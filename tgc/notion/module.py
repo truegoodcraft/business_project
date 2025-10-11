@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from getpass import getpass
+import warnings
+
+try:
+    from getpass import getpass, GetPassWarning
+except ImportError:  # pragma: no cover - Python implementations without GetPassWarning
+    from getpass import getpass  # type: ignore
+
+    GetPassWarning = None  # type: ignore
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
@@ -429,9 +436,30 @@ class NotionAccessModule:
         return existing or ""
 
     def _prompt_secret(self, label: str, existing: Optional[str] = None) -> str:
-        response = getpass(f"INPUT: {label}: ")
-        if response.strip():
-            return response.strip()
+        prompt = f"INPUT: {label}: "
+        response = ""
+        try:
+            if GetPassWarning is not None:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", category=GetPassWarning)
+                    response = getpass(prompt)
+            else:
+                response = getpass(prompt)
+        except (EOFError, KeyboardInterrupt):  # pragma: no cover - interactive guard
+            raise ValueError("A Notion API key is required to enable the module.") from None
+        except Exception:  # pragma: no cover - fallback for unsupported terminals
+            response = ""
+
+        if not response.strip():
+            try:
+                print("INFO: secure input unavailable; falling back to visible entry.")
+                response = input(f"INPUT (visible): {label}: ")
+            except (EOFError, KeyboardInterrupt):  # pragma: no cover - interactive guard
+                raise ValueError("A Notion API key is required to enable the module.") from None
+
+        response = response.strip()
+        if response:
+            return response
         if existing:
             return existing
         raise ValueError("A Notion API key is required to enable the module.")
