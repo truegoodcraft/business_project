@@ -11,6 +11,7 @@ from .actions import (
     DriveLinkAction,
     GmailImportAction,
     LogsAction,
+    NotionModuleAction,
     SettingsAction,
     SheetsSyncAction,
     UpdateAction,
@@ -20,12 +21,14 @@ from .adapters import GmailAdapter, GoogleDriveAdapter, GoogleSheetsAdapter, Not
 from .config import AppConfig
 from .organization import OrganizationProfile
 from .controller import Controller
+from .notion import NotionAccessModule
 
 
 def bootstrap_controller(env_file: str = ".env") -> Controller:
     """Build a controller with adapters and register default actions."""
     config = AppConfig.load(env_file)
     adapters = _build_adapters(config)
+    modules = _build_modules(config, env_file)
     organization = OrganizationProfile.load()
     organization.ensure_reference_page()
     controller = Controller(
@@ -33,6 +36,7 @@ def bootstrap_controller(env_file: str = ".env") -> Controller:
         adapters=adapters,
         organization=organization,
         reports_root=config.reports_dir,
+        modules=modules,
     )
     _register_actions(controller)
     return controller
@@ -48,6 +52,12 @@ def _build_adapters(config: AppConfig) -> Dict[str, object]:
     }
 
 
+def _build_modules(config: AppConfig, env_file: str) -> Dict[str, object]:
+    return {
+        "notion_access": NotionAccessModule(config.notion, env_file),
+    }
+
+
 def _register_actions(controller: Controller) -> None:
     controller.register_action(UpdateAction())
     controller.register_action(DiscoverAuditAction())
@@ -59,3 +69,4 @@ def _register_actions(controller: Controller) -> None:
     controller.register_action(SettingsAction())
     controller.register_action(LogsAction())
     controller.register_action(WaveAction())
+    controller.register_action(NotionModuleAction())

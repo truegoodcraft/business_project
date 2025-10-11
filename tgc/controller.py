@@ -33,6 +33,7 @@ class Controller:
     organization: OrganizationProfile
     reports_root: Path = Path("reports")
     actions: Dict[str, ControllerAction] = field(default_factory=dict)
+    modules: Dict[str, object] = field(default_factory=dict)
 
     def register_action(self, action: ControllerAction) -> None:
         if action.id in self.actions:
@@ -107,6 +108,12 @@ class Controller:
 
     def configured_adapters(self, *keys: str) -> Dict[str, object]:
         return {key: adapter for key, adapter in self.adapters_for(*keys).items() if getattr(adapter, "is_configured", lambda: False)()}
+
+    def get_module(self, module_id: str) -> object:
+        try:
+            return self.modules[module_id]
+        except KeyError as exc:  # pragma: no cover - defensive guard
+            raise ValueError(f"Unknown module '{module_id}'") from exc
 
 
 def render_plan(title: str, steps: Iterable[str], warnings: Optional[Iterable[str]] = None, notes: Optional[Iterable[str]] = None) -> str:

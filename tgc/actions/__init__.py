@@ -6,6 +6,7 @@ from .discover import DiscoverAuditAction
 from .drive_link import DriveLinkAction
 from .gmail_import import GmailImportAction
 from .logs import LogsAction
+from .notion_module import NotionModuleAction
 from .settings import SettingsAction
 from .sheets_sync import SheetsSyncAction
 from .update import UpdateAction
@@ -19,6 +20,7 @@ __all__ = [
     "DriveLinkAction",
     "GmailImportAction",
     "LogsAction",
+    "NotionModuleAction",
     "SettingsAction",
     "SheetsSyncAction",
     "WaveAction",

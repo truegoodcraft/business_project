@@ -39,6 +39,7 @@ Utility:
 - Always show the PLAN summary before executing an action.
 - Ask the user to confirm `Dry-run` or `Apply` for every action. Default to dry-run if the user is uncertain.
 - After running an action, report the run folder path (e.g., `reports/run_<ACTION>_<TIMESTAMP>/`) and summarize `plan.md`, `changes.md`, and `errors.md`.
+- Do **not** use ChatGPT's Notion connector or plugins. All Notion data must flow through the controller's Notion API module using the credentials stored in `.env`.
 - Never print raw tokens or secrets. Mask sensitive strings (e.g., `abc***xyz`).
 - If a module is not configured, explain what value is missing and continue safely.
 - Highlight the active organization name, short code, and SKU example in your summaries so the operator can confirm branding was applied.
