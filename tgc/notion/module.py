@@ -14,9 +14,10 @@ except ImportError:  # pragma: no cover - Python implementations without GetPass
 
     GetPassWarning = None  # type: ignore
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from ..config import NotionConfig
+from .properties import build_property_payload, describe_schema
 
 try:  # Optional dependency; module should degrade gracefully.
     from notion_client import Client
@@ -95,6 +96,7 @@ class NotionAccessModule:
             f"CONFIG: token={'set' if summary.token_present else 'missing'} roots={summary.root_count}",
             f"CLIENT: {'ready' if summary.client_available and not summary.client_error else 'unavailable'}",
             "SOURCE: notion_api_client",
+            "MODE: read_write",
         ]
         if summary.client_error:
             lines.append(f"ERROR: {summary.client_error}")
@@ -226,6 +228,132 @@ class NotionAccessModule:
             "source": "notion_api_client",
         }
 
+    def create_entry(self) -> Dict[str, object]:
+        """Create a database entry interactively using raw value prompts."""
+
+        client, error = self._build_client()
+        if not client:
+            return {"status": "error", "detail": error}
+
+        default_db = self._default_database_id()
+        database_id = self._prompt("Target database ID", existing=default_db)
+        if not database_id:
+            return {"status": "error", "detail": "A database ID is required."}
+
+        try:
+            database = client.databases.retrieve(database_id)  # type: ignore[arg-type]
+        except APIResponseError as exc:  # pragma: no cover - network dependent
+            return {"status": "error", "detail": getattr(exc, "message", str(exc))}
+
+        properties = database.get("properties", {})
+        if not isinstance(properties, dict):
+            return {"status": "error", "detail": "Database properties unavailable."}
+
+        field_summary = describe_schema(properties)
+        if field_summary:
+            print("FIELDS: " + ", ".join(field_summary))
+        print("HINT: use Name=value pairs; blank line to finish.")
+
+        assignments, warnings_list = self._collect_property_inputs(properties)
+        payload, property_errors, _ = build_property_payload(properties, assignments, allow_clear=False)
+
+        if not payload:
+            detail = property_errors[0] if property_errors else "No properties supplied."
+            return {
+                "status": "error",
+                "detail": detail,
+                "warnings": warnings_list,
+                "property_errors": property_errors,
+            }
+
+        try:
+            page = client.pages.create(  # type: ignore[arg-type]
+                parent={"database_id": database_id},
+                properties=payload,
+            )
+        except APIResponseError as exc:  # pragma: no cover - network dependent
+            return {
+                "status": "error",
+                "detail": getattr(exc, "message", str(exc)),
+                "warnings": warnings_list,
+                "property_errors": property_errors,
+            }
+
+        timestamp = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+        return {
+            "status": "ok",
+            "id": page.get("id"),
+            "url": page.get("url"),
+            "database_id": database_id,
+            "properties": list(payload.keys()),
+            "warnings": warnings_list,
+            "property_errors": property_errors,
+            "timestamp": timestamp,
+        }
+
+    def update_entry(self) -> Dict[str, object]:
+        """Update an existing Notion page interactively."""
+
+        client, error = self._build_client()
+        if not client:
+            return {"status": "error", "detail": error}
+
+        page_id = self._prompt("Page ID", existing=None)
+        if not page_id:
+            return {"status": "error", "detail": "A page ID is required."}
+
+        try:
+            page = client.pages.retrieve(page_id)  # type: ignore[arg-type]
+        except APIResponseError as exc:  # pragma: no cover - network dependent
+            return {"status": "error", "detail": getattr(exc, "message", str(exc))}
+
+        properties = page.get("properties", {})
+        if not isinstance(properties, dict):
+            return {"status": "error", "detail": "Page properties unavailable."}
+
+        field_summary = describe_schema(properties)
+        if field_summary:
+            print("FIELDS: " + ", ".join(field_summary))
+        print("HINT: use Name=value pairs; type 'null' to clear; blank line to finish.")
+
+        assignments, warnings_list = self._collect_property_inputs(properties)
+        payload, property_errors, _ = build_property_payload(properties, assignments, allow_clear=True)
+
+        if not payload and not property_errors:
+            return {
+                "status": "error",
+                "detail": "No properties supplied.",
+                "warnings": warnings_list,
+                "property_errors": property_errors,
+            }
+
+        try:
+            updated = client.pages.update(page_id=page_id, properties=payload)  # type: ignore[arg-type]
+        except APIResponseError as exc:  # pragma: no cover - network dependent
+            return {
+                "status": "error",
+                "detail": getattr(exc, "message", str(exc)),
+                "warnings": warnings_list,
+                "property_errors": property_errors,
+            }
+
+        timestamp = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+        parent = updated.get("parent", {}) if isinstance(updated, dict) else {}
+        parent_type = parent.get("type") if isinstance(parent, dict) else None
+        database_id = parent.get("database_id") if isinstance(parent, dict) else None
+
+        return {
+            "status": "ok",
+            "id": updated.get("id") if isinstance(updated, dict) else None,
+            "url": updated.get("url") if isinstance(updated, dict) else None,
+            "parent_type": parent_type,
+            "database_id": database_id,
+            "properties": list(payload.keys()),
+            "warnings": warnings_list,
+            "property_errors": property_errors,
+            "timestamp": timestamp,
+        }
+
     # ------------------------------------------------------------------
     # Internal utilities
 
@@ -239,6 +367,12 @@ class NotionAccessModule:
         except Exception as exc:  # pragma: no cover - defensive guard
             return None, str(exc)
         return client, None
+
+    def _default_database_id(self) -> str:
+        if self.config.inventory_database_id:
+            return self.config.inventory_database_id
+        roots = self._configured_root_ids()
+        return roots[0] if roots else ""
 
     def _configured_root_ids(self) -> List[str]:
         roots = list(self.config.root_ids)
@@ -482,6 +616,46 @@ class NotionAccessModule:
         if choice in {"v", "visible", "show"}:
             return False
         return True
+
+    def _collect_property_inputs(self, schema: Dict[str, Any]) -> Tuple[Dict[str, str], List[str]]:
+        """Collect property assignments from user input."""
+
+        assignments: Dict[str, str] = {}
+        warnings_list: List[str] = []
+        lookup = {name.lower(): name for name in schema.keys()}
+
+        while True:
+            try:
+                raw = input("PROPERTY [Name=Value]: ").strip()
+            except (EOFError, KeyboardInterrupt):  # pragma: no cover - interactive guard
+                raise ValueError("Property entry cancelled.") from None
+
+            if not raw:
+                break
+            if raw.lower() in {"done", "finish", "quit"}:
+                break
+            if "=" not in raw:
+                warnings_list.append(f"Ignored input without '=': {raw}")
+                print("WARN: use Name=Value format.")
+                continue
+            name_part, value_part = raw.split("=", 1)
+            name = name_part.strip()
+            value = value_part.strip()
+            if not name:
+                warnings_list.append("Property name missing.")
+                print("WARN: property name required.")
+                continue
+            canonical = lookup.get(name.lower())
+            if not canonical:
+                warnings_list.append(f"Unknown property: {name}")
+                print(f"WARN: unknown property {name}.")
+                continue
+            if not value:
+                # Skip empty values during creation/update; clearing handled with 'null'.
+                continue
+            assignments[canonical] = value
+
+        return assignments, warnings_list
 
     def _prompt_bool(self, label: str, existing: bool) -> bool:
         default = "y" if existing else "n"

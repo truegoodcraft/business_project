@@ -1,4 +1,4 @@
-"""Notion adapter with read-only access to the inventory vault."""
+"""Notion adapter with read/write access to the inventory vault."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ except Exception:  # pragma: no cover - fallback when notion-client is absent
 
 from .base import AdapterCapability, BaseAdapter
 from ..config import NotionConfig
+from ..notion.properties import build_property_payload
 
 
 class NotionAdapter(BaseAdapter):
@@ -52,6 +53,11 @@ class NotionAdapter(BaseAdapter):
             AdapterCapability(
                 name="Schema introspection",
                 description="Retrieve database metadata for audits",
+                configured=configured,
+            ),
+            AdapterCapability(
+                name="Inventory (write)",
+                description="Create and update inventory entries via the Notion API",
                 configured=configured,
             ),
         ]
@@ -122,12 +128,76 @@ class NotionAdapter(BaseAdapter):
             mapped.append(self._map_inventory_page(page))
         return mapped
 
+    def create_inventory_entry(
+        self, assignments: Dict[str, str], database_id: Optional[str] = None
+    ) -> Dict[str, Optional[str]]:
+        """Create a database entry using raw property assignments."""
+
+        client, error = self._get_client()
+        if not client:
+            raise RuntimeError(error or "Notion client unavailable")
+        target_db = database_id or self._primary_database_id()
+        if not target_db:
+            raise ValueError("A database ID is required.")
+        schema = client.databases.retrieve(target_db)  # type: ignore[arg-type]
+        properties = schema.get("properties", {})
+        payload, errors, unmatched = build_property_payload(
+            properties if isinstance(properties, dict) else {},
+            assignments,
+            allow_clear=False,
+        )
+        issues = list(errors)
+        issues.extend(f"{name}: unknown property" for name in unmatched)
+        if issues:
+            raise ValueError("; ".join(issues))
+        if not payload:
+            raise ValueError("No valid properties supplied.")
+        page = client.pages.create(  # type: ignore[arg-type]
+            parent={"database_id": target_db},
+            properties=payload,
+        )
+        return {
+            "id": page.get("id"),
+            "url": page.get("url"),
+            "database_id": target_db,
+            "properties": ",".join(payload.keys()) or None,
+        }
+
+    def update_page_properties(self, page_id: str, assignments: Dict[str, str]) -> Dict[str, Optional[str]]:
+        """Update properties on an existing page."""
+
+        client, error = self._get_client()
+        if not client:
+            raise RuntimeError(error or "Notion client unavailable")
+        page = client.pages.retrieve(page_id)  # type: ignore[arg-type]
+        properties = page.get("properties", {})
+        payload, errors, unmatched = build_property_payload(
+            properties if isinstance(properties, dict) else {},
+            assignments,
+            allow_clear=True,
+        )
+        issues = list(errors)
+        issues.extend(f"{name}: unknown property" for name in unmatched)
+        if issues:
+            raise ValueError("; ".join(issues))
+        if not payload:
+            raise ValueError("No valid properties supplied.")
+        updated = client.pages.update(page_id=page_id, properties=payload)  # type: ignore[arg-type]
+        parent = updated.get("parent", {}) if isinstance(updated, dict) else {}
+        database_id = parent.get("database_id") if isinstance(parent, dict) else None
+        return {
+            "id": updated.get("id") if isinstance(updated, dict) else None,
+            "url": updated.get("url") if isinstance(updated, dict) else None,
+            "database_id": database_id,
+            "properties": ",".join(payload.keys()) or None,
+        }
+
     def implementation_notes(self) -> str:
         if not self.is_configured():
-            return "Notion adapter ready; enable the Notion access module with credentials for read access."
+            return "Notion adapter ready; enable the Notion access module with credentials for read/write access."
         if self._client_error:
             return f"Configured but cannot initialise client: {self._client_error}"
-        return "Supports live, read-only access to the Vault inventory database."
+        return "Supports live, read/write access to the Vault inventory database."
 
     # ------------------------------------------------------------------
     # Internal utilities

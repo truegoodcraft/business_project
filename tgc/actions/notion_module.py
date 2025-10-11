@@ -24,6 +24,7 @@ class NotionModuleAction(SimpleAction):
             "Offer enable/disable commands",
             "Test connection and report simple metrics",
             "Preview sampled data on request",
+            "Create or update Notion entries interactively",
         ]
         return self.render_plan(
             self.name,
@@ -45,7 +46,7 @@ class NotionModuleAction(SimpleAction):
 
         while True:
             try:
-                command = input("COMMAND [enable/disable/test/show/quit]: ").strip().lower()
+                command = input("COMMAND [enable/disable/test/show/write/update/quit]: ").strip().lower()
             except KeyboardInterrupt:  # pragma: no cover - interactive safety
                 print("INFO: command cancelled.")
                 notes.append("INFO: command cancelled.")
@@ -66,7 +67,13 @@ class NotionModuleAction(SimpleAction):
             if command in {"show", "s"}:
                 self._handle_show(module, notes, errors)
                 continue
-            print("INFO: commands are enable, disable, test, show, quit.")
+            if command in {"write", "w", "create", "c"}:
+                self._handle_write(module, notes, errors, changes)
+                continue
+            if command in {"update", "u"}:
+                self._handle_update(module, notes, errors, changes)
+                continue
+            print("INFO: commands are enable, disable, test, show, write, update, quit.")
             notes.append("INFO: unknown command.")
 
         self._emit_lines(module.status_lines(), notes)
@@ -152,6 +159,58 @@ class NotionModuleAction(SimpleAction):
             detail = sample.get("detail") or "sample unavailable"
             errors.append(str(detail))
 
+    def _handle_write(
+        self,
+        module: NotionAccessModule,
+        notes: List[str],
+        errors: List[str],
+        changes: List[str],
+    ) -> None:
+        try:
+            result = module.create_entry()
+        except ValueError as exc:
+            text = str(exc)
+            prefix = "INFO" if "cancelled" in text.lower() else "ERROR"
+            message = f"{prefix}: {text}"
+            print(message)
+            notes.append(message)
+            if prefix == "ERROR":
+                errors.append(text)
+            return
+        lines = self._format_write(result, action="create")
+        self._emit_lines(lines, notes)
+        if result.get("status") == "ok":
+            changes.append("WRITE: Created Notion entry.")
+        else:
+            detail = result.get("detail") or "write failed"
+            errors.append(str(detail))
+
+    def _handle_update(
+        self,
+        module: NotionAccessModule,
+        notes: List[str],
+        errors: List[str],
+        changes: List[str],
+    ) -> None:
+        try:
+            result = module.update_entry()
+        except ValueError as exc:
+            text = str(exc)
+            prefix = "INFO" if "cancelled" in text.lower() else "ERROR"
+            message = f"{prefix}: {text}"
+            print(message)
+            notes.append(message)
+            if prefix == "ERROR":
+                errors.append(text)
+            return
+        lines = self._format_write(result, action="update")
+        self._emit_lines(lines, notes)
+        if result.get("status") == "ok":
+            changes.append("WRITE: Updated Notion entry.")
+        else:
+            detail = result.get("detail") or "update failed"
+            errors.append(str(detail))
+
     # ------------------------------------------------------------------
     # Formatting helpers
 
@@ -226,3 +285,33 @@ class NotionModuleAction(SimpleAction):
         if not isinstance(module, NotionAccessModule):
             raise RuntimeError("Notion access module unavailable")
         return module
+
+    def _format_write(self, result: Dict[str, object], *, action: str) -> List[str]:
+        status = result.get("status", "unknown")
+        lines = [f"{action.upper()}: status={status}"]
+        if result.get("status") == "ok":
+            detail: List[str] = []
+            if result.get("id"):
+                detail.append(f"id={result['id']}")
+            if result.get("url"):
+                detail.append(f"url={result['url']}")
+            if result.get("database_id"):
+                detail.append(f"database={result['database_id']}")
+            if result.get("parent_type"):
+                detail.append(f"parent={result['parent_type']}")
+            properties = result.get("properties")
+            if isinstance(properties, list) and properties:
+                props = ",".join(str(item) for item in properties[:5])
+                detail.append(f"fields={props}")
+            if detail:
+                lines.append("DETAIL: " + " ".join(detail))
+        else:
+            if result.get("detail"):
+                lines.append(f"ERROR: {result['detail']}")
+        for entry in result.get("warnings", []) or []:
+            lines.append(f"WARN: {entry}")
+        for entry in result.get("property_errors", []) or []:
+            lines.append(f"FIELD: {entry}")
+        if result.get("timestamp"):
+            lines.append(f"STAMP: {result['timestamp']}")
+        return lines
