@@ -1,0 +1,49 @@
+"""Discover & Audit action."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import List
+
+from ..controller import Controller
+from ..reporting import ActionResult, RunContext
+from .base import SimpleAction
+
+
+@dataclass
+class DiscoverAuditAction(SimpleAction):
+    id: str = "1"
+    name: str = "Discover & Audit"
+    description: str = "Read-only audit of configured adapters"
+
+    def build_plan(self, controller: Controller) -> str:
+        steps = [
+            "Check availability of each adapter",
+            "Summarize capabilities and configuration gaps",
+            "Produce audit report in reports directory",
+        ]
+        warnings: List[str] = []
+        for key, ready in controller.adapter_status().items():
+            if not ready:
+                warnings.append(f"{key} adapter not configured; will be skipped.")
+        return self.render_plan(self.name, steps, warnings=warnings)
+
+    def run(self, controller: Controller, context: RunContext) -> ActionResult:
+        lines: List[str] = []
+        notes: List[str] = []
+        for key, adapter in controller.adapters.items():
+            capability_lines = getattr(adapter, "describe_capabilities", lambda: [])()
+            lines.append(f"Adapter: {key}")
+            lines.extend(f"  - {line}" for line in capability_lines)
+            metadata = getattr(adapter, "metadata", lambda: {})()
+            if metadata:
+                notes.append(f"{key} metadata: {metadata}")
+        context.log_notes("audit", lines)
+        plan_text = controller.build_plan(self.id)
+        return ActionResult(
+            plan_text=plan_text,
+            changes=[],
+            errors=[],
+            notes=notes or self._dry_run_message(),
+            preview="\n".join(lines),
+        )
