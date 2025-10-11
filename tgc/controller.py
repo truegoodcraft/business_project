@@ -33,11 +33,20 @@ class Controller:
     organization: OrganizationProfile
     reports_root: Path = Path("reports")
     actions: Dict[str, ControllerAction] = field(default_factory=dict)
+    modules: Dict[str, object] = field(default_factory=dict)
 
     def register_action(self, action: ControllerAction) -> None:
         if action.id in self.actions:
             raise ValueError(f"Action '{action.id}' already registered")
         self.actions[action.id] = action
+
+    def register_module(self, key: str, module: object) -> None:
+        if key in self.modules:
+            raise ValueError(f"Module '{key}' already registered")
+        self.modules[key] = module
+
+    def get_module(self, key: str) -> Optional[object]:
+        return self.modules.get(key)
 
     def available_actions(self) -> List[ControllerAction]:
         return [self.actions[key] for key in sorted(self.actions)]

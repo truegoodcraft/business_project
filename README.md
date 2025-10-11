@@ -12,6 +12,7 @@ This repository implements the controller architecture described in the True Goo
 - **Organization reference tracking** so business name, short codes, and contact details are captured once and reused across the workflow. Placeholder values ship with the project so new operators can quickly rebrand it.
 - **Connector status report** available via `python app.py --status` to quickly audit which adapters are implemented and configured.
 - **In-session auto-update** command so you can pull new repository changes without restarting the conversation.
+- **Dedicated Google Drive module** that can be enabled from the core menu, stores credentials safely on disk, and offers an optional connection test before use.
 
 ## Project Structure
 
@@ -75,7 +76,13 @@ Adapters are designed to run safely without credentials. The Notion adapter now 
 
    This command highlights whether each adapter is implemented, whether it is configured with credentials, and includes the current organization summary so you can confirm the environment before testing.
 
-6. (Optional) Pull the latest repository changes from within the same session. Run a dry-run first to confirm the command, then apply it when ready:
+6. (Optional) Configure the Google Drive module from the CLI menu:
+
+   - Launch the controller and choose **Configure Google Drive module**.
+   - Decide whether to enable the module, then follow the guided prompts to paste or import your Google service-account JSON and any Drive root IDs you want to monitor.
+   - The module stores its configuration in `config/google_drive_module.json` (including masked credentials for reuse), supports an on-demand connection test, and can display a snapshot of the stored settings for quick verification.
+
+7. (Optional) Pull the latest repository changes from within the same session. Run a dry-run first to confirm the command, then apply it when ready:
 
    ```bash
    python app.py --update          # Preview the git pull command
