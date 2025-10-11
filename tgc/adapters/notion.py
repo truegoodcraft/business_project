@@ -4,19 +4,9 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-try:  # Optional dependency for environments that skip extras
-    from notion_client import Client
-    from notion_client.errors import APIResponseError
-except Exception:  # pragma: no cover - fallback when notion-client is absent
-    Client = None  # type: ignore
-
-    class APIResponseError(Exception):  # type: ignore
-        """Fallback error type so callers can handle failures uniformly."""
-
-        pass
-
 from .base import AdapterCapability, BaseAdapter
 from ..config import NotionConfig
+from ..notion.api import NotionAPIClient, NotionAPIError
 from ..notion.properties import build_property_payload
 
 
@@ -26,18 +16,17 @@ class NotionAdapter(BaseAdapter):
 
     def __init__(self, config: NotionConfig) -> None:
         super().__init__(config)
-        self._client: Optional[Client] = None
+        self._client: Optional[NotionAPIClient] = None
         self._client_error: Optional[str] = None
         if self.is_configured():
-            if Client is None:
-                self._client_error = (
-                    "notion-client package is not installed. Run `pip install notion-client`."
+            try:
+                self._client = NotionAPIClient(
+                    config.token or "",
+                    timeout=config.timeout_seconds,
+                    rate_limit_qps=config.rate_limit_qps,
                 )
-            else:
-                try:
-                    self._client = Client(auth=config.token)
-                except Exception as exc:  # pragma: no cover - defensive guard
-                    self._client_error = str(exc)
+            except Exception as exc:  # pragma: no cover - defensive guard
+                self._client_error = str(exc)
 
     def is_configured(self) -> bool:
         return self.config.is_configured()
@@ -92,9 +81,9 @@ class NotionAdapter(BaseAdapter):
         if not client:
             return {"status": "error", "detail": error}
         try:
-            database = client.databases.retrieve(database_id)  # type: ignore[arg-type]
-        except APIResponseError as exc:  # pragma: no cover - network dependent
-            return {"status": "error", "detail": getattr(exc, "message", str(exc))}
+            database = client.databases_retrieve(database_id)
+        except NotionAPIError as exc:  # pragma: no cover - network dependent
+            return {"status": "error", "detail": exc.message}
         title = self._join_rich_text(database.get("title", []))
         properties = list(database.get("properties", {}).keys())
         preview = self.fetch_inventory_preview(limit=3)
@@ -116,12 +105,12 @@ class NotionAdapter(BaseAdapter):
         if not database_id:
             return [{"status": "No database configured."}]
         try:
-            response = client.databases.query(  # type: ignore[arg-type]
-                database_id=database_id,
+            response = client.databases_query(
+                database_id,
                 page_size=min(limit, self.config.page_size),
             )
-        except APIResponseError as exc:  # pragma: no cover - network dependent
-            return [{"status": getattr(exc, "message", str(exc))}]
+        except NotionAPIError as exc:  # pragma: no cover - network dependent
+            return [{"status": exc.message}]
         results = response.get("results", [])
         mapped: List[Dict[str, Optional[str]]] = []
         for page in results:
@@ -139,7 +128,7 @@ class NotionAdapter(BaseAdapter):
         target_db = database_id or self._primary_database_id()
         if not target_db:
             raise ValueError("A database ID is required.")
-        schema = client.databases.retrieve(target_db)  # type: ignore[arg-type]
+        schema = client.databases_retrieve(target_db)
         properties = schema.get("properties", {})
         payload, errors, unmatched = build_property_payload(
             properties if isinstance(properties, dict) else {},
@@ -152,7 +141,7 @@ class NotionAdapter(BaseAdapter):
             raise ValueError("; ".join(issues))
         if not payload:
             raise ValueError("No valid properties supplied.")
-        page = client.pages.create(  # type: ignore[arg-type]
+        page = client.pages_create(
             parent={"database_id": target_db},
             properties=payload,
         )
@@ -169,7 +158,7 @@ class NotionAdapter(BaseAdapter):
         client, error = self._get_client()
         if not client:
             raise RuntimeError(error or "Notion client unavailable")
-        page = client.pages.retrieve(page_id)  # type: ignore[arg-type]
+        page = client.pages_retrieve(page_id)
         properties = page.get("properties", {})
         payload, errors, unmatched = build_property_payload(
             properties if isinstance(properties, dict) else {},
@@ -182,7 +171,7 @@ class NotionAdapter(BaseAdapter):
             raise ValueError("; ".join(issues))
         if not payload:
             raise ValueError("No valid properties supplied.")
-        updated = client.pages.update(page_id=page_id, properties=payload)  # type: ignore[arg-type]
+        updated = client.pages_update(page_id, properties=payload)
         parent = updated.get("parent", {}) if isinstance(updated, dict) else {}
         database_id = parent.get("database_id") if isinstance(parent, dict) else None
         return {
@@ -202,7 +191,7 @@ class NotionAdapter(BaseAdapter):
     # ------------------------------------------------------------------
     # Internal utilities
 
-    def _get_client(self) -> Tuple[Optional[Client], str | None]:
+    def _get_client(self) -> Tuple[Optional[NotionAPIClient], str | None]:
         if not self.is_configured():
             return None, "Notion adapter is not configured."
         if self._client is None:

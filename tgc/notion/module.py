@@ -17,18 +17,8 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from ..config import NotionConfig
+from .api import NotionAPIClient, NotionAPIError
 from .properties import build_property_payload, describe_schema
-
-try:  # Optional dependency; module should degrade gracefully.
-    from notion_client import Client
-    from notion_client.errors import APIResponseError
-except Exception:  # pragma: no cover - optional dependency guard
-    Client = None  # type: ignore
-
-    class APIResponseError(Exception):  # type: ignore
-        """Fallback error type for environments without notion-client."""
-
-        pass
 
 
 @dataclass
@@ -71,13 +61,13 @@ class NotionAccessModule:
     def status(self) -> NotionModuleStatus:
         """Return current module status including client readiness."""
 
-        client_available = Client is not None
+        client_available = True
         client_error: Optional[str] = None
-        if client_available and self.is_configured():
-            try:
-                Client(auth=self.config.token)  # type: ignore[call-arg]
-            except Exception as exc:  # pragma: no cover - defensive guard
-                client_error = str(exc)
+        if self.is_configured():
+            _, client_error = self._build_client()
+            client_available = client_error is None
+        elif not self.is_enabled():
+            client_available = False
         return NotionModuleStatus(
             enabled=self.is_enabled(),
             configured=self.is_configured(),
@@ -199,10 +189,10 @@ class NotionAccessModule:
         }
 
         try:
-            user = client.users.me()  # type: ignore[call-arg]
+            user = client.users_me()
             report["integration_user"] = user.get("name") or user.get("bot", {}).get("owner")
-        except APIResponseError as exc:  # pragma: no cover - network
-            return {"status": "error", "detail": getattr(exc, "message", str(exc))}
+        except NotionAPIError as exc:  # pragma: no cover - network
+            return {"status": "error", "detail": exc.message}
 
         for root_id in self._configured_root_ids():
             report["roots"].append(self._inspect_root(client, root_id))
@@ -241,9 +231,9 @@ class NotionAccessModule:
             return {"status": "error", "detail": "A database ID is required."}
 
         try:
-            database = client.databases.retrieve(database_id)  # type: ignore[arg-type]
-        except APIResponseError as exc:  # pragma: no cover - network dependent
-            return {"status": "error", "detail": getattr(exc, "message", str(exc))}
+            database = client.databases_retrieve(database_id)
+        except NotionAPIError as exc:  # pragma: no cover - network dependent
+            return {"status": "error", "detail": exc.message}
 
         properties = database.get("properties", {})
         if not isinstance(properties, dict):
@@ -267,14 +257,14 @@ class NotionAccessModule:
             }
 
         try:
-            page = client.pages.create(  # type: ignore[arg-type]
+            page = client.pages_create(
                 parent={"database_id": database_id},
                 properties=payload,
             )
-        except APIResponseError as exc:  # pragma: no cover - network dependent
+        except NotionAPIError as exc:  # pragma: no cover - network dependent
             return {
                 "status": "error",
-                "detail": getattr(exc, "message", str(exc)),
+                "detail": exc.message,
                 "warnings": warnings_list,
                 "property_errors": property_errors,
             }
@@ -303,9 +293,9 @@ class NotionAccessModule:
             return {"status": "error", "detail": "A page ID is required."}
 
         try:
-            page = client.pages.retrieve(page_id)  # type: ignore[arg-type]
-        except APIResponseError as exc:  # pragma: no cover - network dependent
-            return {"status": "error", "detail": getattr(exc, "message", str(exc))}
+            page = client.pages_retrieve(page_id)
+        except NotionAPIError as exc:  # pragma: no cover - network dependent
+            return {"status": "error", "detail": exc.message}
 
         properties = page.get("properties", {})
         if not isinstance(properties, dict):
@@ -328,11 +318,11 @@ class NotionAccessModule:
             }
 
         try:
-            updated = client.pages.update(page_id=page_id, properties=payload)  # type: ignore[arg-type]
-        except APIResponseError as exc:  # pragma: no cover - network dependent
+            updated = client.pages_update(page_id, properties=payload)
+        except NotionAPIError as exc:  # pragma: no cover - network dependent
             return {
                 "status": "error",
-                "detail": getattr(exc, "message", str(exc)),
+                "detail": exc.message,
                 "warnings": warnings_list,
                 "property_errors": property_errors,
             }
@@ -357,13 +347,15 @@ class NotionAccessModule:
     # ------------------------------------------------------------------
     # Internal utilities
 
-    def _build_client(self) -> Tuple[Optional[Client], Optional[str]]:
+    def _build_client(self) -> Tuple[Optional[NotionAPIClient], Optional[str]]:
         if not self.is_configured():
             return None, "Module disabled or missing configuration."
-        if Client is None:
-            return None, "notion-client is not installed."
         try:
-            client = Client(auth=self.config.token)  # type: ignore[call-arg]
+            client = NotionAPIClient(
+                self.config.token or "",
+                timeout=self.config.timeout_seconds,
+                rate_limit_qps=self.config.rate_limit_qps,
+            )
         except Exception as exc:  # pragma: no cover - defensive guard
             return None, str(exc)
         return client, None
@@ -386,28 +378,28 @@ class NotionAccessModule:
                 ordered.append(item)
         return ordered
 
-    def _inspect_root(self, client: Client, root_id: str) -> Dict[str, object]:
+    def _inspect_root(self, client: NotionAPIClient, root_id: str) -> Dict[str, object]:
         try:
-            database = client.databases.retrieve(root_id)  # type: ignore[arg-type]
-        except APIResponseError as exc:
-            if getattr(exc, "status", None) in {400, 404}:
+            database = client.databases_retrieve(root_id)
+        except NotionAPIError as exc:
+            if exc.status in {400, 404} or exc.code == "object_not_found":
                 return self._inspect_page(client, root_id)
-            return {"id": root_id, "status": "error", "detail": getattr(exc, "message", str(exc))}
+            return {"id": root_id, "status": "error", "detail": exc.message}
         except Exception as exc:  # pragma: no cover - defensive guard
             return {"id": root_id, "status": "error", "detail": str(exc)}
 
         title = self._join_rich_text(database.get("title", []))
         try:
-            query = client.databases.query(  # type: ignore[arg-type]
-                database_id=root_id,
+            query = client.databases_query(
+                root_id,
                 page_size=min(10, self.config.page_size),
             )
-        except APIResponseError as exc:  # pragma: no cover - network dependent
+        except NotionAPIError as exc:  # pragma: no cover - network dependent
             return {
                 "id": root_id,
                 "status": "error",
                 "type": "database",
-                "detail": getattr(exc, "message", str(exc)),
+                "detail": exc.message,
             }
         count = len(query.get("results", []))
         has_more = bool(query.get("has_more"))
@@ -420,15 +412,15 @@ class NotionAccessModule:
             "has_more": has_more,
         }
 
-    def _inspect_page(self, client: Client, root_id: str) -> Dict[str, object]:
+    def _inspect_page(self, client: NotionAPIClient, root_id: str) -> Dict[str, object]:
         try:
-            page = client.pages.retrieve(root_id)  # type: ignore[arg-type]
-        except APIResponseError as exc:  # pragma: no cover - network dependent
-            return {"id": root_id, "status": "error", "detail": getattr(exc, "message", str(exc))}
+            page = client.pages_retrieve(root_id)
+        except NotionAPIError as exc:  # pragma: no cover - network dependent
+            return {"id": root_id, "status": "error", "detail": exc.message}
 
         title = self._page_title(page)
-        children = client.blocks.children.list(  # type: ignore[arg-type]
-            block_id=root_id,
+        children = client.blocks_children_list(
+            root_id,
             page_size=min(10, self.config.page_size),
         )
         return {
@@ -440,23 +432,23 @@ class NotionAccessModule:
             "has_more": bool(children.get("has_more")),
         }
 
-    def _sample_root(self, client: Client, root_id: str, limit: int) -> Dict[str, object]:
+    def _sample_root(self, client: NotionAPIClient, root_id: str, limit: int) -> Dict[str, object]:
         try:
-            database = client.databases.retrieve(root_id)  # type: ignore[arg-type]
-        except APIResponseError:
+            client.databases_retrieve(root_id)
+        except NotionAPIError:
             return self._sample_page(client, root_id, limit)
 
         try:
-            query = client.databases.query(  # type: ignore[arg-type]
-                database_id=root_id,
+            query = client.databases_query(
+                root_id,
                 page_size=min(limit, self.config.page_size),
             )
-        except APIResponseError as exc:  # pragma: no cover - network dependent
+        except NotionAPIError as exc:  # pragma: no cover - network dependent
             return {
                 "id": root_id,
                 "type": "database",
                 "status": "error",
-                "detail": getattr(exc, "message", str(exc)),
+                "detail": exc.message,
             }
         rows = []
         for item in query.get("results", [])[:limit]:
@@ -476,11 +468,14 @@ class NotionAccessModule:
             "has_more": bool(query.get("has_more")),
         }
 
-    def _sample_page(self, client: Client, root_id: str, limit: int) -> Dict[str, object]:
-        children = client.blocks.children.list(  # type: ignore[arg-type]
-            block_id=root_id,
-            page_size=min(limit, self.config.page_size),
-        )
+    def _sample_page(self, client: NotionAPIClient, root_id: str, limit: int) -> Dict[str, object]:
+        try:
+            children = client.blocks_children_list(
+                root_id,
+                page_size=min(limit, self.config.page_size),
+            )
+        except NotionAPIError as exc:  # pragma: no cover - network dependent
+            return {"id": root_id, "type": "page", "status": "error", "detail": exc.message}
         blocks = []
         for block in children.get("results", [])[:limit]:
             blocks.append(
