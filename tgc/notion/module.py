@@ -40,7 +40,6 @@ class NotionAccessModule:
     ENV_KEYS = (
         "NOTION_MODULE_ENABLED",
         "NOTION_API_KEY",
-        "NOTION_TOKEN",
         "NOTION_DB_INVENTORY_ID",
         "NOTION_ROOT_IDS",
         "NOTION_PAGE_SIZE",
@@ -87,6 +86,7 @@ class NotionAccessModule:
             f"STATUS: {'enabled' if summary.enabled else 'disabled'}",
             f"CONFIG: token={'set' if summary.token_present else 'missing'} roots={summary.root_count}",
             f"CLIENT: {'ready' if summary.client_available and not summary.client_error else 'unavailable'}",
+            "SOURCE: notion_api_client",
         ]
         if summary.client_error:
             lines.append(f"ERROR: {summary.client_error}")
@@ -130,7 +130,6 @@ class NotionAccessModule:
         values: Dict[str, Optional[str]] = {
             "NOTION_MODULE_ENABLED": "true",
             "NOTION_API_KEY": api_key,
-            "NOTION_TOKEN": api_key,
             "NOTION_DB_INVENTORY_ID": inventory_db or None,
             "NOTION_ROOT_IDS": ",".join(root_ids) or None,
             "NOTION_PAGE_SIZE": str(page_size),
@@ -186,6 +185,7 @@ class NotionAccessModule:
             "integration_user": None,
             "roots": [],
             "timestamp": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+            "source": "notion_api_client",
         }
 
         try:
@@ -215,6 +215,7 @@ class NotionAccessModule:
             "limit": limit,
             "samples": samples,
             "timestamp": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+            "source": "notion_api_client",
         }
 
     # ------------------------------------------------------------------

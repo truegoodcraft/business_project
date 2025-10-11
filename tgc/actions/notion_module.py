@@ -104,7 +104,7 @@ class NotionModuleAction(SimpleAction):
             notes.append(message)
             return
         controller.adapters["notion"] = NotionAdapter(controller.config.notion)
-        message = f"INTERFACE: module enabled roots={summary['root_count']}"
+        message = f"INTERFACE: module enabled roots={summary['root_count']} source=notion_api_client"
         print(message)
         notes.append(message)
         changes.append("INTERFACE: Notion module enabled.")
@@ -158,7 +158,8 @@ class NotionModuleAction(SimpleAction):
     def _format_report(self, report: Dict[str, object]) -> List[str]:
         status = report.get("status", "unknown")
         user = report.get("integration_user") or "unknown"
-        lines = [f"CONNECTIVITY: status={status} user={user}"]
+        source = report.get("source") or "unknown"
+        lines = [f"CONNECTIVITY: status={status} user={user} source={source}"]
         for root in report.get("roots", []):
             root_id = root.get("id", "?")
             root_status = root.get("status", "unknown")
@@ -181,7 +182,10 @@ class NotionModuleAction(SimpleAction):
         return lines
 
     def _format_samples(self, sample: Dict[str, object]) -> List[str]:
-        lines = [f"SAMPLE: status={sample.get('status', 'unknown')} limit={sample.get('limit', '?')}"]
+        source = sample.get("source", "unknown")
+        lines = [
+            f"SAMPLE: status={sample.get('status', 'unknown')} limit={sample.get('limit', '?')} source={source}"
+        ]
         if sample.get("status") != "ok":
             detail = sample.get("detail")
             if detail:

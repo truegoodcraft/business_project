@@ -62,6 +62,7 @@ class NotionAdapter(BaseAdapter):
             "client_error": self._client_error,
             "module_enabled": str(self.config.module_enabled).lower(),
             "root_ids": ",".join(self.config.root_ids) or None,
+            "client_source": "notion_api_client" if self._client else "unavailable",
         }
 
     def status_report(self) -> Dict[str, object]:
