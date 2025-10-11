@@ -1,6 +1,6 @@
-# True Good Craft Controller
+# Universal Business Controller
 
-This repository implements the controller architecture described in the True Good Craft master project brief. It provides a single startup command that loads configuration, assembles modular adapters, and exposes a menu-driven workflow for the core business operations.
+This repository implements the controller architecture described in the True Good Craft master project brief and makes it available for any organization to adopt. It provides a single startup command that loads configuration, assembles modular adapters, and exposes a menu-driven workflow for core business operations. (Created by True Good Craft, generalized for wider use.)
 
 ## Features
 
@@ -9,7 +9,7 @@ This repository implements the controller architecture described in the True Goo
 - **ID-first, traceable runs** that create timestamped folders in `reports/` containing `plan.md`, `changes.md`, and `errors.md`.
 - **Beginner-safe defaults** with configuration masking, preview-friendly dry runs, and clear notes on missing credentials.
 - **ChatGPT-first interface** via the included startup prompt file, with a CLI fallback for local execution.
-- **Organization reference tracking** so business name, short codes, and contact details are captured once and reused across the workflow.
+- **Organization reference tracking** so business name, short codes, and contact details are captured once and reused across the workflow. Placeholder values ship with the project so new operators can quickly rebrand it.
 - **Connector status report** available via `python app.py --status` to quickly audit which adapters are implemented and configured.
 - **In-session auto-update** command so you can pull new repository changes without restarting the conversation.
 
@@ -56,7 +56,7 @@ Adapters are designed to run safely without credentials. The Notion adapter now 
    python app.py --init-org
    ```
 
-   The command asks for the business name, contact information, and preferred short code (for example, `TGC` to produce IDs like `TGC-001`). Your answers populate `organization_profile.json` and refresh `docs/organization_reference.md` for quick reference during audits.
+   The command asks for the business name, contact information, and preferred short code (for example, `ABC` to produce IDs like `ABC-001`). Your answers populate `organization_profile.json` and refresh `docs/organization_reference.md` for quick reference during audits.
 
 3. Install dependencies and launch the controller:
 
@@ -104,4 +104,4 @@ The file [`docs/chatgpt_startup_prompt.md`](docs/chatgpt_startup_prompt.md) cont
 
 ---
 
-© 2024 True Good Craft — Contact: [truegoodcragt@gmail.com](mailto:truegoodcragt@gmail.com)
+Crafted by True Good Craft — released for community use.
