@@ -60,6 +60,8 @@ class NotionAdapter(BaseAdapter):
         return {
             "inventory_database_id": self.config.inventory_database_id,
             "client_error": self._client_error,
+            "module_enabled": str(self.config.module_enabled).lower(),
+            "root_ids": ",".join(self.config.root_ids) or None,
         }
 
     def status_report(self) -> Dict[str, object]:
@@ -75,12 +77,15 @@ class NotionAdapter(BaseAdapter):
         """Return metadata about the configured inventory database."""
 
         if not self.is_configured():
-            return {"status": "not_configured", "detail": "Inventory database ID missing."}
+            return {"status": "not_configured", "detail": "Inventory module disabled or missing configuration."}
+        database_id = self._primary_database_id()
+        if not database_id:
+            return {"status": "error", "detail": "No database or root ID supplied."}
         client, error = self._get_client()
         if not client:
             return {"status": "error", "detail": error}
         try:
-            database = client.databases.retrieve(self.config.inventory_database_id)  # type: ignore[arg-type]
+            database = client.databases.retrieve(database_id)  # type: ignore[arg-type]
         except APIResponseError as exc:  # pragma: no cover - network dependent
             return {"status": "error", "detail": getattr(exc, "message", str(exc))}
         title = self._join_rich_text(database.get("title", []))
@@ -100,10 +105,13 @@ class NotionAdapter(BaseAdapter):
         client, error = self._get_client()
         if not client:
             return [{"status": error}]
+        database_id = self._primary_database_id()
+        if not database_id:
+            return [{"status": "No database configured."}]
         try:
             response = client.databases.query(  # type: ignore[arg-type]
-                database_id=self.config.inventory_database_id,
-                page_size=limit,
+                database_id=database_id,
+                page_size=min(limit, self.config.page_size),
             )
         except APIResponseError as exc:  # pragma: no cover - network dependent
             return [{"status": getattr(exc, "message", str(exc))}]
@@ -115,7 +123,7 @@ class NotionAdapter(BaseAdapter):
 
     def implementation_notes(self) -> str:
         if not self.is_configured():
-            return "Notion adapter ready; provide NOTION_TOKEN and NOTION_DB_INVENTORY_ID for read access."
+            return "Notion adapter ready; enable the Notion access module with credentials for read access."
         if self._client_error:
             return f"Configured but cannot initialise client: {self._client_error}"
         return "Supports live, read-only access to the Vault inventory database."
@@ -129,6 +137,13 @@ class NotionAdapter(BaseAdapter):
         if self._client is None:
             return None, self._client_error or "Notion client is unavailable."
         return self._client, None
+
+    def _primary_database_id(self) -> Optional[str]:
+        if self.config.inventory_database_id:
+            return self.config.inventory_database_id
+        if self.config.root_ids:
+            return self.config.root_ids[0]
+        return None
 
     def _map_inventory_page(self, page: Dict[str, Any]) -> Dict[str, Optional[str]]:
         properties = page.get("properties", {})
