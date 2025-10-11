@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+import sys
 import warnings
 
 try:
@@ -438,22 +439,25 @@ class NotionAccessModule:
     def _prompt_secret(self, label: str, existing: Optional[str] = None) -> str:
         prompt = f"INPUT: {label}: "
         response = ""
-        try:
-            if GetPassWarning is not None:
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore", category=GetPassWarning)
+        use_hidden = self._secret_use_hidden()
+
+        if use_hidden:
+            try:
+                if GetPassWarning is not None:
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore", category=GetPassWarning)
+                        response = getpass(prompt)
+                else:
                     response = getpass(prompt)
-            else:
-                response = getpass(prompt)
-        except (EOFError, KeyboardInterrupt):  # pragma: no cover - interactive guard
-            raise ValueError("A Notion API key is required to enable the module.") from None
-        except Exception:  # pragma: no cover - fallback for unsupported terminals
-            response = ""
+            except (EOFError, KeyboardInterrupt):  # pragma: no cover - interactive guard
+                raise ValueError("A Notion API key is required to enable the module.") from None
+            except Exception:  # pragma: no cover - fallback for unsupported terminals
+                response = ""
 
         if not response.strip():
             try:
-                print("INFO: secure input unavailable; falling back to visible entry.")
-                response = input(f"INPUT (visible): {label}: ")
+                visible_prompt = f"INPUT (visible): {label}: "
+                response = input(visible_prompt)
             except (EOFError, KeyboardInterrupt):  # pragma: no cover - interactive guard
                 raise ValueError("A Notion API key is required to enable the module.") from None
 
@@ -463,6 +467,21 @@ class NotionAccessModule:
         if existing:
             return existing
         raise ValueError("A Notion API key is required to enable the module.")
+
+    def _secret_use_hidden(self) -> bool:
+        """Return True if hidden secret entry should be attempted."""
+
+        if not sys.stdin.isatty():  # pragma: no cover - non-interactive fallback
+            return False
+
+        try:
+            choice = input("MODE: secret entry [h=hidden,v=visible] (h): ").strip().lower()
+        except (EOFError, KeyboardInterrupt):  # pragma: no cover - interactive guard
+            raise ValueError("A Notion API key is required to enable the module.") from None
+
+        if choice in {"v", "visible", "show"}:
+            return False
+        return True
 
     def _prompt_bool(self, label: str, existing: bool) -> bool:
         default = "y" if existing else "n"
