@@ -46,6 +46,15 @@ def format_sheets_missing_env_message(email: Optional[str]) -> str:
     )
 
 
+def sheets_share_hint(email: Optional[str]) -> str:
+    """Return guidance for sharing the spreadsheet with the service account."""
+
+    share_target = email or _DEFAULT_SERVICE_ACCOUNT_PLACEHOLDER
+    return (
+        f"Share the sheet with {share_target} as Viewer. Set SHEET_INVENTORY_ID in .env."
+    )
+
+
 def format_drive_share_message(root_id: str, email: Optional[str]) -> str:
     """Return a consistent instruction to share a Drive root with the service account."""
 

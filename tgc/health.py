@@ -15,10 +15,11 @@ from .integration_support import (
     is_drive_permission_error,
     load_drive_module_config,
     service_account_email,
+    sheets_share_hint,
 )
 from .modules.google_drive import DriveModuleConfig, ServiceAccountCredentials, build
+from .adapters import sheets_adapter
 
-SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets.readonly"
 DRIVE_FIELDS = (
     "id, name, mimeType, driveId, capabilities(canListChildren, canEdit), "
     "shortcutDetails(targetId, targetMimeType), permissions(emailAddress, role)"
@@ -263,13 +264,6 @@ def _check_sheets(
         detail = _format_detail(message, start)
         return "Google Sheets", "missing", detail
     start = time.perf_counter()
-    if ServiceAccountCredentials is None or build is None:
-        detail = _format_detail(
-            "Google API client libraries are not installed.",
-            start,
-            "Install google-api-python-client and google-auth to reach Sheets.",
-        )
-        return "Google Sheets", "missing", detail
     if not module_config.has_credentials():
         detail = _format_detail(
             "Drive service account credentials missing; cannot reach Sheets.",
@@ -278,27 +272,28 @@ def _check_sheets(
         )
         return "Google Sheets", "missing", detail
     try:
-        credentials = ServiceAccountCredentials.from_service_account_info(
-            module_config.credentials,
-            scopes=[SHEETS_SCOPE],
+        metadata = sheets_adapter.get_spreadsheet_metadata(
+            sheet_id,
+            credentials=module_config.credentials,
+            timeout=module_config.timeout_seconds,
         )
-        sheets_service = build("sheets", "v4", credentials=credentials, cache_discovery=False)
-        response = (
-            sheets_service.spreadsheets()
-            .get(spreadsheetId=sheet_id, fields="spreadsheetId,properties(title)")
-            .execute()
-        )
-    except Exception as exc:  # pragma: no cover - network dependent
+    except sheets_adapter.SheetsAPIError as exc:  # pragma: no cover - network dependent
         detail = _format_detail(
             f"Sheets API error: {exc}",
             start,
-            "Confirm the sheet ID and share it with the service account.",
+            sheets_share_hint(service_account_email(module_config)),
         )
         return "Google Sheets", "error", detail
-    properties = response.get("properties", {}) if isinstance(response, dict) else {}
-    title = properties.get("title") or "(untitled)"
+    except Exception as exc:  # pragma: no cover - defensive guard
+        detail = _format_detail(
+            f"Unexpected Sheets error: {exc}",
+            start,
+            sheets_share_hint(service_account_email(module_config)),
+        )
+        return "Google Sheets", "error", detail
+    title = metadata.get("title") or "(untitled)"
     detail = _format_detail(
-        f"Spreadsheet '{title}' ({response.get('spreadsheetId', sheet_id)}) reachable.",
+        f"Spreadsheet '{title}' ({metadata.get('spreadsheetId', sheet_id)}) reachable.",
         start,
     )
     return "Google Sheets", "ready", detail
