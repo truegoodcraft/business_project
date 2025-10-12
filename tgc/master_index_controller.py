@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from .notion.api import NotionAPIError
+from .util.stage import stage, stage_done
 from .util.watchdog import with_watchdog
 
 try:  # Optional Google dependencies are managed by the Drive module
@@ -280,6 +281,8 @@ class MasterIndexController:
             )
         else:
             print("No Drive roots configured; skipping file traversal.", flush=True)
+        progress_enabled = logging.getLogger().isEnabledFor(logging.INFO)
+        drive_stage: Optional[float] = None
         if placeholders and drive_roots:
             print(
                 "[dry-run] Skipping Drive API calls and generating placeholder rows.",
@@ -300,18 +303,28 @@ class MasterIndexController:
             drive_partial = False
             drive_reason: Optional[str] = None
         else:
-            drive_result = collect_drive_files(
-                drive_module,
-                drive_roots,
-                mime_whitelist=list(drive_module.config.mime_whitelist) or None,
-                max_depth=drive_module.config.max_depth,
-                page_size=drive_module.config.page_size,
-                limits=traversal_limits,
-            )
-            drive_records = drive_result.records
-            drive_errors = drive_result.errors
-            drive_partial = drive_result.partial
-            drive_reason = drive_result.reason
+            if drive_roots and progress_enabled:
+                drive_stage = stage("Drive → list files")
+            drive_records = []
+            drive_errors = []
+            drive_partial = False
+            drive_reason = None
+            try:
+                drive_result = collect_drive_files(
+                    drive_module,
+                    drive_roots,
+                    mime_whitelist=list(drive_module.config.mime_whitelist) or None,
+                    max_depth=drive_module.config.max_depth,
+                    page_size=drive_module.config.page_size,
+                    limits=traversal_limits,
+                )
+                drive_records = drive_result.records
+                drive_errors = drive_result.errors
+                drive_partial = drive_result.partial
+                drive_reason = drive_result.reason
+            finally:
+                if drive_stage is not None:
+                    stage_done(drive_stage, f"(files: {len(drive_records)})")
         drive_elapsed = time.perf_counter() - drive_start
         print(
             "Collected {} Drive file(s) in {:.1f}s".format(

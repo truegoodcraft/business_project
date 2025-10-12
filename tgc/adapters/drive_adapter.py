@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 import time
 from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Optional, Union
 
@@ -77,6 +78,39 @@ def list_drive_files(
     start_time = time.monotonic()
     stats: Dict[str, int] = {"files": 0, "requests": 0}
 
+    ticker_enabled = logger.isEnabledFor(logging.INFO)
+    ticker: Dict[str, float | int] = {"files": 0, "requests": 0, "last": 0.0}
+
+    def _reset_ticker() -> None:
+        ticker["files"] = 0
+        ticker["requests"] = 0
+        ticker["last"] = 0.0
+
+    def _tick(force: bool = False) -> None:
+        if not ticker_enabled:
+            return
+        now = time.perf_counter()
+        last = float(ticker.get("last", 0.0))
+        if not force and (now - last) < 0.25:
+            return
+        ticker["last"] = now
+        sys.stdout.write(
+            f"\rDrive files ({int(ticker['files'])}) • requests ({int(ticker['requests'])})"
+        )
+        sys.stdout.flush()
+
+    def _start_ticker() -> None:
+        if not ticker_enabled:
+            return
+        _reset_ticker()
+        _tick(force=True)
+
+    def _stop_ticker() -> None:
+        if not ticker_enabled:
+            return
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+
     def _check_time() -> None:
         if max_seconds is not None and (time.monotonic() - start_time) >= float(max_seconds):
             raise _StopTraversal
@@ -100,6 +134,9 @@ def list_drive_files(
             logger.debug("drive.request", extra={"url": url, "params": dict(params)})
         response: Response = default_client.get(url, headers=headers, params=params, timeout=timeout)
         stats["requests"] += 1
+        if ticker_enabled:
+            ticker["requests"] += 1
+            _tick()
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(
                 "drive.response",
@@ -156,6 +193,8 @@ def list_drive_files(
     corpora = "drive" if drive_id else "allDrives"
     results: List[Dict[str, Any]] = []
 
+    _start_ticker()
+
     try:
         for root in roots:
             page_token: Optional[str] = None
@@ -179,6 +218,7 @@ def list_drive_files(
                     params["pageToken"] = page_token
                 payload = _perform_request(_DRIVE_FILES_ENDPOINT, params)
                 files: Iterable[Mapping[str, Any]] = payload.get("files", [])  # type: ignore[assignment]
+                batch_count = 0
                 for item in files:
                     _check_items()
                     if item.get("mimeType") == _SHORTCUT_MIME:
@@ -187,7 +227,11 @@ def list_drive_files(
                         record = _normalise_item(item)
                     results.append(record)
                     stats["files"] += 1
+                    batch_count += 1
                     _check_items()
+                if batch_count and ticker_enabled:
+                    ticker["files"] += batch_count
+                    _tick(force=True)
                 page_token = payload.get("nextPageToken")
                 if not page_token:
                     break
@@ -196,5 +240,7 @@ def list_drive_files(
                 seen_tokens.add(page_token)
     except _StopTraversal:
         pass
+    finally:
+        _stop_ticker()
 
     return results
