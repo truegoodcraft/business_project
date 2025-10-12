@@ -30,9 +30,9 @@ Proceed with curiosity. ⚙️ Tinker responsibly. 🧤
 ## 🚀 Overview
 
 The **TGC Systems Controller** is a universal, modular, **AI-assisted business automation platform** for creative workshops and small businesses.  
-It unifies **Notion**, **Google Drive**, **Google Sheets**, and more — under one local-first control system.  
+It unifies **Notion**, **Google Drive**, **Google Sheets**, and more — under one local-first control system.
 
-It’s for curious makers who want a smart assistant that helps manage their workflow… not run it.  
+It’s for curious makers who want a smart assistant that helps manage their workflow… not run it.
 
 > 🪶 “I’m not a developer. I’m just weaving GPT-fu and luck into something useful.” — *TGC Systems*
 
@@ -59,7 +59,7 @@ It’s for curious makers who want a smart assistant that helps manage their wor
 💬 **ChatGPT-first interface** — use ChatGPT or CLI.  
 🪄 **Auto-update** from GitHub without restarting.  
 🧭 **Organization tracking** for consistent branding and SKUs.  
-🔐 **Safe credential handling** — locally stored and verified.  
+🔐 **Safe credential handling** — locally stored and verified.
 
 ---
 
@@ -71,7 +71,7 @@ It’s for curious makers who want a smart assistant that helps manage their wor
 One-click setup for **Google**, **Notion**, or **Sheets**.  
 Choose size: **Small**, **Medium**, or **Thorough** — easily upgradable.  
 Auto-builds indexes, folders, and templates.  
-All changes backed up as zip archives (10-day retention).  
+All changes backed up as zip archives (10-day retention).
 
 </details>
 
@@ -81,7 +81,7 @@ All changes backed up as zip archives (10-day retention).
 **Non-destructive sync** between local and cloud.  
 Auto-indexing for Notion pages, Drive files, and Sheets.  
 **Local or hybrid cloud operation** — your choice.  
-Smart rollback and recovery.  
+Smart rollback and recovery.
 
 </details>
 
@@ -90,7 +90,7 @@ Smart rollback and recovery.
 
 Accepts **receipts, screenshots, PDFs, bank statements**.  
 Parses and **suggests updates** (vendors, prices, contacts).  
-Learns usage patterns for smarter workflow.  
+Learns usage patterns for smarter workflow.
 
 </details>
 
@@ -99,7 +99,7 @@ Learns usage patterns for smarter workflow.
 
 Archives every change for 10 days.  
 Optional auto-archive for logs.  
-One-click restore for lost or overwritten data.  
+One-click restore for lost or overwritten data.
 
 </details>
 
@@ -109,7 +109,7 @@ One-click restore for lost or overwritten data.
 Clean CLI + ChatGPT menu.  
 Toggle modules on/off anytime.  
 Guided onboarding with tooltips.  
-Fully reversible — **idiot-proof by design.**  
+Fully reversible — **idiot-proof by design.**
 
 </details>
 
@@ -118,7 +118,7 @@ Fully reversible — **idiot-proof by design.**
 
 Anonymous, privacy-safe metrics only.  
 Tracks inventory trends & usage.  
-All outbound data previewed before sending.  
+All outbound data previewed before sending.
 
 </details>
 
@@ -128,7 +128,7 @@ All outbound data previewed before sending.
 Role-based access (Admin / Manager / Employee).  
 Plugin framework for custom extensions.  
 Hybrid deployment (desktop + web dashboard).  
-Low-cost subscription model ($1–$2 / month).  
+Low-cost subscription model ($1–$2 / month).
 
 </details>
 
@@ -139,101 +139,129 @@ Low-cost subscription model ($1–$2 / month).
 🐍 **Python 3.12+**  
 ⚙️ **Flask**, **Notion SDK**, **Google API Client**  
 💾 **JSON / SQLite** local data, optional **Google Sheets** backend  
-💬 **CLI + ChatGPT dual interface**  
+💬 **CLI + ChatGPT** dual interface
 
 ---
 
 ## 📁 Project Structure
 
+```
 /tgc_bridge_bootstrap/
 │
 ├── tgc/
-│ ├── adapters/ # Modular integrations (Notion live, others stubbed)
-│ ├── actions/ # Menu commands (plan → dry-run → apply → report)
-│ ├── config/ # Environment & connections
-│ ├── controller.py # Core engine
-│ ├── bootstrap.py # Builds controller & registers adapters
-│ ├── organization.py # Brand & SKU setup
-│ ├── reporting.py # Logs and audit helpers
-│ └── app.py # CLI entry point
+│   ├── adapters/           # Modular integrations (Notion live, others stubbed)
+│   ├── actions/            # Menu commands (plan → dry-run → apply → report)
+│   ├── config/             # Environment & connections
+│   ├── controller.py       # Core engine
+│   ├── bootstrap.py        # Builds controller & registers adapters
+│   ├── organization.py     # Brand & SKU setup
+│   ├── reporting.py        # Logs and audit helpers
+│   └── app.py              # CLI entry point
 │
 ├── docs/
-│ ├── chatgpt_startup_prompt.md
-│ ├── organization_reference.md
-│ └── feature_roadmap.md
+│   ├── chatgpt_startup_prompt.md
+│   ├── organization_reference.md
+│   └── feature_roadmap.md
 │
 ├── reports/
 ├── requirements.txt
 └── .env
-
-yaml
-Copy code
+```
 
 ---
 
 ## ⚙️ Getting Started
 
-Clone  
+### Clone
+
 ```bash
 git clone https://github.com/truegoodcraft/business_project.git
 cd business_project
-Setup
+```
 
-bash
-Copy code
+### Setup
+
+```bash
 python -m venv .venv
-.venv\Scripts\activate
+source .venv/bin/activate
 pip install -r requirements.txt
-Initialize
+```
 
-bash
-Copy code
+### Initialize
+
+```bash
 python app.py --init-org
-Enter business name, SKU prefix, and contact info.
-Generates /docs/organization_reference.md.
+```
 
-Run
+Enter business name, SKU prefix, and contact info.  
+Generates `/docs/organization_reference.md`.
 
-bash
-Copy code
+### Run
+
+```bash
 python app.py
-Check Status
+```
 
-bash
-Copy code
+### Check Status
+
+```bash
 python app.py --status
-💬 Command Palette
-Command	Action
-update	Pull latest GitHub changes (dry-run first).
-discover	Rebuild indexes and verify structure.
-gmail	Import vendor quotes/orders.
-csv	Import inventory data.
-sheets	Sync metrics with Google Sheets.
-drive	Link Drive files by SKU/reference.
-contacts	Normalize vendor contacts.
-settings	Manage configuration & credentials.
+```
 
-🧭 Author
-TGC Systems
-🎩 Maker. Tinkerer. Possibly the entity that accidentally builds Skynet.
+### Notion setup
+
+Create a **Sources** database in Notion to catalog linked systems alongside the inventory tracker. Configure these lean properties:
+
+- **Name** — Title property for each source record.
+- **Type** — Select property with options `Drive`, `Sheets`, `Notion`.
+- **Key** — Rich text property for canonical IDs such as `drive:<fileId>`, `sheets:<spreadsheetId>#<sheetId>`, or `notion:<dbId>`.
+- **Title** — Rich text property capturing the human-readable name.
+- **URL** — URL property linking directly to the source document or database.
+- **Path** — Rich text property for a concise parent path (for example, a Drive folder path).
+- **Status** — Select property with options `Ready`, `Missing`, `Error`.
+- **Last Indexed** — Date property noting the most recent sync or audit.
+- **Extra** — Rich text property for short, optional notes.
+
+Add the new database ID to your `.env` file:
+
+```bash
+NOTION_DB_SOURCES_ID=your_sources_database_id
+```
+
+### 💬 Command Palette
+
+| Command   | Action                                           |
+|-----------|--------------------------------------------------|
+| `update`  | Pull latest GitHub changes (dry-run first).      |
+| `discover`| Rebuild indexes and verify structure.            |
+| `gmail`   | Import vendor quotes/orders.                     |
+| `csv`     | Import inventory data.                           |
+| `sheets`  | Sync metrics with Google Sheets.                 |
+| `drive`   | Link Drive files by SKU/reference.               |
+| `contacts`| Normalize vendor contacts.                       |
+| `settings`| Manage configuration & credentials.              |
+
+🧭 **Author**  
+TGC Systems  
+🎩 Maker. Tinkerer. Possibly the entity that accidentally builds Skynet.  
 🔗 https://github.com/truegoodcraft
 
-🪙 License & Contribution
-Licensed under the MIT License.
+🪙 **License & Contribution**  
+Licensed under the MIT License.  
 Contributions, bug reports, and survival tips welcome.
 
-🧵 Final Thoughts
-This project is equal parts workshop tool and AI playground.
+🧵 **Final Thoughts**  
+This project is equal parts workshop tool and AI playground.  
 It’s meant to be explored, broken, rebuilt, and improved — safely, curiously, and without fear of failure.
 
-✨ If it works, awesome. If it explodes, we’ll fix it together.
+✨ If it works, awesome. If it explodes, we’ll fix it together.  
 🧠 May your logs be clean and your GPTs merciful.
 
 If you found this project useful or entertaining, consider fueling the chaos with a coffee ☕  
 [**paypal.me/truegoodcraft**](https://paypal.me/truegoodcraft)
 
-“If it ain’t broke, don’t fix it… or was it ‘If it ain’t fixed, don’t broke it?’”
-“If it’s stupid but it works, it’s not stupid.”
-MTFY
+“**If it ain’t broke, don’t fix it… or was it ‘If it ain’t fixed, don’t broke it?’**”  
+“**If it’s stupid but it works, it’s not stupid.**”  
+**MTFY**
 
-</div> ```
+</div>

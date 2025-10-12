@@ -24,6 +24,7 @@ class NotionConfig:
     module_enabled: bool = False
     token: Optional[str] = None
     inventory_database_id: Optional[str] = None
+    sources_database_id: Optional[str] = None
     root_ids: List[str] = field(default_factory=list)
     page_size: int = 100
     include_comments: bool = False
@@ -38,7 +39,9 @@ class NotionConfig:
         if not self.module_enabled:
             return False
         has_token = bool(self.token)
-        has_roots = bool(self.root_ids or self.inventory_database_id)
+        has_roots = bool(
+            self.root_ids or self.inventory_database_id or self.sources_database_id
+        )
         return bool(has_token and has_roots)
 
 
@@ -109,6 +112,7 @@ class AppConfig:
             module_enabled=_env_bool("NOTION_MODULE_ENABLED", default=False),
             token=token,
             inventory_database_id=_clean_env("NOTION_DB_INVENTORY_ID"),
+            sources_database_id=_clean_env("NOTION_DB_SOURCES_ID"),
             root_ids=_env_list("NOTION_ROOT_IDS"),
             page_size=_env_int("NOTION_PAGE_SIZE", default=100),
             include_comments=_env_bool("NOTION_INCLUDE_COMMENTS", default=False),
@@ -161,6 +165,7 @@ class AppConfig:
             "NOTION_TOKEN": mask_secret(self.notion.token),
             "NOTION_API_KEY": mask_secret(self.notion.token),
             "NOTION_DB_INVENTORY_ID": mask_secret(self.notion.inventory_database_id),
+            "NOTION_DB_SOURCES_ID": mask_secret(self.notion.sources_database_id),
             "NOTION_ROOT_IDS": ",".join(self.notion.root_ids) or None,
             "NOTION_MODULE_ENABLED": str(self.notion.module_enabled).lower(),
             "NOTION_PAGE_SIZE": str(self.notion.page_size),
