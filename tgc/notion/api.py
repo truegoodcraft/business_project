@@ -52,10 +52,18 @@ class NotionAPIClient:
     def databases_retrieve(self, database_id: str) -> Dict[str, Any]:
         return self._request("GET", f"/databases/{database_id}")
 
-    def databases_query(self, database_id: str, *, page_size: Optional[int] = None) -> Dict[str, Any]:
+    def databases_query(
+        self,
+        database_id: str,
+        *,
+        page_size: Optional[int] = None,
+        start_cursor: Optional[str] = None,
+    ) -> Dict[str, Any]:
         payload: Dict[str, Any] = {}
         if page_size is not None:
             payload["page_size"] = page_size
+        if start_cursor is not None:
+            payload["start_cursor"] = start_cursor
         return self._request("POST", f"/databases/{database_id}/query", body=payload)
 
     def pages_retrieve(self, page_id: str) -> Dict[str, Any]:

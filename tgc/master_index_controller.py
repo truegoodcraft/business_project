@@ -328,6 +328,21 @@ def collect_notion_pages(
         try:
             page = client.pages_retrieve(page_id)
         except NotionAPIError as exc:
+            if exc.status in {400, 404} or exc.code == "object_not_found":
+                handled = _handle_database_root(
+                    client,
+                    page_id,
+                    depth,
+                    ancestors,
+                    queue,
+                    records,
+                    errors,
+                    limit,
+                    depth_limit,
+                    page_size,
+                )
+                if handled:
+                    continue
             errors.append(f"Page {page_id}: {exc.message}")
             continue
 
@@ -383,6 +398,83 @@ def collect_notion_pages(
                 break
 
     return records[:limit], errors
+
+
+def _handle_database_root(
+    client: "NotionAPIClient",
+    database_id: str,
+    depth: int,
+    ancestors: List[str],
+    queue: "deque[Tuple[str, int, List[str]]]",
+    records: List[Dict[str, str]],
+    errors: List[str],
+    limit: int,
+    depth_limit: Optional[int],
+    page_size: int,
+) -> bool:
+    from .notion.api import NotionAPIError as _NotionAPIError
+
+    try:
+        database = client.databases_retrieve(database_id)
+    except _NotionAPIError as exc:
+        if exc.status in {400, 404} or exc.code == "object_not_found":
+            return False
+        errors.append(f"Database {database_id}: {exc.message}")
+        return True
+    except Exception as exc:  # pragma: no cover - defensive network guard
+        errors.append(f"Database {database_id}: {exc}")
+        return True
+
+    title = _join_rich_text(database.get("title", [])) if isinstance(database, dict) else ""
+    database_title = title or "(untitled)"
+    records.append(
+        {
+            "title": database_title,
+            "page_id": database.get("id", database_id) if isinstance(database, dict) else database_id,
+            "url": database.get("url", "") if isinstance(database, dict) else "",
+            "parent": "/" + "/".join(ancestors) if ancestors else "/",
+            "last_edited": database.get("last_edited_time", "") if isinstance(database, dict) else "",
+        }
+    )
+
+    if len(records) >= limit:
+        return True
+
+    if depth_limit is not None and depth >= depth_limit:
+        return True
+
+    base_path = ancestors + [_sanitize_segment(database_title)] if database_title else list(ancestors)
+
+    next_cursor: Optional[str] = None
+    while True:
+        try:
+            response = client.databases_query(
+                database_id,
+                page_size=min(page_size, 100),
+                start_cursor=next_cursor,
+            )
+        except _NotionAPIError as exc:
+            errors.append(f"Database {database_id}: {exc.message}")
+            break
+        except Exception as exc:  # pragma: no cover - defensive network guard
+            errors.append(f"Database {database_id}: {exc}")
+            break
+
+        for item in response.get("results", []):
+            if not isinstance(item, dict):
+                continue
+            child_id = item.get("id")
+            if not child_id:
+                continue
+            queue.append((child_id, depth + 1, base_path))
+
+        if not response.get("has_more"):
+            break
+        next_cursor = response.get("next_cursor")
+        if not next_cursor:
+            break
+
+    return True
 
 
 def _extract_page_title(page: Dict[str, object]) -> str:
@@ -607,3 +699,4 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from .controller import Controller
     from .modules import GoogleDriveModule
     from .notion import NotionAccessModule
+    from .notion.api import NotionAPIClient
