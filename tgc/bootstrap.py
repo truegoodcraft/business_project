@@ -9,6 +9,7 @@ from .actions import (
     CsvImportAction,
     DiscoverAuditAction,
     DriveLinkAction,
+    DriveModuleAction,
     GmailImportAction,
     LogsAction,
     NotionModuleAction,
@@ -21,6 +22,7 @@ from .adapters import GmailAdapter, GoogleDriveAdapter, GoogleSheetsAdapter, Not
 from .config import AppConfig
 from .organization import OrganizationProfile
 from .controller import Controller
+from .modules import GoogleDriveModule
 from .notion import NotionAccessModule
 
 
@@ -31,6 +33,7 @@ def bootstrap_controller(env_file: str = ".env") -> Controller:
     modules = _build_modules(config, env_file)
     organization = OrganizationProfile.load()
     organization.ensure_reference_page()
+    modules = _build_modules()
     controller = Controller(
         config=config,
         adapters=adapters,
@@ -52,6 +55,9 @@ def _build_adapters(config: AppConfig) -> Dict[str, object]:
     }
 
 
+def _build_modules() -> Dict[str, object]:
+    return {
+        "drive": GoogleDriveModule.load(),
 def _build_modules(config: AppConfig, env_file: str) -> Dict[str, object]:
     return {
         "notion_access": NotionAccessModule(config.notion, env_file),
@@ -65,6 +71,7 @@ def _register_actions(controller: Controller) -> None:
     controller.register_action(CsvImportAction())
     controller.register_action(SheetsSyncAction())
     controller.register_action(DriveLinkAction())
+    controller.register_action(DriveModuleAction())
     controller.register_action(ContactsAction())
     controller.register_action(SettingsAction())
     controller.register_action(LogsAction())

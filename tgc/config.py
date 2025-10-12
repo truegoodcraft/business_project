@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -32,10 +33,21 @@ class NotionConfig:
 
 @dataclass
 class GoogleDriveConfig:
-    root_folder_id: Optional[str] = None
+    module_config_path: Path = Path("config/google_drive_module.json")
+    fallback_root_id: Optional[str] = None
 
     def is_configured(self) -> bool:
-        return bool(self.root_folder_id)
+        path = self.module_config_path.expanduser()
+        if path.exists():
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                return False
+            enabled = bool(data.get("enabled"))
+            has_credentials = bool(data.get("credentials"))
+            root_ids = data.get("root_ids") or []
+            return enabled and has_credentials and bool(root_ids)
+        return bool(self.fallback_root_id)
 
 
 @dataclass
@@ -93,7 +105,12 @@ class AppConfig:
             allowlist_ids=_env_list("NOTION_ALLOWLIST_IDS"),
             denylist_ids=_env_list("NOTION_DENYLIST_IDS"),
         )
-        drive = GoogleDriveConfig(root_folder_id=_clean_env("DRIVE_ROOT_FOLDER_ID"))
+        drive = GoogleDriveConfig(
+            module_config_path=Path(
+                _clean_env("DRIVE_MODULE_CONFIG") or "config/google_drive_module.json"
+            ),
+            fallback_root_id=_clean_env("DRIVE_ROOT_FOLDER_ID"),
+        )
         sheets = GoogleSheetsConfig(inventory_sheet_id=_clean_env("SHEET_INVENTORY_ID"))
         gmail = GmailConfig(query=_clean_env("GMAIL_QUERY"))
         wave = WaveConfig(
@@ -130,7 +147,8 @@ class AppConfig:
             "NOTION_ALLOWLIST_IDS": ",".join(self.notion.allowlist_ids) or None,
             "NOTION_DENYLIST_IDS": ",".join(self.notion.denylist_ids) or None,
             "SHEET_INVENTORY_ID": mask_secret(self.sheets.inventory_sheet_id),
-            "DRIVE_ROOT_FOLDER_ID": mask_secret(self.drive.root_folder_id),
+            "DRIVE_MODULE_CONFIG": str(self.drive.module_config_path),
+            "DRIVE_ROOT_FOLDER_ID": mask_secret(self.drive.fallback_root_id),
             "GMAIL_QUERY": self.gmail.query,
             "WAVE_GRAPHQL_TOKEN": mask_secret(self.wave.graphql_token),
             "WAVE_BUSINESS_ID": mask_secret(self.wave.business_id),

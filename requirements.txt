@@ -1,1 +1,4 @@
+notion-client>=2.2.0
+google-api-python-client>=2.120.0
+google-auth>=2.30.0
 # No external dependencies are required; the Notion module uses the standard library.

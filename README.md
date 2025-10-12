@@ -12,6 +12,7 @@ This repository implements the controller architecture described in the True Goo
 - **Organization reference tracking** so business name, short codes, and contact details are captured once and reused across the workflow. Placeholder values ship with the project so new operators can quickly rebrand it.
 - **Connector status report** available via `python app.py --status` to quickly audit which adapters are implemented and configured.
 - **In-session auto-update** command so you can pull new repository changes without restarting the conversation.
+- **Dedicated Google Drive module** that stores credentials safely on disk, runs live Drive API verification, and exposes read/write helpers with dry-run safety switches.
 
 ## Project Structure
 
@@ -41,6 +42,7 @@ Adapters are designed to run safely without credentials. The Notion adapter now 
    NOTION_TOKEN=
    NOTION_DB_INVENTORY_ID=
    SHEET_INVENTORY_ID=
+   DRIVE_MODULE_CONFIG=  # optional; defaults to config/google_drive_module.json
    DRIVE_ROOT_FOLDER_ID=
    GMAIL_QUERY=from:(order OR invoice OR quote) newer_than:1y
 
@@ -75,7 +77,15 @@ Adapters are designed to run safely without credentials. The Notion adapter now 
 
    This command highlights whether each adapter is implemented, whether it is configured with credentials, and includes the current organization summary so you can confirm the environment before testing.
 
-6. (Optional) Pull the latest repository changes from within the same session. Run a dry-run first to confirm the command, then apply it when ready:
+6. (Optional) Configure the Google Drive module from the CLI menu:
+
+   - Launch the controller and choose **Configure Google Drive module**.
+   - Decide whether to enable the module, then follow the guided prompts to paste or import your Google service-account JSON and the Drive folder/shared-drive IDs you want to monitor.
+   - The module persists its configuration (including credentials) in `config/google_drive_module.json` by default so you only provide them once; override the path via `DRIVE_MODULE_CONFIG` if you prefer a custom location.
+   - You can run a live connection test that calls the Drive API, verifies quota, and confirms that each configured root is reachable.
+   - When write access is enabled, the module and adapter expose upload/update/delete helpers that honour dry-run flags so you can exercise the workflow without destructive side effects.
+
+7. (Optional) Pull the latest repository changes from within the same session. Run a dry-run first to confirm the command, then apply it when ready:
 
    ```bash
    python app.py --update          # Preview the git pull command
