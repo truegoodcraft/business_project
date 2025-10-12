@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -79,12 +80,6 @@ class MasterIndexController:
             summary = MasterIndexSummary(status="unavailable", dry_run=dry_run, message=detail)
             self._append_log(summary)
             return summary.to_dict()
-        ready, _details = self._adapters_ready()
-        if not ready:
-            print(
-                "Master Index unavailable: run 'Discover & Audit' and verify Notion + Drive are ready."
-            )
-            return MasterIndexSummary(status="unavailable", dry_run=dry_run).to_dict()
 
         notion_module = self._notion_module()
         drive_module = self._drive_module()
@@ -101,32 +96,83 @@ class MasterIndexController:
             )
             print(message)
             self._append_log(summary)
-            )
             return summary.to_dict()
 
         notion_roots = self._notion_root_ids(notion_module)
         drive_roots = self._drive_root_ids(drive_module)
 
         generated_at = datetime.utcnow().isoformat(timespec="seconds") + "Z"
-        notion_records, notion_errors = collect_notion_pages(
-            notion_module,
-            notion_roots,
-            max_depth=notion_module.config.max_depth,
-            page_size=notion_module.config.page_size,
+        notion_start = time.perf_counter()
+        if notion_roots:
+            print(f"Collecting Notion pages from {len(notion_roots)} root(s)...")
+        else:
+            print("No Notion roots configured; skipping page traversal.")
+        if dry_run and notion_roots:
+            print("[dry-run] Skipping Notion API calls and generating placeholder rows.")
+            notion_records = [
+                {
+                    "title": f"(dry-run placeholder for root {root[:8]}…)",
+                    "page_id": root,
+                    "url": "",
+                    "parent": "/",
+                    "last_edited": "",
+                }
+                for root in notion_roots
+            ]
+            notion_errors: List[str] = []
+        else:
+            notion_records, notion_errors = collect_notion_pages(
+                notion_module,
+                notion_roots,
+                max_depth=notion_module.config.max_depth,
+                page_size=notion_module.config.page_size,
+            )
+        notion_elapsed = time.perf_counter() - notion_start
+        print(
+            "Collected {} Notion page(s) in {:.1f}s".format(
+                len(notion_records), notion_elapsed
+            )
         )
-        drive_records, drive_errors = collect_drive_files(
-            drive_module,
-            drive_roots,
-            mime_whitelist=list(drive_module.config.mime_whitelist) or None,
-            max_depth=drive_module.config.max_depth,
-            page_size=drive_module.config.page_size,
+
+        drive_start = time.perf_counter()
+        if drive_roots:
+            print(f"Collecting Drive files from {len(drive_roots)} root(s)...")
+        else:
+            print("No Drive roots configured; skipping file traversal.")
+        if dry_run and drive_roots:
+            print("[dry-run] Skipping Drive API calls and generating placeholder rows.")
+            drive_records = [
+                {
+                    "name": f"(dry-run placeholder for root {root[:8]}…)",
+                    "file_id": root,
+                    "path_or_link": "/",
+                    "mimeType": "",
+                    "modifiedTime": "",
+                    "size": "",
+                }
+                for root in drive_roots
+            ]
+            drive_errors: List[str] = []
+        else:
+            drive_records, drive_errors = collect_drive_files(
+                drive_module,
+                drive_roots,
+                mime_whitelist=list(drive_module.config.mime_whitelist) or None,
+                max_depth=drive_module.config.max_depth,
+                page_size=drive_module.config.page_size,
+            )
+        drive_elapsed = time.perf_counter() - drive_start
+        print(
+            "Collected {} Drive file(s) in {:.1f}s".format(
+                len(drive_records), drive_elapsed
+            )
         )
 
         notion_records.sort(key=lambda item: ((item.get("title") or "").casefold(), item.get("url") or ""))
         drive_records.sort(key=lambda item: ((item.get("path_or_link") or "").casefold(), item.get("name") or ""))
 
         timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-        output_dir = Path("reports") / f"master_index_{timestamp}"
+        output_dir = Path("docs") / "master_index_reports" / f"master_index_{timestamp}"
         notion_path = output_dir / "notion_pages.md"
         drive_path = output_dir / "drive_files.md"
 
@@ -156,18 +202,10 @@ class MasterIndexController:
                 except OSError as exc:
                     drive_errors.append(f"Failed to write Drive index: {exc}")
 
-        status = "ok"
-        if notion_errors or drive_errors:
-            status = "error"
+        status = "error" if notion_errors or drive_errors else "ok"
 
         summary = MasterIndexSummary(
             status=status,
-            output_dir.mkdir(parents=True, exist_ok=True)
-            notion_path.write_text(notion_markdown, encoding="utf-8")
-            drive_path.write_text(drive_markdown, encoding="utf-8")
-
-        summary = MasterIndexSummary(
-            status="ok",
             dry_run=dry_run,
             notion_count=len(notion_records),
             drive_count=len(drive_records),
@@ -190,7 +228,6 @@ class MasterIndexController:
         if notion_ready and drive_ready:
             return True, None
         message = "Required adapters not ready: Notion ({}) · Drive ({})".format(
-        message = """Required adapters not ready: Notion ({}) Drive ({})""".format(
             "ready" if notion_ready else "not ready",
             "ready" if drive_ready else "not ready",
         )
@@ -249,11 +286,6 @@ class MasterIndexController:
             line += f" output={summary.output_dir}"
         if summary.message:
             line += f" message={summary.message}"
-            f"{timestamp} module=master_index dry_run={summary.dry_run} "
-            f"notion={summary.notion_count} drive={summary.drive_count}"
-        )
-        if summary.output_dir:
-            line += f" output={summary.output_dir}"
         with log_path.open("a", encoding="utf-8") as handle:
             handle.write(line + "\n")
 
