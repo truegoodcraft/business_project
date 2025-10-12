@@ -13,6 +13,7 @@ from tgc.master_index_controller import (
 from tgc.notion.api import NotionAPIError
 from tgc.notion.module import NotionAccessModule
 from tgc.modules.google_drive import DriveModuleConfig, GoogleDriveModule
+from tgc.reporting import write_drive_files_markdown
 
 
 class FakeNotionModule(NotionAccessModule):
@@ -338,3 +339,65 @@ def test_collect_drive_files_respects_max_pages_limit():
     assert result.partial is True
     assert len(result.records) == 1
     assert result.reason and "max pages" in result.reason
+
+
+def test_write_drive_files_markdown_sorts_and_formats(tmp_path):
+    rows = [
+        {
+            "name": "Older",
+            "mimeType": "application/pdf",
+            "size": "2048",
+            "modifiedTime": "2024-01-01T10:00:00Z",
+            "id": "file-1",
+            "parents": ["root", "folder"],
+            "shortcutDetails": {"targetId": "shortcut-target"},
+            "is_shortcut": True,
+        },
+        {
+            "name": "Newer",
+            "mimeType": "application/pdf",
+            "size": "1024",
+            "modifiedTime": "2024-02-01T11:00:00Z",
+            "id": "file-2",
+            "parents": ["root"],
+        },
+    ]
+
+    paths = write_drive_files_markdown(tmp_path, rows)
+
+    assert [path.name for path in paths] == ["drive_files.md"]
+
+    content = paths[0].read_text(encoding="utf-8").splitlines()
+    assert content[0] == "# Master Index — Drive Files"
+    assert any(line.strip() == "Total: 2" for line in content)
+
+    table_lines = [line for line in content if line.startswith("| ")]
+    data_lines = table_lines[2:]
+    assert data_lines[0].startswith("| Newer")
+    assert "shortcut-target" in data_lines[0] or "shortcut-target" in data_lines[1]
+    assert data_lines[1].endswith("root, folder |")
+
+
+def test_write_drive_files_markdown_chunks_large_dataset(tmp_path):
+    rows = []
+    for index in range(5_001):
+        rows.append(
+            {
+                "name": f"File {index:05d}",
+                "mimeType": "text/plain",
+                "size": str(index),
+                "modifiedTime": f"2024-01-01T00:00:{index % 60:02d}Z",
+                "id": f"id-{index}",
+                "parents": ["root"],
+            }
+        )
+
+    paths = write_drive_files_markdown(tmp_path, rows)
+
+    assert [path.name for path in paths] == ["drive_files_1.md", "drive_files_2.md"]
+
+    first_lines = [line for line in paths[0].read_text(encoding="utf-8").splitlines() if line.startswith("| ")][2:]
+    second_lines = [line for line in paths[1].read_text(encoding="utf-8").splitlines() if line.startswith("| ")][2:]
+
+    assert len(first_lines) == 5_000
+    assert len(second_lines) == 1

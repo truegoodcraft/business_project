@@ -95,9 +95,17 @@ class MasterIndexAction(SimpleAction):
         if context.apply:
             notion_path = summary.get("notion_output")
             drive_path = summary.get("drive_output")
+            drive_chunks = [
+                str(value)
+                for value in summary.get("drive_outputs", [])
+                if isinstance(value, str) and value
+            ]
             if notion_path:
                 changes.append(f"Wrote Notion index to {notion_path}")
-            if drive_path:
+            if drive_chunks:
+                for path in drive_chunks:
+                    changes.append(f"Wrote Drive index to {path}")
+            elif drive_path:
                 changes.append(f"Wrote Drive index to {drive_path}")
         else:
             notes.extend(self._dry_run_message())
