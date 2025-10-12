@@ -393,6 +393,7 @@ def collect_notion_pages(
             continue
 
         next_cursor: Optional[str] = None
+        seen_cursors: set[str] = set()
         while True:
             try:
                 children = client.blocks_children_list(
@@ -421,9 +422,16 @@ def collect_notion_pages(
                             queue.append((target_id, depth + 1, next_path))
             if not children.get("has_more"):
                 break
-            next_cursor = children.get("next_cursor")
-            if not next_cursor:
+            cursor_value = children.get("next_cursor")
+            if not cursor_value:
                 break
+            if cursor_value in seen_cursors:
+                errors.append(
+                    f"Page {page_id}: detected repeated pagination cursor; aborting traversal."
+                )
+                break
+            seen_cursors.add(cursor_value)
+            next_cursor = cursor_value
 
     return records[:limit], errors
 
@@ -474,6 +482,7 @@ def _handle_database_root(
     base_path = ancestors + [_sanitize_segment(database_title)] if database_title else list(ancestors)
 
     next_cursor: Optional[str] = None
+    seen_cursors: set[str] = set()
     while True:
         try:
             response = client.databases_query(
@@ -501,6 +510,12 @@ def _handle_database_root(
         next_cursor = response.get("next_cursor")
         if not next_cursor:
             break
+        if next_cursor in seen_cursors:
+            errors.append(
+                f"Database {database_id}: detected repeated pagination cursor; aborting traversal."
+            )
+            break
+        seen_cursors.add(next_cursor)
 
     return True
 
@@ -647,6 +662,7 @@ def collect_drive_files(
                 continue
             query = f"'{file_id}' in parents and trashed = false"
             page_token: Optional[str] = None
+            seen_tokens: set[str] = set()
             while True:
                 try:
                     response = (
@@ -671,9 +687,16 @@ def collect_drive_files(
                     child_id = child.get("id")
                     if child_id:
                         queue.append((child_id, depth + 1, path_segments))
-                page_token = response.get("nextPageToken")
-                if not page_token:
+                token = response.get("nextPageToken")
+                if not token:
                     break
+                if token in seen_tokens:
+                    errors.append(
+                        f"Drive {file_id}: detected repeated pagination token; aborting traversal."
+                    )
+                    break
+                seen_tokens.add(token)
+                page_token = token
 
     return records[:limit], errors
 

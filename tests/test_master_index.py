@@ -4,9 +4,10 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from tgc.config import NotionConfig
-from tgc.master_index_controller import collect_notion_pages
+from tgc.master_index_controller import collect_drive_files, collect_notion_pages
 from tgc.notion.api import NotionAPIError
 from tgc.notion.module import NotionAccessModule
+from tgc.modules.google_drive import DriveModuleConfig, GoogleDriveModule
 
 
 class FakeNotionModule(NotionAccessModule):
@@ -104,6 +105,75 @@ class FakeNotionClient:
         return {"results": rows, "has_more": False, "next_cursor": None}
 
 
+class LoopingCursorNotionClient(FakeNotionClient):
+    def __init__(self):
+        super().__init__()
+        self._child_calls = 0
+
+    def blocks_children_list(self, block_id, *, page_size=None, start_cursor=None):
+        self._child_calls += 1
+        if self._child_calls == 1:
+            base = super().blocks_children_list(block_id, page_size=page_size, start_cursor=start_cursor)
+            result = dict(base)
+            result["has_more"] = True
+            result["next_cursor"] = "cursor-token"
+            return result
+        return {"results": [], "has_more": True, "next_cursor": "cursor-token"}
+
+
+class LoopingDatabaseCursorClient(FakeNotionClient):
+    def __init__(self):
+        super().__init__()
+        self._database_calls = 0
+
+    def databases_query(self, database_id, *, page_size=None, start_cursor=None):
+        self._database_calls += 1
+        if self._database_calls == 1:
+            rows = list(self.database_rows.get(database_id, []))
+            return {"results": rows, "has_more": True, "next_cursor": "repeat-cursor"}
+        return {"results": [], "has_more": True, "next_cursor": "repeat-cursor"}
+
+
+class FakeDriveRequest:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def execute(self):
+        return self._payload
+
+
+class FakeDriveFiles:
+    def __init__(self, metadata_map, list_responses):
+        self._metadata_map = metadata_map
+        self._list_responses = list_responses
+        self._list_index = 0
+
+    def get(self, fileId, **kwargs):  # noqa: N802 - match google client style
+        return FakeDriveRequest(self._metadata_map[fileId])
+
+    def list(self, **kwargs):  # noqa: N802 - match google client style
+        index = min(self._list_index, len(self._list_responses) - 1)
+        self._list_index += 1
+        return FakeDriveRequest(self._list_responses[index])
+
+
+class FakeDriveService:
+    def __init__(self, metadata_map, list_responses):
+        self._files = FakeDriveFiles(metadata_map, list_responses)
+
+    def files(self):  # noqa: D401 - mimic google client
+        return self._files
+
+
+class FakeDriveModule(GoogleDriveModule):
+    def __init__(self, service):
+        super().__init__(DriveModuleConfig(enabled=True))
+        self._service = service
+
+    def ensure_service(self, *, require_write=False):  # type: ignore[override]
+        return self._service, None
+
+
 def test_collect_notion_pages_with_page_and_links():
     client = FakeNotionClient()
     module = FakeNotionModule(client)
@@ -138,3 +208,55 @@ def test_database_root_not_found_reports_error():
 
     assert records == []
     assert errors == ["Page missing: Page missing not found"]
+
+
+def test_collect_notion_pages_detects_repeating_cursor():
+    client = LoopingCursorNotionClient()
+    module = FakeNotionModule(client)
+    records, errors = collect_notion_pages(module, ["page-1"], limit=10)
+
+    assert any("repeated pagination cursor" in error for error in errors)
+    assert any(record["page_id"] == "child-1" for record in records)
+
+
+def test_collect_notion_database_detects_repeating_cursor():
+    client = LoopingDatabaseCursorClient()
+    module = FakeNotionModule(client)
+    records, errors = collect_notion_pages(module, ["database-1"], limit=10)
+
+    assert any("repeated pagination cursor" in error for error in errors)
+    titles = {record["title"] for record in records}
+    assert "Root Database" in titles
+    assert "Database Row" in titles
+
+
+def test_collect_drive_files_detects_repeating_token():
+    metadata_map = {
+        "root": {
+            "id": "root",
+            "name": "Root",
+            "mimeType": "application/vnd.google-apps.folder",
+            "parents": [],
+            "trashed": False,
+        },
+        "child": {
+            "id": "child",
+            "name": "Child",
+            "mimeType": "application/pdf",
+            "parents": ["root"],
+            "trashed": False,
+            "webViewLink": "https://example.com/child",
+        },
+    }
+    list_responses = [
+        {"files": [{"id": "child"}], "nextPageToken": "token"},
+        {"files": [], "nextPageToken": "token"},
+    ]
+    service = FakeDriveService(metadata_map, list_responses)
+    module = FakeDriveModule(service)
+
+    records, errors = collect_drive_files(module, ["root"], limit=10)
+
+    assert any("repeated pagination token" in error for error in errors)
+    ids = {record["file_id"] for record in records}
+    assert ids == {"root", "child"}
