@@ -69,10 +69,18 @@ class NotionAPIClient:
         body = {"properties": properties}
         return self._request("PATCH", f"/pages/{page_id}", body=body)
 
-    def blocks_children_list(self, block_id: str, *, page_size: Optional[int] = None) -> Dict[str, Any]:
+    def blocks_children_list(
+        self,
+        block_id: str,
+        *,
+        page_size: Optional[int] = None,
+        start_cursor: Optional[str] = None,
+    ) -> Dict[str, Any]:
         params: Dict[str, Any] = {}
         if page_size is not None:
             params["page_size"] = str(page_size)
+        if start_cursor is not None:
+            params["start_cursor"] = start_cursor
         return self._request("GET", f"/blocks/{block_id}/children", params=params)
 
     # ------------------------------------------------------------------
