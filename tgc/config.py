@@ -36,6 +36,7 @@ class NotionConfig:
 class GoogleDriveConfig:
     module_config_path: Path = Path("config/google_drive_module.json")
     fallback_root_id: Optional[str] = None
+    shared_drive_id: Optional[str] = None
 
     def is_configured(self) -> bool:
         path = self.module_config_path.expanduser()
@@ -114,6 +115,7 @@ class AppConfig:
                 _clean_env("DRIVE_MODULE_CONFIG") or "config/google_drive_module.json"
             ),
             fallback_root_id=_clean_env("DRIVE_ROOT_FOLDER_ID"),
+            shared_drive_id=_clean_env("DRIVE_SHARED_DRIVE_ID"),
         )
 
         sheets = GoogleSheetsConfig(inventory_sheet_id=_clean_env("SHEET_INVENTORY_ID"))
@@ -157,6 +159,7 @@ class AppConfig:
             "SHEET_INVENTORY_ID": mask_secret(self.sheets.inventory_sheet_id),
             "DRIVE_MODULE_CONFIG": str(self.drive.module_config_path),
             "DRIVE_ROOT_FOLDER_ID": mask_secret(self.drive.fallback_root_id),
+            "DRIVE_SHARED_DRIVE_ID": mask_secret(self.drive.shared_drive_id),
             "GMAIL_QUERY": self.gmail.query,
             "WAVE_GRAPHQL_TOKEN": mask_secret(self.wave.graphql_token),
             "WAVE_BUSINESS_ID": mask_secret(self.wave.business_id),
