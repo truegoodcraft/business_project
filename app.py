@@ -62,10 +62,15 @@ def main() -> None:
         help="Stop traversal after this depth",
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
+    parser.add_argument("--quiet", action="store_true", help="Suppress informational logging")
     args = parser.parse_args()
 
+    level = logging.INFO
     if args.debug:
-        logging.getLogger().setLevel(logging.DEBUG)
+        level = logging.DEBUG
+    if args.quiet:
+        level = logging.WARNING
+    logging.getLogger().setLevel(level)
 
     if args.init_org:
         configure_profile_interactive()

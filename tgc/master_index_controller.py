@@ -476,7 +476,8 @@ def collect_notion_pages(
 
     root_id_list = list(root_ids)
     timer_start = time.perf_counter()
-    logging.debug("notion.list_pages.start", extra={"root_ids": root_id_list})
+    if logging.getLogger().isEnabledFor(logging.DEBUG):
+        logging.debug("notion.list_pages.start", extra={"root_ids": root_id_list})
     try:
         if not isinstance(notion_module, NotionAccessModule):
             return [], ["Notion module unavailable"]
@@ -721,10 +722,11 @@ def collect_notion_pages(
         partial = bool(stop_reason)
         return TraversalResult(records=records[:limit], errors=errors, partial=partial, reason=stop_reason)
     finally:
-        logging.debug(
-            "notion.list_pages.done",
-            extra={"ms": int((time.perf_counter() - timer_start) * 1000)},
-        )
+        if logging.getLogger().isEnabledFor(logging.DEBUG):
+            logging.debug(
+                "notion.list_pages.done",
+                extra={"ms": int((time.perf_counter() - timer_start) * 1000)},
+            )
 
 
 def _handle_database_root(
@@ -879,7 +881,8 @@ def collect_drive_files(
 
     root_id_list = list(root_ids)
     timer_start = time.perf_counter()
-    logging.debug("drive.list_files.start", extra={"root_ids": root_id_list})
+    if logging.getLogger().isEnabledFor(logging.DEBUG):
+        logging.debug("drive.list_files.start", extra={"root_ids": root_id_list})
     try:
         if not isinstance(drive_module, GoogleDriveModule):
             return TraversalResult(records=[], errors=["Google Drive module unavailable"])
@@ -1093,10 +1096,11 @@ def collect_drive_files(
         partial = bool(stop_reason)
         return TraversalResult(records=records[:limit], errors=errors, partial=partial, reason=stop_reason)
     finally:
-        logging.debug(
-            "drive.list_files.done",
-            extra={"ms": int((time.perf_counter() - timer_start) * 1000)},
-        )
+        if logging.getLogger().isEnabledFor(logging.DEBUG):
+            logging.debug(
+                "drive.list_files.done",
+                extra={"ms": int((time.perf_counter() - timer_start) * 1000)},
+            )
 
 def _resolve_shortcut(
     service: object,
