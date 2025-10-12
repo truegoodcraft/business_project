@@ -174,7 +174,10 @@ class GoogleDriveAdapter(BaseAdapter):
         if MediaIoBaseDownload is None:  # pragma: no cover - dependency guard
             return {
                 "status": "error",
-                "detail": "google-api-python-client is not installed; cannot download files.",
+                "detail": (
+                    "google-api-python-client is required to download files. "
+                    "Run `pip install -r requirements.txt`."
+                ),
             }
         destination.parent.mkdir(parents=True, exist_ok=True)
         with destination.open("wb") as handle:
@@ -210,7 +213,10 @@ class GoogleDriveAdapter(BaseAdapter):
         if MediaFileUpload is None:  # pragma: no cover - dependency guard
             return {
                 "status": "error",
-                "detail": "google-api-python-client is not installed; cannot upload files.",
+                "detail": (
+                    "google-api-python-client is required to upload files. "
+                    "Run `pip install -r requirements.txt`."
+                ),
             }
         media = MediaFileUpload(source, mimetype=mime_type, resumable=True)
         body = {"name": source.name}
@@ -299,7 +305,7 @@ class GoogleDriveAdapter(BaseAdapter):
         if ServiceAccountCredentials is None or build is None:  # pragma: no cover - dependency guard
             self._client_error = (
                 "google-api-python-client and google-auth are required. "
-                "Run `pip install google-api-python-client google-auth`."
+                "Run `pip install -r requirements.txt`."
             )
             self._service = None
             return

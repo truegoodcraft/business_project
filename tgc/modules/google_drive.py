@@ -121,7 +121,7 @@ class GoogleDriveModule:
         if ServiceAccountCredentials is None or build is None:  # pragma: no cover - dependency guard
             return None, (
                 "google-api-python-client and google-auth are required. "
-                "Run `pip install google-api-python-client google-auth`."
+                "Run `pip install -r requirements.txt`."
             )
         if not self.config.enabled:
             return None, "Drive module is disabled."
@@ -582,7 +582,10 @@ class GoogleDriveModule:
         except Exception:  # pragma: no cover - dependency guard
             return {
                 "status": "error",
-                "detail": "google-api-python-client is required to download files.",
+                "detail": (
+                    "google-api-python-client is required to download files. "
+                    "Run `pip install -r requirements.txt`."
+                ),
             }
         destination.parent.mkdir(parents=True, exist_ok=True)
         with destination.open("wb") as handle:
@@ -619,7 +622,10 @@ class GoogleDriveModule:
         if MediaFileUpload is None:  # pragma: no cover - dependency guard
             return {
                 "status": "error",
-                "detail": "google-api-python-client is required to upload files.",
+                "detail": (
+                    "google-api-python-client is required to upload files. "
+                    "Run `pip install -r requirements.txt`."
+                ),
             }
         media = MediaFileUpload(source, mimetype=mime_type, resumable=True)
         body = {"name": source.name}
