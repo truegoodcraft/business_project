@@ -6,7 +6,7 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 from .config import AppConfig
 from .notion.api import NotionAPIClient, NotionAPIError
@@ -48,6 +48,42 @@ def system_health() -> Tuple[List[Dict[str, str]], bool]:
             overall_ok = False
 
     return checks, overall_ok
+
+
+def format_health_table(
+    checks: Iterable[Dict[str, str]], *, include_environment: bool = False
+) -> str:
+    """Return a compact, single-line summary for CLI output."""
+
+    entries: List[str] = []
+    for check in checks:
+        name = check.get("name", "")
+        if not include_environment and name == "Environment":
+            continue
+        label = _display_label(name)
+        status = check.get("status", "unknown").upper()
+        detail = check.get("details", "")
+        info = _compact_detail(detail, status)
+        entry_parts = [f"{label} {status}"]
+        if info:
+            entry_parts.append(info)
+        entries.append(" ".join(entry_parts).strip())
+    return " ".join(entries)
+
+
+def format_health_banner(checks: Iterable[Dict[str, str]]) -> str:
+    """Return a banner string describing key connector readiness."""
+
+    parts: List[str] = []
+    for check in checks:
+        label = _banner_label(check.get("name", ""))
+        if not label:
+            continue
+        status = check.get("status", "unknown").upper()
+        parts.append(f"[{label}:{status}]")
+    if not parts:
+        return ""
+    return "Status: " + " ".join(parts)
 
 
 def _check_environment(config: AppConfig, drive_config_path: Path) -> Tuple[str, str, str]:
@@ -320,4 +356,49 @@ def _format_detail(message: str, start: float, fix: Optional[str] = None) -> str
         parts.append(f"Fix: {fix}")
     parts.append(f"elapsed {elapsed_ms:.0f} ms")
     return "; ".join(parts)
+
+
+def _display_label(name: str) -> str:
+    mapping = {
+        "Notion": "NOTION",
+        "Google Drive": "DRIVE",
+        "Google Sheets": "SHEETS",
+        "Environment": "ENV",
+    }
+    return mapping.get(name, name.upper())
+
+
+def _banner_label(name: str) -> str:
+    mapping = {
+        "Notion": "NOTION",
+        "Google Drive": "DRIVE",
+        "Google Sheets": "SHEETS",
+    }
+    return mapping.get(name, "")
+
+
+def _compact_detail(detail: str, status: str) -> str:
+    if not detail:
+        return ""
+    segments = [segment.strip() for segment in detail.split(";") if segment.strip()]
+    summary: Optional[str] = None
+    fix: Optional[str] = None
+    elapsed: Optional[str] = None
+    for segment in segments:
+        lowered = segment.lower()
+        if lowered.startswith("fix:"):
+            fix = segment.split(":", 1)[1].strip() if ":" in segment else segment[4:].strip()
+            continue
+        if lowered.startswith("elapsed"):
+            elapsed = segment.split(" ", 1)[1].strip() if " " in segment else segment
+            continue
+        if summary is None:
+            summary = segment
+    detail_text = fix if status != "READY" and fix else summary
+    parts: List[str] = []
+    if detail_text:
+        parts.append(f"({detail_text})")
+    if elapsed:
+        parts.append(elapsed)
+    return " ".join(parts).strip()
 

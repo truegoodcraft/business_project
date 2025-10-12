@@ -10,6 +10,7 @@ from typing import Dict, Optional
 
 from tgc.actions.master_index import MasterIndexAction
 from tgc.bootstrap import bootstrap_controller
+from tgc.health import format_health_banner, format_health_table, system_health
 from tgc.menu import run_cli
 from tgc.organization import configure_profile_interactive
 from tgc.master_index_controller import MasterIndexController, TraversalLimits
@@ -25,6 +26,11 @@ def main() -> None:
         "--status",
         action="store_true",
         help="Print a connector functionality report and exit",
+    )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Run integration system checks and print a compact summary",
     )
     parser.add_argument(
         "--init-org",
@@ -76,6 +82,15 @@ def main() -> None:
         configure_profile_interactive()
         return
 
+    checks, _ = system_health()
+    banner = format_health_banner(checks)
+    if banner:
+        print(banner)
+
+    if args.check:
+        print("> " + format_health_table(checks))
+        return
+
     controller = bootstrap_controller()
 
     def _positive(value: Optional[float]) -> Optional[float]:
@@ -103,7 +118,7 @@ def main() -> None:
     traversal_limits = TraversalLimits(**limit_kwargs) if limit_kwargs else None
 
     if args.update:
-        action_id = "0"
+        action_id = "U"
         plan_text = controller.build_plan(action_id)
         print("=== PLAN ===")
         print(plan_text)
