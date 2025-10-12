@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from ..controller import Controller
 from ..master_index_controller import MasterIndexController, TraversalLimits
 from ..reporting import ActionResult, RunContext
 from .base import SimpleAction
+from .sheets_index import build_sheets_index, write_sheets_index_markdown
 
 
 @dataclass
@@ -41,6 +43,7 @@ class MasterIndexAction(SimpleAction):
         notion_count = int(summary.get("notion_count", 0))
         drive_count = int(summary.get("drive_count", 0))
         output_dir = summary.get("output_dir")
+        output_dir_path = Path(output_dir) if output_dir else None
         status = summary.get("status", "unknown")
         message = summary.get("message")
 
@@ -91,6 +94,9 @@ class MasterIndexAction(SimpleAction):
 
         notes: List[str] = []
         changes: List[str] = []
+        sheets_errors: List[str] = []
+        sheets_notes: List[str] = []
+        sheets_changes: List[str] = []
 
         if context.apply:
             notion_path = summary.get("notion_output")
@@ -107,6 +113,47 @@ class MasterIndexAction(SimpleAction):
                     changes.append(f"Wrote Drive index to {path}")
             elif drive_path:
                 changes.append(f"Wrote Drive index to {drive_path}")
+
+            drive_module = controller.get_module("drive")
+            root_ids: List[str] = []
+            if drive_module is not None:
+                candidate = getattr(drive_module, "root_ids", None)
+                if callable(candidate):
+                    try:
+                        root_ids = [value for value in candidate() if value]
+                    except Exception as exc:  # pragma: no cover - defensive
+                        sheets_errors.append(f"Unable to load Drive roots for Sheets index: {exc}")
+            if not root_ids:
+                fallback_root = getattr(controller.config.drive, "fallback_root_id", None)
+                if fallback_root:
+                    root_ids = [fallback_root]
+
+            sheets_rows: List[Dict[str, Any]] = []
+            if root_ids:
+                for root_id in root_ids:
+                    try:
+                        sheets_rows.extend(build_sheets_index(limits, root_id, controller.config))
+                    except Exception as exc:
+                        sheets_errors.append(
+                            f"Sheets index traversal failed for Drive root {root_id}: {exc}"
+                        )
+            else:
+                sheets_notes.append(
+                    "Sheets index skipped: no Drive root IDs configured for traversal."
+                )
+
+            if output_dir_path:
+                try:
+                    sheet_paths = write_sheets_index_markdown(output_dir_path, sheets_rows)
+                except OSError as exc:
+                    sheets_errors.append(f"Failed to write Sheets index: {exc}")
+                else:
+                    for path in sheet_paths:
+                        sheets_changes.append(f"Wrote Sheets index to {path}")
+            elif sheets_rows and not output_dir_path:
+                sheets_errors.append(
+                    "Sheets index rows generated but output directory was not provided."
+                )
         else:
             notes.extend(self._dry_run_message())
             if output_dir:
@@ -119,6 +166,13 @@ class MasterIndexAction(SimpleAction):
 
         notes.append(f"Indexed Notion pages: {notion_count}")
         notes.append(f"Indexed Drive files: {drive_count}")
+        if sheets_notes:
+            notes.extend(sheets_notes)
+        if sheets_changes:
+            changes.extend(sheets_changes)
+        if sheets_errors:
+            for warning in sheets_errors:
+                notes.append(f"Sheets warning: {warning}")
         if message:
             notes.append(f"Message: {message}")
 

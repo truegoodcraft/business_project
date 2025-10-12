@@ -1,9 +1,12 @@
 from pathlib import Path
+from typing import Any, Dict, List
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from tgc.config import NotionConfig
+from tgc.actions.master_index import MasterIndexAction
+from tgc.config import AppConfig, NotionConfig
+from tgc.controller import Controller
 from tgc.master_index_controller import (
     MasterIndexData,
     TraversalLimits,
@@ -13,7 +16,8 @@ from tgc.master_index_controller import (
 from tgc.notion.api import NotionAPIError
 from tgc.notion.module import NotionAccessModule
 from tgc.modules.google_drive import DriveModuleConfig, GoogleDriveModule
-from tgc.reporting import write_drive_files_markdown
+from tgc.organization import OrganizationProfile
+from tgc.reporting import RunContext, write_drive_files_markdown
 
 
 class FakeNotionModule(NotionAccessModule):
@@ -401,3 +405,96 @@ def test_write_drive_files_markdown_chunks_large_dataset(tmp_path):
 
     assert len(first_lines) == 5_000
     assert len(second_lines) == 1
+
+
+def test_master_index_action_writes_sheets_index(monkeypatch, tmp_path):
+    output_dir = tmp_path / "docs" / "master_index_reports" / "master_index_test"
+    output_dir.mkdir(parents=True)
+
+    class DummyMasterIndexController:
+        def __init__(self, controller):
+            self.controller = controller
+
+        def run_master_index(self, dry_run, *, limits=None):
+            return {
+                "status": "ok",
+                "dry_run": dry_run,
+                "notion_count": 0,
+                "drive_count": 0,
+                "output_dir": str(output_dir),
+                "notion_output": str(output_dir / "notion_pages.md"),
+                "drive_output": str(output_dir / "drive_files.md"),
+                "drive_outputs": [str(output_dir / "drive_files.md")],
+                "notion_errors": [],
+                "drive_errors": [],
+                "message": None,
+            }
+
+    monkeypatch.setattr(
+        "tgc.actions.master_index.MasterIndexController",
+        DummyMasterIndexController,
+    )
+
+    captured_roots: List[str] = []
+    sample_rows = [
+        {
+            "spreadsheetId": "sheet-1",
+            "spreadsheetTitle": "Sheet",
+            "sheetId": 10,
+            "sheetTitle": "Tab",
+            "sheetIndex": 0,
+            "rows": 1,
+            "cols": 1,
+            "modifiedTime": "2024-01-01T00:00:00Z",
+            "parentPath": "/",
+        }
+    ]
+
+    def fake_build(limits, drive_root_id, config):
+        captured_roots.append(drive_root_id)
+        return list(sample_rows)
+
+    monkeypatch.setattr("tgc.actions.master_index.build_sheets_index", fake_build)
+
+    written_payloads: List[List[Dict[str, Any]]] = []
+
+    def fake_write(output_dir_path, rows):
+        written_payloads.append(list(rows))
+        target = output_dir_path / "sheets_index.md"
+        target.write_text("content", encoding="utf-8")
+        return [target]
+
+    monkeypatch.setattr(
+        "tgc.actions.master_index.write_sheets_index_markdown",
+        fake_write,
+    )
+
+    class DummyDriveModule:
+        def root_ids(self):
+            return ["drive-root"]
+
+    config = AppConfig()
+    config.drive.fallback_root_id = None
+    controller = Controller(
+        config=config,
+        adapters={},
+        organization=OrganizationProfile(),
+        reports_root=tmp_path,
+    )
+    controller.register_module("drive", DummyDriveModule())
+
+    action = MasterIndexAction()
+    controller.register_action(action)
+    context = RunContext(
+        action_id=action.id,
+        apply=True,
+        reports_root=tmp_path,
+        metadata={"action_name": action.name},
+        options={},
+    )
+
+    result = action.run(controller, context)
+
+    assert any("Sheets index" in change for change in result.changes)
+    assert captured_roots == ["drive-root"]
+    assert written_payloads == [sample_rows]

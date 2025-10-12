@@ -1,6 +1,6 @@
 import pytest
 
-from tgc.actions.sheets_index import build_sheets_index
+from tgc.actions.sheets_index import build_sheets_index, write_sheets_index_markdown
 
 SPREADSHEET_MIME = "application/vnd.google-apps.spreadsheet"
 FOLDER_MIME = "application/vnd.google-apps.folder"
@@ -188,3 +188,77 @@ def test_build_sheets_index_respects_max_seconds(monkeypatch):
 
     assert rows == []
     assert called is False
+
+
+def test_write_sheets_index_markdown_writes_sorted_table(tmp_path):
+    rows = [
+        {
+            "spreadsheetId": "S2",
+            "spreadsheetTitle": "Budget",
+            "sheetId": 22,
+            "sheetTitle": "Summary",
+            "sheetIndex": 1,
+            "rows": 20,
+            "cols": 5,
+            "modifiedTime": "2024-02-02T00:00:00Z",
+            "parentPath": "/Finance",
+        },
+        {
+            "spreadsheetId": "S1",
+            "spreadsheetTitle": "Analytics",
+            "sheetId": 11,
+            "sheetTitle": "Data",
+            "sheetIndex": 0,
+            "rows": 100,
+            "cols": 10,
+            "modifiedTime": "2024-02-01T00:00:00Z",
+            "parentPath": "/Ops",
+        },
+    ]
+
+    output_paths = write_sheets_index_markdown(tmp_path, rows)
+
+    assert output_paths == [tmp_path / "sheets_index.md"]
+    content = output_paths[0].read_text(encoding="utf-8").splitlines()
+
+    assert content[0] == "# Master Index — Google Sheets"
+    assert "Total spreadsheets: 2 • Total tabs: 2" in content[2]
+    # Sorted alphabetically by spreadsheet title, then sheet index
+    data_rows = [
+        line
+        for line in content
+        if line.startswith("| ") and not line.startswith("| Spreadsheet") and not line.startswith("| ---")
+    ]
+    assert data_rows[0].startswith("| Analytics | Data | 100 | 10 | 2024-02-01T00:00:00Z | S1 | 11 | /Ops |")
+    assert data_rows[1].startswith("| Budget | Summary | 20 | 5 | 2024-02-02T00:00:00Z | S2 | 22 | /Finance |")
+
+
+def test_write_sheets_index_markdown_splits_large_dataset(tmp_path):
+    rows = [
+        {
+            "spreadsheetId": f"S{index // 2}",
+            "spreadsheetTitle": f"Sheet {index // 2}",
+            "sheetId": index,
+            "sheetTitle": f"Tab {index}",
+            "sheetIndex": index,
+            "rows": index,
+            "cols": index,
+            "modifiedTime": "2024-01-01T00:00:00Z",
+            "parentPath": "/",
+        }
+        for index in range(6_001)
+    ]
+
+    paths = write_sheets_index_markdown(tmp_path, rows)
+
+    assert paths == [tmp_path / "sheets_index_1.md", tmp_path / "sheets_index_2.md"]
+    first_lines = paths[0].read_text(encoding="utf-8").splitlines()
+    assert first_lines[0] == "# Master Index — Google Sheets"
+    assert "Total spreadsheets: " in first_lines[2]
+    second_count = sum(
+        1
+        for line in paths[1].read_text(encoding="utf-8").splitlines()
+        if line.startswith("| ") and not line.startswith("| Spreadsheet") and not line.startswith("| ---")
+    )
+    # Remaining rows beyond the first 5,000 go into the second chunk
+    assert second_count == 1_001

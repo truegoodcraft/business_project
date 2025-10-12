@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 import time
 from collections import deque
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Optional, Sequence
 
 from ..adapters import drive_adapter, sheets_adapter
@@ -348,3 +349,117 @@ def build_sheets_index(
         ticker.stop()
 
     return rows
+
+
+def write_sheets_index_markdown(
+    output_dir: Path,
+    rows: Sequence[Mapping[str, Any]],
+) -> List[Path]:
+    """Write spreadsheet tab metadata to Markdown table(s).
+
+    The table summarises each spreadsheet tab and splits large datasets into
+    5,000-row chunks to keep the generated Markdown responsive.
+    """
+
+    def _escape(value: str) -> str:
+        return value.replace("|", r"\|").replace("\n", " ").strip()
+
+    def _stringify(value: object) -> str:
+        if value is None:
+            return ""
+        return str(value)
+
+    normalised: List[Dict[str, Any]] = []
+    for row in rows:
+        if isinstance(row, Mapping):
+            normalised.append(dict(row))
+        else:  # pragma: no cover - defensive conversion
+            try:
+                normalised.append(dict(row))
+            except Exception:
+                continue
+
+    def _sheet_index(value: object) -> int:
+        try:
+            return int(value) if value is not None else 0
+        except (TypeError, ValueError):
+            return 0
+
+    sorted_rows = sorted(
+        normalised,
+        key=lambda item: (
+            (item.get("spreadsheetTitle") or "").casefold(),
+            _sheet_index(item.get("sheetIndex")),
+            (item.get("sheetTitle") or ""),
+        ),
+    )
+
+    unique_spreadsheets = {
+        _stringify(entry.get("spreadsheetId")) for entry in sorted_rows if entry.get("spreadsheetId") is not None
+    }
+    total_spreadsheets = len(unique_spreadsheets)
+    total_tabs = len(sorted_rows)
+
+    chunk_size = 5_000
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    def _render_chunk(chunk_rows: Sequence[Mapping[str, Any]]) -> str:
+        lines = [
+            "# Master Index — Google Sheets",
+            "",
+            f"Total spreadsheets: {total_spreadsheets} • Total tabs: {total_tabs}",
+            "",
+        ]
+        lines.append(
+            "| Spreadsheet | Tab | Rows | Cols | Modified | Spreadsheet ID | Sheet ID | Path |"
+        )
+        lines.append("| --- | --- | --- | --- | --- | --- | --- | --- |")
+
+        for entry in chunk_rows:
+            spreadsheet_title = _escape(_stringify(entry.get("spreadsheetTitle") or ""))
+            sheet_title = _escape(_stringify(entry.get("sheetTitle") or ""))
+            row_count = _escape(_stringify(entry.get("rows")))
+            col_count = _escape(_stringify(entry.get("cols")))
+            modified = _escape(_stringify(entry.get("modifiedTime")))
+            spreadsheet_id = _escape(_stringify(entry.get("spreadsheetId")))
+            sheet_id = _escape(_stringify(entry.get("sheetId")))
+            parent_path = _escape(_stringify(entry.get("parentPath")))
+
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        spreadsheet_title,
+                        sheet_title,
+                        row_count,
+                        col_count,
+                        modified,
+                        spreadsheet_id,
+                        sheet_id,
+                        parent_path,
+                    ]
+                )
+                + " |"
+            )
+
+        return "\n".join(lines) + "\n"
+
+    if total_tabs == 0:
+        path = output_dir / "sheets_index.md"
+        path.write_text(_render_chunk([]), encoding="utf-8")
+        return [path]
+
+    paths: List[Path] = []
+    if total_tabs <= chunk_size:
+        path = output_dir / "sheets_index.md"
+        path.write_text(_render_chunk(sorted_rows), encoding="utf-8")
+        paths.append(path)
+        return paths
+
+    for index in range(0, total_tabs, chunk_size):
+        chunk = sorted_rows[index : index + chunk_size]
+        chunk_index = index // chunk_size + 1
+        path = output_dir / f"sheets_index_{chunk_index}.md"
+        path.write_text(_render_chunk(chunk), encoding="utf-8")
+        paths.append(path)
+    return paths
