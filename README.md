@@ -1,129 +1,239 @@
-# True Good Craft Controller
+<div align="center">
 
-This repository implements the controller architecture described in the True Good Craft master project brief. It provides a single startup command that loads configuration, assembles modular adapters, and exposes a menu-driven workflow for the core business operations.
-# Universal Business Controller
-
-This repository implements the controller architecture described in the True Good Craft master project brief and makes it available for any organization to adopt. It provides a single startup command that loads configuration, assembles modular adapters, and exposes a menu-driven workflow for core business operations. (Created by True Good Craft, generalized for wider use.)
-
-## Features
-
-- **Single core controller** with modular adapters for Notion, Google Drive, Google Sheets, Gmail, and optional Wave.
-- **Menu-driven actions** that follow the required plan → dry-run/apply → report flow.
-- **ID-first, traceable runs** that create timestamped folders in `reports/` containing `plan.md`, `changes.md`, and `errors.md`.
-- **Beginner-safe defaults** with configuration masking, preview-friendly dry runs, and clear notes on missing credentials.
-- **ChatGPT-first interface** via the included startup prompt file, with a CLI fallback for local execution.
-- **Organization reference tracking** so business name, short codes, and contact details are captured once and reused across the workflow. Placeholder values ship with the project so new operators can quickly rebrand it.
-- **Connector status report** available via `python app.py --status` to quickly audit which adapters are implemented and configured.
-- **In-session auto-update** command so you can pull new repository changes without restarting the conversation.
-- **Dedicated Google Drive module** that stores credentials safely on disk, runs live Drive API verification, and exposes read/write helpers with dry-run safety switches.
-
-## Project Structure
-
-```
-app.py                 # CLI entrypoint (python app.py)
-tgc/                   # Controller, adapters, and actions
-  adapters/            # Modular integrations (safe stubs)
-  adapters/            # Modular integrations (Notion live read + safe stubs for others)
-  actions/             # Menu commands with plan/dry-run/apply flow
-  bootstrap.py         # Builds controller and registers actions
-  config.py            # Loads .env and masks secrets
-  controller.py        # Core orchestration engine
-  menu.py              # CLI menu loop
-  reporting.py         # Run context and report helpers
-requirements.txt       # Python dependency list (empty by default)
-docs/chatgpt_startup_prompt.md  # Prompt to operate the system via ChatGPT
-```
-
-Adapters are implemented as safe placeholders so the controller can run without third-party credentials. Each adapter exposes capability summaries and stub methods that can later be expanded to perform real API calls.
-  organization.py      # Organization profile helpers and setup prompts
-  reporting.py         # Run context and report helpers
-requirements.txt       # Python dependency list
-docs/chatgpt_startup_prompt.md  # Prompt to operate the system via ChatGPT
-docs/organization_reference.md  # Generated organization quick reference
-```
-
-Adapters are designed to run safely without credentials. The Notion adapter now supports live read-only access to the inventory vault, while the remaining adapters currently expose capability summaries and placeholder methods that can be upgraded to full API integrations.
-
-## Getting Started
-
-1. Create and populate a `.env` file following the template below. Missing values are allowed; unavailable adapters will be skipped automatically.
-
-   ```env
-   NOTION_TOKEN=
-   NOTION_DB_INVENTORY_ID=
-   SHEET_INVENTORY_ID=
-   DRIVE_MODULE_CONFIG=  # optional; defaults to config/google_drive_module.json
-   DRIVE_ROOT_FOLDER_ID=
-   GMAIL_QUERY=from:(order OR invoice OR quote) newer_than:1y
-
-   # Optional Wave support
-   WAVE_GRAPHQL_TOKEN=
-   WAVE_BUSINESS_ID=
-   WAVE_SHEET_ID=
-   ```
-
-2. Install dependencies and launch the controller:
-2. Configure your organization profile. This step removes placeholder branding and sets up SKU prefixes that follow the `[xxx]-001` format until a custom short code is provided.
-
-   ```bash
-   python app.py --init-org
-   ```
-
-   The command asks for the business name, contact information, and preferred short code (for example, `ABC` to produce IDs like `ABC-001`). Your answers populate `organization_profile.json` and refresh `docs/organization_reference.md` for quick reference during audits.
-
-3. Install dependencies and launch the controller:
-
-   ```bash
-   pip install -r requirements.txt
-   python app.py
-   ```
-
-3. Follow the prompts to select an action. Each action displays a plan, allows you to choose a dry run or apply mode, and writes reports under `reports/run_<ACTION>_<TIMESTAMP>/`.
-4. Follow the prompts to select an action. Each action displays a plan, allows you to choose a dry run or apply mode, and writes reports under `reports/run_<ACTION>_<TIMESTAMP>/`.
-
-5. (Optional) Print a connector functionality report without entering the menu:
-
-   ```bash
-   python app.py --status
-   ```
-
-   This command highlights whether each adapter is implemented, whether it is configured with credentials, and includes the current organization summary so you can confirm the environment before testing.
-
-6. (Optional) Configure the Google Drive module from the CLI menu:
-
-   - Launch the controller and choose **Configure Google Drive module**.
-   - Decide whether to enable the module, then follow the guided prompts to paste or import your Google service-account JSON and the Drive folder/shared-drive IDs you want to monitor.
-   - The module persists its configuration (including credentials) in `config/google_drive_module.json` by default so you only provide them once; override the path via `DRIVE_MODULE_CONFIG` if you prefer a custom location.
-   - You can run a live connection test that calls the Drive API, verifies quota, and confirms that each configured root is reachable.
-   - When write access is enabled, the module and adapter expose upload/update/delete helpers that honour dry-run flags so you can exercise the workflow without destructive side effects.
-
-7. (Optional) Pull the latest repository changes from within the same session. Run a dry-run first to confirm the command, then apply it when ready:
-
-   ```bash
-   python app.py --update          # Preview the git pull command
-   python app.py --update --apply  # Execute git pull --ff-only
-   ```
-
-   Update reports record stdout/stderr so you can review what changed without leaving the workflow. Configure at least one Git
-   remote (e.g., `origin`) before running the update command; otherwise the controller will report that no remotes are available
-   and skip the pull.
-
-## Organization Reference
-
-- `organization_profile.json` — machine-readable profile used by the controller.
-- `docs/organization_reference.md` — human-friendly view regenerated whenever you run `python app.py --init-org`.
-
-Keep these files version-controlled so new environments inherit the same branding, SKU structure, and contact information. If you onboard another business, run the init command again to update the values safely.
-
-## ChatGPT Startup Prompt
-
-The file [`docs/chatgpt_startup_prompt.md`](docs/chatgpt_startup_prompt.md) contains the startup instructions to load this controller inside ChatGPT. Paste its contents into a new ChatGPT conversation to operate the workflow conversationally. The CLI remains available as a fallback.
-
-## Optional Distribution Notes
-
-- Licensed under the MIT License (see `LICENSE`).
-- Add a PayPal donation badge or additional documentation as needed before publishing publicly.
+# 🤖 TGC Systems — True Good Craft Controller  
+### _Universal AI-Driven Business Controller for Makers, Builders & Brave Souls_
 
 ---
 
-Crafted by True Good Craft — released for community use.
+> 🧠 *An experiment in automation, curiosity, and accidental intelligence.*  
+> *Built by TGC Systems — powered by GPT-fu, caffeine, and a healthy dose of luck.*
+
+---
+
+## ⚠️ Disclaimer (Read This First!)
+
+This project is **AI-based** and **experimental**. It blends automation, GPT logic, and modular systems in unpredictable ways.  
+While it’s designed for safety and transparency, it may occasionally act in **unexpected or unintended ways**.
+
+By using or modifying this code, you acknowledge and agree:
+
+🧩 **Not production-ready software.**  
+💥 **TGC Systems accepts no liability** for data loss, file modification, unintentional automation, or emergent AI behavior.  
+🤷‍♂️ The developer has **no formal idea what they’re doing** — this is part art project, part experiment, part chaos magic.  
+🕹️ If it ever becomes self-aware, please unplug it, pour it a coffee, and tell it we tried our best.  
+☠️ *There’s a non-zero chance we’re accidentally building Skynet.*
+
+Proceed with curiosity. ⚙️ Tinker responsibly. 🧤
+
+---
+
+## 🚀 Overview
+
+The **TGC Systems Controller** is a universal, modular, **AI-assisted business automation platform** for creative workshops and small businesses.  
+It unifies **Notion**, **Google Drive**, **Google Sheets**, and more — under one local-first control system.  
+
+It’s for curious makers who want a smart assistant that helps manage their workflow… not run it.  
+
+> 🪶 “I’m not a developer. I’m just weaving GPT-fu and luck into something useful.” — *TGC Systems*
+
+---
+
+## 🧭 System Flow (Simplified)
+
+👤 User  
+↓  
+🧠 ChatGPT / AI Layer ←→ 🤖 Controller Core (Python)  
+↓  
+📚 Notion 🗂️ Google Drive 📊 Google Sheets 📧 Gmail
+
+> The AI layer interprets intent → the Controller executes → the logs tell the story.
+
+---
+
+## 🧩 Core Features
+
+🧠 **AI-assisted logic** — actions & parsing guided by GPT context.  
+🧩 **Single modular controller** for all integrations.  
+🧾 **Traceable runs** with timestamped `plan.md / changes.md / errors.md`.  
+🧱 **Beginner-friendly** defaults: dry-runs, masked secrets, clear prompts.  
+💬 **ChatGPT-first interface** — use ChatGPT or CLI.  
+🪄 **Auto-update** from GitHub without restarting.  
+🧭 **Organization tracking** for consistent branding and SKUs.  
+🔐 **Safe credential handling** — locally stored and verified.  
+
+---
+
+## 🧩 Planned Features
+
+<details>
+<summary>🌐 Setup & Structure</summary>
+
+One-click setup for **Google**, **Notion**, or **Sheets**.  
+Choose size: **Small**, **Medium**, or **Thorough** — easily upgradable.  
+Auto-builds indexes, folders, and templates.  
+All changes backed up as zip archives (10-day retention).  
+
+</details>
+
+<details>
+<summary>🗂️ Data & Storage</summary>
+
+**Non-destructive sync** between local and cloud.  
+Auto-indexing for Notion pages, Drive files, and Sheets.  
+**Local or hybrid cloud operation** — your choice.  
+Smart rollback and recovery.  
+
+</details>
+
+<details>
+<summary>💬 Smart Assistant</summary>
+
+Accepts **receipts, screenshots, PDFs, bank statements**.  
+Parses and **suggests updates** (vendors, prices, contacts).  
+Learns usage patterns for smarter workflow.  
+
+</details>
+
+<details>
+<summary>🔒 Backup & Recovery</summary>
+
+Archives every change for 10 days.  
+Optional auto-archive for logs.  
+One-click restore for lost or overwritten data.  
+
+</details>
+
+<details>
+<summary>⚙️ User Experience</summary>
+
+Clean CLI + ChatGPT menu.  
+Toggle modules on/off anytime.  
+Guided onboarding with tooltips.  
+Fully reversible — **idiot-proof by design.**  
+
+</details>
+
+<details>
+<summary>📊 Analytics (Optional)</summary>
+
+Anonymous, privacy-safe metrics only.  
+Tracks inventory trends & usage.  
+All outbound data previewed before sending.  
+
+</details>
+
+<details>
+<summary>💡 Future Plans</summary>
+
+Role-based access (Admin / Manager / Employee).  
+Plugin framework for custom extensions.  
+Hybrid deployment (desktop + web dashboard).  
+Low-cost subscription model ($1–$2 / month).  
+
+</details>
+
+---
+
+## 🛠️ Tech Stack
+
+🐍 **Python 3.12+**  
+⚙️ **Flask**, **Notion SDK**, **Google API Client**  
+💾 **JSON / SQLite** local data, optional **Google Sheets** backend  
+💬 **CLI + ChatGPT dual interface**  
+
+---
+
+## 📁 Project Structure
+
+/tgc_bridge_bootstrap/
+│
+├── tgc/
+│ ├── adapters/ # Modular integrations (Notion live, others stubbed)
+│ ├── actions/ # Menu commands (plan → dry-run → apply → report)
+│ ├── config/ # Environment & connections
+│ ├── controller.py # Core engine
+│ ├── bootstrap.py # Builds controller & registers adapters
+│ ├── organization.py # Brand & SKU setup
+│ ├── reporting.py # Logs and audit helpers
+│ └── app.py # CLI entry point
+│
+├── docs/
+│ ├── chatgpt_startup_prompt.md
+│ ├── organization_reference.md
+│ └── feature_roadmap.md
+│
+├── reports/
+├── requirements.txt
+└── .env
+
+yaml
+Copy code
+
+---
+
+## ⚙️ Getting Started
+
+Clone  
+```bash
+git clone https://github.com/truegoodcraft/business_project.git
+cd business_project
+Setup
+
+bash
+Copy code
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+Initialize
+
+bash
+Copy code
+python app.py --init-org
+Enter business name, SKU prefix, and contact info.
+Generates /docs/organization_reference.md.
+
+Run
+
+bash
+Copy code
+python app.py
+Check Status
+
+bash
+Copy code
+python app.py --status
+💬 Command Palette
+Command	Action
+update	Pull latest GitHub changes (dry-run first).
+discover	Rebuild indexes and verify structure.
+gmail	Import vendor quotes/orders.
+csv	Import inventory data.
+sheets	Sync metrics with Google Sheets.
+drive	Link Drive files by SKU/reference.
+contacts	Normalize vendor contacts.
+settings	Manage configuration & credentials.
+
+🧭 Author
+TGC Systems
+🎩 Maker. Tinkerer. Possibly the entity that accidentally builds Skynet.
+🔗 https://github.com/truegoodcraft
+
+🪙 License & Contribution
+Licensed under the MIT License.
+Contributions, bug reports, and survival tips welcome.
+
+🧵 Final Thoughts
+This project is equal parts workshop tool and AI playground.
+It’s meant to be explored, broken, rebuilt, and improved — safely, curiously, and without fear of failure.
+
+✨ If it works, awesome. If it explodes, we’ll fix it together.
+🧠 May your logs be clean and your GPTs merciful.
+
+If you found this project useful or entertaining, consider fueling the chaos with a coffee ☕  
+[**paypal.me/truegoodcraft**](https://paypal.me/truegoodcraft)
+
+“If it ain’t broke, don’t fix it… or was it ‘If it ain’t fixed, don’t broke it?’”
+“If it’s stupid but it works, it’s not stupid.”
+MTFY
+
+</div> ```
