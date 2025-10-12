@@ -1,9 +1,13 @@
+"""Core controller for orchestrating True Good Craft actions."""
 """Core controller for orchestrating workflow actions."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Dict, Iterable, List, Optional
+
+from .config import AppConfig
 from typing import Any, Dict, Iterable, List, Optional
 
 from .config import AppConfig
@@ -30,6 +34,8 @@ class ControllerAction:
 class Controller:
     config: AppConfig
     adapters: Dict[str, object]
+    reports_root: Path = Path("reports")
+    actions: Dict[str, ControllerAction] = field(default_factory=dict)
     organization: OrganizationProfile
     reports_root: Path = Path("reports")
     actions: Dict[str, ControllerAction] = field(default_factory=dict)

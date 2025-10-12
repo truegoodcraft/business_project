@@ -9,6 +9,10 @@ from .actions import (
     CsvImportAction,
     DiscoverAuditAction,
     DriveLinkAction,
+    GmailImportAction,
+    LogsAction,
+    SettingsAction,
+    SheetsSyncAction,
     DriveModuleAction,
     GmailImportAction,
     LogsAction,
@@ -20,6 +24,7 @@ from .actions import (
 )
 from .adapters import GmailAdapter, GoogleDriveAdapter, GoogleSheetsAdapter, NotionAdapter, WaveAdapter
 from .config import AppConfig
+from .controller import Controller
 from .organization import OrganizationProfile
 from .controller import Controller
 from .modules import GoogleDriveModule
@@ -30,6 +35,7 @@ def bootstrap_controller(env_file: str = ".env") -> Controller:
     """Build a controller with adapters and register default actions."""
     config = AppConfig.load(env_file)
     adapters = _build_adapters(config)
+    controller = Controller(config=config, adapters=adapters, reports_root=config.reports_dir)
     modules = _build_modules(config, env_file)
     organization = OrganizationProfile.load()
     organization.ensure_reference_page()
@@ -55,6 +61,7 @@ def _build_adapters(config: AppConfig) -> Dict[str, object]:
     }
 
 
+def _register_actions(controller: Controller) -> None:
 def _build_modules() -> Dict[str, object]:
     return {
         "drive": GoogleDriveModule.load(),

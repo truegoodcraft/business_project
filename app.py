@@ -1,3 +1,4 @@
+"""Entry point for the True Good Craft controller CLI."""
 """Entry point for the workflow controller CLI."""
 
 from __future__ import annotations
@@ -6,6 +7,17 @@ import argparse
 
 from tgc.bootstrap import bootstrap_controller
 from tgc.menu import run_cli
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="True Good Craft controller")
+    parser.add_argument("--menu-only", action="store_true", help="Always show the interactive menu")
+    parser.add_argument("--action", help="Run a specific action ID without entering the menu")
+    parser.add_argument("--apply", action="store_true", help="Apply changes when running --action")
+    args = parser.parse_args()
+
+    controller = bootstrap_controller()
+
 from tgc.organization import configure_profile_interactive
 
 

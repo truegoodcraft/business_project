@@ -1,3 +1,6 @@
+# True Good Craft Controller
+
+This repository implements the controller architecture described in the True Good Craft master project brief. It provides a single startup command that loads configuration, assembles modular adapters, and exposes a menu-driven workflow for the core business operations.
 # Universal Business Controller
 
 This repository implements the controller architecture described in the True Good Craft master project brief and makes it available for any organization to adopt. It provides a single startup command that loads configuration, assembles modular adapters, and exposes a menu-driven workflow for core business operations. (Created by True Good Craft, generalized for wider use.)
@@ -19,12 +22,19 @@ This repository implements the controller architecture described in the True Goo
 ```
 app.py                 # CLI entrypoint (python app.py)
 tgc/                   # Controller, adapters, and actions
+  adapters/            # Modular integrations (safe stubs)
   adapters/            # Modular integrations (Notion live read + safe stubs for others)
   actions/             # Menu commands with plan/dry-run/apply flow
   bootstrap.py         # Builds controller and registers actions
   config.py            # Loads .env and masks secrets
   controller.py        # Core orchestration engine
   menu.py              # CLI menu loop
+  reporting.py         # Run context and report helpers
+requirements.txt       # Python dependency list (empty by default)
+docs/chatgpt_startup_prompt.md  # Prompt to operate the system via ChatGPT
+```
+
+Adapters are implemented as safe placeholders so the controller can run without third-party credentials. Each adapter exposes capability summaries and stub methods that can later be expanded to perform real API calls.
   organization.py      # Organization profile helpers and setup prompts
   reporting.py         # Run context and report helpers
 requirements.txt       # Python dependency list
@@ -52,6 +62,7 @@ Adapters are designed to run safely without credentials. The Notion adapter now 
    WAVE_SHEET_ID=
    ```
 
+2. Install dependencies and launch the controller:
 2. Configure your organization profile. This step removes placeholder branding and sets up SKU prefixes that follow the `[xxx]-001` format until a custom short code is provided.
 
    ```bash
@@ -67,6 +78,7 @@ Adapters are designed to run safely without credentials. The Notion adapter now 
    python app.py
    ```
 
+3. Follow the prompts to select an action. Each action displays a plan, allows you to choose a dry run or apply mode, and writes reports under `reports/run_<ACTION>_<TIMESTAMP>/`.
 4. Follow the prompts to select an action. Each action displays a plan, allows you to choose a dry run or apply mode, and writes reports under `reports/run_<ACTION>_<TIMESTAMP>/`.
 
 5. (Optional) Print a connector functionality report without entering the menu:

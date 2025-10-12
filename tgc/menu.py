@@ -1,3 +1,4 @@
+"""CLI menu for the True Good Craft controller."""
 """CLI menu for the workflow controller."""
 
 from __future__ import annotations
@@ -9,6 +10,7 @@ from .controller import Controller
 
 def run_cli(controller: Controller) -> None:
     """Display an interactive menu for manual operation."""
+    print("True Good Craft — Controller Menu")
     org = controller.organization
     print(f"{org.display_name()} — Controller Menu")
     if org.has_custom_short_code():

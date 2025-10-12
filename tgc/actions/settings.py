@@ -20,6 +20,14 @@ class SettingsAction(SimpleAction):
         steps = [
             "Load .env file values",
             "Mask sensitive tokens",
+            "Display editable guidance",
+        ]
+        return self.render_plan(self.name, steps, notes=["Edit .env directly or via future prompts."])
+
+    def run(self, controller: Controller, context: RunContext) -> ActionResult:
+        masked = controller.mask_config()
+        lines = [f"{key}: {value}" for key, value in masked.items()]
+        context.log_notes("settings", lines)
             "Display organization reference summary",
             "Provide editable guidance",
         ]
@@ -42,6 +50,8 @@ class SettingsAction(SimpleAction):
             plan_text=plan_text,
             changes=[],
             errors=[],
+            notes=["Settings displayed. Update .env manually to change values."],
+            preview="\n".join(lines),
             notes=[
                 "Environment settings displayed. Update .env manually to change values.",
                 "Organization summary shown. Use `python app.py --init-org` for updates.",
