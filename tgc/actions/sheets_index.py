@@ -351,6 +351,9 @@ def build_sheets_index(
     return rows
 
 
+MAX_ROWS_PER_INDEX_CHUNK = 5_000
+
+
 def write_sheets_index_markdown(
     output_dir: Path,
     rows: Sequence[Mapping[str, Any]],
@@ -400,7 +403,7 @@ def write_sheets_index_markdown(
     total_spreadsheets = len(unique_spreadsheets)
     total_tabs = len(sorted_rows)
 
-    chunk_size = 5_000
+    chunk_size = MAX_ROWS_PER_INDEX_CHUNK
     output_dir.mkdir(parents=True, exist_ok=True)
 
     def _render_chunk(chunk_rows: Sequence[Mapping[str, Any]]) -> str:
