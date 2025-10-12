@@ -1,22 +1,13 @@
-"""Notion adapter with read-only access to the inventory vault."""
+"""Notion adapter with read/write access to the inventory vault."""
 
 from __future__ import annotations
 
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-try:  # Optional dependency for environments that skip extras
-    from notion_client import Client
-    from notion_client.errors import APIResponseError
-except Exception:  # pragma: no cover - fallback when notion-client is absent
-    Client = None  # type: ignore
-
-    class APIResponseError(Exception):  # type: ignore
-        """Fallback error type so callers can handle failures uniformly."""
-
-        pass
-
 from .base import AdapterCapability, BaseAdapter
 from ..config import NotionConfig
+from ..notion.api import NotionAPIClient, NotionAPIError
+from ..notion.properties import build_property_payload
 
 
 class NotionAdapter(BaseAdapter):
@@ -25,18 +16,17 @@ class NotionAdapter(BaseAdapter):
 
     def __init__(self, config: NotionConfig) -> None:
         super().__init__(config)
-        self._client: Optional[Client] = None
+        self._client: Optional[NotionAPIClient] = None
         self._client_error: Optional[str] = None
         if self.is_configured():
-            if Client is None:
-                self._client_error = (
-                    "notion-client package is not installed. Run `pip install notion-client`."
+            try:
+                self._client = NotionAPIClient(
+                    config.token or "",
+                    timeout=config.timeout_seconds,
+                    rate_limit_qps=config.rate_limit_qps,
                 )
-            else:
-                try:
-                    self._client = Client(auth=config.token)
-                except Exception as exc:  # pragma: no cover - defensive guard
-                    self._client_error = str(exc)
+            except Exception as exc:  # pragma: no cover - defensive guard
+                self._client_error = str(exc)
 
     def is_configured(self) -> bool:
         return self.config.is_configured()
@@ -54,12 +44,20 @@ class NotionAdapter(BaseAdapter):
                 description="Retrieve database metadata for audits",
                 configured=configured,
             ),
+            AdapterCapability(
+                name="Inventory (write)",
+                description="Create and update inventory entries via the Notion API",
+                configured=configured,
+            ),
         ]
 
     def metadata(self) -> Dict[str, Optional[str]]:
         return {
             "inventory_database_id": self.config.inventory_database_id,
             "client_error": self._client_error,
+            "module_enabled": str(self.config.module_enabled).lower(),
+            "root_ids": ",".join(self.config.root_ids) or None,
+            "client_source": "notion_api_client" if self._client else "unavailable",
         }
 
     def status_report(self) -> Dict[str, object]:
@@ -75,14 +73,17 @@ class NotionAdapter(BaseAdapter):
         """Return metadata about the configured inventory database."""
 
         if not self.is_configured():
-            return {"status": "not_configured", "detail": "Inventory database ID missing."}
+            return {"status": "not_configured", "detail": "Inventory module disabled or missing configuration."}
+        database_id = self._primary_database_id()
+        if not database_id:
+            return {"status": "error", "detail": "No database or root ID supplied."}
         client, error = self._get_client()
         if not client:
             return {"status": "error", "detail": error}
         try:
-            database = client.databases.retrieve(self.config.inventory_database_id)  # type: ignore[arg-type]
-        except APIResponseError as exc:  # pragma: no cover - network dependent
-            return {"status": "error", "detail": getattr(exc, "message", str(exc))}
+            database = client.databases_retrieve(database_id)
+        except NotionAPIError as exc:  # pragma: no cover - network dependent
+            return {"status": "error", "detail": exc.message}
         title = self._join_rich_text(database.get("title", []))
         properties = list(database.get("properties", {}).keys())
         preview = self.fetch_inventory_preview(limit=3)
@@ -100,35 +101,109 @@ class NotionAdapter(BaseAdapter):
         client, error = self._get_client()
         if not client:
             return [{"status": error}]
+        database_id = self._primary_database_id()
+        if not database_id:
+            return [{"status": "No database configured."}]
         try:
-            response = client.databases.query(  # type: ignore[arg-type]
-                database_id=self.config.inventory_database_id,
-                page_size=limit,
+            response = client.databases_query(
+                database_id,
+                page_size=min(limit, self.config.page_size),
             )
-        except APIResponseError as exc:  # pragma: no cover - network dependent
-            return [{"status": getattr(exc, "message", str(exc))}]
+        except NotionAPIError as exc:  # pragma: no cover - network dependent
+            return [{"status": exc.message}]
         results = response.get("results", [])
         mapped: List[Dict[str, Optional[str]]] = []
         for page in results:
             mapped.append(self._map_inventory_page(page))
         return mapped
 
+    def create_inventory_entry(
+        self, assignments: Dict[str, str], database_id: Optional[str] = None
+    ) -> Dict[str, Optional[str]]:
+        """Create a database entry using raw property assignments."""
+
+        client, error = self._get_client()
+        if not client:
+            raise RuntimeError(error or "Notion client unavailable")
+        target_db = database_id or self._primary_database_id()
+        if not target_db:
+            raise ValueError("A database ID is required.")
+        schema = client.databases_retrieve(target_db)
+        properties = schema.get("properties", {})
+        payload, errors, unmatched = build_property_payload(
+            properties if isinstance(properties, dict) else {},
+            assignments,
+            allow_clear=False,
+        )
+        issues = list(errors)
+        issues.extend(f"{name}: unknown property" for name in unmatched)
+        if issues:
+            raise ValueError("; ".join(issues))
+        if not payload:
+            raise ValueError("No valid properties supplied.")
+        page = client.pages_create(
+            parent={"database_id": target_db},
+            properties=payload,
+        )
+        return {
+            "id": page.get("id"),
+            "url": page.get("url"),
+            "database_id": target_db,
+            "properties": ",".join(payload.keys()) or None,
+        }
+
+    def update_page_properties(self, page_id: str, assignments: Dict[str, str]) -> Dict[str, Optional[str]]:
+        """Update properties on an existing page."""
+
+        client, error = self._get_client()
+        if not client:
+            raise RuntimeError(error or "Notion client unavailable")
+        page = client.pages_retrieve(page_id)
+        properties = page.get("properties", {})
+        payload, errors, unmatched = build_property_payload(
+            properties if isinstance(properties, dict) else {},
+            assignments,
+            allow_clear=True,
+        )
+        issues = list(errors)
+        issues.extend(f"{name}: unknown property" for name in unmatched)
+        if issues:
+            raise ValueError("; ".join(issues))
+        if not payload:
+            raise ValueError("No valid properties supplied.")
+        updated = client.pages_update(page_id, properties=payload)
+        parent = updated.get("parent", {}) if isinstance(updated, dict) else {}
+        database_id = parent.get("database_id") if isinstance(parent, dict) else None
+        return {
+            "id": updated.get("id") if isinstance(updated, dict) else None,
+            "url": updated.get("url") if isinstance(updated, dict) else None,
+            "database_id": database_id,
+            "properties": ",".join(payload.keys()) or None,
+        }
+
     def implementation_notes(self) -> str:
         if not self.is_configured():
-            return "Notion adapter ready; provide NOTION_TOKEN and NOTION_DB_INVENTORY_ID for read access."
+            return "Notion adapter ready; enable the Notion access module with credentials for read/write access."
         if self._client_error:
             return f"Configured but cannot initialise client: {self._client_error}"
-        return "Supports live, read-only access to the Vault inventory database."
+        return "Supports live, read/write access to the Vault inventory database."
 
     # ------------------------------------------------------------------
     # Internal utilities
 
-    def _get_client(self) -> Tuple[Optional[Client], str | None]:
+    def _get_client(self) -> Tuple[Optional[NotionAPIClient], str | None]:
         if not self.is_configured():
             return None, "Notion adapter is not configured."
         if self._client is None:
             return None, self._client_error or "Notion client is unavailable."
         return self._client, None
+
+    def _primary_database_id(self) -> Optional[str]:
+        if self.config.inventory_database_id:
+            return self.config.inventory_database_id
+        if self.config.root_ids:
+            return self.config.root_ids[0]
+        return None
 
     def _map_inventory_page(self, page: Dict[str, Any]) -> Dict[str, Optional[str]]:
         properties = page.get("properties", {})
