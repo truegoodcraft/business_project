@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 import logging
 import time
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -30,6 +31,45 @@ def _sanitize_segment(text: str) -> str:
     cleaned = cleaned.replace("/", "／").replace("|", "¦")
     return cleaned or "(untitled)"
 logger = logging.getLogger(__name__)
+
+
+_ticker_enabled = False
+_ticker = {"requests": 0, "pages": 0, "blocks": 0, "last": 0.0}
+
+
+def _reset_ticker() -> None:
+    _ticker["requests"] = 0
+    _ticker["pages"] = 0
+    _ticker["blocks"] = 0
+    _ticker["last"] = 0.0
+
+
+def _tick(force: bool = False) -> None:
+    if not _ticker_enabled:
+        return
+    now = time.perf_counter()
+    if not force and (now - _ticker["last"]) < 0.25:
+        return
+    _ticker["last"] = now
+    sys.stdout.write(
+        f"\rCollecting pages ({_ticker['pages']}) • blocks ({_ticker['blocks']}) • requests ({_ticker['requests']})"
+    )
+    sys.stdout.flush()
+
+
+def _start_ticker() -> None:
+    global _ticker_enabled
+    _reset_ticker()
+    _ticker_enabled = True
+    _tick(force=True)
+
+
+def _stop_ticker() -> None:
+    global _ticker_enabled
+    if _ticker_enabled:
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+    _ticker_enabled = False
 
 
 def _notion_sort_key(item: Dict[str, str]) -> Tuple[str, str]:
@@ -490,6 +530,9 @@ def collect_notion_pages(
             if root:
                 queue.append((root, 0, []))
 
+        if queue:
+            _start_ticker()
+
         visited: set[str] = set()
         records: List[Dict[str, str]] = []
         errors: List[str] = []
@@ -544,9 +587,9 @@ def collect_notion_pages(
             requests = int(stats["requests"])
             if requests and requests % 50 == 0:
                 force = True
-            if force:
+            if force and logger.isEnabledFor(logging.DEBUG):
                 elapsed = time.perf_counter() - float(stats["started"])
-                logging.info(
+                logger.debug(
                     "notion.traversal.progress",
                     extra={
                         "requests": requests,
@@ -559,6 +602,9 @@ def collect_notion_pages(
         def page_done() -> None:
             nonlocal stop_reason
             stats["pages"] += 1
+            if _ticker_enabled:
+                _ticker["pages"] += 1
+                _tick(force=True)
             log_progress(force=True)
             check_limits()
 
@@ -605,6 +651,9 @@ def collect_notion_pages(
                     continue
                 finally:
                     stats["requests"] += 1
+                    if _ticker_enabled:
+                        _ticker["requests"] += 1
+                        _tick()
                     log_progress()
                     check_limits()
                     if stop_reason:
@@ -622,16 +671,19 @@ def collect_notion_pages(
                     }
                 )
                 processed += 1
-                if processed % progress_interval == 0:
+                if (
+                    processed % progress_interval == 0
+                    and logger.isEnabledFor(logging.DEBUG)
+                ):
                     elapsed = time.perf_counter() - start_time
-                    print(
-                        "  Processed {} Notion page(s) so far (queue: {}, elapsed: {:.1f}s)".format(
-                            processed,
-                            len(queue),
-                            elapsed,
-                    ),
-                    flush=True,
-                )
+                    logger.debug(
+                        "notion.traversal.pages",
+                        extra={
+                            "processed": processed,
+                            "queue": len(queue),
+                            "elapsed": round(elapsed, 1),
+                        },
+                    )
 
                 if len(records) >= limit:
                     page_done()
@@ -657,13 +709,20 @@ def collect_notion_pages(
                         break
                     finally:
                         stats["requests"] += 1
+                        if _ticker_enabled:
+                            _ticker["requests"] += 1
+                            _tick()
                         log_progress()
                         check_limits()
                         if stop_reason:
                             break
 
                     results = children.get("results", [])
-                    stats["blocks"] += len(results)
+                    count = len(results)
+                    stats["blocks"] += count
+                    if _ticker_enabled:
+                        _ticker["blocks"] += count
+                        _tick()
 
                     for block in results:
                         if not isinstance(block, dict):
@@ -722,6 +781,7 @@ def collect_notion_pages(
         partial = bool(stop_reason)
         return TraversalResult(records=records[:limit], errors=errors, partial=partial, reason=stop_reason)
     finally:
+        _stop_ticker()
         if logging.getLogger().isEnabledFor(logging.DEBUG):
             logging.debug(
                 "notion.list_pages.done",
@@ -761,6 +821,9 @@ def _handle_database_root(
         raise
     finally:
         stats["requests"] += 1
+        if _ticker_enabled:
+            _ticker["requests"] += 1
+            _tick()
         log_progress()
         if check_limits():
             return True
@@ -806,6 +869,9 @@ def _handle_database_root(
             raise
         finally:
             stats["requests"] += 1
+            if _ticker_enabled:
+                _ticker["requests"] += 1
+                _tick()
             log_progress()
             if check_limits():
                 break
