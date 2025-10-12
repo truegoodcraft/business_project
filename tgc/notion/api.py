@@ -121,14 +121,14 @@ class NotionAPIClient:
             request_kwargs["json"] = body
         self._throttle()
         start = time.perf_counter()
-        logger.info("→ Notion %s %s", method, path)
+        logger.debug("→ Notion %s %s", method, path)
         try:
             response = http.request(method, url, timeout=self.timeout, **request_kwargs)
             response.raise_for_status()
         except HTTPError as exc:  # pragma: no cover - network dependent
             elapsed_ms = (time.perf_counter() - start) * 1000
             error = self._convert_http_error(exc.response)
-            logger.info(
+            logger.debug(
                 "← Notion %s %s failed [%s] in %.0f ms: %s",
                 method,
                 path,
@@ -140,7 +140,7 @@ class NotionAPIClient:
             raise error
         except RequestException as exc:  # pragma: no cover - network dependent
             elapsed_ms = (time.perf_counter() - start) * 1000
-            logger.info(
+            logger.debug(
                 "← Notion %s %s failed [network] in %.0f ms: %s",
                 method,
                 path,
@@ -151,7 +151,7 @@ class NotionAPIClient:
             raise NotionAPIError(status=0, code="network_error", message=str(exc)) from None
         else:
             elapsed_ms = (time.perf_counter() - start) * 1000
-            logger.info(
+            logger.debug(
                 "← Notion %s %s succeeded [%s] in %.0f ms",
                 method,
                 path,
