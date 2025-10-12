@@ -1,4 +1,5 @@
 """Core controller for orchestrating True Good Craft actions."""
+"""Core controller for orchestrating workflow actions."""
 
 from __future__ import annotations
 
@@ -7,6 +8,10 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
 from .config import AppConfig
+from typing import Any, Dict, Iterable, List, Optional
+
+from .config import AppConfig
+from .organization import OrganizationProfile, organization_status_lines
 from .reporting import ActionResult, RunContext
 
 
@@ -31,11 +36,23 @@ class Controller:
     adapters: Dict[str, object]
     reports_root: Path = Path("reports")
     actions: Dict[str, ControllerAction] = field(default_factory=dict)
+    organization: OrganizationProfile
+    reports_root: Path = Path("reports")
+    actions: Dict[str, ControllerAction] = field(default_factory=dict)
+    modules: Dict[str, object] = field(default_factory=dict)
 
     def register_action(self, action: ControllerAction) -> None:
         if action.id in self.actions:
             raise ValueError(f"Action '{action.id}' already registered")
         self.actions[action.id] = action
+
+    def register_module(self, key: str, module: object) -> None:
+        if key in self.modules:
+            raise ValueError(f"Module '{key}' already registered")
+        self.modules[key] = module
+
+    def get_module(self, key: str) -> Optional[object]:
+        return self.modules.get(key)
 
     def available_actions(self) -> List[ControllerAction]:
         return [self.actions[key] for key in sorted(self.actions)]
@@ -81,6 +98,20 @@ class Controller:
     def adapter_status(self) -> Dict[str, bool]:
         return self.config.enabled_modules()
 
+    def adapter_status_report(self) -> List[Dict[str, Any]]:
+        """Return detailed status information for each registered adapter."""
+
+        report: List[Dict[str, Any]] = []
+        for key in sorted(self.adapters):
+            adapter = self.adapters[key]
+            status = adapter.status_report()
+            status["key"] = key
+            report.append(status)
+        return report
+
+    def organization_summary(self) -> List[str]:
+        return list(organization_status_lines(self.organization))
+
     def list_reports(self) -> List[Path]:
         if not self.reports_root.exists():
             return []
@@ -91,6 +122,12 @@ class Controller:
 
     def configured_adapters(self, *keys: str) -> Dict[str, object]:
         return {key: adapter for key, adapter in self.adapters_for(*keys).items() if getattr(adapter, "is_configured", lambda: False)()}
+
+    def get_module(self, module_id: str) -> object:
+        try:
+            return self.modules[module_id]
+        except KeyError as exc:  # pragma: no cover - defensive guard
+            raise ValueError(f"Unknown module '{module_id}'") from exc
 
 
 def render_plan(title: str, steps: Iterable[str], warnings: Optional[Iterable[str]] = None, notes: Optional[Iterable[str]] = None) -> str:

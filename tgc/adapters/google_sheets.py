@@ -33,3 +33,8 @@ class GoogleSheetsAdapter(BaseAdapter):
         if not self.is_configured():
             return ["Google Sheets inventory sheet ID missing; cannot sync metrics."]
         return [f"Updated {key} -> {value}" for key, value in metrics.items()]
+
+    def implementation_notes(self) -> str:
+        return (
+            "Placeholder Google Sheets adapter; write operations are simulated pending API wiring."
+        )

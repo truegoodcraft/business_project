@@ -47,3 +47,8 @@ class WaveAdapter(BaseAdapter):
         if self.config.sheet_id:
             lines.append("- Would read data from Wave Sheets connector")
         return lines
+
+    def implementation_notes(self) -> str:
+        return (
+            "Placeholder Wave adapter; GraphQL and Sheets synchronisation to be implemented as optional add-ons."
+        )

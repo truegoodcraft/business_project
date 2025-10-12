@@ -38,6 +38,17 @@ class DiscoverAuditAction(SimpleAction):
             metadata = getattr(adapter, "metadata", lambda: {})()
             if metadata:
                 notes.append(f"{key} metadata: {metadata}")
+            if key == "notion" and hasattr(adapter, "verify_inventory_access"):
+                access = adapter.verify_inventory_access()
+                status = access.get("status")
+                detail = access.get("detail")
+                if status:
+                    lines.append(f"  - Inventory access status: {status}")
+                if detail:
+                    lines.append(f"    detail: {detail}")
+                preview = access.get("preview_sample")
+                if isinstance(preview, list):
+                    lines.append(f"    preview rows available: {len(preview)}")
         context.log_notes("audit", lines)
         plan_text = controller.build_plan(self.id)
         return ActionResult(

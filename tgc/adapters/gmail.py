@@ -45,3 +45,8 @@ class GmailAdapter(BaseAdapter):
             "Fetched messages using configured query (simulated)",
             "Extracted attachments and metadata for staging",
         ]
+
+    def implementation_notes(self) -> str:
+        return (
+            "Placeholder Gmail adapter; message parsing and API calls are simulated for now."
+        )

@@ -23,6 +23,7 @@ class BaseAdapter:
     """Base adapter providing status helpers."""
 
     name: str = "adapter"
+    implementation_state: str = "placeholder"
 
     def __init__(self, config: object) -> None:
         self.config = config
@@ -38,3 +39,29 @@ class BaseAdapter:
 
     def describe_capabilities(self) -> List[str]:
         return [cap.as_line() for cap in self.capabilities()]
+
+    # ------------------------------------------------------------------
+    # Status helpers
+
+    def is_implemented(self) -> bool:
+        """Return True if the adapter has real integrations available."""
+
+        return self.implementation_state == "implemented"
+
+    def implementation_notes(self) -> str:
+        """Human-friendly description of the adapter implementation state."""
+
+        if self.is_implemented():
+            return "Adapter provides live integrations."
+        return "Adapter scaffolding ready; API integration not yet implemented."
+
+    def status_report(self) -> Dict[str, object]:
+        """Structured status summary used by status reporting commands."""
+
+        return {
+            "implemented": self.is_implemented(),
+            "configured": self.is_configured(),
+            "notes": self.implementation_notes(),
+            "capabilities": self.describe_capabilities(),
+            "metadata": self.metadata(),
+        }

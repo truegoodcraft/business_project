@@ -1,4 +1,5 @@
 """True Good Craft controller package."""
+"""Controller package exports."""
 
 from importlib.metadata import version, PackageNotFoundError
 

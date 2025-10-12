@@ -11,12 +11,27 @@ from .sheets_sync import SheetsSyncAction
 from .wave import WaveAction
 
 __all__ = [
+from .drive_module import DriveModuleAction
+from .gmail_import import GmailImportAction
+from .logs import LogsAction
+from .notion_module import NotionModuleAction
+from .settings import SettingsAction
+from .sheets_sync import SheetsSyncAction
+from .update import UpdateAction
+from .wave import WaveAction
+
+__all__ = [
+    "UpdateAction",
     "ContactsAction",
     "CsvImportAction",
     "DiscoverAuditAction",
     "DriveLinkAction",
     "GmailImportAction",
     "LogsAction",
+    "DriveModuleAction",
+    "GmailImportAction",
+    "LogsAction",
+    "NotionModuleAction",
     "SettingsAction",
     "SheetsSyncAction",
     "WaveAction",

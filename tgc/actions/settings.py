@@ -28,6 +28,23 @@ class SettingsAction(SimpleAction):
         masked = controller.mask_config()
         lines = [f"{key}: {value}" for key, value in masked.items()]
         context.log_notes("settings", lines)
+            "Display organization reference summary",
+            "Provide editable guidance",
+        ]
+        return self.render_plan(
+            self.name,
+            steps,
+            notes=[
+                "Update environment variables via .env.",
+                "Run `python app.py --init-org` to edit organization details.",
+            ],
+        )
+
+    def run(self, controller: Controller, context: RunContext) -> ActionResult:
+        masked = controller.mask_config()
+        env_lines = [f"{key}: {value}" for key, value in masked.items()]
+        org_lines = controller.organization_summary()
+        context.log_notes("settings", ["Environment"] + env_lines + [""] + ["Organization"] + org_lines)
         plan_text = controller.build_plan(self.id)
         return ActionResult(
             plan_text=plan_text,
@@ -35,4 +52,9 @@ class SettingsAction(SimpleAction):
             errors=[],
             notes=["Settings displayed. Update .env manually to change values."],
             preview="\n".join(lines),
+            notes=[
+                "Environment settings displayed. Update .env manually to change values.",
+                "Organization summary shown. Use `python app.py --init-org` for updates.",
+            ],
+            preview="\n".join(["Environment:"] + env_lines + ["", "Organization:"] + org_lines),
         )
