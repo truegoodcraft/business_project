@@ -16,6 +16,7 @@ class RunContext:
     apply: bool
     reports_root: Path
     metadata: Dict[str, str]
+    options: Dict[str, object] = field(default_factory=dict)
 
     run_id: str = field(init=False)
     run_dir: Path = field(init=False)

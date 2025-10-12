@@ -6,11 +6,13 @@ import argparse
 import logging
 import sys
 import traceback
+from typing import Dict, Optional
 
+from tgc.actions.master_index import MasterIndexAction
 from tgc.bootstrap import bootstrap_controller
 from tgc.menu import run_cli
 from tgc.organization import configure_profile_interactive
-from tgc.master_index_controller import MasterIndexController
+from tgc.master_index_controller import MasterIndexController, TraversalLimits
 from tgc.util.serialization import safe_serialize
 
 
@@ -39,6 +41,26 @@ def main() -> None:
         action="store_true",
         help="Build the Master Index in memory and print it as JSON",
     )
+    parser.add_argument(
+        "--max-seconds",
+        type=float,
+        help="Stop traversal after this many seconds",
+    )
+    parser.add_argument(
+        "--max-pages",
+        type=int,
+        help="Stop traversal after collecting this many pages/files",
+    )
+    parser.add_argument(
+        "--max-requests",
+        type=int,
+        help="Stop traversal after this many API requests",
+    )
+    parser.add_argument(
+        "--max-depth",
+        type=int,
+        help="Stop traversal after this depth",
+    )
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     args = parser.parse_args()
 
@@ -50,6 +72,30 @@ def main() -> None:
         return
 
     controller = bootstrap_controller()
+
+    def _positive(value: Optional[float]) -> Optional[float]:
+        if value is None:
+            return None
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            return None
+        return numeric if numeric > 0 else None
+
+    limit_kwargs: Dict[str, float | int] = {}
+    seconds_value = _positive(args.max_seconds)
+    if seconds_value is not None:
+        limit_kwargs["max_seconds"] = seconds_value
+    pages_value = _positive(args.max_pages)
+    if pages_value is not None:
+        limit_kwargs["max_pages"] = int(pages_value)
+    requests_value = _positive(args.max_requests)
+    if requests_value is not None:
+        limit_kwargs["max_requests"] = int(requests_value)
+    depth_value = _positive(args.max_depth)
+    if depth_value is not None:
+        limit_kwargs["max_depth"] = int(depth_value)
+    traversal_limits = TraversalLimits(**limit_kwargs) if limit_kwargs else None
 
     if args.update:
         action_id = "0"
@@ -94,7 +140,7 @@ def main() -> None:
 
     if args.print_index:
         master = MasterIndexController(controller)
-        snapshot = master.build_index_snapshot()
+        snapshot = master.build_index_snapshot(limits=traversal_limits)
         print(safe_serialize(snapshot))
         return
 
@@ -102,10 +148,16 @@ def main() -> None:
         action_id = args.action
         if action_id not in controller.actions:
             raise SystemExit(f"Unknown action '{action_id}'. Use --menu-only to list actions.")
+        action_obj = controller.get_action(action_id)
+        action_options = (
+            dict(limit_kwargs)
+            if limit_kwargs and isinstance(action_obj, MasterIndexAction)
+            else None
+        )
         plan_text = controller.build_plan(action_id)
         print("=== PLAN ===")
         print(plan_text)
-        result = controller.run_action(action_id, apply=args.apply)
+        result = controller.run_action(action_id, apply=args.apply, options=action_options)
         print("\n=== RESULT ===")
         print(result.summary())
         print(f"Reports stored in: {controller.reports_root}")
