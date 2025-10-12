@@ -27,7 +27,7 @@ class DriveModuleAction(SimpleAction):
             "Optionally enable the module and capture Drive connection settings",
             "Store service-account credentials for reuse across sessions",
             "Persist configuration changes",
-            "Optionally run a lightweight connection test",
+            "Optionally run a live Drive API connection test (honouring write-access settings)",
             "Optionally display stored configuration data",
         ]
         return self.render_plan(self.name, steps, warnings=warnings)

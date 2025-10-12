@@ -5,9 +5,22 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
+
+try:  # Optional dependency to keep base installs light
+    from google.oauth2.service_account import Credentials as ServiceAccountCredentials
+    from googleapiclient.discovery import build
+    from googleapiclient.errors import HttpError
+    from googleapiclient.http import MediaFileUpload
+except Exception:  # pragma: no cover - fallback when Google libraries are absent
+    ServiceAccountCredentials = None  # type: ignore
+    build = None  # type: ignore
+    HttpError = Exception  # type: ignore
+    MediaFileUpload = None  # type: ignore
 
 DEFAULT_MODULE_CONFIG = Path("config/google_drive_module.json")
+READONLY_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
+FULL_SCOPE = "https://www.googleapis.com/auth/drive"
 
 
 @dataclass
@@ -29,6 +42,23 @@ class DriveModuleConfig:
 
     def has_credentials(self) -> bool:
         return bool(self.credentials)
+
+    def scopes(self, require_write: bool = False) -> List[str]:
+        if require_write or self.allow_writes:
+            return [FULL_SCOPE]
+        return [READONLY_SCOPE]
+
+    def all_root_ids(self, fallback: Optional[Iterable[str] | str] = None) -> List[str]:
+        roots = [value for value in (self.root_ids or []) if value]
+        if fallback:
+            if isinstance(fallback, str):
+                extra = [fallback]
+            else:
+                extra = [value for value in fallback if value]
+            for value in extra:
+                if value and value not in roots:
+                    roots.append(value)
+        return roots
 
     def to_dict(self) -> Dict[str, object]:
         return {
@@ -82,6 +112,35 @@ class GoogleDriveModule:
         self.config_path = config_path
 
     # ------------------------------------------------------------------
+    # Drive client helpers
+
+    def root_ids(self) -> List[str]:
+        return self.config.all_root_ids()
+
+    def ensure_service(self, *, require_write: bool = False) -> Tuple[Optional[object], Optional[str]]:
+        if ServiceAccountCredentials is None or build is None:  # pragma: no cover - dependency guard
+            return None, (
+                "google-api-python-client and google-auth are required. "
+                "Run `pip install google-api-python-client google-auth`."
+            )
+        if not self.config.enabled:
+            return None, "Drive module is disabled."
+        if not self.config.has_credentials():
+            return None, "No credentials stored; import a service account JSON first."
+        try:
+            credentials = ServiceAccountCredentials.from_service_account_info(
+                self.config.credentials,
+                scopes=self.config.scopes(require_write=require_write),
+            )
+        except Exception as exc:  # pragma: no cover - credential parsing guard
+            return None, f"Unable to load credentials: {exc}"
+        try:
+            service = build("drive", "v3", credentials=credentials, cache_discovery=False)
+        except Exception as exc:  # pragma: no cover - dependency guard
+            return None, f"Unable to initialise Drive client: {exc}"
+        return service, None
+
+    # ------------------------------------------------------------------
     # Persistence helpers
 
     @classmethod
@@ -122,8 +181,9 @@ class GoogleDriveModule:
                 lines.append(f"  • Project: {project_id}")
         else:
             lines.append("- Credentials: not captured yet")
-        if self.config.root_ids:
-            lines.append(f"- Root IDs ({len(self.config.root_ids)}): {', '.join(self.config.root_ids)}")
+        roots = self.root_ids()
+        if roots:
+            lines.append(f"- Root IDs ({len(roots)}): {', '.join(roots)}")
         else:
             lines.append("- Root IDs: not configured")
         lines.append(
@@ -135,6 +195,7 @@ class GoogleDriveModule:
         else:
             lines.append("- MIME whitelist: all types")
         lines.append(f"- Allow write operations: {'yes' if self.config.allow_writes else 'no'}")
+        lines.append(f"- Config file: {self._mask_path(str(self.config_path))}")
         return lines
 
     def preview_data(self) -> List[str]:
@@ -152,9 +213,10 @@ class GoogleDriveModule:
         lines.append(f"Traversal depth limit: {self.config.max_depth or 'unlimited'}")
         lines.append(f"Rate limit QPS: {self.config.rate_limit_qps}")
         lines.append(f"Timeout seconds: {self.config.timeout_seconds}")
-        if self.config.root_ids:
+        roots = self.root_ids()
+        if roots:
             lines.append("Configured root IDs:")
-            lines.extend(f"  - {value}" for value in self.config.root_ids)
+            lines.extend(f"  - {value}" for value in roots)
         else:
             lines.append("Configured root IDs: (none)")
         if self.config.mime_whitelist:
@@ -166,6 +228,7 @@ class GoogleDriveModule:
             lines.append(
                 f"Original credentials file: {self._mask_path(self.config.credentials_path)}"
             )
+        lines.append(f"Configuration stored at: {self._mask_path(str(self.config_path))}")
         return lines
 
     def _credential_preview(self) -> List[str]:
@@ -336,8 +399,8 @@ class GoogleDriveModule:
     # ------------------------------------------------------------------
     # Connection helpers
 
-    def test_connection(self) -> Tuple[bool, List[str]]:
-        """Perform lightweight validation of the provided configuration."""
+    def test_connection(self, *, require_write: bool = False) -> Tuple[bool, List[str]]:
+        """Validate credentials with live Drive API calls."""
 
         if not self.config.enabled:
             return False, ["Module is disabled; enable it before testing the connection."]
@@ -349,33 +412,369 @@ class GoogleDriveModule:
         if missing:
             return False, [f"Stored credentials are missing keys: {', '.join(missing)}"]
 
-        if not self.config.root_ids:
+        roots = self.root_ids()
+        if not roots:
             return False, ["No Drive root IDs configured. Provide at least one folder or shared drive ID."]
 
+        service, error = self.ensure_service(require_write=require_write)
+        if not service:
+            return False, [error]
+
+        lines: List[str] = []
+        try:
+            about = service.about().get(
+                fields="user, storageQuota, kind, importFormats"
+            ).execute()
+        except Exception as exc:  # pragma: no cover - network dependent
+            return False, [f"Unable to query Drive API: {_format_http_error(exc)}"]
+
+        user_info = about.get("user", {})
+        storage = about.get("storageQuota", {})
         client_email = str(self.config.credentials.get("client_email", ""))
         project_id = str(self.config.credentials.get("project_id", ""))
-        summary = [
-            "Credentials JSON validated successfully.",
-            f"Service account: {client_email or 'unknown'}",
-            f"Project ID: {project_id or 'unknown'}",
-            f"Configured root IDs: {', '.join(self.config.root_ids)}",
-            f"Shared drives enabled: {'yes' if self.config.include_shared_drives else 'no'}",
-            f"'Shared with me' enabled: {'yes' if self.config.include_shared_with_me else 'no'}",
-        ]
-        if self.config.mime_whitelist:
-            summary.append(f"MIME whitelist active: {', '.join(self.config.mime_whitelist)}")
-        else:
-            summary.append("MIME whitelist not set; all types allowed.")
-        if self.config.allow_writes:
-            summary.append(
-                "Write access is enabled — ensure least-privilege permissions are used."
-            )
-        else:
-            summary.append("Module is currently operating in read-only mode.")
-        summary.append(
-            "No API calls were made; full Drive access requires running the dedicated module."
+        lines.extend(
+            [
+                "Credentials JSON validated successfully.",
+                f"Service account: {client_email or 'unknown'}",
+                f"Project ID: {project_id or 'unknown'}",
+                f"Drive user: {user_info.get('displayName', 'unknown')} <{user_info.get('emailAddress', 'unknown')}>",
+                f"Storage usage: {storage.get('usage', 'unknown')} / {storage.get('limit', 'unknown')} bytes",
+                f"Configured root IDs: {', '.join(roots)}",
+                f"Shared drives enabled: {'yes' if self.config.include_shared_drives else 'no'}",
+                f"'Shared with me' enabled: {'yes' if self.config.include_shared_with_me else 'no'}",
+            ]
         )
-        return True, summary
+
+        if self.config.mime_whitelist:
+            lines.append(f"MIME whitelist active: {', '.join(self.config.mime_whitelist)}")
+        else:
+            lines.append("MIME whitelist not set; all types allowed.")
+
+        root_reports: List[str] = []
+        for root_id in roots:
+            try:
+                metadata = service.files().get(
+                    fileId=root_id,
+                    fields="id, name, mimeType, driveId",
+                    supportsAllDrives=True,
+                ).execute()
+            except Exception as exc:  # pragma: no cover - network dependent
+                root_reports.append(f"Root {root_id}: unable to fetch metadata ({_format_http_error(exc)})")
+            else:
+                root_reports.append(
+                    "Root {id} — {name} ({mime})".format(
+                        id=metadata.get("id", root_id),
+                        name=metadata.get("name", "unknown"),
+                        mime=metadata.get("mimeType", "unknown"),
+                    )
+                )
+        lines.append("Reachable roots:")
+        lines.extend(f"  • {entry}" for entry in root_reports)
+
+        if self.config.allow_writes:
+            lines.append("Write access is enabled — destructive operations require explicit opt-in per command.")
+        else:
+            lines.append("Module is currently operating in read-only mode.")
+
+        if require_write and not self.config.allow_writes:
+            lines.append("Write scope was not requested because module write access is disabled.")
+
+        lines.append("Live Drive API calls completed successfully.")
+        return True, lines
+
+    # ------------------------------------------------------------------
+    # Read/write helpers with dry-run support
+
+    def crawl(
+        self,
+        *,
+        page_size: Optional[int] = None,
+        max_depth: Optional[int] = None,
+    ) -> Iterable[Dict[str, object]]:
+        service, error = self.ensure_service()
+        if not service:
+            yield {"status": "error", "detail": error}
+            return
+        depth_limit = self.config.max_depth if max_depth is None else max_depth
+        size = self.config.page_size if page_size is None else page_size
+        mime_whitelist = set(self.config.mime_whitelist)
+        include_trashed = True
+
+        from collections import deque
+
+        queue = deque([(root_id, 0) for root_id in self.root_ids()])
+        visited: set[str] = set()
+        while queue:
+            current_id, depth = queue.popleft()
+            if current_id in visited:
+                continue
+            visited.add(current_id)
+            try:
+                current = (
+                    service.files()
+                    .get(
+                        fileId=current_id,
+                        fields="id, name, mimeType, parents, trashed, driveId, size, shortcutDetails",
+                        supportsAllDrives=True,
+                    )
+                    .execute()
+                )
+            except Exception as exc:  # pragma: no cover - network dependent
+                yield {"id": current_id, "status": "error", "detail": _format_http_error(exc)}
+                continue
+            yield current
+            shortcut = current.get("shortcutDetails", {}) or {}
+            target_id = shortcut.get("targetId") if isinstance(shortcut, dict) else None
+            if target_id and target_id not in visited:
+                queue.append((target_id, depth))
+                continue
+            if current.get("mimeType") != "application/vnd.google-apps.folder":
+                continue
+            if depth_limit and depth >= depth_limit:
+                continue
+            q_parts = [f"'{current_id}' in parents"]
+            if mime_whitelist:
+                mime_query = " or ".join(f"mimeType = '{mime}'" for mime in mime_whitelist)
+                q_parts.append(f"({mime_query})")
+            if not include_trashed:
+                q_parts.append("trashed = false")
+            query = " and ".join(q_parts)
+            page_token: Optional[str] = None
+            while True:
+                try:
+                    response = (
+                        service.files()
+                        .list(
+                            q=query,
+                            includeItemsFromAllDrives=self.config.include_shared_drives,
+                            supportsAllDrives=True,
+                            corpora="allDrives" if self.config.include_shared_drives else "default",
+                            pageSize=size,
+                            pageToken=page_token,
+                            fields="nextPageToken, files(id)",
+                        )
+                        .execute()
+                    )
+                except Exception as exc:  # pragma: no cover - network dependent
+                    yield {
+                        "parent": current_id,
+                        "status": "error",
+                        "detail": _format_http_error(exc),
+                    }
+                    break
+                for child in response.get("files", []):
+                    queue.append((child.get("id"), depth + 1))
+                page_token = response.get("nextPageToken")
+                if not page_token:
+                    break
+
+        if self.config.include_shared_with_me:
+            yield from self._list_shared_with_me(service, page_size=size)
+
+    def download_file(self, file_id: str, destination: Path, *, dry_run: bool = True) -> Dict[str, object]:
+        service, error = self.ensure_service()
+        if not service:
+            return {"status": "error", "detail": error}
+        if dry_run:
+            return {"status": "dry_run", "detail": f"Would download {file_id} to {destination}"}
+        try:
+            from googleapiclient.http import MediaIoBaseDownload  # Local import to avoid unused when dry-run
+        except Exception:  # pragma: no cover - dependency guard
+            return {
+                "status": "error",
+                "detail": "google-api-python-client is required to download files.",
+            }
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with destination.open("wb") as handle:
+            request = service.files().get_media(fileId=file_id, supportsAllDrives=True)
+            downloader = MediaIoBaseDownload(handle, request)
+            try:
+                done = False
+                while not done:
+                    _, done = downloader.next_chunk()
+            except Exception as exc:  # pragma: no cover - network dependent
+                return {"status": "error", "detail": _format_http_error(exc)}
+        return {"status": "ok", "detail": f"Downloaded file {file_id} to {destination}"}
+
+    def upload_file(
+        self,
+        source: Path,
+        *,
+        parent_id: Optional[str] = None,
+        mime_type: Optional[str] = None,
+        dry_run: bool = True,
+        overwrite: bool = False,
+    ) -> Dict[str, object]:
+        write_guard = self._write_guard()
+        if write_guard:
+            return {"status": "error", "detail": write_guard}
+        service, error = self.ensure_service(require_write=True)
+        if not service:
+            return {"status": "error", "detail": error}
+        if dry_run:
+            return {
+                "status": "dry_run",
+                "detail": f"Would upload {source} to parent {parent_id or 'root'}",
+            }
+        if MediaFileUpload is None:  # pragma: no cover - dependency guard
+            return {
+                "status": "error",
+                "detail": "google-api-python-client is required to upload files.",
+            }
+        media = MediaFileUpload(source, mimetype=mime_type, resumable=True)
+        body = {"name": source.name}
+        if parent_id:
+            body["parents"] = [parent_id]
+        try:
+            if overwrite:
+                matches = (
+                    service.files()
+                    .list(
+                        q=f"name = '{source.name}'",
+                        supportsAllDrives=True,
+                        includeItemsFromAllDrives=True,
+                        corpora="allDrives" if self.config.include_shared_drives else "default",
+                        pageSize=1,
+                        fields="files(id)",
+                    )
+                    .execute()
+                )
+                files = matches.get("files", [])
+                if files:
+                    file_id = files[0].get("id")
+                    response = (
+                        service.files()
+                        .update(fileId=file_id, media_body=media, supportsAllDrives=True)
+                        .execute()
+                    )
+                    return {"status": "ok", "detail": "Updated existing file", "file": response}
+            response = (
+                service.files()
+                .create(body=body, media_body=media, fields="id, name", supportsAllDrives=True)
+                .execute()
+            )
+        except Exception as exc:  # pragma: no cover - network dependent
+            return {"status": "error", "detail": _format_http_error(exc)}
+        return {"status": "ok", "detail": "Uploaded new file", "file": response}
+
+    def update_metadata(
+        self,
+        file_id: str,
+        metadata: Dict[str, object],
+        *,
+        dry_run: bool = True,
+    ) -> Dict[str, object]:
+        write_guard = self._write_guard()
+        if write_guard:
+            return {"status": "error", "detail": write_guard}
+        service, error = self.ensure_service(require_write=True)
+        if not service:
+            return {"status": "error", "detail": error}
+        if dry_run:
+            return {
+                "status": "dry_run",
+                "detail": f"Would update {file_id} with metadata {metadata}",
+            }
+        try:
+            response = (
+                service.files()
+                .update(fileId=file_id, body=metadata, supportsAllDrives=True)
+                .execute()
+            )
+        except Exception as exc:  # pragma: no cover - network dependent
+            return {"status": "error", "detail": _format_http_error(exc)}
+        return {"status": "ok", "detail": "Updated metadata", "file": response}
+
+    def delete_file(self, file_id: str, *, dry_run: bool = True) -> Dict[str, object]:
+        write_guard = self._write_guard()
+        if write_guard:
+            return {"status": "error", "detail": write_guard}
+        service, error = self.ensure_service(require_write=True)
+        if not service:
+            return {"status": "error", "detail": error}
+        if dry_run:
+            return {"status": "dry_run", "detail": f"Would delete file {file_id}"}
+        try:
+            service.files().delete(fileId=file_id, supportsAllDrives=True).execute()
+        except Exception as exc:  # pragma: no cover - network dependent
+            return {"status": "error", "detail": _format_http_error(exc)}
+        return {"status": "ok", "detail": f"Deleted file {file_id}"}
+
+    def update_permissions(
+        self,
+        file_id: str,
+        *,
+        role: str,
+        permission_type: str,
+        email: Optional[str] = None,
+        domain: Optional[str] = None,
+        allow_notification: bool = False,
+        dry_run: bool = True,
+    ) -> Dict[str, object]:
+        write_guard = self._write_guard()
+        if write_guard:
+            return {"status": "error", "detail": write_guard}
+        service, error = self.ensure_service(require_write=True)
+        if not service:
+            return {"status": "error", "detail": error}
+        body: Dict[str, object] = {"role": role, "type": permission_type}
+        if email:
+            body["emailAddress"] = email
+        if domain:
+            body["domain"] = domain
+        if dry_run:
+            return {
+                "status": "dry_run",
+                "detail": f"Would add permission {body} to {file_id}",
+            }
+        try:
+            response = (
+                service.permissions()
+                .create(
+                    fileId=file_id,
+                    body=body,
+                    sendNotificationEmail=allow_notification,
+                    supportsAllDrives=True,
+                )
+                .execute()
+            )
+        except Exception as exc:  # pragma: no cover - network dependent
+            return {"status": "error", "detail": _format_http_error(exc)}
+        return {"status": "ok", "detail": "Permission added", "permission": response}
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+
+    def _write_guard(self) -> Optional[str]:
+        if not self.config.allow_writes:
+            return "Write operations are disabled; enable them in the Drive module configuration."
+        return None
+
+    def _list_shared_with_me(self, service: object, page_size: int) -> Iterable[Dict[str, object]]:
+        page_token: Optional[str] = None
+        while True:
+            try:
+                response = (
+                    service.files()
+                    .list(
+                        q="sharedWithMe",
+                        includeItemsFromAllDrives=self.config.include_shared_drives,
+                        supportsAllDrives=True,
+                        corpora="allDrives" if self.config.include_shared_drives else "default",
+                        pageToken=page_token,
+                        pageSize=page_size,
+                        fields="nextPageToken, files(id, name, mimeType, owners, sharedWithMeTime)",
+                    )
+                    .execute()
+                )
+            except Exception as exc:  # pragma: no cover - network dependent
+                yield {"status": "error", "detail": _format_http_error(exc)}
+                return
+            for file_obj in response.get("files", []):
+                yield file_obj
+            page_token = response.get("nextPageToken")
+            if not page_token:
+                break
 
     # ------------------------------------------------------------------
     # Utility helpers
@@ -444,6 +843,20 @@ def _clean_list(value: object, allow_empty: bool = False) -> List[str]:
         items = [token.strip() for token in value.split(",") if token.strip()]
         return items
     return []
+
+
+def _format_http_error(error: Exception) -> str:
+    if isinstance(error, HttpError):  # pragma: no branch - type guard
+        try:
+            payload = json.loads(error.content.decode("utf-8")) if getattr(error, "content", None) else {}
+        except Exception:  # pragma: no cover - defensive
+            payload = {}
+        if isinstance(payload, dict):
+            message = payload.get("error", {}).get("message")
+            if message:
+                return message
+        return getattr(error, "message", str(error))
+    return str(error)
 
 
 def _mask_value(value: str) -> str:
