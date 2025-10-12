@@ -74,9 +74,9 @@ class MasterIndexController:
             message = (
                 "Master Index unavailable: run 'Discover & Audit' and verify Notion + Drive are ready."
             )
-            print(message)
+            print(message, flush=True)
             if detail:
-                print(detail)
+                print(detail, flush=True)
             summary = MasterIndexSummary(status="unavailable", dry_run=dry_run, message=detail)
             self._append_log(summary)
             return summary.to_dict()
@@ -94,7 +94,7 @@ class MasterIndexController:
                 drive_errors=drive_errors,
                 message=message,
             )
-            print(message)
+            print(message, flush=True)
             self._append_log(summary)
             return summary.to_dict()
 
@@ -104,11 +104,17 @@ class MasterIndexController:
         generated_at = datetime.utcnow().isoformat(timespec="seconds") + "Z"
         notion_start = time.perf_counter()
         if notion_roots:
-            print(f"Collecting Notion pages from {len(notion_roots)} root(s)...")
+            print(
+                f"Collecting Notion pages from {len(notion_roots)} root(s)...",
+                flush=True,
+            )
         else:
-            print("No Notion roots configured; skipping page traversal.")
+            print("No Notion roots configured; skipping page traversal.", flush=True)
         if dry_run and notion_roots:
-            print("[dry-run] Skipping Notion API calls and generating placeholder rows.")
+            print(
+                "[dry-run] Skipping Notion API calls and generating placeholder rows.",
+                flush=True,
+            )
             notion_records = [
                 {
                     "title": f"(dry-run placeholder for root {root[:8]}…)",
@@ -131,16 +137,23 @@ class MasterIndexController:
         print(
             "Collected {} Notion page(s) in {:.1f}s".format(
                 len(notion_records), notion_elapsed
-            )
+            ),
+            flush=True,
         )
 
         drive_start = time.perf_counter()
         if drive_roots:
-            print(f"Collecting Drive files from {len(drive_roots)} root(s)...")
+            print(
+                f"Collecting Drive files from {len(drive_roots)} root(s)...",
+                flush=True,
+            )
         else:
-            print("No Drive roots configured; skipping file traversal.")
+            print("No Drive roots configured; skipping file traversal.", flush=True)
         if dry_run and drive_roots:
-            print("[dry-run] Skipping Drive API calls and generating placeholder rows.")
+            print(
+                "[dry-run] Skipping Drive API calls and generating placeholder rows.",
+                flush=True,
+            )
             drive_records = [
                 {
                     "name": f"(dry-run placeholder for root {root[:8]}…)",
@@ -165,7 +178,8 @@ class MasterIndexController:
         print(
             "Collected {} Drive file(s) in {:.1f}s".format(
                 len(drive_records), drive_elapsed
-            )
+            ),
+            flush=True,
         )
 
         notion_records.sort(key=lambda item: ((item.get("title") or "").casefold(), item.get("url") or ""))
@@ -183,8 +197,8 @@ class MasterIndexController:
         drive_errors = drive_errors or []
 
         if dry_run:
-            print(f"[dry-run] Would write Notion index to: {notion_path}")
-            print(f"[dry-run] Would write Drive index to: {drive_path}")
+            print(f"[dry-run] Would write Notion index to: {notion_path}", flush=True)
+            print(f"[dry-run] Would write Drive index to: {drive_path}", flush=True)
         else:
             try:
                 output_dir.mkdir(parents=True, exist_ok=True)
@@ -319,6 +333,9 @@ def collect_notion_pages(
     records: List[Dict[str, str]] = []
     errors: List[str] = []
     depth_limit = max_depth if max_depth and max_depth > 0 else None
+    start_time = time.perf_counter()
+    processed = 0
+    progress_interval = 100
 
     while queue and len(records) < limit:
         page_id, depth, ancestors = queue.popleft()
@@ -357,6 +374,17 @@ def collect_notion_pages(
                 "last_edited": page.get("last_edited_time", ""),
             }
         )
+        processed += 1
+        if processed % progress_interval == 0:
+            elapsed = time.perf_counter() - start_time
+            print(
+                "  Processed {} Notion page(s) so far (queue: {}, elapsed: {:.1f}s)".format(
+                    processed,
+                    len(queue),
+                    elapsed,
+                ),
+                flush=True,
+            )
 
         if len(records) >= limit:
             break
@@ -533,6 +561,9 @@ def collect_drive_files(
     records: List[Dict[str, str]] = []
     errors: List[str] = []
     shortcut_cache: Dict[str, Dict[str, object]] = {}
+    start_time = time.perf_counter()
+    processed = 0
+    progress_interval = 200
 
     while queue and len(records) < limit:
         file_id, depth, ancestors = queue.popleft()
@@ -599,6 +630,17 @@ def collect_drive_files(
             )
             if len(records) >= limit:
                 break
+            processed += 1
+            if processed % progress_interval == 0:
+                elapsed = time.perf_counter() - start_time
+                print(
+                    "  Processed {} Drive file(s) so far (queue: {}, elapsed: {:.1f}s)".format(
+                        processed,
+                        len(queue),
+                        elapsed,
+                    ),
+                    flush=True,
+                )
 
         if mime_type == "application/vnd.google-apps.folder":
             if depth_limit is not None and depth >= depth_limit:
