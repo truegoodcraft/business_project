@@ -20,6 +20,11 @@ except Exception:  # pragma: no cover - fallback when google-api-python-client i
 
 from .base import AdapterCapability, BaseAdapter
 from ..config import GoogleDriveConfig
+from ..integration_support import (
+    format_drive_share_message,
+    is_drive_permission_error,
+    service_account_email,
+)
 from ..modules.google_drive import DEFAULT_MODULE_CONFIG, DriveModuleConfig
 
 READONLY_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
@@ -343,6 +348,8 @@ class GoogleDriveAdapter(BaseAdapter):
 
     def _probe_roots(self, service: object) -> List[Dict[str, object]]:
         roots: List[Dict[str, object]] = []
+        module_config = DriveModuleConfig.from_dict(self._module_config)
+        share_email = service_account_email(module_config)
         for root_id in self._configured_root_ids():
             try:
                 result = (
@@ -355,7 +362,11 @@ class GoogleDriveAdapter(BaseAdapter):
                     .execute()
                 )
             except Exception as exc:  # pragma: no cover - network dependent
-                roots.append({"id": root_id, "status": "error", "detail": _format_http_error(exc)})
+                if is_drive_permission_error(exc):
+                    detail = format_drive_share_message(root_id, share_email)
+                else:
+                    detail = _format_http_error(exc)
+                roots.append({"id": root_id, "status": "error", "detail": detail})
             else:
                 result["status"] = "ok"
                 roots.append(result)

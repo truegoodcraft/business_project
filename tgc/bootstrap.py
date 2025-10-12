@@ -22,7 +22,9 @@ from .actions import (
 from .adapters import GmailAdapter, GoogleDriveAdapter, GoogleSheetsAdapter, NotionAdapter, WaveAdapter
 from .config import AppConfig
 from .controller import Controller
+from .integration_support import load_drive_module_config, service_account_email
 from .modules import GoogleDriveModule
+from .modules.google_drive import DriveModuleConfig
 from .notion import NotionAccessModule
 from .organization import OrganizationProfile
 
@@ -31,10 +33,11 @@ def bootstrap_controller(env_file: str = ".env") -> Controller:
     """Build a controller with adapters, modules, and default actions."""
 
     config = AppConfig.load(env_file)
-    adapters = _build_adapters(config)
+    drive_module_config = load_drive_module_config(config.drive.module_config_path)
+    adapters = _build_adapters(config, drive_module_config)
     organization = OrganizationProfile.load()
     organization.ensure_reference_page()
-    modules = _build_modules(config, env_file)
+    modules = _build_modules(config, env_file, drive_module_config)
     controller = Controller(
         config=config,
         adapters=adapters,
@@ -46,20 +49,24 @@ def bootstrap_controller(env_file: str = ".env") -> Controller:
     return controller
 
 
-def _build_adapters(config: AppConfig) -> Dict[str, object]:
+def _build_adapters(config: AppConfig, drive_module_config: DriveModuleConfig) -> Dict[str, object]:
+    sheets_email = service_account_email(drive_module_config)
     return {
         "notion": NotionAdapter(config.notion),
         "drive": GoogleDriveAdapter(config.drive),
-        "sheets": GoogleSheetsAdapter(config.sheets),
+        "sheets": GoogleSheetsAdapter(config.sheets, service_account_email=sheets_email),
         "gmail": GmailAdapter(config.gmail),
         "wave": WaveAdapter(config.wave),
     }
 
 
-def _build_modules(config: AppConfig, env_file: str) -> Dict[str, object]:
+def _build_modules(
+    config: AppConfig, env_file: str, drive_module_config: DriveModuleConfig
+) -> Dict[str, object]:
     return {
-        "drive": GoogleDriveModule.load(
-            config.drive.module_config_path,
+        "drive": GoogleDriveModule(
+            drive_module_config,
+            config.drive.module_config_path.expanduser(),
             fallback_root_id=config.drive.fallback_root_id,
             shared_drive_id=config.drive.shared_drive_id,
         ),

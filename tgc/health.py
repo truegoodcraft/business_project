@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import time
 from pathlib import Path
@@ -10,6 +9,13 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 from .config import AppConfig
 from .notion.api import NotionAPIClient, NotionAPIError
+from .integration_support import (
+    format_drive_share_message,
+    format_sheets_missing_env_message,
+    is_drive_permission_error,
+    load_drive_module_config,
+    service_account_email,
+)
 from .modules.google_drive import DriveModuleConfig, ServiceAccountCredentials, build
 
 SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets.readonly"
@@ -23,7 +29,8 @@ def system_health() -> Tuple[List[Dict[str, str]], bool]:
     """Run system health checks and return detailed results."""
 
     config = AppConfig.load()
-    drive_module_config, drive_config_path = _load_drive_module_config(config)
+    drive_config_path = config.drive.module_config_path.expanduser()
+    drive_module_config = load_drive_module_config(drive_config_path)
 
     checks: List[Dict[str, str]] = []
     results: List[Tuple[str, str, str]] = []
@@ -216,10 +223,14 @@ def _check_drive(config: AppConfig, module_config: DriveModuleConfig) -> Tuple[s
     try:
         metadata, shortcut_chain = _validate_drive_root(drive_service, root_id)
     except Exception as exc:  # pragma: no cover - network dependent
+        if is_drive_permission_error(exc):
+            fix = format_drive_share_message(root_id, service_account_email(module_config))
+        else:
+            fix = "Confirm the folder exists and is shared with the service account."
         detail = _format_detail(
             f"Drive validation failed for {root_id}: {exc}",
             start,
-            "Confirm the folder exists and is shared with the service account.",
+            fix,
         )
         return "Google Drive", "error", detail
     name = metadata.get("name") or "(untitled)"
@@ -248,11 +259,8 @@ def _check_sheets(
     sheet_id = config.sheets.inventory_sheet_id
     if not sheet_id:
         start = time.perf_counter()
-        detail = _format_detail(
-            "SHEET_INVENTORY_ID is not set.",
-            start,
-            "Add the Google Sheets ID to enable metrics sync checks.",
-        )
+        message = format_sheets_missing_env_message(service_account_email(module_config))
+        detail = _format_detail(message, start)
         return "Google Sheets", "missing", detail
     start = time.perf_counter()
     if ServiceAccountCredentials is None or build is None:
@@ -294,20 +302,6 @@ def _check_sheets(
         start,
     )
     return "Google Sheets", "ready", detail
-
-
-def _load_drive_module_config(config: AppConfig) -> Tuple[DriveModuleConfig, Path]:
-    path = config.drive.module_config_path.expanduser()
-    if path.exists():
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            data = {}
-    else:
-        data = {}
-    module_config = DriveModuleConfig.from_dict(data)
-    return module_config, path
-
 
 def _validate_drive_root(service: object, root_id: str) -> Tuple[Dict[str, object], List[str]]:
     shortcuts: List[str] = []

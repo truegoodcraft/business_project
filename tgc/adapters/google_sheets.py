@@ -6,13 +6,17 @@ from typing import Dict, List, Optional
 
 from .base import AdapterCapability, BaseAdapter
 from ..config import GoogleSheetsConfig
+from ..integration_support import format_sheets_missing_env_message
 
 
 class GoogleSheetsAdapter(BaseAdapter):
     name = "sheets"
 
-    def __init__(self, config: GoogleSheetsConfig) -> None:
+    def __init__(
+        self, config: GoogleSheetsConfig, *, service_account_email: Optional[str] = None
+    ) -> None:
         super().__init__(config)
+        self._service_account_email = service_account_email
 
     def is_configured(self) -> bool:
         return self.config.is_configured()
@@ -31,8 +35,11 @@ class GoogleSheetsAdapter(BaseAdapter):
 
     def sync_metrics(self, metrics: Dict[str, str]) -> List[str]:
         if not self.is_configured():
-            return ["Google Sheets inventory sheet ID missing; cannot sync metrics."]
+            return [self.missing_configuration_message()]
         return [f"Updated {key} -> {value}" for key, value in metrics.items()]
+
+    def missing_configuration_message(self) -> str:
+        return format_sheets_missing_env_message(self._service_account_email)
 
     def implementation_notes(self) -> str:
         return (
