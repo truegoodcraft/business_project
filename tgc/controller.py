@@ -1,13 +1,9 @@
-"""Core controller for orchestrating True Good Craft actions."""
 """Core controller for orchestrating workflow actions."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional
-
-from .config import AppConfig
 from typing import Any, Dict, Iterable, List, Optional
 
 from .config import AppConfig
@@ -32,10 +28,10 @@ class ControllerAction:
 
 @dataclass
 class Controller:
+    """Coordinate adapters, modules, and actions for the workflow."""
+
     config: AppConfig
     adapters: Dict[str, object]
-    reports_root: Path = Path("reports")
-    actions: Dict[str, ControllerAction] = field(default_factory=dict)
     organization: OrganizationProfile
     reports_root: Path = Path("reports")
     actions: Dict[str, ControllerAction] = field(default_factory=dict)
@@ -121,16 +117,19 @@ class Controller:
         return {key: self.adapters.get(key) for key in keys if key in self.adapters}
 
     def configured_adapters(self, *keys: str) -> Dict[str, object]:
-        return {key: adapter for key, adapter in self.adapters_for(*keys).items() if getattr(adapter, "is_configured", lambda: False)()}
-
-    def get_module(self, module_id: str) -> object:
-        try:
-            return self.modules[module_id]
-        except KeyError as exc:  # pragma: no cover - defensive guard
-            raise ValueError(f"Unknown module '{module_id}'") from exc
+        return {
+            key: adapter
+            for key, adapter in self.adapters_for(*keys).items()
+            if getattr(adapter, "is_configured", lambda: False)()
+        }
 
 
-def render_plan(title: str, steps: Iterable[str], warnings: Optional[Iterable[str]] = None, notes: Optional[Iterable[str]] = None) -> str:
+def render_plan(
+    title: str,
+    steps: Iterable[str],
+    warnings: Optional[Iterable[str]] = None,
+    notes: Optional[Iterable[str]] = None,
+) -> str:
     lines: List[str] = [f"# {title}", ""]
     lines.append("## Steps")
     lines.extend(f"- {step}" for step in steps)
