@@ -63,7 +63,9 @@ class Controller:
         action = self.get_action(action_id)
         return action.build_plan(self)
 
-    def run_action(self, action_id: str, apply: bool) -> ActionResult:
+    def run_action(
+        self, action_id: str, apply: bool, *, options: Optional[Dict[str, object]] = None
+    ) -> ActionResult:
         action = self.get_action(action_id)
         plan_text = action.build_plan(self)
         context = RunContext(
@@ -71,6 +73,7 @@ class Controller:
             apply=apply,
             reports_root=self.reports_root,
             metadata={"action_name": action.name, "apply": str(apply)},
+            options=dict(options or {}),
         )
         context.log_plan(plan_text)
         result = action.run(self, context)

@@ -4,7 +4,12 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from tgc.config import NotionConfig
-from tgc.master_index_controller import MasterIndexData, collect_drive_files, collect_notion_pages
+from tgc.master_index_controller import (
+    MasterIndexData,
+    TraversalLimits,
+    collect_drive_files,
+    collect_notion_pages,
+)
 from tgc.notion.api import NotionAPIError
 from tgc.notion.module import NotionAccessModule
 from tgc.modules.google_drive import DriveModuleConfig, GoogleDriveModule
@@ -177,19 +182,24 @@ class FakeDriveModule(GoogleDriveModule):
 def test_collect_notion_pages_with_page_and_links():
     client = FakeNotionClient()
     module = FakeNotionModule(client)
-    records, errors = collect_notion_pages(module, ["page-1"], limit=10)
+    result = collect_notion_pages(module, ["page-1"], limit=10)
+    records = result.records
+    errors = result.errors
 
     titles = [record["title"] for record in records]
     assert "Root Page" in titles
     assert "Child" in titles
     assert "Linked" in titles
     assert errors == []
+    assert result.partial is False
 
 
 def test_collect_notion_pages_with_database_root_includes_rows():
     client = FakeNotionClient()
     module = FakeNotionModule(client)
-    records, errors = collect_notion_pages(module, ["database-1"], limit=10)
+    result = collect_notion_pages(module, ["database-1"], limit=10)
+    records = result.records
+    errors = result.errors
 
     titles = [record["title"] for record in records]
     assert "Root Database" in titles
@@ -219,16 +229,21 @@ def test_master_index_data_snapshot_counts():
 def test_database_root_not_found_reports_error():
     client = FakeNotionClient()
     module = FakeNotionModule(client)
-    records, errors = collect_notion_pages(module, ["missing"], limit=10)
+    result = collect_notion_pages(module, ["missing"], limit=10)
+    records = result.records
+    errors = result.errors
 
     assert records == []
     assert errors == ["Page missing: Page missing not found"]
+    assert result.partial is False
 
 
 def test_collect_notion_pages_detects_repeating_cursor():
     client = LoopingCursorNotionClient()
     module = FakeNotionModule(client)
-    records, errors = collect_notion_pages(module, ["page-1"], limit=10)
+    result = collect_notion_pages(module, ["page-1"], limit=10)
+    records = result.records
+    errors = result.errors
 
     assert any("repeated pagination cursor" in error for error in errors)
     assert any(record["page_id"] == "child-1" for record in records)
@@ -237,7 +252,9 @@ def test_collect_notion_pages_detects_repeating_cursor():
 def test_collect_notion_database_detects_repeating_cursor():
     client = LoopingDatabaseCursorClient()
     module = FakeNotionModule(client)
-    records, errors = collect_notion_pages(module, ["database-1"], limit=10)
+    result = collect_notion_pages(module, ["database-1"], limit=10)
+    records = result.records
+    errors = result.errors
 
     assert any("repeated pagination cursor" in error for error in errors)
     titles = {record["title"] for record in records}
@@ -270,8 +287,54 @@ def test_collect_drive_files_detects_repeating_token():
     service = FakeDriveService(metadata_map, list_responses)
     module = FakeDriveModule(service)
 
-    records, errors = collect_drive_files(module, ["root"], limit=10)
+    result = collect_drive_files(module, ["root"], limit=10)
+    records = result.records
+    errors = result.errors
 
     assert any("repeated pagination token" in error for error in errors)
     ids = {record["file_id"] for record in records}
     assert ids == {"root", "child"}
+
+
+def test_collect_notion_pages_respects_max_pages_limit():
+    client = FakeNotionClient()
+    module = FakeNotionModule(client)
+    limits = TraversalLimits(max_pages=1)
+
+    result = collect_notion_pages(module, ["page-1"], limit=10, limits=limits)
+
+    assert result.partial is True
+    assert len(result.records) == 1
+    assert result.reason and "max pages" in result.reason
+
+
+def test_collect_drive_files_respects_max_pages_limit():
+    metadata_map = {
+        "root": {
+            "id": "root",
+            "name": "Root",
+            "mimeType": "application/vnd.google-apps.folder",
+            "parents": [],
+            "trashed": False,
+        },
+        "child": {
+            "id": "child",
+            "name": "Child",
+            "mimeType": "application/pdf",
+            "parents": ["root"],
+            "trashed": False,
+            "webViewLink": "https://example.com/child",
+        },
+    }
+    list_responses = [
+        {"files": [{"id": "child"}], "nextPageToken": None},
+    ]
+    service = FakeDriveService(metadata_map, list_responses)
+    module = FakeDriveModule(service)
+    limits = TraversalLimits(max_pages=1)
+
+    result = collect_drive_files(module, ["root"], limit=10, limits=limits)
+
+    assert result.partial is True
+    assert len(result.records) == 1
+    assert result.reason and "max pages" in result.reason

@@ -110,6 +110,26 @@ class MasterIndexData:
         }
 
 
+@dataclass
+class TraversalLimits:
+    """Optional limits that can short-circuit traversal."""
+
+    max_seconds: Optional[float] = None
+    max_pages: Optional[int] = None
+    max_requests: Optional[int] = None
+    max_depth: Optional[int] = None
+
+
+@dataclass
+class TraversalResult:
+    """Outcome from a traversal helper."""
+
+    records: List[Dict[str, str]]
+    errors: List[str]
+    partial: bool = False
+    reason: Optional[str] = None
+
+
 class MasterIndexController:
     """Generate Markdown indexes for Notion pages and Google Drive files."""
 
@@ -119,13 +139,18 @@ class MasterIndexController:
     # ------------------------------------------------------------------
     # Public entry point
 
-    def build_index_snapshot(self) -> Dict[str, object]:
+    def build_index_snapshot(
+        self, *, limits: Optional[TraversalLimits] = None
+    ) -> Dict[str, object]:
         """Collect the live Master Index data without writing to disk."""
 
-        data = self._collect_master_index(placeholders=False)
+        data = self._collect_master_index(placeholders=False, limits=limits)
         return data.snapshot()
 
-    def _collect_master_index(self, *, placeholders: bool) -> MasterIndexData:
+    def _collect_master_index(
+        self, *, placeholders: bool, limits: Optional[TraversalLimits] = None
+    ) -> MasterIndexData:
+        traversal_limits = limits or TraversalLimits()
         ready, detail = self._adapters_ready()
         generated_at = datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
         if not ready:
@@ -185,13 +210,20 @@ class MasterIndexController:
                 for root in notion_roots
             ]
             notion_errors: List[str] = []
+            notion_partial = False
+            notion_reason: Optional[str] = None
         else:
-            notion_records, notion_errors = collect_notion_pages(
+            notion_result = collect_notion_pages(
                 notion_module,
                 notion_roots,
                 max_depth=notion_module.config.max_depth,
                 page_size=notion_module.config.page_size,
+                limits=traversal_limits,
             )
+            notion_records = notion_result.records
+            notion_errors = notion_result.errors
+            notion_partial = notion_result.partial
+            notion_reason = notion_result.reason
         notion_elapsed = time.perf_counter() - notion_start
         print(
             "Collected {} Notion page(s) in {:.1f}s".format(
@@ -225,14 +257,21 @@ class MasterIndexController:
                 for root in drive_roots
             ]
             drive_errors: List[str] = []
+            drive_partial = False
+            drive_reason: Optional[str] = None
         else:
-            drive_records, drive_errors = collect_drive_files(
+            drive_result = collect_drive_files(
                 drive_module,
                 drive_roots,
                 mime_whitelist=list(drive_module.config.mime_whitelist) or None,
                 max_depth=drive_module.config.max_depth,
                 page_size=drive_module.config.page_size,
+                limits=traversal_limits,
             )
+            drive_records = drive_result.records
+            drive_errors = drive_result.errors
+            drive_partial = drive_result.partial
+            drive_reason = drive_result.reason
         drive_elapsed = time.perf_counter() - drive_start
         print(
             "Collected {} Drive file(s) in {:.1f}s".format(
@@ -244,8 +283,17 @@ class MasterIndexController:
         notion_records.sort(key=_notion_sort_key)
         drive_records.sort(key=_drive_sort_key)
 
+        partial_messages: List[str] = []
+        if notion_partial:
+            partial_messages.append(notion_reason or "Notion traversal stopped early.")
+        if drive_partial:
+            partial_messages.append(drive_reason or "Drive traversal stopped early.")
+
+        status = "partial" if partial_messages else "ok"
+        message = "\n".join(partial_messages) if partial_messages else None
+
         return MasterIndexData(
-            status="ok",
+            status=status,
             dry_run=placeholders,
             generated_at=generated_at,
             notion_records=notion_records,
@@ -256,10 +304,13 @@ class MasterIndexController:
             drive_roots=drive_roots,
             notion_elapsed=notion_elapsed,
             drive_elapsed=drive_elapsed,
+            message=message,
         )
 
-    def run_master_index(self, dry_run: bool) -> Dict[str, object]:
-        data = self._collect_master_index(placeholders=dry_run)
+    def run_master_index(
+        self, dry_run: bool, *, limits: Optional[TraversalLimits] = None
+    ) -> Dict[str, object]:
+        data = self._collect_master_index(placeholders=dry_run, limits=limits)
         if data.status == "unavailable":
             summary = MasterIndexSummary(status="unavailable", dry_run=dry_run, message=data.message)
             self._append_log(summary)
@@ -316,7 +367,9 @@ class MasterIndexController:
                 except OSError as exc:
                     drive_errors.append(f"Failed to write Drive index: {exc}")
 
-        status = "error" if notion_errors or drive_errors else "ok"
+        status = "partial" if data.status == "partial" else "ok"
+        if status != "partial" and (notion_errors or drive_errors):
+            status = "error"
 
         summary = MasterIndexSummary(
             status=status,
@@ -328,6 +381,7 @@ class MasterIndexController:
             drive_output=None if dry_run else drive_path,
             notion_errors=notion_errors or None,
             drive_errors=drive_errors or None,
+            message=data.message,
         )
         self._append_log(summary)
         return summary.to_dict()
@@ -416,7 +470,8 @@ def collect_notion_pages(
     max_depth: int = 0,
     page_size: int = 100,
     limit: int = MAX_NOTION_ITEMS,
-) -> Tuple[List[Dict[str, str]], List[str]]:
+    limits: Optional[TraversalLimits] = None,
+) -> TraversalResult:
     from .notion.module import NotionAccessModule
 
     root_id_list = list(root_ids)
@@ -441,12 +496,48 @@ def collect_notion_pages(
         start_time = time.perf_counter()
         processed = 0
         progress_interval = 100
+        traversal_limits = limits or TraversalLimits()
         stats: dict[str, int | float] = {
             "requests": 0,
             "pages": 0,
             "blocks": 0,
             "started": time.perf_counter(),
         }
+        stop_reason: Optional[str] = None
+
+        def set_stop(reason: str) -> None:
+            nonlocal stop_reason
+            if not stop_reason:
+                stop_reason = reason
+
+        def check_limits() -> bool:
+            if stop_reason:
+                return True
+            if (
+                traversal_limits.max_seconds
+                and (time.perf_counter() - float(stats["started"])) > traversal_limits.max_seconds
+            ):
+                set_stop(
+                    f"Reached Notion max seconds ({traversal_limits.max_seconds})."
+                )
+                return True
+            if (
+                traversal_limits.max_requests is not None
+                and traversal_limits.max_requests > 0
+                and int(stats["requests"]) >= traversal_limits.max_requests
+            ):
+                set_stop(
+                    f"Reached Notion max requests ({traversal_limits.max_requests})."
+                )
+                return True
+            if (
+                traversal_limits.max_pages is not None
+                and traversal_limits.max_pages > 0
+                and int(stats["pages"]) >= traversal_limits.max_pages
+            ):
+                set_stop(f"Reached Notion max pages ({traversal_limits.max_pages}).")
+                return True
+            return False
 
         def log_progress(force: bool = False) -> None:
             requests = int(stats["requests"])
@@ -465,15 +556,26 @@ def collect_notion_pages(
                 )
 
         def page_done() -> None:
+            nonlocal stop_reason
             stats["pages"] += 1
             log_progress(force=True)
+            check_limits()
 
         try:
-            while queue and len(records) < limit:
+            while queue and len(records) < limit and not stop_reason:
                 page_id, depth, ancestors = queue.popleft()
                 if page_id in visited:
                     continue
                 visited.add(page_id)
+                if (
+                    traversal_limits.max_depth is not None
+                    and traversal_limits.max_depth > -1
+                    and depth > traversal_limits.max_depth
+                ):
+                    set_stop(f"Reached Notion max depth ({traversal_limits.max_depth}).")
+                    break
+                if check_limits():
+                    break
                 try:
                     page = client.pages_retrieve(page_id)
                 except NotionAPIError as exc:
@@ -492,6 +594,9 @@ def collect_notion_pages(
                             stats,
                             log_progress,
                             page_done,
+                            traversal_limits,
+                            check_limits,
+                            set_stop,
                         )
                         if handled:
                             continue
@@ -500,6 +605,9 @@ def collect_notion_pages(
                 finally:
                     stats["requests"] += 1
                     log_progress()
+                    check_limits()
+                    if stop_reason:
+                        break
 
                 title = _extract_page_title(page)
                 parent_path = "/" + "/".join(ancestors) if ancestors else "/"
@@ -520,9 +628,9 @@ def collect_notion_pages(
                             processed,
                             len(queue),
                             elapsed,
-                        ),
-                        flush=True,
-                    )
+                    ),
+                    flush=True,
+                )
 
                 if len(records) >= limit:
                     page_done()
@@ -535,6 +643,8 @@ def collect_notion_pages(
                 next_cursor: Optional[str] = None
                 seen_cursors: set[str] = set()
                 while True:
+                    if check_limits():
+                        break
                     try:
                         children = client.blocks_children_list(
                             page_id,
@@ -547,6 +657,9 @@ def collect_notion_pages(
                     finally:
                         stats["requests"] += 1
                         log_progress()
+                        check_limits()
+                        if stop_reason:
+                            break
 
                     results = children.get("results", [])
                     stats["blocks"] += len(results)
@@ -558,6 +671,15 @@ def collect_notion_pages(
                         child_id = block.get("id")
                         if block_type == "child_page" and child_id:
                             next_path = ancestors + [_sanitize_segment(title or "(untitled)")]
+                            if (
+                                traversal_limits.max_depth is not None
+                                and traversal_limits.max_depth > -1
+                                and depth + 1 > traversal_limits.max_depth
+                            ):
+                                set_stop(
+                                    f"Reached Notion max depth ({traversal_limits.max_depth})."
+                                )
+                                break
                             queue.append((child_id, depth + 1, next_path))
                         elif block_type == "link_to_page":
                             target = block.get("link_to_page", {})
@@ -565,6 +687,15 @@ def collect_notion_pages(
                                 target_id = target.get("page_id")
                                 if target_id and target_id not in visited:
                                     next_path = ancestors + [_sanitize_segment(title or "(untitled)")]
+                                    if (
+                                        traversal_limits.max_depth is not None
+                                        and traversal_limits.max_depth > -1
+                                        and depth + 1 > traversal_limits.max_depth
+                                    ):
+                                        set_stop(
+                                            f"Reached Notion max depth ({traversal_limits.max_depth})."
+                                        )
+                                        break
                                     queue.append((target_id, depth + 1, next_path))
                     if not children.get("has_more"):
                         break
@@ -578,12 +709,17 @@ def collect_notion_pages(
                         break
                     seen_cursors.add(cursor_value)
                     next_cursor = cursor_value
+                    if check_limits():
+                        break
                 page_done()
+                if stop_reason:
+                    break
         except Exception:
             logger.exception("notion traversal failed", extra={"root_ids": root_id_list})
             raise
 
-        return records[:limit], errors
+        partial = bool(stop_reason)
+        return TraversalResult(records=records[:limit], errors=errors, partial=partial, reason=stop_reason)
     finally:
         logging.debug(
             "notion.list_pages.done",
@@ -605,6 +741,9 @@ def _handle_database_root(
     stats: dict[str, int | float],
     log_progress: Callable[..., None],
     page_done: Callable[[], None],
+    limits: TraversalLimits,
+    check_limits: Callable[[], bool],
+    set_stop: Callable[[str], None],
 ) -> bool:
     from .notion.api import NotionAPIError as _NotionAPIError
 
@@ -621,6 +760,8 @@ def _handle_database_root(
     finally:
         stats["requests"] += 1
         log_progress()
+        if check_limits():
+            return True
 
     title = _join_rich_text(database.get("title", [])) if isinstance(database, dict) else ""
     database_title = title or "(untitled)"
@@ -664,6 +805,8 @@ def _handle_database_root(
         finally:
             stats["requests"] += 1
             log_progress()
+            if check_limits():
+                break
 
         for item in response.get("results", []):
             if not isinstance(item, dict):
@@ -671,6 +814,13 @@ def _handle_database_root(
             child_id = item.get("id")
             if not child_id:
                 continue
+            if (
+                limits.max_depth is not None
+                and limits.max_depth > -1
+                and depth + 1 > limits.max_depth
+            ):
+                set_stop(f"Reached Notion max depth ({limits.max_depth}).")
+                break
             queue.append((child_id, depth + 1, base_path))
 
         if not response.get("has_more"):
@@ -714,6 +864,7 @@ def _join_rich_text(rich_text: Iterable[Dict[str, object]]) -> str:
 # Google Drive helpers
 
 
+
 def collect_drive_files(
     drive_module: "GoogleDriveModule",
     root_ids: Sequence[str],
@@ -722,7 +873,8 @@ def collect_drive_files(
     max_depth: int = 0,
     page_size: int = 200,
     limit: int = MAX_DRIVE_ITEMS,
-) -> Tuple[List[Dict[str, str]], List[str]]:
+    limits: Optional[TraversalLimits] = None,
+) -> TraversalResult:
     from .modules.google_drive import GoogleDriveModule
 
     root_id_list = list(root_ids)
@@ -730,15 +882,16 @@ def collect_drive_files(
     logging.debug("drive.list_files.start", extra={"root_ids": root_id_list})
     try:
         if not isinstance(drive_module, GoogleDriveModule):
-            return [], ["Google Drive module unavailable"]
+            return TraversalResult(records=[], errors=["Google Drive module unavailable"])
 
         service, error = drive_module.ensure_service()
         if not service:
-            return [], [error or "Google Drive service unavailable"]
+            return TraversalResult(records=[], errors=[error or "Google Drive service unavailable"])
 
         whitelist = {value for value in mime_whitelist or [] if value}
         depth_limit = max_depth if max_depth and max_depth > 0 else None
         size = page_size if page_size and page_size > 0 else 200
+        traversal_limits = limits or TraversalLimits()
 
         queue: deque[Tuple[str, int, List[str]]] = deque()
         for root in root_id_list:
@@ -751,13 +904,58 @@ def collect_drive_files(
         shortcut_cache: Dict[str, Dict[str, object]] = {}
         start_time = time.perf_counter()
         processed = 0
-        progress_interval = 200
+        progress_interval = 100
+        stats: dict[str, int | float] = {
+            "requests": 0,
+            "pages": 0,
+            "started": time.perf_counter(),
+        }
+        stop_reason: Optional[str] = None
 
-        while queue and len(records) < limit:
+        def set_stop(reason: str) -> None:
+            nonlocal stop_reason
+            if not stop_reason:
+                stop_reason = reason
+
+        def check_limits() -> bool:
+            if stop_reason:
+                return True
+            if (
+                traversal_limits.max_seconds
+                and (time.perf_counter() - float(stats["started"])) > traversal_limits.max_seconds
+            ):
+                set_stop(f"Reached Drive max seconds ({traversal_limits.max_seconds}).")
+                return True
+            if (
+                traversal_limits.max_requests is not None
+                and traversal_limits.max_requests > 0
+                and int(stats["requests"]) >= traversal_limits.max_requests
+            ):
+                set_stop(f"Reached Drive max requests ({traversal_limits.max_requests}).")
+                return True
+            if (
+                traversal_limits.max_pages is not None
+                and traversal_limits.max_pages > 0
+                and int(stats["pages"]) >= traversal_limits.max_pages
+            ):
+                set_stop(f"Reached Drive max pages ({traversal_limits.max_pages}).")
+                return True
+            return False
+
+        while queue and len(records) < limit and not stop_reason:
             file_id, depth, ancestors = queue.popleft()
             if not file_id or file_id in visited:
                 continue
             visited.add(file_id)
+            if (
+                traversal_limits.max_depth is not None
+                and traversal_limits.max_depth > -1
+                and depth > traversal_limits.max_depth
+            ):
+                set_stop(f"Reached Drive max depth ({traversal_limits.max_depth}).")
+                break
+            if check_limits():
+                break
             try:
                 metadata = (
                     service.files()
@@ -771,6 +969,10 @@ def collect_drive_files(
             except Exception as exc:  # pragma: no cover - network dependent
                 errors.append(_format_drive_error(file_id, exc))
                 continue
+            finally:
+                stats["requests"] += 1
+                if check_limits():
+                    break
 
             if metadata.get("trashed"):
                 continue
@@ -816,6 +1018,8 @@ def collect_drive_files(
                         "size": size_text,
                     }
                 )
+                stats["pages"] += 1
+                check_limits()
                 if len(records) >= limit:
                     break
                 processed += 1
@@ -837,6 +1041,8 @@ def collect_drive_files(
                 page_token: Optional[str] = None
                 seen_tokens: set[str] = set()
                 while True:
+                    if check_limits():
+                        break
                     try:
                         response = (
                             service.files()
@@ -856,9 +1062,20 @@ def collect_drive_files(
                     except Exception as exc:  # pragma: no cover - network dependent
                         errors.append(_format_drive_error(file_id, exc))
                         break
+                    finally:
+                        stats["requests"] += 1
+                        if check_limits():
+                            break
                     for child in response.get("files", []):
                         child_id = child.get("id")
                         if child_id:
+                            if (
+                                traversal_limits.max_depth is not None
+                                and traversal_limits.max_depth > -1
+                                and depth + 1 > traversal_limits.max_depth
+                            ):
+                                set_stop(f"Reached Drive max depth ({traversal_limits.max_depth}).")
+                                break
                             queue.append((child_id, depth + 1, path_segments))
                     token = response.get("nextPageToken")
                     if not token:
@@ -870,14 +1087,16 @@ def collect_drive_files(
                         break
                     seen_tokens.add(token)
                     page_token = token
+                    if check_limits():
+                        break
 
-        return records[:limit], errors
+        partial = bool(stop_reason)
+        return TraversalResult(records=records[:limit], errors=errors, partial=partial, reason=stop_reason)
     finally:
         logging.debug(
             "drive.list_files.done",
             extra={"ms": int((time.perf_counter() - timer_start) * 1000)},
         )
-
 
 def _resolve_shortcut(
     service: object,

@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 from ..controller import Controller
-from ..master_index_controller import MasterIndexController
+from ..master_index_controller import MasterIndexController, TraversalLimits
 from ..reporting import ActionResult, RunContext
 from .base import SimpleAction
 
@@ -35,7 +35,8 @@ class MasterIndexAction(SimpleAction):
     def run(self, controller: Controller, context: RunContext) -> ActionResult:
         plan_text = controller.build_plan(self.id)
         master = MasterIndexController(controller)
-        summary = master.run_master_index(dry_run=not context.apply)
+        limits = self._limits_from_context(context)
+        summary = master.run_master_index(dry_run=not context.apply, limits=limits)
 
         notion_count = int(summary.get("notion_count", 0))
         drive_count = int(summary.get("drive_count", 0))
@@ -110,10 +111,41 @@ class MasterIndexAction(SimpleAction):
 
         notes.append(f"Indexed Notion pages: {notion_count}")
         notes.append(f"Indexed Drive files: {drive_count}")
+        if message:
+            notes.append(f"Message: {message}")
 
         return ActionResult(
             plan_text=plan_text,
             changes=changes,
             errors=[],
             notes=notes,
+        )
+
+    def _limits_from_context(self, context: RunContext) -> Optional[TraversalLimits]:
+        options = getattr(context, "options", {}) or {}
+        if not options:
+            return None
+
+        def _positive(value: object, caster) -> Optional[float]:
+            if value is None:
+                return None
+            try:
+                numeric = caster(value)
+            except (TypeError, ValueError):
+                return None
+            return numeric if numeric > 0 else None
+
+        seconds = _positive(options.get("max_seconds"), float)
+        pages = _positive(options.get("max_pages"), int)
+        requests = _positive(options.get("max_requests"), int)
+        depth = _positive(options.get("max_depth"), int)
+
+        if not any(value is not None for value in (seconds, pages, requests, depth)):
+            return None
+
+        return TraversalLimits(
+            max_seconds=seconds,
+            max_pages=int(pages) if pages is not None else None,
+            max_requests=int(requests) if requests is not None else None,
+            max_depth=int(depth) if depth is not None else None,
         )
