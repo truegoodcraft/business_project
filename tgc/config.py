@@ -9,6 +9,16 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 
+from .integration_support import (
+    format_sheets_missing_env_message,
+    load_drive_module_config,
+    service_account_email,
+)
+
+
+_WARNED_CONFIG_KEYS: set[str] = set()
+
+
 @dataclass
 class NotionConfig:
     module_enabled: bool = False
@@ -119,6 +129,11 @@ class AppConfig:
         )
 
         sheets = GoogleSheetsConfig(inventory_sheet_id=_clean_env("SHEET_INVENTORY_ID"))
+        if not sheets.is_configured() and "sheets" not in _WARNED_CONFIG_KEYS:
+            module_config = load_drive_module_config(drive.module_config_path)
+            email = service_account_email(module_config)
+            print(format_sheets_missing_env_message(email))
+            _WARNED_CONFIG_KEYS.add("sheets")
         gmail = GmailConfig(query=_clean_env("GMAIL_QUERY"))
         wave = WaveConfig(
             graphql_token=_clean_env("WAVE_GRAPHQL_TOKEN"),

@@ -11,6 +11,11 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
+from .integration_support import (
+    format_drive_share_message,
+    is_drive_permission_error,
+    service_account_email,
+)
 from .notion.api import NotionAPIError
 from .util.stage import stage, stage_done
 from .util.watchdog import with_watchdog
@@ -980,6 +985,7 @@ def collect_drive_files(
         if not service:
             return TraversalResult(records=[], errors=[error or "Google Drive service unavailable"])
 
+        share_email = service_account_email(drive_module.config)
         whitelist = {value for value in mime_whitelist or [] if value}
         depth_limit = max_depth if max_depth and max_depth > 0 else None
         size = page_size if page_size and page_size > 0 else 200
@@ -1059,7 +1065,10 @@ def collect_drive_files(
                     .execute()
                 )
             except Exception as exc:  # pragma: no cover - network dependent
-                errors.append(_format_drive_error(file_id, exc))
+                if depth == 0 and is_drive_permission_error(exc):
+                    errors.append(format_drive_share_message(file_id, share_email))
+                else:
+                    errors.append(_format_drive_error(file_id, exc))
                 continue
             finally:
                 stats["requests"] += 1
