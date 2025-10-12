@@ -419,126 +419,135 @@ def collect_notion_pages(
 ) -> Tuple[List[Dict[str, str]], List[str]]:
     from .notion.module import NotionAccessModule
 
-    if not isinstance(notion_module, NotionAccessModule):
-        return [], ["Notion module unavailable"]
-    client, error = notion_module._build_client()  # type: ignore[attr-defined]
-    if not client:
-        return [], [error or "Notion client unavailable"]
-
-    queue: deque[Tuple[str, int, List[str]]] = deque()
-    for root in root_ids:
-        if root:
-            queue.append((root, 0, []))
-
-    visited: set[str] = set()
-    records: List[Dict[str, str]] = []
-    errors: List[str] = []
-    depth_limit = max_depth if max_depth and max_depth > 0 else None
-    start_time = time.perf_counter()
-    processed = 0
-    progress_interval = 100
-
+    root_id_list = list(root_ids)
+    timer_start = time.perf_counter()
+    logging.debug("notion.list_pages.start", extra={"root_ids": root_id_list})
     try:
-        while queue and len(records) < limit:
-            page_id, depth, ancestors = queue.popleft()
-            if page_id in visited:
-                continue
-            visited.add(page_id)
-            try:
-                page = client.pages_retrieve(page_id)
-            except NotionAPIError as exc:
-                if exc.status in {400, 404} or exc.code == "object_not_found":
-                    handled = _handle_database_root(
-                        client,
-                        page_id,
-                        depth,
-                        ancestors,
-                        queue,
-                        records,
-                        errors,
-                        limit,
-                        depth_limit,
-                        page_size,
-                    )
-                    if handled:
-                        continue
-                errors.append(f"Page {page_id}: {exc.message}")
-                continue
+        if not isinstance(notion_module, NotionAccessModule):
+            return [], ["Notion module unavailable"]
+        client, error = notion_module._build_client()  # type: ignore[attr-defined]
+        if not client:
+            return [], [error or "Notion client unavailable"]
 
-            title = _extract_page_title(page)
-            parent_path = "/" + "/".join(ancestors) if ancestors else "/"
-            records.append(
-                {
-                    "title": title or "(untitled)",
-                    "page_id": page.get("id", page_id),
-                    "url": page.get("url", ""),
-                    "parent": parent_path,
-                    "last_edited": page.get("last_edited_time", ""),
-                }
-            )
-            processed += 1
-            if processed % progress_interval == 0:
-                elapsed = time.perf_counter() - start_time
-                print(
-                    "  Processed {} Notion page(s) so far (queue: {}, elapsed: {:.1f}s)".format(
-                        processed,
-                        len(queue),
-                        elapsed,
-                    ),
-                    flush=True,
-                )
+        queue: deque[Tuple[str, int, List[str]]] = deque()
+        for root in root_id_list:
+            if root:
+                queue.append((root, 0, []))
 
-            if len(records) >= limit:
-                break
+        visited: set[str] = set()
+        records: List[Dict[str, str]] = []
+        errors: List[str] = []
+        depth_limit = max_depth if max_depth and max_depth > 0 else None
+        start_time = time.perf_counter()
+        processed = 0
+        progress_interval = 100
 
-            if depth_limit is not None and depth >= depth_limit:
-                continue
-
-            next_cursor: Optional[str] = None
-            seen_cursors: set[str] = set()
-            while True:
+        try:
+            while queue and len(records) < limit:
+                page_id, depth, ancestors = queue.popleft()
+                if page_id in visited:
+                    continue
+                visited.add(page_id)
                 try:
-                    children = client.blocks_children_list(
-                        page_id,
-                        page_size=min(page_size, 100),
-                        start_cursor=next_cursor,
-                    )
+                    page = client.pages_retrieve(page_id)
                 except NotionAPIError as exc:
-                    errors.append(f"Children {page_id}: {exc.message}")
-                    break
+                    if exc.status in {400, 404} or exc.code == "object_not_found":
+                        handled = _handle_database_root(
+                            client,
+                            page_id,
+                            depth,
+                            ancestors,
+                            queue,
+                            records,
+                            errors,
+                            limit,
+                            depth_limit,
+                            page_size,
+                        )
+                        if handled:
+                            continue
+                    errors.append(f"Page {page_id}: {exc.message}")
+                    continue
 
-                for block in children.get("results", []):
-                    if not isinstance(block, dict):
-                        continue
-                    block_type = block.get("type")
-                    child_id = block.get("id")
-                    if block_type == "child_page" and child_id:
-                        next_path = ancestors + [_sanitize_segment(title or "(untitled)")]
-                        queue.append((child_id, depth + 1, next_path))
-                    elif block_type == "link_to_page":
-                        target = block.get("link_to_page", {})
-                        if isinstance(target, dict) and target.get("type") == "page_id":
-                            target_id = target.get("page_id")
-                            if target_id:
-                                next_path = ancestors + [_sanitize_segment(title or "(untitled)")]
-                                queue.append((target_id, depth + 1, next_path))
-                if not children.get("has_more"):
-                    break
-                cursor_value = children.get("next_cursor")
-                if not cursor_value:
-                    break
-                if cursor_value in seen_cursors:
-                    errors.append(
-                        f"Page {page_id}: detected repeated pagination cursor; aborting traversal."
+                title = _extract_page_title(page)
+                parent_path = "/" + "/".join(ancestors) if ancestors else "/"
+                records.append(
+                    {
+                        "title": title or "(untitled)",
+                        "page_id": page.get("id", page_id),
+                        "url": page.get("url", ""),
+                        "parent": parent_path,
+                        "last_edited": page.get("last_edited_time", ""),
+                    }
+                )
+                processed += 1
+                if processed % progress_interval == 0:
+                    elapsed = time.perf_counter() - start_time
+                    print(
+                        "  Processed {} Notion page(s) so far (queue: {}, elapsed: {:.1f}s)".format(
+                            processed,
+                            len(queue),
+                            elapsed,
+                        ),
+                        flush=True,
                     )
-                    break
-                seen_cursors.add(cursor_value)
-                next_cursor = cursor_value
-    except Exception:
-        logger.exception("notion traversal failed", extra={"root_ids": list(root_ids)})
-        raise
 
-    return records[:limit], errors
+                if len(records) >= limit:
+                    break
+
+                if depth_limit is not None and depth >= depth_limit:
+                    continue
+
+                next_cursor: Optional[str] = None
+                seen_cursors: set[str] = set()
+                while True:
+                    try:
+                        children = client.blocks_children_list(
+                            page_id,
+                            page_size=min(page_size, 100),
+                            start_cursor=next_cursor,
+                        )
+                    except NotionAPIError as exc:
+                        errors.append(f"Children {page_id}: {exc.message}")
+                        break
+
+                    for block in children.get("results", []):
+                        if not isinstance(block, dict):
+                            continue
+                        block_type = block.get("type")
+                        child_id = block.get("id")
+                        if block_type == "child_page" and child_id:
+                            next_path = ancestors + [_sanitize_segment(title or "(untitled)")]
+                            queue.append((child_id, depth + 1, next_path))
+                        elif block_type == "link_to_page":
+                            target = block.get("link_to_page", {})
+                            if isinstance(target, dict) and target.get("type") == "page_id":
+                                target_id = target.get("page_id")
+                                if target_id and target_id not in visited:
+                                    next_path = ancestors + [_sanitize_segment(title or "(untitled)")]
+                                    queue.append((target_id, depth + 1, next_path))
+                    if not children.get("has_more"):
+                        break
+                    cursor_value = children.get("next_cursor")
+                    if not cursor_value:
+                        break
+                    if cursor_value in seen_cursors:
+                        errors.append(
+                            f"Page {page_id}: detected repeated pagination cursor; aborting traversal."
+                        )
+                        break
+                    seen_cursors.add(cursor_value)
+                    next_cursor = cursor_value
+        except Exception:
+            logger.exception("notion traversal failed", extra={"root_ids": root_id_list})
+            raise
+
+        return records[:limit], errors
+    finally:
+        logging.debug(
+            "notion.list_pages.done",
+            extra={"ms": int((time.perf_counter() - timer_start) * 1000)},
+        )
 
 
 def _handle_database_root(
@@ -663,149 +672,158 @@ def collect_drive_files(
 ) -> Tuple[List[Dict[str, str]], List[str]]:
     from .modules.google_drive import GoogleDriveModule
 
-    if not isinstance(drive_module, GoogleDriveModule):
-        return [], ["Google Drive module unavailable"]
+    root_id_list = list(root_ids)
+    timer_start = time.perf_counter()
+    logging.debug("drive.list_files.start", extra={"root_ids": root_id_list})
+    try:
+        if not isinstance(drive_module, GoogleDriveModule):
+            return [], ["Google Drive module unavailable"]
 
-    service, error = drive_module.ensure_service()
-    if not service:
-        return [], [error or "Google Drive service unavailable"]
+        service, error = drive_module.ensure_service()
+        if not service:
+            return [], [error or "Google Drive service unavailable"]
 
-    whitelist = {value for value in mime_whitelist or [] if value}
-    depth_limit = max_depth if max_depth and max_depth > 0 else None
-    size = page_size if page_size and page_size > 0 else 200
+        whitelist = {value for value in mime_whitelist or [] if value}
+        depth_limit = max_depth if max_depth and max_depth > 0 else None
+        size = page_size if page_size and page_size > 0 else 200
 
-    queue: deque[Tuple[str, int, List[str]]] = deque()
-    for root in root_ids:
-        if root:
-            queue.append((root, 0, []))
+        queue: deque[Tuple[str, int, List[str]]] = deque()
+        for root in root_id_list:
+            if root:
+                queue.append((root, 0, []))
 
-    visited: set[str] = set()
-    records: List[Dict[str, str]] = []
-    errors: List[str] = []
-    shortcut_cache: Dict[str, Dict[str, object]] = {}
-    start_time = time.perf_counter()
-    processed = 0
-    progress_interval = 200
+        visited: set[str] = set()
+        records: List[Dict[str, str]] = []
+        errors: List[str] = []
+        shortcut_cache: Dict[str, Dict[str, object]] = {}
+        start_time = time.perf_counter()
+        processed = 0
+        progress_interval = 200
 
-    while queue and len(records) < limit:
-        file_id, depth, ancestors = queue.popleft()
-        if not file_id or file_id in visited:
-            continue
-        visited.add(file_id)
-        try:
-            metadata = (
-                service.files()
-                .get(
-                    fileId=file_id,
-                    fields="id,name,mimeType,parents,modifiedTime,size,webViewLink,shortcutDetails,trashed",
-                    supportsAllDrives=True,
-                )
-                .execute()
-            )
-        except Exception as exc:  # pragma: no cover - network dependent
-            errors.append(_format_drive_error(file_id, exc))
-            continue
-
-        if metadata.get("trashed"):
-            continue
-
-        name = metadata.get("name") or "(untitled)"
-        path_segments = ancestors + [_sanitize_segment(name)]
-        path_value = "/".join(segment for segment in path_segments if segment)
-
-        shortcut_details = metadata.get("shortcutDetails")
-        path_or_link = path_value
-        if isinstance(shortcut_details, dict):
-            target_id = shortcut_details.get("targetId")
-            if target_id:
-                target = _resolve_shortcut(service, target_id, shortcut_cache, errors)
-                if target:
-                    metadata.setdefault("mimeType", target.get("mimeType"))
-                    metadata.setdefault("modifiedTime", target.get("modifiedTime"))
-                    metadata.setdefault("size", target.get("size"))
-                    metadata.setdefault("webViewLink", target.get("webViewLink"))
-                    target_label = target.get("webViewLink") or target.get("name") or target_id
-                else:
-                    target_label = target_id
-                path_or_link = f"{path_value} → {target_label}"
-                if target_id not in visited:
-                    queue.append((target_id, depth, ancestors))
-
-        mime_type = metadata.get("mimeType") or ""
-        include_record = True
-        if whitelist and mime_type != "application/vnd.google-apps.folder":
-            include_record = mime_type in whitelist
-
-        if include_record:
-            size_value = metadata.get("size")
-            size_text = "" if size_value in (None, "") else str(size_value)
-            modified = metadata.get("modifiedTime") or ""
-            records.append(
-                {
-                    "name": name,
-                    "file_id": metadata.get("id", file_id),
-                    "path_or_link": path_or_link,
-                    "mimeType": mime_type,
-                    "modifiedTime": modified,
-                    "size": size_text,
-                }
-            )
-            if len(records) >= limit:
-                break
-            processed += 1
-            if processed % progress_interval == 0:
-                elapsed = time.perf_counter() - start_time
-                print(
-                    "  Processed {} Drive file(s) so far (queue: {}, elapsed: {:.1f}s)".format(
-                        processed,
-                        len(queue),
-                        elapsed,
-                    ),
-                    flush=True,
-                )
-
-        if mime_type == "application/vnd.google-apps.folder":
-            if depth_limit is not None and depth >= depth_limit:
+        while queue and len(records) < limit:
+            file_id, depth, ancestors = queue.popleft()
+            if not file_id or file_id in visited:
                 continue
-            query = f"'{file_id}' in parents and trashed = false"
-            page_token: Optional[str] = None
-            seen_tokens: set[str] = set()
-            while True:
-                try:
-                    response = (
-                        service.files()
-                        .list(
-                            q=query,
-                            includeItemsFromAllDrives=drive_module.config.include_shared_drives,
-                            supportsAllDrives=True,
-                            corpora="allDrives"
-                            if drive_module.config.include_shared_drives
-                            else "default",
-                            pageSize=size,
-                            pageToken=page_token,
-                            fields="nextPageToken, files(id)",
-                        )
-                        .execute()
+            visited.add(file_id)
+            try:
+                metadata = (
+                    service.files()
+                    .get(
+                        fileId=file_id,
+                        fields="id,name,mimeType,parents,modifiedTime,size,webViewLink,shortcutDetails,trashed",
+                        supportsAllDrives=True,
                     )
-                except Exception as exc:  # pragma: no cover - network dependent
-                    errors.append(_format_drive_error(file_id, exc))
-                    break
-                for child in response.get("files", []):
-                    child_id = child.get("id")
-                    if child_id:
-                        queue.append((child_id, depth + 1, path_segments))
-                token = response.get("nextPageToken")
-                if not token:
-                    break
-                if token in seen_tokens:
-                    errors.append(
-                        f"Drive {file_id}: detected repeated pagination token; aborting traversal."
-                    )
-                    break
-                seen_tokens.add(token)
-                page_token = token
+                    .execute()
+                )
+            except Exception as exc:  # pragma: no cover - network dependent
+                errors.append(_format_drive_error(file_id, exc))
+                continue
 
-    return records[:limit], errors
+            if metadata.get("trashed"):
+                continue
+
+            name = metadata.get("name") or "(untitled)"
+            path_segments = ancestors + [_sanitize_segment(name)]
+            path_value = "/".join(segment for segment in path_segments if segment)
+
+            shortcut_details = metadata.get("shortcutDetails")
+            path_or_link = path_value
+            if isinstance(shortcut_details, dict):
+                target_id = shortcut_details.get("targetId")
+                if target_id:
+                    target = _resolve_shortcut(service, target_id, shortcut_cache, errors)
+                    if target:
+                        metadata.setdefault("mimeType", target.get("mimeType"))
+                        metadata.setdefault("modifiedTime", target.get("modifiedTime"))
+                        metadata.setdefault("size", target.get("size"))
+                        metadata.setdefault("webViewLink", target.get("webViewLink"))
+                        target_label = target.get("webViewLink") or target.get("name") or target_id
+                    else:
+                        target_label = target_id
+                    path_or_link = f"{path_value} → {target_label}"
+                    if target_id not in visited:
+                        queue.append((target_id, depth, ancestors))
+
+            mime_type = metadata.get("mimeType") or ""
+            include_record = True
+            if whitelist and mime_type != "application/vnd.google-apps.folder":
+                include_record = mime_type in whitelist
+
+            if include_record:
+                size_value = metadata.get("size")
+                size_text = "" if size_value in (None, "") else str(size_value)
+                modified = metadata.get("modifiedTime") or ""
+                records.append(
+                    {
+                        "name": name,
+                        "file_id": metadata.get("id", file_id),
+                        "path_or_link": path_or_link,
+                        "mimeType": mime_type,
+                        "modifiedTime": modified,
+                        "size": size_text,
+                    }
+                )
+                if len(records) >= limit:
+                    break
+                processed += 1
+                if processed % progress_interval == 0:
+                    elapsed = time.perf_counter() - start_time
+                    print(
+                        "  Processed {} Drive file(s) so far (queue: {}, elapsed: {:.1f}s)".format(
+                            processed,
+                            len(queue),
+                            elapsed,
+                        ),
+                        flush=True,
+                    )
+
+            if mime_type == "application/vnd.google-apps.folder":
+                if depth_limit is not None and depth >= depth_limit:
+                    continue
+                query = f"'{file_id}' in parents and trashed = false"
+                page_token: Optional[str] = None
+                seen_tokens: set[str] = set()
+                while True:
+                    try:
+                        response = (
+                            service.files()
+                            .list(
+                                q=query,
+                                includeItemsFromAllDrives=drive_module.config.include_shared_drives,
+                                supportsAllDrives=True,
+                                corpora="allDrives"
+                                if drive_module.config.include_shared_drives
+                                else "default",
+                                pageSize=size,
+                                pageToken=page_token,
+                                fields="nextPageToken, files(id)",
+                            )
+                            .execute()
+                        )
+                    except Exception as exc:  # pragma: no cover - network dependent
+                        errors.append(_format_drive_error(file_id, exc))
+                        break
+                    for child in response.get("files", []):
+                        child_id = child.get("id")
+                        if child_id:
+                            queue.append((child_id, depth + 1, path_segments))
+                    token = response.get("nextPageToken")
+                    if not token:
+                        break
+                    if token in seen_tokens:
+                        errors.append(
+                            f"Drive {file_id}: detected repeated pagination token; aborting traversal."
+                        )
+                        break
+                    seen_tokens.add(token)
+                    page_token = token
+
+        return records[:limit], errors
+    finally:
+        logging.debug(
+            "drive.list_files.done",
+            extra={"ms": int((time.perf_counter() - timer_start) * 1000)},
+        )
 
 
 def _resolve_shortcut(

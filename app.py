@@ -39,7 +39,11 @@ def main() -> None:
         action="store_true",
         help="Build the Master Index in memory and print it as JSON",
     )
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     args = parser.parse_args()
+
+    if args.debug:
+        logging.getLogger().setLevel(logging.DEBUG)
 
     if args.init_org:
         configure_profile_interactive()
