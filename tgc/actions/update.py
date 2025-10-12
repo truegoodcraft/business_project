@@ -17,7 +17,7 @@ from .base import SimpleAction
 class UpdateAction(SimpleAction):
     """Pull the latest changes from the tracked Git remote."""
 
-    id: str = "0"
+    id: str = "U"
     name: str = "Update from repository"
     description: str = "Fetch and merge the latest code without leaving the session"
 

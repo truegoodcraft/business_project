@@ -6,6 +6,7 @@ from typing import Callable, Dict, Optional
 
 from .controller import Controller
 from .master_index_controller import MasterIndexController
+from .health import format_health_table, system_health
 from .util.serialization import safe_serialize
 
 
@@ -22,6 +23,11 @@ def run_cli(controller: Controller) -> None:
     print("Type the menu number to continue, or 'q' to quit.\n")
 
     advanced_options: Dict[str, tuple[str, str, Callable[[Controller], None]]] = {
+        "0": (
+            "System Check",
+            "Validate credentials and show READY/MISSING status",
+            _run_system_check,
+        ),
         "13": (
             "Print Master Index (debug)",
             "Build the Master Index snapshot and dump it as JSON",
@@ -30,10 +36,10 @@ def run_cli(controller: Controller) -> None:
     }
 
     while True:
-        for action in controller.available_actions():
-            print(f"{action.id}) {action.name} — {action.description}")
         for key, (name, description, _) in advanced_options.items():
             print(f"{key}) {name} — {description}")
+        for action in controller.available_actions():
+            print(f"{action.id}) {action.name} — {action.description}")
         choice = input("Select an option (or q to quit): ").strip()
         if choice.lower() in {"q", "quit", "exit"}:
             print("Goodbye!")
@@ -77,3 +83,8 @@ def _print_master_index_snapshot(controller: Controller) -> None:
     master = MasterIndexController(controller)
     snapshot = master.build_index_snapshot()
     print(safe_serialize(snapshot))
+
+
+def _run_system_check(_: Controller) -> None:
+    checks, _ = system_health()
+    print(format_health_table(checks))
