@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Callable, Dict, Iterable, List, Optional, Sequ
 from .notion.api import NotionAPIError
 from .util.stage import stage, stage_done
 from .util.watchdog import with_watchdog
+from .reporting import write_drive_files_markdown
 
 try:  # Optional Google dependencies are managed by the Drive module
     from googleapiclient.errors import HttpError
@@ -92,6 +93,7 @@ class MasterIndexSummary:
     output_dir: Optional[Path] = None
     notion_output: Optional[Path] = None
     drive_output: Optional[Path] = None
+    drive_outputs: Optional[List[Path]] = None
     notion_errors: Optional[List[str]] = None
     drive_errors: Optional[List[str]] = None
     message: Optional[str] = None
@@ -105,6 +107,7 @@ class MasterIndexSummary:
             "output_dir": str(self.output_dir) if self.output_dir else None,
             "notion_output": str(self.notion_output) if self.notion_output else None,
             "drive_output": str(self.drive_output) if self.drive_output else None,
+            "drive_outputs": [str(path) for path in self.drive_outputs or []],
             "notion_errors": list(self.notion_errors or []),
             "drive_errors": list(self.drive_errors or []),
             "message": self.message,
@@ -388,21 +391,27 @@ class MasterIndexController:
         timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
         output_dir = Path("docs") / "master_index_reports" / f"master_index_{timestamp}"
         notion_path = output_dir / "notion_pages.md"
-        drive_path = output_dir / "drive_files.md"
-
         notion_markdown = render_markdown(
             notion_records, "Master Index — Notion Pages", NOTION_COLUMNS, data.generated_at
-        )
-        drive_markdown = render_markdown(
-            drive_records, "Master Index — Drive Files", DRIVE_COLUMNS, data.generated_at
         )
 
         notion_errors = list(data.notion_errors)
         drive_errors = list(data.drive_errors)
+        drive_paths: List[Path] = []
 
         if dry_run:
             print(f"[dry-run] Would write Notion index to: {notion_path}", flush=True)
-            print(f"[dry-run] Would write Drive index to: {drive_path}", flush=True)
+            drive_chunks = (len(drive_records) + 4_999) // 5_000
+            if drive_chunks <= 1:
+                print(
+                    f"[dry-run] Would write Drive index to: {output_dir / 'drive_files.md'}",
+                    flush=True,
+                )
+            else:
+                print(
+                    f"[dry-run] Would write Drive index chunks ({drive_chunks}) in: {output_dir}",
+                    flush=True,
+                )
         else:
             try:
                 output_dir.mkdir(parents=True, exist_ok=True)
@@ -416,7 +425,7 @@ class MasterIndexController:
                 except OSError as exc:
                     notion_errors.append(f"Failed to write Notion index: {exc}")
                 try:
-                    drive_path.write_text(drive_markdown, encoding="utf-8")
+                    drive_paths = write_drive_files_markdown(output_dir, drive_records)
                 except OSError as exc:
                     drive_errors.append(f"Failed to write Drive index: {exc}")
 
@@ -431,7 +440,8 @@ class MasterIndexController:
             drive_count=len(drive_records),
             output_dir=output_dir,
             notion_output=None if dry_run else notion_path,
-            drive_output=None if dry_run else drive_path,
+            drive_output=None if dry_run else (drive_paths[0] if drive_paths else None),
+            drive_outputs=None if dry_run else (drive_paths or None),
             notion_errors=notion_errors or None,
             drive_errors=drive_errors or None,
             message=data.message,
@@ -1090,6 +1100,10 @@ def collect_drive_files(
                 size_value = metadata.get("size")
                 size_text = "" if size_value in (None, "") else str(size_value)
                 modified = metadata.get("modifiedTime") or ""
+                parents = [str(value) for value in metadata.get("parents", []) if value]
+                shortcut_target = ""
+                if isinstance(shortcut_details, dict):
+                    shortcut_target = str(shortcut_details.get("targetId", "") or "")
                 records.append(
                     {
                         "name": name,
@@ -1098,6 +1112,11 @@ def collect_drive_files(
                         "mimeType": mime_type,
                         "modifiedTime": modified,
                         "size": size_text,
+                        "parent_ids": parents,
+                        "parents": parents,
+                        "shortcut_target": shortcut_target,
+                        "shortcutDetails": shortcut_details if isinstance(shortcut_details, dict) else None,
+                        "is_shortcut": bool(shortcut_details),
                     }
                 )
                 stats["pages"] += 1

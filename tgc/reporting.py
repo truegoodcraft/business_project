@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, Iterable, List, Mapping, Optional, Sequence
 
 
 @dataclass
@@ -73,3 +73,120 @@ class ActionResult:
             output.append("\nNotes:")
             output.extend(f"  - {line}" for line in self.notes)
         return "\n".join(output)
+
+
+def write_drive_files_markdown(output_dir: Path, rows: Sequence[Mapping[str, object]]) -> List[Path]:
+    """Write Drive file metadata as Markdown table(s).
+
+    The rows are sorted by ``modifiedTime`` descending and then ``name`` ascending.
+    Large datasets are split into 5,000-row chunks to keep each Markdown file
+    responsive. Chunked files are named ``drive_files_1.md``, ``drive_files_2.md``,
+    and so on, while smaller datasets use ``drive_files.md``.
+    """
+
+    def _parse_modified(value: object) -> float:
+        if isinstance(value, str) and value:
+            text = value.strip()
+            if text.endswith("Z"):
+                text = text[:-1] + "+00:00"
+            try:
+                return datetime.fromisoformat(text).timestamp()
+            except (ValueError, OSError):
+                return float("-inf")
+        return float("-inf")
+
+    def _stringify(value: object) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, bool):
+            return "yes" if value else ""
+        if isinstance(value, (list, tuple, set)):
+            parts = [str(item) for item in value if item not in (None, "")]
+            return ", ".join(parts)
+        if isinstance(value, Mapping):
+            target = value.get("targetId") or value.get("id")
+            return str(target) if target else ""
+        return str(value)
+
+    def _resolve_shortcut(row: Mapping[str, object]) -> str:
+        shortcut = row.get("shortcut_target") or row.get("shortcutTargetId") or row.get("shortcut")
+        if not shortcut:
+            details = row.get("shortcut_details") or row.get("shortcutDetails")
+            if isinstance(details, Mapping):
+                shortcut = details.get("targetId") or details.get("id")
+        if not shortcut:
+            if row.get("is_shortcut"):
+                return "yes"
+            return ""
+        return _stringify(shortcut)
+
+    def _escape(value: str) -> str:
+        return value.replace("|", r"\|").replace("\n", " ").strip()
+
+    normalised: List[Dict[str, object]] = []
+    for row in rows:
+        if isinstance(row, Mapping):
+            normalised.append(dict(row))
+        else:  # pragma: no cover - defensive conversion
+            try:
+                normalised.append(dict(row))
+            except Exception:
+                continue
+
+    sorted_rows = sorted(
+        normalised,
+        key=lambda item: (
+            -_parse_modified(item.get("modifiedTime") or item.get("modified")),
+            (str(item.get("name") or item.get("Name") or "").casefold()),
+            str(item.get("name") or item.get("Name") or ""),
+        ),
+    )
+
+    total = len(sorted_rows)
+    chunk_size = 5_000
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    def _render_chunk(chunk_rows: Sequence[Mapping[str, object]]) -> str:
+        lines = ["# Master Index — Drive Files", "", f"Total: {total}", ""]
+        lines.append("| Name | Type | Size | Modified | ID | Shortcut | ParentIDs |")
+        lines.append("| --- | --- | --- | --- | --- | --- | --- |")
+        for row in chunk_rows:
+            name = _escape(
+                _stringify(row.get("name") or row.get("Name") or row.get("title"))
+            )
+            mime = _escape(_stringify(row.get("mimeType") or row.get("type")))
+            size = _escape(_stringify(row.get("size")))
+            modified = _escape(
+                _stringify(row.get("modifiedTime") or row.get("modified"))
+            )
+            identifier = _escape(_stringify(row.get("id") or row.get("file_id")))
+            shortcut = _escape(_resolve_shortcut(row))
+            parents = _escape(
+                _stringify(
+                    row.get("parent_ids")
+                    or row.get("parentIds")
+                    or row.get("parentIDs")
+                    or row.get("parents")
+                )
+            )
+            lines.append(
+                "| "
+                + " | ".join([name, mime, size, modified, identifier, shortcut, parents])
+                + " |"
+            )
+        return "\n".join(lines) + "\n"
+
+    paths: List[Path] = []
+    if total <= chunk_size:
+        path = output_dir / "drive_files.md"
+        path.write_text(_render_chunk(sorted_rows), encoding="utf-8")
+        paths.append(path)
+        return paths
+
+    for index in range(0, total, chunk_size):
+        chunk_rows = sorted_rows[index : index + chunk_size]
+        chunk_index = index // chunk_size + 1
+        path = output_dir / f"drive_files_{chunk_index}.md"
+        path.write_text(_render_chunk(chunk_rows), encoding="utf-8")
+        paths.append(path)
+    return paths
