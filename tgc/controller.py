@@ -36,6 +36,7 @@ class Controller:
     reports_root: Path = Path("reports")
     actions: Dict[str, ControllerAction] = field(default_factory=dict)
     modules: Dict[str, object] = field(default_factory=dict)
+    runtime_limits: Dict[str, object] = field(default_factory=dict)
 
     def register_action(self, action: ControllerAction) -> None:
         if action.id in self.actions:

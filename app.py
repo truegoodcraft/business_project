@@ -67,6 +67,11 @@ def main() -> None:
         type=int,
         help="Stop traversal after this depth",
     )
+    parser.add_argument(
+        "--max-rows",
+        type=int,
+        help="Stop Sheets reads after this many rows",
+    )
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     parser.add_argument("--quiet", action="store_true", help="Suppress informational logging")
     args = parser.parse_args()
@@ -103,9 +108,11 @@ def main() -> None:
         return numeric if numeric > 0 else None
 
     limit_kwargs: Dict[str, float | int] = {}
+    runtime_limits: Dict[str, float | int] = {}
     seconds_value = _positive(args.max_seconds)
     if seconds_value is not None:
         limit_kwargs["max_seconds"] = seconds_value
+        runtime_limits["max_seconds"] = seconds_value
     pages_value = _positive(args.max_pages)
     if pages_value is not None:
         limit_kwargs["max_pages"] = int(pages_value)
@@ -115,6 +122,10 @@ def main() -> None:
     depth_value = _positive(args.max_depth)
     if depth_value is not None:
         limit_kwargs["max_depth"] = int(depth_value)
+    rows_value = _positive(args.max_rows)
+    if rows_value is not None:
+        runtime_limits["max_rows"] = int(rows_value)
+    controller.runtime_limits = runtime_limits
     traversal_limits = TraversalLimits(**limit_kwargs) if limit_kwargs else None
 
     if args.update:

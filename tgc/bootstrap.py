@@ -54,7 +54,11 @@ def _build_adapters(config: AppConfig, drive_module_config: DriveModuleConfig) -
     return {
         "notion": NotionAdapter(config.notion),
         "drive": GoogleDriveAdapter(config.drive),
-        "sheets": GoogleSheetsAdapter(config.sheets, service_account_email=sheets_email),
+        "sheets": GoogleSheetsAdapter(
+            config.sheets,
+            drive_module_config,
+            service_account_email=sheets_email,
+        ),
         "gmail": GmailAdapter(config.gmail),
         "wave": WaveAdapter(config.wave),
     }
