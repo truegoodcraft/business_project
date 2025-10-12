@@ -3,9 +3,16 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from typing import Any, Dict, Optional
-from urllib import error, parse, request
+
+from requests import HTTPError, RequestException, Response
+
+from tgc.util.http import default_client as http
+
+
+logger = logging.getLogger(__name__)
 
 
 class NotionAPIError(Exception):
@@ -103,51 +110,81 @@ class NotionAPIClient:
         params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         url = f"{self.API_BASE}{path}"
-        if params:
-            query = parse.urlencode({k: v for k, v in params.items() if v is not None})
-            if query:
-                url = f"{url}?{query}"
-        data = None
         headers = {
             "Authorization": f"Bearer {self.token}",
             "Notion-Version": self.notion_version,
         }
-        if body:
-            data = json.dumps(body).encode("utf-8")
-            headers["Content-Type"] = "application/json"
+        request_kwargs: Dict[str, Any] = {"headers": headers}
+        if params:
+            request_kwargs["params"] = {k: v for k, v in params.items() if v is not None}
+        if body is not None:
+            request_kwargs["json"] = body
         self._throttle()
-        req = request.Request(url, data=data, headers=headers, method=method)
+        start = time.perf_counter()
+        logger.info("→ Notion %s %s", method, path)
         try:
-            with request.urlopen(req, timeout=self.timeout) as resp:
-                payload = resp.read()
-        except error.HTTPError as exc:  # pragma: no cover - network dependent
-            raise self._convert_http_error(exc) from None
-        except error.URLError as exc:  # pragma: no cover - network dependent
-            raise NotionAPIError(status=0, code="network_error", message=str(exc.reason)) from None
-        self._last_request = time.monotonic()
-        if not payload:
-            return {}
-        try:
-            return json.loads(payload.decode("utf-8"))
-        except json.JSONDecodeError:
-            return {"raw": payload.decode("utf-8", errors="replace")}
-
-    def _convert_http_error(self, exc: error.HTTPError) -> NotionAPIError:
-        message = exc.reason if isinstance(exc.reason, str) else str(exc)
-        code: Optional[str] = None
-        try:
-            body = exc.read().decode("utf-8")
-        except Exception:  # pragma: no cover - defensive
-            body = ""
-        if body:
+            response = http.request(method, url, timeout=self.timeout, **request_kwargs)
+            response.raise_for_status()
+        except HTTPError as exc:  # pragma: no cover - network dependent
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            error = self._convert_http_error(exc.response)
+            logger.info(
+                "← Notion %s %s failed [%s] in %.0f ms: %s",
+                method,
+                path,
+                error.status,
+                elapsed_ms,
+                error.message,
+            )
+            self._last_request = time.monotonic()
+            raise error
+        except RequestException as exc:  # pragma: no cover - network dependent
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            logger.info(
+                "← Notion %s %s failed [network] in %.0f ms: %s",
+                method,
+                path,
+                elapsed_ms,
+                exc,
+            )
+            self._last_request = time.monotonic()
+            raise NotionAPIError(status=0, code="network_error", message=str(exc)) from None
+        else:
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            logger.info(
+                "← Notion %s %s succeeded [%s] in %.0f ms",
+                method,
+                path,
+                response.status_code,
+                elapsed_ms,
+            )
+            self._last_request = time.monotonic()
+            if not response.content:
+                return {}
             try:
-                payload = json.loads(body)
-            except json.JSONDecodeError:
-                payload = None
-            if isinstance(payload, dict):
-                code = payload.get("code") or code
-                message = payload.get("message") or message
-        return NotionAPIError(status=exc.code or 0, code=code, message=message)
+                return response.json()
+            except ValueError:
+                return {"raw": response.text}
+
+    def _convert_http_error(self, response: Optional[Response]) -> NotionAPIError:
+        status = response.status_code if response is not None else 0
+        reason = response.reason if response is not None else None
+        message = reason or "HTTP error"
+        code: Optional[str] = None
+        body = None
+        if response is not None:
+            try:
+                body = response.json()
+            except ValueError:
+                body = None
+        if isinstance(body, dict):
+            code = body.get("code") or code
+            message = body.get("message") or message
+        elif response is not None and not body:
+            text = response.text
+            if text:
+                message = text
+        return NotionAPIError(status=status, code=code, message=message)
 
     def _throttle(self) -> None:
         if self._min_interval <= 0:

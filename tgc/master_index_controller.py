@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass
-from datetime import datetime
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+import logging
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from .notion.api import NotionAPIError
+from .util.watchdog import with_watchdog
 
 try:  # Optional Google dependencies are managed by the Drive module
     from googleapiclient.errors import HttpError
@@ -27,6 +29,15 @@ def _sanitize_segment(text: str) -> str:
     cleaned = (text or "").strip()
     cleaned = cleaned.replace("/", "／").replace("|", "¦")
     return cleaned or "(untitled)"
+logger = logging.getLogger(__name__)
+
+
+def _notion_sort_key(item: Dict[str, str]) -> Tuple[str, str]:
+    return ((item.get("title") or "").casefold(), item.get("url") or "")
+
+
+def _drive_sort_key(item: Dict[str, str]) -> Tuple[str, str]:
+    return ((item.get("path_or_link") or "").casefold(), item.get("name") or "")
 
 
 @dataclass
@@ -59,6 +70,46 @@ class MasterIndexSummary:
         }
 
 
+@dataclass
+class MasterIndexData:
+    """In-memory representation of the assembled Master Index."""
+
+    status: str
+    dry_run: bool
+    generated_at: str
+    notion_records: List[Dict[str, str]] = field(default_factory=list)
+    drive_records: List[Dict[str, str]] = field(default_factory=list)
+    notion_errors: List[str] = field(default_factory=list)
+    drive_errors: List[str] = field(default_factory=list)
+    notion_roots: List[str] = field(default_factory=list)
+    drive_roots: List[str] = field(default_factory=list)
+    notion_elapsed: float = 0.0
+    drive_elapsed: float = 0.0
+    message: Optional[str] = None
+
+    def snapshot(self) -> Dict[str, object]:
+        return {
+            "status": self.status,
+            "dry_run": self.dry_run,
+            "generated_at": self.generated_at,
+            "message": self.message,
+            "notion": {
+                "roots": list(self.notion_roots),
+                "count": len(self.notion_records),
+                "elapsed_seconds": self.notion_elapsed,
+                "errors": list(self.notion_errors),
+                "records": self.notion_records,
+            },
+            "drive": {
+                "roots": list(self.drive_roots),
+                "count": len(self.drive_records),
+                "elapsed_seconds": self.drive_elapsed,
+                "errors": list(self.drive_errors),
+                "records": self.drive_records,
+            },
+        }
+
+
 class MasterIndexController:
     """Generate Markdown indexes for Notion pages and Google Drive files."""
 
@@ -68,8 +119,15 @@ class MasterIndexController:
     # ------------------------------------------------------------------
     # Public entry point
 
-    def run_master_index(self, dry_run: bool) -> Dict[str, object]:
+    def build_index_snapshot(self) -> Dict[str, object]:
+        """Collect the live Master Index data without writing to disk."""
+
+        data = self._collect_master_index(placeholders=False)
+        return data.snapshot()
+
+    def _collect_master_index(self, *, placeholders: bool) -> MasterIndexData:
         ready, detail = self._adapters_ready()
+        generated_at = datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
         if not ready:
             message = (
                 "Master Index unavailable: run 'Discover & Audit' and verify Notion + Drive are ready."
@@ -77,31 +135,32 @@ class MasterIndexController:
             print(message, flush=True)
             if detail:
                 print(detail, flush=True)
-            summary = MasterIndexSummary(status="unavailable", dry_run=dry_run, message=detail)
-            self._append_log(summary)
-            return summary.to_dict()
+            return MasterIndexData(
+                status="unavailable",
+                dry_run=placeholders,
+                generated_at=generated_at,
+                message=detail or message,
+            )
 
         notion_module = self._notion_module()
         drive_module = self._drive_module()
         if notion_module is None or drive_module is None:
-            notion_errors = ["Notion module unavailable"] if notion_module is None else None
-            drive_errors = ["Google Drive module unavailable"] if drive_module is None else None
+            notion_errors = ["Notion module unavailable"] if notion_module is None else []
+            drive_errors = ["Google Drive module unavailable"] if drive_module is None else []
             message = "Required modules unavailable; re-run Discover & Audit after configuration."
-            summary = MasterIndexSummary(
+            print(message, flush=True)
+            return MasterIndexData(
                 status="error",
-                dry_run=dry_run,
+                dry_run=placeholders,
+                generated_at=generated_at,
                 notion_errors=notion_errors,
                 drive_errors=drive_errors,
                 message=message,
             )
-            print(message, flush=True)
-            self._append_log(summary)
-            return summary.to_dict()
 
         notion_roots = self._notion_root_ids(notion_module)
         drive_roots = self._drive_root_ids(drive_module)
 
-        generated_at = datetime.utcnow().isoformat(timespec="seconds") + "Z"
         notion_start = time.perf_counter()
         if notion_roots:
             print(
@@ -110,7 +169,7 @@ class MasterIndexController:
             )
         else:
             print("No Notion roots configured; skipping page traversal.", flush=True)
-        if dry_run and notion_roots:
+        if placeholders and notion_roots:
             print(
                 "[dry-run] Skipping Notion API calls and generating placeholder rows.",
                 flush=True,
@@ -149,7 +208,7 @@ class MasterIndexController:
             )
         else:
             print("No Drive roots configured; skipping file traversal.", flush=True)
-        if dry_run and drive_roots:
+        if placeholders and drive_roots:
             print(
                 "[dry-run] Skipping Drive API calls and generating placeholder rows.",
                 flush=True,
@@ -182,19 +241,60 @@ class MasterIndexController:
             flush=True,
         )
 
-        notion_records.sort(key=lambda item: ((item.get("title") or "").casefold(), item.get("url") or ""))
-        drive_records.sort(key=lambda item: ((item.get("path_or_link") or "").casefold(), item.get("name") or ""))
+        notion_records.sort(key=_notion_sort_key)
+        drive_records.sort(key=_drive_sort_key)
 
-        timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+        return MasterIndexData(
+            status="ok",
+            dry_run=placeholders,
+            generated_at=generated_at,
+            notion_records=notion_records,
+            drive_records=drive_records,
+            notion_errors=notion_errors,
+            drive_errors=drive_errors,
+            notion_roots=notion_roots,
+            drive_roots=drive_roots,
+            notion_elapsed=notion_elapsed,
+            drive_elapsed=drive_elapsed,
+        )
+
+    def run_master_index(self, dry_run: bool) -> Dict[str, object]:
+        data = self._collect_master_index(placeholders=dry_run)
+        if data.status == "unavailable":
+            summary = MasterIndexSummary(status="unavailable", dry_run=dry_run, message=data.message)
+            self._append_log(summary)
+            return summary.to_dict()
+
+        if data.status == "error":
+            summary = MasterIndexSummary(
+                status="error",
+                dry_run=dry_run,
+                notion_count=len(data.notion_records),
+                drive_count=len(data.drive_records),
+                notion_errors=data.notion_errors or None,
+                drive_errors=data.drive_errors or None,
+                message=data.message,
+            )
+            self._append_log(summary)
+            return summary.to_dict()
+
+        notion_records = list(data.notion_records)
+        drive_records = list(data.drive_records)
+
+        timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
         output_dir = Path("docs") / "master_index_reports" / f"master_index_{timestamp}"
         notion_path = output_dir / "notion_pages.md"
         drive_path = output_dir / "drive_files.md"
 
-        notion_markdown = render_markdown(notion_records, "Master Index — Notion Pages", NOTION_COLUMNS, generated_at)
-        drive_markdown = render_markdown(drive_records, "Master Index — Drive Files", DRIVE_COLUMNS, generated_at)
+        notion_markdown = render_markdown(
+            notion_records, "Master Index — Notion Pages", NOTION_COLUMNS, data.generated_at
+        )
+        drive_markdown = render_markdown(
+            drive_records, "Master Index — Drive Files", DRIVE_COLUMNS, data.generated_at
+        )
 
-        notion_errors = notion_errors or []
-        drive_errors = drive_errors or []
+        notion_errors = list(data.notion_errors)
+        drive_errors = list(data.drive_errors)
 
         if dry_run:
             print(f"[dry-run] Would write Notion index to: {notion_path}", flush=True)
@@ -290,7 +390,7 @@ class MasterIndexController:
         log_dir = Path("logs")
         log_dir.mkdir(parents=True, exist_ok=True)
         log_path = log_dir / "controller.log"
-        timestamp = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+        timestamp = datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
         line = (
             f"{timestamp} module=master_index status={summary.status} "
             f"dry_run={summary.dry_run} notion={summary.notion_count} "
@@ -308,6 +408,7 @@ class MasterIndexController:
 # Notion helpers
 
 
+@with_watchdog(45)
 def collect_notion_pages(
     notion_module: "NotionAccessModule",
     root_ids: Sequence[str],
@@ -337,101 +438,105 @@ def collect_notion_pages(
     processed = 0
     progress_interval = 100
 
-    while queue and len(records) < limit:
-        page_id, depth, ancestors = queue.popleft()
-        if page_id in visited:
-            continue
-        visited.add(page_id)
-        try:
-            page = client.pages_retrieve(page_id)
-        except NotionAPIError as exc:
-            if exc.status in {400, 404} or exc.code == "object_not_found":
-                handled = _handle_database_root(
-                    client,
-                    page_id,
-                    depth,
-                    ancestors,
-                    queue,
-                    records,
-                    errors,
-                    limit,
-                    depth_limit,
-                    page_size,
-                )
-                if handled:
-                    continue
-            errors.append(f"Page {page_id}: {exc.message}")
-            continue
-
-        title = _extract_page_title(page)
-        parent_path = "/" + "/".join(ancestors) if ancestors else "/"
-        records.append(
-            {
-                "title": title or "(untitled)",
-                "page_id": page.get("id", page_id),
-                "url": page.get("url", ""),
-                "parent": parent_path,
-                "last_edited": page.get("last_edited_time", ""),
-            }
-        )
-        processed += 1
-        if processed % progress_interval == 0:
-            elapsed = time.perf_counter() - start_time
-            print(
-                "  Processed {} Notion page(s) so far (queue: {}, elapsed: {:.1f}s)".format(
-                    processed,
-                    len(queue),
-                    elapsed,
-                ),
-                flush=True,
-            )
-
-        if len(records) >= limit:
-            break
-
-        if depth_limit is not None and depth >= depth_limit:
-            continue
-
-        next_cursor: Optional[str] = None
-        seen_cursors: set[str] = set()
-        while True:
+    try:
+        while queue and len(records) < limit:
+            page_id, depth, ancestors = queue.popleft()
+            if page_id in visited:
+                continue
+            visited.add(page_id)
             try:
-                children = client.blocks_children_list(
-                    page_id,
-                    page_size=min(page_size, 100),
-                    start_cursor=next_cursor,
-                )
+                page = client.pages_retrieve(page_id)
             except NotionAPIError as exc:
-                errors.append(f"Children {page_id}: {exc.message}")
+                if exc.status in {400, 404} or exc.code == "object_not_found":
+                    handled = _handle_database_root(
+                        client,
+                        page_id,
+                        depth,
+                        ancestors,
+                        queue,
+                        records,
+                        errors,
+                        limit,
+                        depth_limit,
+                        page_size,
+                    )
+                    if handled:
+                        continue
+                errors.append(f"Page {page_id}: {exc.message}")
+                continue
+
+            title = _extract_page_title(page)
+            parent_path = "/" + "/".join(ancestors) if ancestors else "/"
+            records.append(
+                {
+                    "title": title or "(untitled)",
+                    "page_id": page.get("id", page_id),
+                    "url": page.get("url", ""),
+                    "parent": parent_path,
+                    "last_edited": page.get("last_edited_time", ""),
+                }
+            )
+            processed += 1
+            if processed % progress_interval == 0:
+                elapsed = time.perf_counter() - start_time
+                print(
+                    "  Processed {} Notion page(s) so far (queue: {}, elapsed: {:.1f}s)".format(
+                        processed,
+                        len(queue),
+                        elapsed,
+                    ),
+                    flush=True,
+                )
+
+            if len(records) >= limit:
                 break
 
-            for block in children.get("results", []):
-                if not isinstance(block, dict):
-                    continue
-                block_type = block.get("type")
-                child_id = block.get("id")
-                if block_type == "child_page" and child_id:
-                    next_path = ancestors + [_sanitize_segment(title or "(untitled)")]
-                    queue.append((child_id, depth + 1, next_path))
-                elif block_type == "link_to_page":
-                    target = block.get("link_to_page", {})
-                    if isinstance(target, dict) and target.get("type") == "page_id":
-                        target_id = target.get("page_id")
-                        if target_id:
-                            next_path = ancestors + [_sanitize_segment(title or "(untitled)")]
-                            queue.append((target_id, depth + 1, next_path))
-            if not children.get("has_more"):
-                break
-            cursor_value = children.get("next_cursor")
-            if not cursor_value:
-                break
-            if cursor_value in seen_cursors:
-                errors.append(
-                    f"Page {page_id}: detected repeated pagination cursor; aborting traversal."
-                )
-                break
-            seen_cursors.add(cursor_value)
-            next_cursor = cursor_value
+            if depth_limit is not None and depth >= depth_limit:
+                continue
+
+            next_cursor: Optional[str] = None
+            seen_cursors: set[str] = set()
+            while True:
+                try:
+                    children = client.blocks_children_list(
+                        page_id,
+                        page_size=min(page_size, 100),
+                        start_cursor=next_cursor,
+                    )
+                except NotionAPIError as exc:
+                    errors.append(f"Children {page_id}: {exc.message}")
+                    break
+
+                for block in children.get("results", []):
+                    if not isinstance(block, dict):
+                        continue
+                    block_type = block.get("type")
+                    child_id = block.get("id")
+                    if block_type == "child_page" and child_id:
+                        next_path = ancestors + [_sanitize_segment(title or "(untitled)")]
+                        queue.append((child_id, depth + 1, next_path))
+                    elif block_type == "link_to_page":
+                        target = block.get("link_to_page", {})
+                        if isinstance(target, dict) and target.get("type") == "page_id":
+                            target_id = target.get("page_id")
+                            if target_id:
+                                next_path = ancestors + [_sanitize_segment(title or "(untitled)")]
+                                queue.append((target_id, depth + 1, next_path))
+                if not children.get("has_more"):
+                    break
+                cursor_value = children.get("next_cursor")
+                if not cursor_value:
+                    break
+                if cursor_value in seen_cursors:
+                    errors.append(
+                        f"Page {page_id}: detected repeated pagination cursor; aborting traversal."
+                    )
+                    break
+                seen_cursors.add(cursor_value)
+                next_cursor = cursor_value
+    except Exception:
+        logger.exception("notion traversal failed", extra={"root_ids": list(root_ids)})
+        raise
 
     return records[:limit], errors
 
@@ -458,8 +563,8 @@ def _handle_database_root(
         errors.append(f"Database {database_id}: {exc.message}")
         return True
     except Exception as exc:  # pragma: no cover - defensive network guard
-        errors.append(f"Database {database_id}: {exc}")
-        return True
+        logger.exception("database traversal failed", extra={"database_id": database_id})
+        raise
 
     title = _join_rich_text(database.get("title", [])) if isinstance(database, dict) else ""
     database_title = title or "(untitled)"
@@ -494,8 +599,10 @@ def _handle_database_root(
             errors.append(f"Database {database_id}: {exc.message}")
             break
         except Exception as exc:  # pragma: no cover - defensive network guard
-            errors.append(f"Database {database_id}: {exc}")
-            break
+            logger.exception(
+                "database query traversal failed", extra={"database_id": database_id}
+            )
+            raise
 
         for item in response.get("results", []):
             if not isinstance(item, dict):
