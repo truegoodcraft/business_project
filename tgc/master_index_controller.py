@@ -648,7 +648,7 @@ def collect_notion_pages(
                     try:
                         children = client.blocks_children_list(
                             page_id,
-                            page_size=min(page_size, 100),
+                            page_size=100,
                             start_cursor=next_cursor,
                         )
                     except NotionAPIError as exc:
