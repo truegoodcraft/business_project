@@ -12,6 +12,7 @@ from .actions import (
     DriveModuleAction,
     GmailImportAction,
     LogsAction,
+    MasterIndexAction,
     NotionModuleAction,
     SettingsAction,
     SheetsSyncAction,
@@ -75,3 +76,4 @@ def _register_actions(controller: Controller) -> None:
     controller.register_action(LogsAction())
     controller.register_action(WaveAction())
     controller.register_action(NotionModuleAction())
+    controller.register_action(MasterIndexAction())
