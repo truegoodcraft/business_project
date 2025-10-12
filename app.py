@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import logging
+import sys
+import traceback
 
 from tgc.bootstrap import bootstrap_controller
 from tgc.menu import run_cli
@@ -107,5 +110,21 @@ def main() -> None:
     run_cli(controller)
 
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+
+def _run_main():
+    return main()
+
+
 if __name__ == "__main__":
-    main()
+    try:
+        code = _run_main() or 0
+        sys.exit(code)
+    except SystemExit as e:
+        print(f"[tgc] SystemExit: code={e.code}")
+        raise
+    except Exception:
+        print("[tgc] Uncaught exception in top-level:")
+        traceback.print_exc()
+        sys.exit(1)
