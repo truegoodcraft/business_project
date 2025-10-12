@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -101,18 +102,41 @@ class MasterIndexController:
         drive_roots = self._drive_root_ids(drive_module)
 
         generated_at = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+        notion_start = time.perf_counter()
+        if notion_roots:
+            print(f"Collecting Notion pages from {len(notion_roots)} root(s)...")
+        else:
+            print("No Notion roots configured; skipping page traversal.")
         notion_records, notion_errors = collect_notion_pages(
             notion_module,
             notion_roots,
             max_depth=notion_module.config.max_depth,
             page_size=notion_module.config.page_size,
         )
+        notion_elapsed = time.perf_counter() - notion_start
+        print(
+            "Collected {} Notion page(s) in {:.1f}s".format(
+                len(notion_records), notion_elapsed
+            )
+        )
+
+        drive_start = time.perf_counter()
+        if drive_roots:
+            print(f"Collecting Drive files from {len(drive_roots)} root(s)...")
+        else:
+            print("No Drive roots configured; skipping file traversal.")
         drive_records, drive_errors = collect_drive_files(
             drive_module,
             drive_roots,
             mime_whitelist=list(drive_module.config.mime_whitelist) or None,
             max_depth=drive_module.config.max_depth,
             page_size=drive_module.config.page_size,
+        )
+        drive_elapsed = time.perf_counter() - drive_start
+        print(
+            "Collected {} Drive file(s) in {:.1f}s".format(
+                len(drive_records), drive_elapsed
+            )
         )
 
         notion_records.sort(key=lambda item: ((item.get("title") or "").casefold(), item.get("url") or ""))
