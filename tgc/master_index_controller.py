@@ -41,6 +41,7 @@ class MasterIndexSummary:
     drive_output: Optional[Path] = None
     notion_errors: Optional[List[str]] = None
     drive_errors: Optional[List[str]] = None
+    message: Optional[str] = None
 
     def to_dict(self) -> Dict[str, object]:
         return {
@@ -53,6 +54,7 @@ class MasterIndexSummary:
             "drive_output": str(self.drive_output) if self.drive_output else None,
             "notion_errors": list(self.notion_errors or []),
             "drive_errors": list(self.drive_errors or []),
+            "message": self.message,
         }
 
 
@@ -66,6 +68,17 @@ class MasterIndexController:
     # Public entry point
 
     def run_master_index(self, dry_run: bool) -> Dict[str, object]:
+        ready, detail = self._adapters_ready()
+        if not ready:
+            message = (
+                "Master Index unavailable: run 'Discover & Audit' and verify Notion + Drive are ready."
+            )
+            print(message)
+            if detail:
+                print(detail)
+            summary = MasterIndexSummary(status="unavailable", dry_run=dry_run, message=detail)
+            self._append_log(summary)
+            return summary.to_dict()
         ready, _details = self._adapters_ready()
         if not ready:
             print(
@@ -78,11 +91,16 @@ class MasterIndexController:
         if notion_module is None or drive_module is None:
             notion_errors = ["Notion module unavailable"] if notion_module is None else None
             drive_errors = ["Google Drive module unavailable"] if drive_module is None else None
+            message = "Required modules unavailable; re-run Discover & Audit after configuration."
             summary = MasterIndexSummary(
                 status="error",
                 dry_run=dry_run,
                 notion_errors=notion_errors,
                 drive_errors=drive_errors,
+                message=message,
+            )
+            print(message)
+            self._append_log(summary)
             )
             return summary.to_dict()
 
@@ -115,10 +133,35 @@ class MasterIndexController:
         notion_markdown = render_markdown(notion_records, "Master Index — Notion Pages", NOTION_COLUMNS, generated_at)
         drive_markdown = render_markdown(drive_records, "Master Index — Drive Files", DRIVE_COLUMNS, generated_at)
 
+        notion_errors = notion_errors or []
+        drive_errors = drive_errors or []
+
         if dry_run:
             print(f"[dry-run] Would write Notion index to: {notion_path}")
             print(f"[dry-run] Would write Drive index to: {drive_path}")
         else:
+            try:
+                output_dir.mkdir(parents=True, exist_ok=True)
+            except OSError as exc:
+                message = f"Unable to prepare report directory {output_dir}: {exc}"
+                notion_errors.append(message)
+                drive_errors.append(message)
+            else:
+                try:
+                    notion_path.write_text(notion_markdown, encoding="utf-8")
+                except OSError as exc:
+                    notion_errors.append(f"Failed to write Notion index: {exc}")
+                try:
+                    drive_path.write_text(drive_markdown, encoding="utf-8")
+                except OSError as exc:
+                    drive_errors.append(f"Failed to write Drive index: {exc}")
+
+        status = "ok"
+        if notion_errors or drive_errors:
+            status = "error"
+
+        summary = MasterIndexSummary(
+            status=status,
             output_dir.mkdir(parents=True, exist_ok=True)
             notion_path.write_text(notion_markdown, encoding="utf-8")
             drive_path.write_text(drive_markdown, encoding="utf-8")
@@ -146,6 +189,7 @@ class MasterIndexController:
         drive_ready = statuses.get("drive", False)
         if notion_ready and drive_ready:
             return True, None
+        message = "Required adapters not ready: Notion ({}) · Drive ({})".format(
         message = """Required adapters not ready: Notion ({}) Drive ({})""".format(
             "ready" if notion_ready else "not ready",
             "ready" if drive_ready else "not ready",
@@ -197,6 +241,14 @@ class MasterIndexController:
         log_path = log_dir / "controller.log"
         timestamp = datetime.utcnow().isoformat(timespec="seconds") + "Z"
         line = (
+            f"{timestamp} module=master_index status={summary.status} "
+            f"dry_run={summary.dry_run} notion={summary.notion_count} "
+            f"drive={summary.drive_count}"
+        )
+        if summary.output_dir:
+            line += f" output={summary.output_dir}"
+        if summary.message:
+            line += f" message={summary.message}"
             f"{timestamp} module=master_index dry_run={summary.dry_run} "
             f"notion={summary.notion_count} drive={summary.drive_count}"
         )

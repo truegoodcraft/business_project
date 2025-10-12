@@ -41,6 +41,7 @@ class MasterIndexAction(SimpleAction):
         drive_count = int(summary.get("drive_count", 0))
         output_dir = summary.get("output_dir")
         status = summary.get("status", "unknown")
+        message = summary.get("message")
 
         lines = [
             f"status: {status}",
@@ -49,12 +50,18 @@ class MasterIndexAction(SimpleAction):
             f"drive_count: {drive_count}",
             f"output_dir: {output_dir or '(not written)'}",
         ]
+        if message:
+            lines.append(f"message: {message}")
         context.log_notes("master_index_summary", lines)
 
         notion_errors = [str(value) for value in summary.get("notion_errors", [])]
         drive_errors = [str(value) for value in summary.get("drive_errors", [])]
 
         if summary.get("status") == "unavailable":
+            detail = message or (
+                "Master Index unavailable: run 'Discover & Audit' and verify Notion + Drive readiness."
+            )
+            errors = [detail]
             errors = [
                 "Master Index unavailable: run 'Discover & Audit' and verify Notion + Drive readiness."
             ]
@@ -68,6 +75,7 @@ class MasterIndexAction(SimpleAction):
         errors = notion_errors + drive_errors
         if summary.get("status") == "error":
             if not errors:
+                errors = [message or "Unable to initialise Master Index modules."]
                 errors = ["Unable to initialise Master Index modules."]
             return ActionResult(
                 plan_text=plan_text,
@@ -83,6 +91,8 @@ class MasterIndexAction(SimpleAction):
         print(f"Drive files: {drive_count}")
         if output_dir:
             print(f"Outputs: {output_dir}")
+        if message:
+            print(message)
 
         notes: List[str] = []
         changes: List[str] = []
