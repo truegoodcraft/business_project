@@ -58,13 +58,8 @@ class MasterIndexAction(SimpleAction):
         drive_errors = [str(value) for value in summary.get("drive_errors", [])]
 
         if summary.get("status") == "unavailable":
-            detail = message or (
-                "Master Index unavailable: run 'Discover & Audit' and verify Notion + Drive readiness."
-            )
+            detail = message or "Master Index unavailable: run 'Discover & Audit' and verify Notion + Drive readiness."
             errors = [detail]
-            errors = [
-                "Master Index unavailable: run 'Discover & Audit' and verify Notion + Drive readiness."
-            ]
             return ActionResult(
                 plan_text=plan_text,
                 changes=[],
@@ -76,7 +71,6 @@ class MasterIndexAction(SimpleAction):
         if summary.get("status") == "error":
             if not errors:
                 errors = [message or "Unable to initialise Master Index modules."]
-                errors = ["Unable to initialise Master Index modules."]
             return ActionResult(
                 plan_text=plan_text,
                 changes=[],
