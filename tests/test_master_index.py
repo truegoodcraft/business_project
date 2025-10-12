@@ -1,0 +1,140 @@
+from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from tgc.config import NotionConfig
+from tgc.master_index_controller import collect_notion_pages
+from tgc.notion.api import NotionAPIError
+from tgc.notion.module import NotionAccessModule
+
+
+class FakeNotionModule(NotionAccessModule):
+    def __init__(self, client):
+        super().__init__(
+            NotionConfig(
+                module_enabled=True,
+                token="token",
+                root_ids=["root"],
+                page_size=50,
+                max_depth=0,
+            )
+        )
+        self._fake_client = client
+
+    def _build_client(self):  # type: ignore[override]
+        return self._fake_client, None
+
+
+class FakeNotionClient:
+    def __init__(self):
+        self.pages = {
+            "page-1": {
+                "id": "page-1",
+                "properties": {
+                    "title": {"type": "title", "title": [{"plain_text": "Root Page"}]}
+                },
+                "url": "https://notion.so/page-1",
+                "last_edited_time": "2023-10-10T00:00:00.000Z",
+            },
+            "db-row": {
+                "id": "db-row",
+                "properties": {
+                    "Name": {"type": "title", "title": [{"plain_text": "Database Row"}]}
+                },
+                "url": "https://notion.so/db-row",
+                "last_edited_time": "2023-10-10T01:00:00.000Z",
+            },
+        }
+        self.children = {
+            "page-1": {
+                "results": [
+                    {"type": "child_page", "id": "child-1"},
+                    {"type": "link_to_page", "id": "link-1", "link_to_page": {"type": "page_id", "page_id": "linked"}},
+                ],
+                "has_more": False,
+            }
+        }
+        self.pages["child-1"] = {
+            "id": "child-1",
+            "properties": {
+                "title": {"type": "title", "title": [{"plain_text": "Child"}]}
+            },
+            "url": "https://notion.so/child-1",
+            "last_edited_time": "2023-10-10T02:00:00.000Z",
+        }
+        self.pages["linked"] = {
+            "id": "linked",
+            "properties": {
+                "title": {"type": "title", "title": [{"plain_text": "Linked"}]}
+            },
+            "url": "https://notion.so/linked",
+            "last_edited_time": "2023-10-10T03:00:00.000Z",
+        }
+        self.databases = {
+            "database-1": {
+                "id": "database-1",
+                "title": [{"plain_text": "Root Database"}],
+                "url": "https://notion.so/database-1",
+                "last_edited_time": "2023-10-11T00:00:00.000Z",
+            }
+        }
+        self.database_rows = {
+            "database-1": [
+                {"id": "db-row"},
+            ]
+        }
+
+    def pages_retrieve(self, page_id):
+        try:
+            return self.pages[page_id]
+        except KeyError:
+            raise NotionAPIError(404, "object_not_found", f"Page {page_id} not found")
+
+    def blocks_children_list(self, block_id, *, page_size=None, start_cursor=None):
+        return self.children.get(block_id, {"results": [], "has_more": False})
+
+    def databases_retrieve(self, database_id):
+        if database_id not in self.databases:
+            raise NotionAPIError(404, "object_not_found", f"Database {database_id} not found")
+        return self.databases[database_id]
+
+    def databases_query(self, database_id, *, page_size=None, start_cursor=None):
+        rows = list(self.database_rows.get(database_id, []))
+        return {"results": rows, "has_more": False, "next_cursor": None}
+
+
+def test_collect_notion_pages_with_page_and_links():
+    client = FakeNotionClient()
+    module = FakeNotionModule(client)
+    records, errors = collect_notion_pages(module, ["page-1"], limit=10)
+
+    titles = [record["title"] for record in records]
+    assert "Root Page" in titles
+    assert "Child" in titles
+    assert "Linked" in titles
+    assert errors == []
+
+
+def test_collect_notion_pages_with_database_root_includes_rows():
+    client = FakeNotionClient()
+    module = FakeNotionModule(client)
+    records, errors = collect_notion_pages(module, ["database-1"], limit=10)
+
+    titles = [record["title"] for record in records]
+    assert "Root Database" in titles
+    assert "Database Row" in titles
+    database_entry = next(record for record in records if record["title"] == "Root Database")
+    assert database_entry["parent"] == "/"
+    row_entry = next(record for record in records if record["title"] == "Database Row")
+    assert row_entry["parent"].startswith("/Root Database")
+    assert errors == []
+
+
+def test_database_root_not_found_reports_error():
+    client = FakeNotionClient()
+    module = FakeNotionModule(client)
+    records, errors = collect_notion_pages(module, ["missing"], limit=10)
+
+    assert records == []
+    assert errors == ["Page missing: Page missing not found"]
