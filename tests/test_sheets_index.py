@@ -233,6 +233,42 @@ def test_write_sheets_index_markdown_writes_sorted_table(tmp_path):
     assert data_rows[1].startswith("| Budget | Summary | 20 | 5 | 2024-02-02T00:00:00Z | S2 | 22 | /Finance |")
 
 
+def test_write_sheets_index_markdown_counts_unique_spreadsheets(tmp_path):
+    rows = [
+        {
+            "spreadsheetId": "S1",
+            "spreadsheetTitle": "Analytics",
+            "sheetId": 11,
+            "sheetTitle": "Data",
+            "sheetIndex": 0,
+            "rows": 100,
+            "cols": 10,
+            "modifiedTime": "2024-02-01T00:00:00Z",
+            "parentPath": "/Ops",
+        },
+        {
+            "spreadsheetId": "S1",
+            "spreadsheetTitle": "Analytics",
+            "sheetId": 12,
+            "sheetTitle": "Pivot",
+            "sheetIndex": 1,
+            "rows": 50,
+            "cols": 6,
+            "modifiedTime": "2024-02-03T00:00:00Z",
+            "parentPath": "/Ops",
+        },
+    ]
+
+    (tmp_path / "nested").mkdir()
+    output_paths = write_sheets_index_markdown(tmp_path / "nested", rows)
+
+    assert output_paths == [tmp_path / "nested" / "sheets_index.md"]
+    content = output_paths[0].read_text(encoding="utf-8").splitlines()
+
+    assert content[0] == "# Master Index — Google Sheets"
+    assert content[2] == "Total spreadsheets: 1 • Total tabs: 2"
+
+
 def test_write_sheets_index_markdown_splits_large_dataset(tmp_path):
     rows = [
         {
