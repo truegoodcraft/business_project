@@ -59,6 +59,7 @@ class NotionAdapter(BaseAdapter):
     def metadata(self) -> Dict[str, Optional[str]]:
         return {
             "inventory_database_id": self.config.inventory_database_id,
+            "sources_database_id": self.config.sources_database_id,
             "module_enabled": str(self.config.module_enabled).lower(),
             "root_ids": ",".join(self.config.root_ids) or None,
             "client_source": "notion_api_client" if self._client else "unavailable",

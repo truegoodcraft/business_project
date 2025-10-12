@@ -40,6 +40,7 @@ class NotionAccessModule:
         "NOTION_MODULE_ENABLED",
         "NOTION_API_KEY",
         "NOTION_DB_INVENTORY_ID",
+        "NOTION_DB_SOURCES_ID",
         "NOTION_ROOT_IDS",
         "NOTION_PAGE_SIZE",
         "NOTION_INCLUDE_COMMENTS",
@@ -110,6 +111,9 @@ class NotionAccessModule:
             "Inventory database ID (optional)",
             existing=self.config.inventory_database_id or (roots.split(",")[0].strip() if roots else ""),
         )
+        sources_db = self._prompt(
+            "Sources database ID (optional)", existing=self.config.sources_database_id or ""
+        )
         page_size = self._safe_int(self._prompt("Page size", str(self.config.page_size or 100)), default=100)
         include_comments = self._prompt_bool("Include comments", self.config.include_comments)
         include_files = self._prompt_bool("Include file metadata", self.config.include_file_metadata)
@@ -131,6 +135,7 @@ class NotionAccessModule:
             "NOTION_MODULE_ENABLED": "true",
             "NOTION_API_KEY": api_key,
             "NOTION_DB_INVENTORY_ID": inventory_db or None,
+            "NOTION_DB_SOURCES_ID": sources_db or None,
             "NOTION_ROOT_IDS": ",".join(root_ids) or None,
             "NOTION_PAGE_SIZE": str(page_size),
             "NOTION_INCLUDE_COMMENTS": "true" if include_comments else "false",
@@ -147,6 +152,7 @@ class NotionAccessModule:
             enabled=True,
             token=api_key,
             inventory_database_id=inventory_db or None,
+            sources_database_id=sources_db or None,
             root_ids=root_ids,
             page_size=page_size,
             include_comments=include_comments,
@@ -162,6 +168,7 @@ class NotionAccessModule:
             "token": self._mask_secret(api_key),
             "root_count": str(len(root_ids)),
             "inventory_database_id": self._mask_secret(inventory_db),
+            "sources_database_id": self._mask_secret(sources_db),
         }
 
     def disable(self) -> None:
@@ -363,6 +370,8 @@ class NotionAccessModule:
     def _default_database_id(self) -> str:
         if self.config.inventory_database_id:
             return self.config.inventory_database_id
+        if self.config.sources_database_id:
+            return self.config.sources_database_id
         roots = self._configured_root_ids()
         return roots[0] if roots else ""
 
@@ -370,6 +379,8 @@ class NotionAccessModule:
         roots = list(self.config.root_ids)
         if not roots and self.config.inventory_database_id:
             roots.append(self.config.inventory_database_id)
+        if self.config.sources_database_id:
+            roots.append(self.config.sources_database_id)
         seen: set[str] = set()
         ordered: List[str] = []
         for item in roots:
@@ -521,6 +532,7 @@ class NotionAccessModule:
         enabled: bool,
         token: Optional[str],
         inventory_database_id: Optional[str],
+        sources_database_id: Optional[str],
         root_ids: List[str],
         page_size: int,
         include_comments: bool,
@@ -534,6 +546,7 @@ class NotionAccessModule:
         self.config.module_enabled = enabled
         self.config.token = token
         self.config.inventory_database_id = inventory_database_id
+        self.config.sources_database_id = sources_database_id
         self.config.root_ids = root_ids
         self.config.page_size = page_size
         self.config.include_comments = include_comments
