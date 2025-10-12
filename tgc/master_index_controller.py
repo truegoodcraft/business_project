@@ -133,18 +133,6 @@ class MasterIndexController:
                 len(notion_records), notion_elapsed
             )
         )
-        notion_records, notion_errors = collect_notion_pages(
-            notion_module,
-            notion_roots,
-            max_depth=notion_module.config.max_depth,
-            page_size=notion_module.config.page_size,
-        )
-        notion_elapsed = time.perf_counter() - notion_start
-        print(
-            "Collected {} Notion page(s) in {:.1f}s".format(
-                len(notion_records), notion_elapsed
-            )
-        )
 
         drive_start = time.perf_counter()
         if drive_roots:
@@ -173,18 +161,6 @@ class MasterIndexController:
                 max_depth=drive_module.config.max_depth,
                 page_size=drive_module.config.page_size,
             )
-        drive_elapsed = time.perf_counter() - drive_start
-        print(
-            "Collected {} Drive file(s) in {:.1f}s".format(
-                len(drive_records), drive_elapsed
-            )
-        drive_records, drive_errors = collect_drive_files(
-            drive_module,
-            drive_roots,
-            mime_whitelist=list(drive_module.config.mime_whitelist) or None,
-            max_depth=drive_module.config.max_depth,
-            page_size=drive_module.config.page_size,
-        )
         drive_elapsed = time.perf_counter() - drive_start
         print(
             "Collected {} Drive file(s) in {:.1f}s".format(
