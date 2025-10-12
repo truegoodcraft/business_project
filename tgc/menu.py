@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Callable, Dict, Optional
 
 from .controller import Controller
+from .master_index_controller import MasterIndexController
+from .util.serialization import safe_serialize
 
 
 def run_cli(controller: Controller) -> None:
@@ -19,13 +21,29 @@ def run_cli(controller: Controller) -> None:
         print("Short code: XXX (placeholder) · Run `python app.py --init-org` to customize.")
     print("Type the menu number to continue, or 'q' to quit.\n")
 
+    advanced_options: Dict[str, tuple[str, str, Callable[[Controller], None]]] = {
+        "13": (
+            "Print Master Index (debug)",
+            "Build the Master Index snapshot and dump it as JSON",
+            _print_master_index_snapshot,
+        )
+    }
+
     while True:
         for action in controller.available_actions():
             print(f"{action.id}) {action.name} — {action.description}")
+        for key, (name, description, _) in advanced_options.items():
+            print(f"{key}) {name} — {description}")
         choice = input("Select an option (or q to quit): ").strip()
         if choice.lower() in {"q", "quit", "exit"}:
             print("Goodbye!")
             return
+        if choice in advanced_options:
+            handler = advanced_options[choice][2]
+            print("\n=== MASTER INDEX SNAPSHOT ===")
+            handler(controller)
+            print()
+            continue
         if choice not in controller.actions:
             print("Invalid choice. Try again.\n")
             continue
@@ -53,3 +71,9 @@ def _prompt_mode() -> Optional[str]:
         if answer in {"c", "cancel"}:
             return None
         print("Invalid selection. Use d, a, or c.")
+
+
+def _print_master_index_snapshot(controller: Controller) -> None:
+    master = MasterIndexController(controller)
+    snapshot = master.build_index_snapshot()
+    print(safe_serialize(snapshot))

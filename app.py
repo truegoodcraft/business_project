@@ -7,6 +7,8 @@ import argparse
 from tgc.bootstrap import bootstrap_controller
 from tgc.menu import run_cli
 from tgc.organization import configure_profile_interactive
+from tgc.master_index_controller import MasterIndexController
+from tgc.util.serialization import safe_serialize
 
 
 def main() -> None:
@@ -28,6 +30,11 @@ def main() -> None:
         "--update",
         action="store_true",
         help="Fetch the latest repository changes (use with --apply to run the pull)",
+    )
+    parser.add_argument(
+        "--print-index",
+        action="store_true",
+        help="Build the Master Index in memory and print it as JSON",
     )
     args = parser.parse_args()
 
@@ -76,6 +83,12 @@ def main() -> None:
                 if isinstance(preview, list):
                     print(f"      preview rows: {len(preview)}")
         print()
+        return
+
+    if args.print_index:
+        master = MasterIndexController(controller)
+        snapshot = master.build_index_snapshot()
+        print(safe_serialize(snapshot))
         return
 
     if args.action and not args.menu_only:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
@@ -24,7 +24,7 @@ class RunContext:
     errors_path: Path = field(init=False)
 
     def __post_init__(self) -> None:
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
         self.run_id = f"{self.action_id}_{timestamp}"
         self.run_dir = self.reports_root / f"run_{self.run_id}"
         self.run_dir.mkdir(parents=True, exist_ok=True)

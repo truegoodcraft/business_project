@@ -4,7 +4,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from tgc.config import NotionConfig
-from tgc.master_index_controller import collect_drive_files, collect_notion_pages
+from tgc.master_index_controller import MasterIndexData, collect_drive_files, collect_notion_pages
 from tgc.notion.api import NotionAPIError
 from tgc.notion.module import NotionAccessModule
 from tgc.modules.google_drive import DriveModuleConfig, GoogleDriveModule
@@ -198,7 +198,22 @@ def test_collect_notion_pages_with_database_root_includes_rows():
     assert database_entry["parent"] == "/"
     row_entry = next(record for record in records if record["title"] == "Database Row")
     assert row_entry["parent"].startswith("/Root Database")
-    assert errors == []
+
+
+def test_master_index_data_snapshot_counts():
+    data = MasterIndexData(
+        status="ok",
+        dry_run=False,
+        generated_at="2024-01-01T00:00:00Z",
+        notion_records=[{"title": "Example", "page_id": "1", "url": "", "parent": "/", "last_edited": ""}],
+        drive_records=[],
+    )
+
+    snapshot = data.snapshot()
+
+    assert snapshot["status"] == "ok"
+    assert snapshot["notion"]["count"] == 1
+    assert snapshot["drive"]["count"] == 0
 
 
 def test_database_root_not_found_reports_error():

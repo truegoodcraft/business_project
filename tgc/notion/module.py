@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 import sys
 import warnings
 
@@ -184,7 +184,7 @@ class NotionAccessModule:
             "status": "ok",
             "integration_user": None,
             "roots": [],
-            "timestamp": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+            "timestamp": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
             "source": "notion_api_client",
         }
 
@@ -214,7 +214,7 @@ class NotionAccessModule:
             "status": "ok",
             "limit": limit,
             "samples": samples,
-            "timestamp": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+            "timestamp": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
             "source": "notion_api_client",
         }
 
@@ -269,7 +269,7 @@ class NotionAccessModule:
                 "property_errors": property_errors,
             }
 
-        timestamp = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+        timestamp = datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
         return {
             "status": "ok",
             "id": page.get("id"),
@@ -327,7 +327,7 @@ class NotionAccessModule:
                 "property_errors": property_errors,
             }
 
-        timestamp = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+        timestamp = datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
         parent = updated.get("parent", {}) if isinstance(updated, dict) else {}
         parent_type = parent.get("type") if isinstance(parent, dict) else None
         database_id = parent.get("database_id") if isinstance(parent, dict) else None
