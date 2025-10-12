@@ -1,11 +1,3 @@
-"""Notion adapter placeholder implementation."""
-
-from __future__ import annotations
-
-from typing import Dict, List, Optional
-
-from .base import AdapterCapability, BaseAdapter
-from ..config import NotionConfig
 """Notion adapter with read/write access to the inventory vault."""
 
 from __future__ import annotations
@@ -19,10 +11,9 @@ from ..notion.properties import build_property_payload
 
 
 class NotionAdapter(BaseAdapter):
-    name = "notion"
+    """Adapter implementing inventory access via the Notion API."""
 
-    def __init__(self, config: NotionConfig) -> None:
-        super().__init__(config)
+    name = "notion"
     implementation_state = "implemented"
 
     def __init__(self, config: NotionConfig) -> None:
@@ -39,20 +30,13 @@ class NotionAdapter(BaseAdapter):
             except Exception as exc:  # pragma: no cover - defensive guard
                 self._client_error = str(exc)
 
+    # ------------------------------------------------------------------
+    # BaseAdapter overrides
+
     def is_configured(self) -> bool:
         return self.config.is_configured()
 
     def capabilities(self) -> List[AdapterCapability]:
-        return [
-            AdapterCapability(
-                name="Inventory",
-                description="Read/write inventory database entries by ID",
-                configured=self.is_configured(),
-            ),
-            AdapterCapability(
-                name="Contacts",
-                description="Link contacts and vendors by GUID",
-                configured=self.is_configured(),
         configured = self.is_configured() and self._client is not None
         return [
             AdapterCapability(
@@ -75,26 +59,10 @@ class NotionAdapter(BaseAdapter):
     def metadata(self) -> Dict[str, Optional[str]]:
         return {
             "inventory_database_id": self.config.inventory_database_id,
-        }
-
-    # Placeholder operations -------------------------------------------------
-
-    def audit_inventory(self) -> List[str]:
-        if not self.is_configured():
-            return ["Notion inventory database is not configured."]
-        return [
-            "Checked inventory database schema (simulated)",
-            "Validated required properties: name, sku, qty, batch, notes",
-        ]
-
-    def stage_inventory_updates(self, rows: List[Dict[str, str]]) -> List[str]:
-        if not self.is_configured():
-            return ["Cannot stage inventory updates: Notion not configured."]
-        return [f"Prepared update for SKU {row.get('sku','?')}" for row in rows]
-            "client_error": self._client_error,
             "module_enabled": str(self.config.module_enabled).lower(),
             "root_ids": ",".join(self.config.root_ids) or None,
             "client_source": "notion_api_client" if self._client else "unavailable",
+            "client_error": self._client_error,
         }
 
     def status_report(self) -> Dict[str, object]:
@@ -315,3 +283,6 @@ class NotionAdapter(BaseAdapter):
 
     def _join_rich_text(self, rich_text: Iterable[Dict[str, Any]]) -> str:
         return "".join(part.get("plain_text", "") for part in rich_text)
+
+
+__all__ = ["NotionAdapter"]

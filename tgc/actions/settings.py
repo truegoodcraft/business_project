@@ -1,4 +1,4 @@
-"""View and edit settings."""
+"""View and edit controller settings."""
 
 from __future__ import annotations
 
@@ -20,41 +20,33 @@ class SettingsAction(SimpleAction):
         steps = [
             "Load .env file values",
             "Mask sensitive tokens",
-            "Display editable guidance",
-        ]
-        return self.render_plan(self.name, steps, notes=["Edit .env directly or via future prompts."])
-
-    def run(self, controller: Controller, context: RunContext) -> ActionResult:
-        masked = controller.mask_config()
-        lines = [f"{key}: {value}" for key, value in masked.items()]
-        context.log_notes("settings", lines)
             "Display organization reference summary",
             "Provide editable guidance",
         ]
-        return self.render_plan(
-            self.name,
-            steps,
-            notes=[
-                "Update environment variables via .env.",
-                "Run `python app.py --init-org` to edit organization details.",
-            ],
-        )
+        notes = [
+            "Update environment variables via .env.",
+            "Run `python app.py --init-org` to edit organization details.",
+        ]
+        return self.render_plan(self.name, steps, notes=notes)
 
     def run(self, controller: Controller, context: RunContext) -> ActionResult:
         masked = controller.mask_config()
         env_lines = [f"{key}: {value}" for key, value in masked.items()]
         org_lines = controller.organization_summary()
-        context.log_notes("settings", ["Environment"] + env_lines + [""] + ["Organization"] + org_lines)
+
+        log_lines: List[str] = ["Environment"] + env_lines + ["", "Organization"] + org_lines
+        context.log_notes("settings", log_lines)
+
         plan_text = controller.build_plan(self.id)
+        preview_lines = ["Environment:"] + env_lines + ["", "Organization:"] + org_lines
+        notes = [
+            "Environment settings displayed. Update .env manually to change values.",
+            "Organization summary shown. Use `python app.py --init-org` for updates.",
+        ]
         return ActionResult(
             plan_text=plan_text,
             changes=[],
             errors=[],
-            notes=["Settings displayed. Update .env manually to change values."],
-            preview="\n".join(lines),
-            notes=[
-                "Environment settings displayed. Update .env manually to change values.",
-                "Organization summary shown. Use `python app.py --init-org` for updates.",
-            ],
-            preview="\n".join(["Environment:"] + env_lines + ["", "Organization:"] + org_lines),
+            notes=notes,
+            preview="\n".join(preview_lines),
         )

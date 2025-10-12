@@ -1,15 +1,9 @@
-"""Configuration loading and masking helpers for the True Good Craft controller."""
-
-from __future__ import annotations
-
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Dict, Optional
 """Configuration loading and masking helpers for the controller."""
 
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -17,11 +11,6 @@ from typing import Dict, List, Optional
 
 @dataclass
 class NotionConfig:
-    token: Optional[str] = None
-    inventory_database_id: Optional[str] = None
-
-    def is_configured(self) -> bool:
-        return bool(self.token and self.inventory_database_id)
     module_enabled: bool = False
     token: Optional[str] = None
     inventory_database_id: Optional[str] = None
@@ -45,10 +34,6 @@ class NotionConfig:
 
 @dataclass
 class GoogleDriveConfig:
-    root_folder_id: Optional[str] = None
-
-    def is_configured(self) -> bool:
-        return bool(self.root_folder_id)
     module_config_path: Path = Path("config/google_drive_module.json")
     fallback_root_id: Optional[str] = None
 
@@ -104,12 +89,9 @@ class AppConfig:
     @classmethod
     def load(cls, env_file: str = ".env") -> "AppConfig":
         """Load configuration from ``env_file`` and environment variables."""
+
         _load_env_file(env_file)
-        notion = NotionConfig(
-            token=_clean_env("NOTION_TOKEN"),
-            inventory_database_id=_clean_env("NOTION_DB_INVENTORY_ID"),
-        )
-        drive = GoogleDriveConfig(root_folder_id=_clean_env("DRIVE_ROOT_FOLDER_ID"))
+
         api_key = _clean_env("NOTION_API_KEY")
         token = _clean_env("NOTION_TOKEN") or api_key
         notion = NotionConfig(
@@ -126,12 +108,14 @@ class AppConfig:
             allowlist_ids=_env_list("NOTION_ALLOWLIST_IDS"),
             denylist_ids=_env_list("NOTION_DENYLIST_IDS"),
         )
+
         drive = GoogleDriveConfig(
             module_config_path=Path(
                 _clean_env("DRIVE_MODULE_CONFIG") or "config/google_drive_module.json"
             ),
             fallback_root_id=_clean_env("DRIVE_ROOT_FOLDER_ID"),
         )
+
         sheets = GoogleSheetsConfig(inventory_sheet_id=_clean_env("SHEET_INVENTORY_ID"))
         gmail = GmailConfig(query=_clean_env("GMAIL_QUERY"))
         wave = WaveConfig(
@@ -139,10 +123,12 @@ class AppConfig:
             business_id=_clean_env("WAVE_BUSINESS_ID"),
             sheet_id=_clean_env("WAVE_SHEET_ID"),
         )
+
         return cls(notion=notion, drive=drive, sheets=sheets, gmail=gmail, wave=wave)
 
     def enabled_modules(self) -> Dict[str, bool]:
         """Return a mapping of module names to their configuration status."""
+
         return {
             "notion": self.notion.is_configured(),
             "drive": self.drive.is_configured(),
@@ -153,11 +139,9 @@ class AppConfig:
 
     def mask_sensitive(self) -> Dict[str, Optional[str]]:
         """Return a masked view of sensitive config values for display purposes."""
+
         return {
             "NOTION_TOKEN": mask_secret(self.notion.token),
-            "NOTION_DB_INVENTORY_ID": mask_secret(self.notion.inventory_database_id),
-            "SHEET_INVENTORY_ID": mask_secret(self.sheets.inventory_sheet_id),
-            "DRIVE_ROOT_FOLDER_ID": mask_secret(self.drive.root_folder_id),
             "NOTION_API_KEY": mask_secret(self.notion.token),
             "NOTION_DB_INVENTORY_ID": mask_secret(self.notion.inventory_database_id),
             "NOTION_ROOT_IDS": ",".join(self.notion.root_ids) or None,
@@ -182,6 +166,7 @@ class AppConfig:
 
 def mask_secret(value: Optional[str]) -> Optional[str]:
     """Mask a secret value, keeping the first and last 3 characters visible."""
+
     if not value:
         return value
     if len(value) <= 6:
@@ -244,6 +229,3 @@ def _env_list(key: str) -> List[str]:
         return []
     parts = [part.strip() for part in value.split(",")]
     return [part for part in parts if part]
-
-
-import os  # noqa: E402  # pylint: disable=wrong-import-position

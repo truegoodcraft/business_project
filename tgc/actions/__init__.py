@@ -1,16 +1,9 @@
-"""Action registry."""
+"""Registry of available controller actions."""
 
 from .contacts import ContactsAction
 from .csv_import import CsvImportAction
 from .discover import DiscoverAuditAction
 from .drive_link import DriveLinkAction
-from .gmail_import import GmailImportAction
-from .logs import LogsAction
-from .settings import SettingsAction
-from .sheets_sync import SheetsSyncAction
-from .wave import WaveAction
-
-__all__ = [
 from .drive_module import DriveModuleAction
 from .gmail_import import GmailImportAction
 from .logs import LogsAction
@@ -26,8 +19,6 @@ __all__ = [
     "CsvImportAction",
     "DiscoverAuditAction",
     "DriveLinkAction",
-    "GmailImportAction",
-    "LogsAction",
     "DriveModuleAction",
     "GmailImportAction",
     "LogsAction",

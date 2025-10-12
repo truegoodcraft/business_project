@@ -14,7 +14,7 @@ from .base import SimpleAction
 
 @dataclass
 class NotionModuleAction(SimpleAction):
-    id: str = "10"
+    id: str = "11"
     name: str = "Notion Access Module"
     description: str = "Enable, test, and inspect Notion connectivity"
 
