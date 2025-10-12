@@ -107,6 +107,32 @@ class MasterIndexController:
             print(f"Collecting Notion pages from {len(notion_roots)} root(s)...")
         else:
             print("No Notion roots configured; skipping page traversal.")
+        if dry_run and notion_roots:
+            print("[dry-run] Skipping Notion API calls and generating placeholder rows.")
+            notion_records = [
+                {
+                    "title": f"(dry-run placeholder for root {root[:8]}…)",
+                    "page_id": root,
+                    "url": "",
+                    "parent": "/",
+                    "last_edited": "",
+                }
+                for root in notion_roots
+            ]
+            notion_errors: List[str] = []
+        else:
+            notion_records, notion_errors = collect_notion_pages(
+                notion_module,
+                notion_roots,
+                max_depth=notion_module.config.max_depth,
+                page_size=notion_module.config.page_size,
+            )
+        notion_elapsed = time.perf_counter() - notion_start
+        print(
+            "Collected {} Notion page(s) in {:.1f}s".format(
+                len(notion_records), notion_elapsed
+            )
+        )
         notion_records, notion_errors = collect_notion_pages(
             notion_module,
             notion_roots,
@@ -125,6 +151,33 @@ class MasterIndexController:
             print(f"Collecting Drive files from {len(drive_roots)} root(s)...")
         else:
             print("No Drive roots configured; skipping file traversal.")
+        if dry_run and drive_roots:
+            print("[dry-run] Skipping Drive API calls and generating placeholder rows.")
+            drive_records = [
+                {
+                    "name": f"(dry-run placeholder for root {root[:8]}…)",
+                    "file_id": root,
+                    "path_or_link": "/",
+                    "mimeType": "",
+                    "modifiedTime": "",
+                    "size": "",
+                }
+                for root in drive_roots
+            ]
+            drive_errors: List[str] = []
+        else:
+            drive_records, drive_errors = collect_drive_files(
+                drive_module,
+                drive_roots,
+                mime_whitelist=list(drive_module.config.mime_whitelist) or None,
+                max_depth=drive_module.config.max_depth,
+                page_size=drive_module.config.page_size,
+            )
+        drive_elapsed = time.perf_counter() - drive_start
+        print(
+            "Collected {} Drive file(s) in {:.1f}s".format(
+                len(drive_records), drive_elapsed
+            )
         drive_records, drive_errors = collect_drive_files(
             drive_module,
             drive_roots,
@@ -143,7 +196,7 @@ class MasterIndexController:
         drive_records.sort(key=lambda item: ((item.get("path_or_link") or "").casefold(), item.get("name") or ""))
 
         timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-        output_dir = Path("reports") / f"master_index_{timestamp}"
+        output_dir = Path("docs") / "master_index_reports" / f"master_index_{timestamp}"
         notion_path = output_dir / "notion_pages.md"
         drive_path = output_dir / "drive_files.md"
 
