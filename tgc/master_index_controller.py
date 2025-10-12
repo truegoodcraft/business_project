@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 import logging
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from .notion.api import NotionAPIError
 from .util.watchdog import with_watchdog
@@ -441,6 +441,32 @@ def collect_notion_pages(
         start_time = time.perf_counter()
         processed = 0
         progress_interval = 100
+        stats: dict[str, int | float] = {
+            "requests": 0,
+            "pages": 0,
+            "blocks": 0,
+            "started": time.perf_counter(),
+        }
+
+        def log_progress(force: bool = False) -> None:
+            requests = int(stats["requests"])
+            if requests and requests % 50 == 0:
+                force = True
+            if force:
+                elapsed = time.perf_counter() - float(stats["started"])
+                logging.info(
+                    "notion.traversal.progress",
+                    extra={
+                        "requests": requests,
+                        "pages": int(stats["pages"]),
+                        "blocks": int(stats["blocks"]),
+                        "s": int(elapsed),
+                    },
+                )
+
+        def page_done() -> None:
+            stats["pages"] += 1
+            log_progress(force=True)
 
         try:
             while queue and len(records) < limit:
@@ -463,11 +489,17 @@ def collect_notion_pages(
                             limit,
                             depth_limit,
                             page_size,
+                            stats,
+                            log_progress,
+                            page_done,
                         )
                         if handled:
                             continue
                     errors.append(f"Page {page_id}: {exc.message}")
                     continue
+                finally:
+                    stats["requests"] += 1
+                    log_progress()
 
                 title = _extract_page_title(page)
                 parent_path = "/" + "/".join(ancestors) if ancestors else "/"
@@ -493,9 +525,11 @@ def collect_notion_pages(
                     )
 
                 if len(records) >= limit:
+                    page_done()
                     break
 
                 if depth_limit is not None and depth >= depth_limit:
+                    page_done()
                     continue
 
                 next_cursor: Optional[str] = None
@@ -510,8 +544,14 @@ def collect_notion_pages(
                     except NotionAPIError as exc:
                         errors.append(f"Children {page_id}: {exc.message}")
                         break
+                    finally:
+                        stats["requests"] += 1
+                        log_progress()
 
-                    for block in children.get("results", []):
+                    results = children.get("results", [])
+                    stats["blocks"] += len(results)
+
+                    for block in results:
                         if not isinstance(block, dict):
                             continue
                         block_type = block.get("type")
@@ -538,6 +578,7 @@ def collect_notion_pages(
                         break
                     seen_cursors.add(cursor_value)
                     next_cursor = cursor_value
+                page_done()
         except Exception:
             logger.exception("notion traversal failed", extra={"root_ids": root_id_list})
             raise
@@ -561,6 +602,9 @@ def _handle_database_root(
     limit: int,
     depth_limit: Optional[int],
     page_size: int,
+    stats: dict[str, int | float],
+    log_progress: Callable[..., None],
+    page_done: Callable[[], None],
 ) -> bool:
     from .notion.api import NotionAPIError as _NotionAPIError
 
@@ -574,6 +618,9 @@ def _handle_database_root(
     except Exception as exc:  # pragma: no cover - defensive network guard
         logger.exception("database traversal failed", extra={"database_id": database_id})
         raise
+    finally:
+        stats["requests"] += 1
+        log_progress()
 
     title = _join_rich_text(database.get("title", [])) if isinstance(database, dict) else ""
     database_title = title or "(untitled)"
@@ -588,9 +635,11 @@ def _handle_database_root(
     )
 
     if len(records) >= limit:
+        page_done()
         return True
 
     if depth_limit is not None and depth >= depth_limit:
+        page_done()
         return True
 
     base_path = ancestors + [_sanitize_segment(database_title)] if database_title else list(ancestors)
@@ -612,6 +661,9 @@ def _handle_database_root(
                 "database query traversal failed", extra={"database_id": database_id}
             )
             raise
+        finally:
+            stats["requests"] += 1
+            log_progress()
 
         for item in response.get("results", []):
             if not isinstance(item, dict):
@@ -633,6 +685,7 @@ def _handle_database_root(
             break
         seen_cursors.add(next_cursor)
 
+    page_done()
     return True
 
 
