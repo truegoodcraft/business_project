@@ -49,6 +49,21 @@ class DiscoverAuditAction(SimpleAction):
                 preview = access.get("preview_sample")
                 if isinstance(preview, list):
                     lines.append(f"    preview rows available: {len(preview)}")
+            if key == "drive":
+                from ..modules import GoogleDriveModule
+
+                module_obj = controller.get_module("drive")
+                if isinstance(module_obj, GoogleDriveModule):
+                    validation_lines = module_obj.validation_summary()
+                    if validation_lines:
+                        lines.append("  - Drive module validation:")
+                        lines.extend(f"    {line}" for line in validation_lines)
+                    details = module_obj.validation_details()
+                    for message in details.get("errors", []):
+                        notes.append(f"drive validation error: {message}")
+                    notes.extend(
+                        f"drive validation note: {message}" for message in details.get("notes", [])
+                    )
         context.log_notes("audit", lines)
         plan_text = controller.build_plan(self.id)
         return ActionResult(

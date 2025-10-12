@@ -173,8 +173,8 @@ class FakeDriveService:
 
 class FakeDriveModule(GoogleDriveModule):
     def __init__(self, service):
-        super().__init__(DriveModuleConfig(enabled=True))
         self._service = service
+        super().__init__(DriveModuleConfig(enabled=True))
 
     def ensure_service(self, *, require_write=False):  # type: ignore[override]
         return self._service, None

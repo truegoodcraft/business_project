@@ -107,15 +107,37 @@ class DriveModuleConfig:
 class GoogleDriveModule:
     """Self-contained helper that manages Google Drive configuration."""
 
-    def __init__(self, config: DriveModuleConfig, config_path: Path = DEFAULT_MODULE_CONFIG) -> None:
+    def __init__(
+        self,
+        config: DriveModuleConfig,
+        config_path: Path = DEFAULT_MODULE_CONFIG,
+        *,
+        fallback_root_id: Optional[str] = None,
+        shared_drive_id: Optional[str] = None,
+    ) -> None:
         self.config = config
         self.config_path = config_path
+        self.fallback_root_id = fallback_root_id
+        self.shared_drive_id = shared_drive_id
+        self._validation_errors: List[str] = []
+        self._validation_notes: List[str] = []
+        self._corpora_mode = self._determine_corpora_mode()
+        self._validate_environment()
 
     # ------------------------------------------------------------------
     # Drive client helpers
 
     def root_ids(self) -> List[str]:
         return self.config.all_root_ids()
+
+    def corpora_mode(self) -> str:
+        return self._corpora_mode
+
+    def validation_details(self) -> Dict[str, List[str]]:
+        return {
+            "notes": list(self._validation_notes),
+            "errors": list(self._validation_errors),
+        }
 
     def ensure_service(self, *, require_write: bool = False) -> Tuple[Optional[object], Optional[str]]:
         if ServiceAccountCredentials is None or build is None:  # pragma: no cover - dependency guard
@@ -141,10 +163,35 @@ class GoogleDriveModule:
         return service, None
 
     # ------------------------------------------------------------------
+    # Validation helpers
+
+    def validation_summary(self) -> List[str]:
+        lines: List[str] = []
+        description = self._describe_corpora_mode()
+        lines.append(f"Corpora mode: {description}")
+        if self.shared_drive_id:
+            lines.append(f"Shared drive ID: {self.shared_drive_id}")
+        if self.fallback_root_id:
+            lines.append(f"Fallback root (DRIVE_ROOT_FOLDER_ID): {self.fallback_root_id}")
+        if self._validation_errors:
+            lines.append("Validation errors detected:")
+            lines.extend(f"  • {message}" for message in self._validation_errors)
+        elif self._validation_notes:
+            lines.append("Validation checks:")
+            lines.extend(f"  • {message}" for message in self._validation_notes)
+        return lines
+
+    # ------------------------------------------------------------------
     # Persistence helpers
 
     @classmethod
-    def load(cls, path: Path = DEFAULT_MODULE_CONFIG) -> "GoogleDriveModule":
+    def load(
+        cls,
+        path: Path = DEFAULT_MODULE_CONFIG,
+        *,
+        fallback_root_id: Optional[str] = None,
+        shared_drive_id: Optional[str] = None,
+    ) -> "GoogleDriveModule":
         if path.exists():
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
@@ -153,7 +200,12 @@ class GoogleDriveModule:
         else:
             data = {}
         config = DriveModuleConfig.from_dict(data)
-        return cls(config=config, config_path=path)
+        return cls(
+            config=config,
+            config_path=path,
+            fallback_root_id=fallback_root_id,
+            shared_drive_id=shared_drive_id,
+        )
 
     def save(self) -> None:
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -161,6 +213,7 @@ class GoogleDriveModule:
             json.dumps(self.config.to_dict(), indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
+        self._validate_environment()
 
     # ------------------------------------------------------------------
     # Status helpers
@@ -186,16 +239,27 @@ class GoogleDriveModule:
             lines.append(f"- Root IDs ({len(roots)}): {', '.join(roots)}")
         else:
             lines.append("- Root IDs: not configured")
+        if self.fallback_root_id:
+            lines.append(f"- Fallback root (DRIVE_ROOT_FOLDER_ID): {self.fallback_root_id}")
+        lines.append(f"- Corpora mode: {self._describe_corpora_mode()}")
         lines.append(
             f"- Include 'Shared with me': {'yes' if self.config.include_shared_with_me else 'no'}"
         )
         lines.append(f"- Include shared drives: {'yes' if self.config.include_shared_drives else 'no'}")
+        if self.shared_drive_id:
+            lines.append(f"  • Shared drive ID: {self.shared_drive_id}")
         if self.config.mime_whitelist:
             lines.append(f"- MIME whitelist: {', '.join(self.config.mime_whitelist)}")
         else:
             lines.append("- MIME whitelist: all types")
         lines.append(f"- Allow write operations: {'yes' if self.config.allow_writes else 'no'}")
         lines.append(f"- Config file: {self._mask_path(str(self.config_path))}")
+        if self._validation_errors:
+            lines.append("- Validation errors:")
+            lines.extend(f"  • {message}" for message in self._validation_errors)
+        elif self._validation_notes:
+            lines.append("- Validation checks:")
+            lines.extend(f"  • {message}" for message in self._validation_notes)
         return lines
 
     def preview_data(self) -> List[str]:
@@ -219,6 +283,11 @@ class GoogleDriveModule:
             lines.extend(f"  - {value}" for value in roots)
         else:
             lines.append("Configured root IDs: (none)")
+        if self.fallback_root_id:
+            lines.append(f"Fallback root (DRIVE_ROOT_FOLDER_ID): {self.fallback_root_id}")
+        lines.append(f"Corpora mode: {self._describe_corpora_mode()}")
+        if self.shared_drive_id:
+            lines.append(f"Shared drive ID: {self.shared_drive_id}")
         if self.config.mime_whitelist:
             lines.append("MIME whitelist:")
             lines.extend(f"  - {value}" for value in self.config.mime_whitelist)
@@ -229,6 +298,12 @@ class GoogleDriveModule:
                 f"Original credentials file: {self._mask_path(self.config.credentials_path)}"
             )
         lines.append(f"Configuration stored at: {self._mask_path(str(self.config_path))}")
+        if self._validation_errors:
+            lines.append("Validation errors:")
+            lines.extend(f"  - {message}" for message in self._validation_errors)
+        elif self._validation_notes:
+            lines.append("Validation checks:")
+            lines.extend(f"  - {message}" for message in self._validation_notes)
         return lines
 
     def _credential_preview(self) -> List[str]:
@@ -747,6 +822,113 @@ class GoogleDriveModule:
         except Exception as exc:  # pragma: no cover - network dependent
             return {"status": "error", "detail": _format_http_error(exc)}
         return {"status": "ok", "detail": "Permission added", "permission": response}
+
+    def _determine_corpora_mode(self) -> str:
+        if self.shared_drive_id:
+            return "drive"
+        if self.config.include_shared_drives:
+            return "allDrives"
+        return "default"
+
+    def _describe_corpora_mode(self) -> str:
+        if self._corpora_mode == "drive":
+            drive_detail = self.shared_drive_id or "(not set)"
+            return f"drive (driveId={drive_detail})"
+        if self._corpora_mode == "allDrives":
+            return "allDrives (supportsAllDrives=True)"
+        return "default (My Drive only)"
+
+    def _validate_environment(self) -> None:
+        self._validation_errors = []
+        self._validation_notes = []
+        self._corpora_mode = self._determine_corpora_mode()
+
+        self._validation_notes.append(f"Corpora mode active: {self._describe_corpora_mode()}")
+        if self.shared_drive_id and not self.config.include_shared_drives:
+            self._validation_notes.append(
+                "Shared drive ID set; using corpora=drive overrides include_shared_drives settings."
+            )
+
+        root_id = self.fallback_root_id
+        if not root_id:
+            self._validation_notes.append(
+                "DRIVE_ROOT_FOLDER_ID not provided; configure this environment variable to supply a fallback root."
+            )
+            return
+
+        if not self.config.enabled or not self.config.has_credentials():
+            self._validation_errors.append(
+                "Cannot validate DRIVE_ROOT_FOLDER_ID because the Drive module is disabled or missing credentials. "
+                "Hint: run 'Configure Google Drive module' and store service-account credentials."
+            )
+            return
+
+        service, error = self.ensure_service()
+        if not service:
+            hint = error or "Drive client could not be created"
+            self._validation_errors.append(
+                f"Unable to validate DRIVE_ROOT_FOLDER_ID: {hint}. Hint: re-run Drive module configuration."
+            )
+            return
+
+        try:
+            metadata = (
+                service.files()
+                .get(
+                    fileId=root_id,
+                    fields="id, name, mimeType, driveId",
+                    supportsAllDrives=True,
+                )
+                .execute()
+            )
+        except Exception as exc:  # pragma: no cover - network dependent
+            message = _format_http_error(exc)
+            self._validation_errors.append(
+                f"Unable to reach DRIVE_ROOT_FOLDER_ID '{root_id}': {message}. "
+                "Hint: confirm the folder ID and verify the service account has at least viewer access."
+            )
+            return
+
+        display_name = metadata.get("name") or "(untitled)"
+        drive_id = metadata.get("driveId")
+
+        if self._corpora_mode == "drive":
+            if not drive_id:
+                self._validation_errors.append(
+                    "Corpora mode 'drive' is active but DRIVE_ROOT_FOLDER_ID resolves to a My Drive folder. "
+                    "Hint: clear DRIVE_SHARED_DRIVE_ID or choose a folder from the shared drive."
+                )
+                return
+            if self.shared_drive_id and drive_id != self.shared_drive_id:
+                self._validation_errors.append(
+                    "DRIVE_ROOT_FOLDER_ID belongs to shared drive {actual} but DRIVE_SHARED_DRIVE_ID is {expected}. "
+                    "Hint: update DRIVE_SHARED_DRIVE_ID to {actual} or pick a folder within the configured drive."
+                    .format(actual=drive_id, expected=self.shared_drive_id)
+                )
+                return
+            self._validation_notes.append(f"Using corpora=drive with driveId={drive_id}.")
+        elif drive_id:
+            if self._corpora_mode == "default":
+                self._validation_errors.append(
+                    "DRIVE_ROOT_FOLDER_ID is on shared drive {drive_id} but corpora mode is 'default'. "
+                    "Hint: set DRIVE_SHARED_DRIVE_ID to {drive_id} or enable shared drives in the module so corpora=allDrives is used."
+                    .format(drive_id=drive_id)
+                )
+                return
+            self._validation_notes.append(
+                f"Shared drive {drive_id} will be accessed via corpora=allDrives with supportsAllDrives=True."
+            )
+        elif self.shared_drive_id:
+            self._validation_errors.append(
+                "DRIVE_SHARED_DRIVE_ID is set but DRIVE_ROOT_FOLDER_ID is not part of that shared drive. "
+                "Hint: provide a folder ID from the shared drive or remove DRIVE_SHARED_DRIVE_ID."
+            )
+            return
+
+        detail = f"Validated DRIVE_ROOT_FOLDER_ID '{root_id}' ({display_name})"
+        if drive_id:
+            detail += f" on drive {drive_id}"
+        self._validation_notes.append(detail)
 
     # ------------------------------------------------------------------
     # Internal helpers

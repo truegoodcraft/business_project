@@ -58,7 +58,11 @@ def _build_adapters(config: AppConfig) -> Dict[str, object]:
 
 def _build_modules(config: AppConfig, env_file: str) -> Dict[str, object]:
     return {
-        "drive": GoogleDriveModule.load(config.drive.module_config_path),
+        "drive": GoogleDriveModule.load(
+            config.drive.module_config_path,
+            fallback_root_id=config.drive.fallback_root_id,
+            shared_drive_id=config.drive.shared_drive_id,
+        ),
         "notion_access": NotionAccessModule(config.notion, env_file),
     }
 
