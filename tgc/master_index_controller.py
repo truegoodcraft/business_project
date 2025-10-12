@@ -79,6 +79,12 @@ class MasterIndexController:
             summary = MasterIndexSummary(status="unavailable", dry_run=dry_run, message=detail)
             self._append_log(summary)
             return summary.to_dict()
+        ready, _details = self._adapters_ready()
+        if not ready:
+            print(
+                "Master Index unavailable: run 'Discover & Audit' and verify Notion + Drive are ready."
+            )
+            return MasterIndexSummary(status="unavailable", dry_run=dry_run).to_dict()
 
         notion_module = self._notion_module()
         drive_module = self._drive_module()
@@ -95,6 +101,7 @@ class MasterIndexController:
             )
             print(message)
             self._append_log(summary)
+            )
             return summary.to_dict()
 
         notion_roots = self._notion_root_ids(notion_module)
@@ -155,6 +162,12 @@ class MasterIndexController:
 
         summary = MasterIndexSummary(
             status=status,
+            output_dir.mkdir(parents=True, exist_ok=True)
+            notion_path.write_text(notion_markdown, encoding="utf-8")
+            drive_path.write_text(drive_markdown, encoding="utf-8")
+
+        summary = MasterIndexSummary(
+            status="ok",
             dry_run=dry_run,
             notion_count=len(notion_records),
             drive_count=len(drive_records),
@@ -177,6 +190,7 @@ class MasterIndexController:
         if notion_ready and drive_ready:
             return True, None
         message = "Required adapters not ready: Notion ({}) · Drive ({})".format(
+        message = """Required adapters not ready: Notion ({}) Drive ({})""".format(
             "ready" if notion_ready else "not ready",
             "ready" if drive_ready else "not ready",
         )
@@ -235,6 +249,11 @@ class MasterIndexController:
             line += f" output={summary.output_dir}"
         if summary.message:
             line += f" message={summary.message}"
+            f"{timestamp} module=master_index dry_run={summary.dry_run} "
+            f"notion={summary.notion_count} drive={summary.drive_count}"
+        )
+        if summary.output_dir:
+            line += f" output={summary.output_dir}"
         with log_path.open("a", encoding="utf-8") as handle:
             handle.write(line + "\n")
 
