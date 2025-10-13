@@ -6,11 +6,12 @@ import os
 import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Callable, List, Optional, Sequence
+from typing import Callable, Dict, List, Optional, Sequence
 
 from core.action_cards.model import ActionCard, DiffEntry
 from core.bus import command_bus
 from core.bus.models import CommandContext
+from core.conn_broker import ConnectionBroker
 from tgc.bootstrap import bootstrap_controller
 from tgc.util.serialization import safe_serialize
 from tgc.util.stage import stage, stage_done
@@ -19,6 +20,12 @@ PromptFn = Callable[[str], str]
 PrintFn = Callable[..., None]
 
 _SAFE_RISKS = {"low", "info", "informational", "none"}
+
+_SERVICE_LABELS = {
+    "drive": "Google Drive",
+    "sheets": "Sheets",
+    "notion": "Notion",
+}
 
 
 def _select_env_file(dev: bool) -> str:
@@ -43,6 +50,72 @@ def _build_context(controller, *, run_id: Optional[str] = None) -> CommandContex
     )
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    value = raw.strip().lower()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
+def _env_int(name: str, default: Optional[int]) -> Optional[int]:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return value
+
+
+def _normalise_limit(value: Optional[int]) -> Optional[int]:
+    if value is None:
+        return None
+    if value <= 0:
+        return None
+    return value
+
+
+def _resolve_discovery_limits(fast_mode: bool) -> Dict[str, Optional[int]]:
+    max_files_default = 250 if fast_mode else None
+    max_pages_default = 20 if fast_mode else None
+    page_size_default = 100 if fast_mode else None
+    timeout_default = 45 if fast_mode else None
+
+    max_files = _normalise_limit(_env_int("DISCOVERY_MAX_FILES", max_files_default))
+    max_pages = _normalise_limit(_env_int("NOTION_MAX_PAGES", max_pages_default))
+    page_size = _normalise_limit(_env_int("DRIVE_PAGE_SIZE", page_size_default))
+    timeout_sec = _env_int("DISCOVERY_TIMEOUT_SEC", timeout_default)
+    timeout_sec = timeout_sec if timeout_sec and timeout_sec > 0 else None
+
+    return {
+        "fast": fast_mode,
+        "max_files": max_files,
+        "max_pages": max_pages,
+        "page_size": page_size,
+        "timeout_sec": timeout_sec,
+    }
+
+
+def _resolve_discovery_options(
+    *, fast_flag: bool, disable_drive: bool, disable_notion: bool, disable_sheets: bool
+) -> Dict[str, object]:
+    fast_env = _env_bool("DISCOVERY_FAST", False)
+    fast_mode = bool(fast_flag or fast_env)
+    enabled = {
+        "drive": _env_bool("DISCOVERY_DRIVE_ENABLED", True) and not disable_drive,
+        "notion": _env_bool("DISCOVERY_NOTION_ENABLED", True) and not disable_notion,
+        "sheets": _env_bool("DISCOVERY_SHEETS_ENABLED", True) and not disable_sheets,
+    }
+    limits = _resolve_discovery_limits(fast_mode)
+    return {"fast": fast_mode, "enabled": enabled, "limits": limits}
+
+
 def _is_destructive(card: ActionCard) -> bool:
     risk = (card.risk or "").strip().lower()
     if risk and risk not in _SAFE_RISKS:
@@ -60,6 +133,104 @@ def _split_cards(cards: Sequence[ActionCard]) -> tuple[List[ActionCard], List[Ac
     for card in cards:
         (confirm if _is_destructive(card) else safe).append(card)
     return safe, confirm
+
+
+def _connection_summary(results: Dict[str, Dict[str, object]], enabled: Dict[str, bool]) -> str:
+    pieces: List[str] = []
+    for service in ("drive", "sheets", "notion"):
+        if not enabled.get(service, True):
+            continue
+        label = _SERVICE_LABELS.get(service, service.title())
+        ok = bool(results.get(service, {}).get("ok"))
+        icon = "✓" if ok else "⚠"
+        pieces.append(f"{icon} {label}")
+    return f"Connections: {' '.join(pieces)}" if pieces else ""
+
+
+def _format_fast_limits_line(limits: Dict[str, Optional[int]]) -> str:
+    if not limits.get("fast"):
+        return ""
+    max_files = limits.get("max_files")
+    max_pages = limits.get("max_pages")
+    timeout = limits.get("timeout_sec")
+    parts = [
+        f"max_files={max_files if max_files is not None else '∞'}",
+        f"max_pages={max_pages if max_pages is not None else '∞'}",
+        f"timeout={f'{timeout}s' if timeout is not None else '∞'}",
+    ]
+    return "Fast discovery is ON: " + ", ".join(parts)
+
+
+def _run_handshake(
+    ctx: CommandContext, discovery_options: Dict[str, object], output: PrintFn
+) -> Dict[str, Dict[str, object]]:
+    broker = ctx.extras.get("conn_broker") if isinstance(ctx.extras, dict) else None
+    results: Dict[str, Dict[str, object]] = {}
+    enabled: Dict[str, bool] = discovery_options.get("enabled", {})  # type: ignore[arg-type]
+    for service in ("drive", "sheets", "notion"):
+        if not enabled.get(service, True):
+            continue
+        label = _SERVICE_LABELS.get(service, service.title())
+        if broker is None:
+            results[service] = {"service": service, "ok": False, "detail": "broker_unavailable"}
+            output(f"⚠ {label} probe unavailable (broker missing)")
+            continue
+        result = broker.probe(service)
+        results[service] = result
+        if result.get("ok"):
+            meta = result.get("metadata", {}) if isinstance(result, dict) else {}
+            if service == "drive":
+                root = meta.get("root") if isinstance(meta, dict) else None
+                output(f"✓ {label} connected (root={root or 'n/a'})")
+            elif service == "sheets":
+                inventory_id = meta.get("inventory_id") if isinstance(meta, dict) else None
+                output(f"✓ {label} connected (inventory_id={inventory_id or 'n/a'})")
+            elif service == "notion":
+                root = meta.get("root") if isinstance(meta, dict) else None
+                pages = None
+                if isinstance(meta, dict):
+                    for key in ("pages", "title_len", "count"):
+                        if meta.get(key) is not None:
+                            pages = meta.get(key)
+                            break
+                pages_text = pages if pages is not None else 0
+                output(f"✓ {label} connected (root={root or 'n/a'}, pages: {pages_text} base)")
+        else:
+            detail = result.get("detail") if isinstance(result, dict) else None
+            output(f"⚠ {label} probe failed: {detail or 'probe failed'}")
+    return results
+
+
+def _prompt_discovery_action(
+    prompt: PromptFn,
+    output: PrintFn,
+    *,
+    discovery_options: Dict[str, object],
+    handshake_results: Dict[str, Dict[str, object]],
+) -> str:
+    enabled: Dict[str, bool] = discovery_options.get("enabled", {})  # type: ignore[arg-type]
+    limits: Dict[str, Optional[int]] = discovery_options.get("limits", {})  # type: ignore[arg-type]
+    summary_line = _connection_summary(handshake_results, enabled)
+    if summary_line:
+        output(summary_line)
+    fast_line = _format_fast_limits_line(limits)
+    if fast_line:
+        output(fast_line)
+    if limits.get("fast"):
+        while True:
+            choice = prompt(
+                "[Enter]=Run fast discovery   (f)=Full crawl   (s)=Skip discovery   (q)=Quit\n> "
+            ).strip().lower()
+            if choice in {"", "\n"}:
+                return "fast"
+            if choice == "f":
+                return "full"
+            if choice == "s":
+                return "skip"
+            if choice == "q":
+                return "quit"
+            output("Unknown selection. Use Enter, f, s, or q.")
+    return "full"
 
 
 def _print_card(card: ActionCard, output: PrintFn) -> None:
@@ -139,6 +310,10 @@ def backup_config(*, output_fn: Optional[PrintFn] = None) -> str:
 def cmd_go(
     dev: bool = False,
     *,
+    fast: bool = False,
+    disable_drive: bool = False,
+    disable_notion: bool = False,
+    disable_sheets: bool = False,
     input_fn: Optional[PromptFn] = None,
     output_fn: Optional[PrintFn] = None,
 ) -> None:
@@ -153,9 +328,44 @@ def cmd_go(
     stage_done(step)
 
     context = _build_context(controller)
-    step = stage("Discover changes")
-    findings = command_bus.discover(context)
+    broker = ConnectionBroker(controller)
+    context.extras["conn_broker"] = broker
+
+    discovery_options = _resolve_discovery_options(
+        fast_flag=fast,
+        disable_drive=disable_drive,
+        disable_notion=disable_notion,
+        disable_sheets=disable_sheets,
+    )
+    context.options["discovery"] = discovery_options
+
+    step = stage("Base-layer handshake")
+    handshake_results = _run_handshake(context, discovery_options, output)
     stage_done(step)
+    context.extras["handshake"] = handshake_results
+
+    action = _prompt_discovery_action(
+        prompt,
+        output,
+        discovery_options=discovery_options,
+        handshake_results=handshake_results,
+    )
+    if action == "quit":
+        output("Aborted.")
+        return
+    findings: Dict[str, object]
+    if action == "skip":
+        findings = {}
+        context.findings = {}
+        output("Discovery skipped.")
+    else:
+        if action == "full" and discovery_options.get("fast"):
+            discovery_options["fast"] = False
+            discovery_options["limits"] = _resolve_discovery_limits(False)
+            context.options["discovery"] = discovery_options
+        step = stage("Discover changes")
+        findings = command_bus.discover(context)
+        stage_done(step)
 
     step = stage("Plan proposals")
     cards = command_bus.plan(context, findings)

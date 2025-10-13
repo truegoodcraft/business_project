@@ -98,21 +98,9 @@ def discover(ctx: CommandContext) -> Dict[str, PluginFinding]:
     """Run all discovery plugins and aggregate findings."""
 
     logger = ctx.logger or logging.getLogger(__name__)
-    discovery_options = getattr(ctx, "options", {}).get("discovery", {})
-    enabled_map = discovery_options.get("enabled", {}) if isinstance(discovery_options, dict) else {}
-    limits_cfg = discovery_options.get("limits", {}) if isinstance(discovery_options, dict) else {}
-    fast_mode = bool(limits_cfg.get("fast"))
-    scope = "read_base" if fast_mode else "read_crawl"
-    if isinstance(ctx.extras, dict):
-        ctx.extras["discovery_limits"] = limits_cfg
-        ctx.extras["discovery_scope"] = scope
     findings: Dict[str, PluginFinding] = {}
     plugin_counts: Dict[str, int] = {}
     for plugin in _DISCOVERY_PLUGINS:
-        service_key = plugin.split(".")[-1]
-        if enabled_map and not enabled_map.get(service_key, True):
-            uni_write("plugin.skipped_disabled", ctx.run_id, plugin=plugin, reason="disabled")
-            continue
         if not plugins_json.enabled(plugin):
             uni_write("plugin.skipped_disabled", ctx.run_id, plugin=plugin)
             continue
@@ -130,27 +118,8 @@ def discover(ctx: CommandContext) -> Dict[str, PluginFinding]:
             elapsed_ms = 0
         else:
             finding = _normalise_finding(plugin, payload)
-            timeout_sec = limits_cfg.get("timeout_sec") if isinstance(limits_cfg, dict) else None
-            if timeout_sec and elapsed_ms > int(float(timeout_sec) * 1000):
-                if not finding.partial:
-                    finding.partial = True
-                    finding.reason = finding.reason or f"Timeout after {timeout_sec}s"
-                logger.warning(
-                    "discover.timeout",
-                    extra={"plugin": plugin, "timeout": timeout_sec, "elapsed_ms": elapsed_ms},
-                )
         findings[plugin] = finding
         plugin_counts[plugin] = finding.count()
-        if finding.partial:
-            logger.warning(
-                "discover.partial",
-                extra={
-                    "plugin": plugin,
-                    "reason": finding.reason,
-                    "count": finding.count(),
-                    "limits": limits_cfg,
-                },
-            )
         uni_write(
             "bus.discover.plugin",
             ctx.run_id,

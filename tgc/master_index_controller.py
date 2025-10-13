@@ -518,6 +518,7 @@ def collect_notion_pages(
     page_size: int = 100,
     limit: int = MAX_NOTION_ITEMS,
     limits: Optional[TraversalLimits] = None,
+    client: Optional[object] = None,
 ) -> TraversalResult:
     from .notion.module import NotionAccessModule
 
@@ -528,9 +529,13 @@ def collect_notion_pages(
     try:
         if not isinstance(notion_module, NotionAccessModule):
             return [], ["Notion module unavailable"]
-        client, error = notion_module._build_client()  # type: ignore[attr-defined]
-        if not client:
+        client_obj = client
+        error = None
+        if client_obj is None:
+            client_obj, error = notion_module._build_client()  # type: ignore[attr-defined]
+        if not client_obj:
             return [], [error or "Notion client unavailable"]
+        client = client_obj
 
         queue: deque[Tuple[str, int, List[str]]] = deque()
         for root in root_id_list:
@@ -631,11 +636,11 @@ def collect_notion_pages(
                 if check_limits():
                     break
                 try:
-                    page = client.pages_retrieve(page_id)
+                    page = client_obj.pages_retrieve(page_id)
                 except NotionAPIError as exc:
                     if exc.status in {400, 404} or exc.code == "object_not_found":
                         handled = _handle_database_root(
-                            client,
+                            client_obj,
                             page_id,
                             depth,
                             ancestors,
@@ -706,7 +711,7 @@ def collect_notion_pages(
                     if check_limits():
                         break
                     try:
-                        children = client.blocks_children_list(
+                        children = client_obj.blocks_children_list(
                             page_id,
                             page_size=100,
                             start_cursor=next_cursor,
@@ -949,6 +954,7 @@ def collect_drive_files(
     page_size: int = 200,
     limit: int = MAX_DRIVE_ITEMS,
     limits: Optional[TraversalLimits] = None,
+    service: Optional[object] = None,
 ) -> TraversalResult:
     from .modules.google_drive import GoogleDriveModule
 
@@ -960,8 +966,11 @@ def collect_drive_files(
         if not isinstance(drive_module, GoogleDriveModule):
             return TraversalResult(records=[], errors=["Google Drive module unavailable"])
 
-        service, error = drive_module.ensure_service()
-        if not service:
+        service_obj = service
+        error = None
+        if service_obj is None:
+            service_obj, error = drive_module.ensure_service()
+        if not service_obj:
             return TraversalResult(records=[], errors=[error or "Google Drive service unavailable"])
 
         share_email = service_account_email(drive_module.config)
@@ -1035,7 +1044,7 @@ def collect_drive_files(
                 break
             try:
                 metadata = (
-                    service.files()
+                    service_obj.files()
                     .get(
                         fileId=file_id,
                         fields="id,name,mimeType,parents,modifiedTime,size,webViewLink,shortcutDetails,trashed",
@@ -1066,7 +1075,7 @@ def collect_drive_files(
             if isinstance(shortcut_details, dict):
                 target_id = shortcut_details.get("targetId")
                 if target_id:
-                    target = _resolve_shortcut(service, target_id, shortcut_cache, errors)
+                    target = _resolve_shortcut(service_obj, target_id, shortcut_cache, errors)
                     if target:
                         metadata.setdefault("mimeType", target.get("mimeType"))
                         metadata.setdefault("modifiedTime", target.get("modifiedTime"))
@@ -1134,7 +1143,7 @@ def collect_drive_files(
                         break
                     try:
                         response = (
-                            service.files()
+                            service_obj.files()
                             .list(
                                 q=query,
                                 includeItemsFromAllDrives=drive_module.config.include_shared_drives,

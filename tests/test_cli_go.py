@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+import types
+from pathlib import Path
 from typing import Iterator, List
 
 import pytest
@@ -71,6 +73,25 @@ def _install_bus(monkeypatch, cards: List[ActionCard], apply_calls: List[str]):
     monkeypatch.setattr("tgc.cli_main.command_bus.discover", fake_discover)
     monkeypatch.setattr("tgc.cli_main.command_bus.plan", fake_plan)
     monkeypatch.setattr("tgc.cli_main.command_bus.apply", fake_apply)
+
+    class _Broker:
+        def __init__(self, controller):
+            self.controller = controller
+
+        def get_client(self, service: str, scope: str = "read_base"):
+            return types.SimpleNamespace(service=service, scope=scope, handle=object())
+
+        def probe(self, service: str):
+            meta = {"service": service, "ok": True, "metadata": {}}
+            if service == "drive":
+                meta["metadata"] = {"root": "root"}
+            elif service == "sheets":
+                meta["metadata"] = {"inventory_id": "sheet"}
+            else:
+                meta["metadata"] = {"root": "notion-root", "pages": 1}
+            return meta
+
+    monkeypatch.setattr("tgc.cli_main.ConnectionBroker", _Broker)
 
 
 def test_cmd_go_applies_safe_only(monkeypatch):
