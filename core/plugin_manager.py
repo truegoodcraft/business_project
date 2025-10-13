@@ -9,7 +9,6 @@ from core.capabilities import declare, register
 from core.plugins_state import is_enabled as _plugin_enabled
 from core.signing import PUBLIC_KEY_HEX, SIGNING_AVAILABLE, verify_plugin_signature
 from core.unilog import write as uni_write
-from tgc.plugin_adapter import adapt as adapt_plugin
 
 CORE_VERSION = "0.1.0"
 SECURITY_LOG = pathlib.Path("reports/security.log")
@@ -100,7 +99,6 @@ def load_plugins(root: str = "plugins"):
         declared_version = str(man.get("plugin_api", "1.0"))
         if not getattr(mod, "api_version", None):
             setattr(mod, "api_version", declared_version)
-        mod = adapt_plugin(mod)
         for cap in man["capabilities"]:
             func = getattr(mod, cap["callable"])
             register(

@@ -1256,6 +1256,34 @@ def render_markdown(
     return "\n".join(lines) + "\n"
 
 
+def run_master_index(context: CommandContext, *, options: Optional[Dict[str, object]] = None):
+    """Entry point used by the alpha CLI to execute the master index crawl."""
+
+    controller = context.controller
+    master = MasterIndexController(controller)
+
+    limits_obj: Optional[TraversalLimits] = None
+    if options:
+        limits_obj = TraversalLimits(
+            max_seconds=options.get("timeout_sec"),
+            max_pages=options.get("max_pages"),
+        )
+        context.options.update(options)
+    else:
+        context.options.update({})
+
+    if limits_obj is None:
+        existing = context.limits if isinstance(context.limits, TraversalLimits) else None
+        limits_obj = existing or TraversalLimits()
+    context.limits = limits_obj
+
+    return master.run_master_index(
+        dry_run=bool(getattr(context, "dry_run", False)),
+        limits=limits_obj,
+        run_context=context,
+    )
+
+
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from .controller import Controller
     from .modules import GoogleDriveModule
