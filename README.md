@@ -348,6 +348,12 @@ If you found this project useful or entertaining, consider fueling the chaos wit
 
 </div>
 
+## Security
+
+Plugin signatures (Ed25519) are verified when PyNaCl is installed.
+Install with: `python -m pip install "pynacl>=1.5,<2"`
+Without PyNaCl, TGC Frame will skip signature verification and log a warning.
+
 ## Transparency & Architecture
 
 The Core controller is owned and kept private to protect integrity and user data. All integrations are plugins that declare:
