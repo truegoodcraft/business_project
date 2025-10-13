@@ -1,77 +1,183 @@
-# Alpha Core
+# 🤖 TGC Alpha Core
 
-The Alpha Core provides a slim controller that boots the system, discovers v2 plugins, probes configured services, and reports status. A deep crawl is only started when explicitly requested.
+> A small, opinionated controller that boots, checks connections, shows status — and only digs deeper when you ask.
+
+---
+
+## What It Is
+
+**TGC Alpha Core** is a lean automation hub. On start it loads plugins, performs **base‑layer probes** via a scoped connection broker, and prints a clear status report. No crawling or writes by default. 🧭
+
+**Use it to:**
+
+* See which integrations are reachable (Notion, Drive, Sheets, etc.)
+* Verify your plugin setup
+* Optionally trigger a crawl or index when you’re ready
+
+---
+
+## Safety & Transparency
+
+* 🔒 **Scoped clients**: `read_base`, `read_crawl`, `write`
+* 🚫 **No scope escalation**: a plugin can’t jump from read → write
+* 🧪 **Probe‑only boot**: the default path is read‑only
+* 🧾 **One‑line header + status table** every run
+
+---
 
 ## Quickstart
 
 ```bash
-python app.py alpha               # boot, discover v2 plugins, probe base services
-python app.py alpha --crawl       # boot + start full index/crawl
-python app.py alpha --fast --max-files 500 --timeout 60 --crawl
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+# Boot, list plugins, probe connections, print status, exit
+python app.py alpha
+
+# Start a crawl or index (optional)
+python app.py alpha --crawl --fast --timeout 60 --max-files 500 --max-pages 5000 --page-size 100
 ```
 
-`--fast`, `--timeout`, `--max-files`, `--max-pages`, and `--page-size` constrain crawl workloads only. The boot/probe flow always runs with the same semantics. `--dry-run` is reserved for future write actions during crawl execution.
+---
 
-## Plugin API (v2)
+## Commands
 
-Alpha plugins must implement the `PluginV2` interface defined in `core/contracts/plugin_v2.py`:
+* `alpha` → boot + probe + status ✅
+* `alpha --crawl` → perform full index/crawl (respects limits) ⛏️
+* `--fast`, `--timeout`, `--max-files`, `--max-pages`, `--page-size` → constrain crawls ⚙️
+
+---
+
+## Plugin v2 (Alpha)
+
+A minimal contract for integrations:
 
 ```python
 class PluginV2:
-    id: str = "plugin"
-    name: str = "Alpha Plugin"
-
-    def probe(self, broker) -> Dict[str, Any]:
-        raise NotImplementedError
-
-    def describe(self) -> Dict[str, Any]:
-        return {"services": [], "scopes": ["read_base"]}
-
-    def run(self, broker, options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        return {"ok": True}
+    id: str
+    name: str
+    def probe(self, broker) -> dict: ...      # return {"ok": bool, "detail"?: str}
+    def describe(self) -> dict: ...           # {"services": ["drive"], "scopes": ["read_base"]}
+    def run(self, broker, options: dict | None = None) -> dict: ...
 ```
 
-An example plugin lives in `plugins_alpha/example_plugin.py`:
+Guidelines: declare services in `describe()`, keep `probe()` fast, expect **scoped** handles from the broker.
+
+---
+
+## Example Output
+
+```
+[run:2025-10-13T19:40:31Z] mode=alpha fast=False timeout_sec=None max_files=None max_pages=None page_size=None
+Services: 2/3 reachable
+  - drive: OK
+  - notion: FAIL (missing token)
+  - sheets: OK
+Plugins enabled: 2
+  - master_index
+  - my_custom_plugin
+```
+
+---
+
+## License & Ownership
+
+* 🧿 **Core Ownership**: The **core** is proprietary to True Good Craft (TGC). All rights reserved. I retain control over the core and all decisions related to it.
+* 🔌 **Plugins**: You may create and add plugins for use **within this software’s access scope**. Your plugins remain yours; the core remains mine.
+* ✅ **Permitted**: Build plugins, use the broker, run crawls.
+* ❌ **Not Permitted**: Extracting or re‑licensing the core, or bypassing the broker/safety model.
+
+If this helps you, buy your software a coffee. ☕️
+
+# 🤖 TGC Alpha Core
+
+> A small, opinionated controller that boots, checks connections, shows status — and only digs deeper when you ask.
+
+---
+
+## What It Is
+
+**TGC Alpha Core** is a lean automation hub. On start it loads plugins, performs **base‑layer probes** via a scoped connection broker, and prints a clear status report. No crawling or writes by default. 🧭
+
+**Use it to:**
+
+* See which integrations are reachable (Notion, Drive, Sheets, etc.)
+* Verify your plugin setup
+* Optionally trigger a crawl or index when you’re ready
+
+---
+
+## Safety & Transparency
+
+* 🔒 **Scoped clients**: `read_base`, `read_crawl`, `write`
+* 🚫 **No scope escalation**: a plugin can’t jump from read → write
+* 🧪 **Probe‑only boot**: the default path is read‑only
+* 🧾 **One‑line header + status table** every run
+
+---
+
+## Quickstart
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+# Boot, list plugins, probe connections, print status, exit
+python app.py alpha
+
+# Start a crawl or index (optional)
+python app.py alpha --crawl --fast --timeout 60 --max-files 500 --max-pages 5000 --page-size 100
+```
+
+---
+
+## Commands
+
+* `alpha` → boot + probe + status ✅
+* `alpha --crawl` → perform full index/crawl (respects limits) ⛏️
+* `--fast`, `--timeout`, `--max-files`, `--max-pages`, `--page-size` → constrain crawls ⚙️
+
+---
+
+## Plugin v2 (Alpha)
+
+A minimal contract for integrations:
 
 ```python
-from core.contracts.plugin_v2 import PluginV2
-
-class Plugin(PluginV2):
-    id = "example"
-    name = "Example Alpha Plugin"
-
-    def describe(self):
-        base = super().describe()
-        base["services"] = ["drive"]
-        return base
-
-    def probe(self, broker):
-        return broker.probe("drive")
+class PluginV2:
+    id: str
+    name: str
+    def probe(self, broker) -> dict: ...      # return {"ok": bool, "detail"?: str}
+    def describe(self) -> dict: ...           # {"services": ["drive"], "scopes": ["read_base"]}
+    def run(self, broker, options: dict | None = None) -> dict: ...
 ```
 
-Plugins should list the services they depend on via `describe().services`. The core will call `ConnectionBroker.probe(service)` for each service before invoking `plugin.probe(broker)` to allow additional validation.
+Guidelines: declare services in `describe()`, keep `probe()` fast, expect **scoped** handles from the broker.
 
-## Connection Broker
+---
 
-The connection broker issues scoped client handles for services. Supported scopes:
+## Example Output
 
-- `read_base`
-- `read_crawl`
-- `write`
+```
+[run:2025-10-13T19:40:31Z] mode=alpha fast=False timeout_sec=None max_files=None max_pages=None page_size=None
+Services: 2/3 reachable
+  - drive: OK
+  - notion: FAIL (missing token)
+  - sheets: OK
+Plugins enabled: 2
+  - master_index
+  - my_custom_plugin
+```
 
-Once a service has been granted a scope, the broker will not escalate that service to `write` during the same run. Attempts to escalate are denied and logged via `broker.escalation.denied`. Repeated requests for the same scope or lower scopes are permitted.
+---
 
-## What’s removed
+## License & Ownership
 
-- Developer/`--dev` CLI flows
-- Legacy plugin adapters and compatibility layers
-- Safe-mode first boot paths (`OFFLINE_SAFE_MODE` no longer blocks startup)
-- Default deep crawls (now opt-in via `--crawl`)
+* 🧿 **Core Ownership**: The **core** is proprietary to True Good Craft (TGC). All rights reserved. I retain control over the core and all decisions related to it.
+* 🔌 **Plugins**: You may create and add plugins for use **within this software’s access scope**. Your plugins remain yours; the core remains mine.
+* ✅ **Permitted**: Build plugins, use the broker, run crawls.
+* ❌ **Not Permitted**: Extracting or re‑licensing the core, or bypassing the broker/safety model.
 
-## Alpha expectations
-
-The Alpha Core is intentionally breaking and may change quickly before beta. Boot/probe is read-only. Write paths (when introduced) must honor `--dry-run` during the crawl phase. The status output lists reachable services, enabled plugins, and the effective crawl configuration.
-
-## Design Rationale
-
-Alpha isolates the boot/probe phase from the expensive crawl. Booting always initializes the controller, discovers v2 plugins, and probes base connections. Crawls are executed only when the operator passes `--crawl`, reusing the existing master index pipeline while respecting the provided limits.
+If this helps you, buy your software a coffee. ☕️
