@@ -4,11 +4,18 @@ from __future__ import annotations
 
 from typing import Callable, Dict, Iterable, List, Optional
 
-from core import brand, retention
+from core import brand, retention, unilog
 from core.consent_cli import current_consents, grant_scopes, list_scopes, revoke_scopes
-from core.menu_render import render_root, render_submenu
-from core.menu_spec import LEGACY_SHIMS, SUBMENUS
+from core.menu_render import (
+    render_controller_tools_menu,
+    render_data_ops_menu,
+    render_main_menu,
+    render_status_plugins_overview,
+)
+from core.menu_spec import LEGACY_ACTIONS
+from core.runtime_state import boot_sequence
 from core.system_check import system_check as _plugin_system_check
+from core.plugin_manager import CORE_VERSION
 from core.plugins_hub import run_plugins_hub
 from .controller import Controller
 from .health import format_health_table, system_health
@@ -51,7 +58,7 @@ def run_cli(controller: Controller, *, quiet: bool = False, debug: bool = False)
     while True:
         if loop_index:
             print()
-        render_root(quiet=True)
+        render_main_menu(quiet=True)
         choice = input().strip()
         loop_index += 1
         if choice == "?":
@@ -60,56 +67,62 @@ def run_cli(controller: Controller, *, quiet: bool = False, debug: bool = False)
             print()
             continue
         if choice.lower() in {"q", "quit", "exit"}:
+            unilog.write("menu.main.select", None, choice="q")
             print("Goodbye!")
             return
+        if choice in {"1", "2", "3", "4"}:
+            unilog.write("menu.main.select", None, choice=choice)
+            if choice == "1":
+                status_payload = boot_sequence()
+                render_status_plugins_overview(status_payload)
+                input("Press Enter to return to the main menu...")
+                continue
+            if choice == "2":
+                if _handle_data_operations(controller, debug=debug):
+                    return
+                continue
+            if choice == "3":
+                _open_plugins_hub(controller)
+                continue
+            if choice == "4":
+                if _handle_controller_config(controller, debug=debug):
+                    return
+                continue
         if _dispatch_legacy(controller, choice):
             continue
-        if choice in SUBMENUS:
-            while True:
-                render_submenu(choice)
-                sub_choice = input().strip()
-                if sub_choice == "?":
-                    for line in _format_help_lines(debug=debug):
-                        print(line)
-                    print()
-                    continue
-                if sub_choice.lower() in {"q", "quit", "exit"}:
-                    print("Goodbye!")
-                    return
-                if sub_choice == "0":
-                    break
-                submenu_keys = {item_key for item_key, _label, _handler in SUBMENUS.get(choice, [])}
-                if sub_choice in submenu_keys:
-                    try:
-                        _dispatch_by_path(controller, choice, sub_choice)
-                    except RuntimeError as exc:
-                        print(str(exc))
-                    except KeyError:
-                        print("Invalid selection.")
-                else:
-                    print("Invalid selection.")
-        else:
-            print("Invalid selection.")
-
-
-def _dispatch_by_path(controller: Controller, section_key: str, item_key: str):
-    items = SUBMENUS.get(section_key, [])
-    for key, _label, handler_name in items:
-        if key == item_key:
-            handler = HANDLERS.get(handler_name)
-            if handler is None:
-                raise RuntimeError(f"Handler missing: {handler_name}")
-            return handler(controller)
-    raise KeyError(f"No such menu item {section_key}.{item_key}")
+        print("Invalid selection.")
 
 
 def _dispatch_legacy(controller: Controller, input_key: str) -> bool:
-    mapping = LEGACY_SHIMS.get(input_key)
-    if not mapping:
+    handler_name = LEGACY_ACTIONS.get(input_key)
+    if not handler_name:
         return False
-    section_key, item_key = mapping
-    _dispatch_by_path(controller, section_key, item_key)
+    handler = HANDLERS.get(handler_name)
+    if handler is None:
+        raise RuntimeError(f"Handler missing: {handler_name}")
+    handler(controller)
     return True
+
+
+DATA_OPS_ACTIONS: Dict[str, str] = {
+    "12": "action_build_master_index",
+    "15": "action_build_sheets_index",
+    "2": "action_import_gmail",
+    "3": "action_import_csv",
+    "4": "action_sync_metrics",
+    "5": "action_link_drive_pdfs",
+    "6": "action_contacts_vendors",
+}
+
+
+CONTROLLER_TOOLS_ACTIONS: Dict[str, str] = {
+    "1": "action_system_check",
+    "2": "action_logs_reports",
+    "3": "action_prune_old_runs",
+    "4": "action_update_repo",
+    "5": "action_manage_consents",
+    "6": "action_about_versions",
+}
 
 
 def _prompt_mode() -> Optional[str]:
@@ -186,6 +199,70 @@ def _manage_plugin_scopes(_: Controller) -> None:
 
 def _open_plugins_hub(_: Controller) -> None:
     run_plugins_hub()
+
+
+def _handle_data_operations(controller: Controller, *, debug: bool = False) -> bool:
+    while True:
+        render_data_ops_menu()
+        sub_choice = input().strip()
+        if sub_choice == "?":
+            for line in _format_help_lines(debug=debug):
+                print(line)
+            print()
+            continue
+        if sub_choice.lower() in {"q", "quit", "exit"}:
+            unilog.write("menu.main.select", None, choice="q")
+            print("Goodbye!")
+            return True
+        if sub_choice.lower() == "b":
+            break
+        if not sub_choice:
+            print("Invalid selection.")
+            continue
+        unilog.write("menu.sub.select", None, submenu="data_ops", choice=sub_choice)
+        handler_name = DATA_OPS_ACTIONS.get(sub_choice)
+        if not handler_name:
+            print("Invalid selection.")
+            continue
+        handler = HANDLERS.get(handler_name)
+        if handler is None:
+            print(f"Handler missing: {handler_name}")
+            continue
+        try:
+            handler(controller)
+        except RuntimeError as exc:
+            print(str(exc))
+    return False
+
+
+def _handle_controller_config(controller: Controller, *, debug: bool = False) -> bool:
+    while True:
+        render_controller_tools_menu()
+        sub_choice = input().strip()
+        if sub_choice == "?":
+            for line in _format_help_lines(debug=debug):
+                print(line)
+            print()
+            continue
+        if sub_choice.lower() in {"q", "quit", "exit"}:
+            unilog.write("menu.main.select", None, choice="q")
+            print("Goodbye!")
+            return True
+        if sub_choice.lower() == "b":
+            break
+        handler_name = CONTROLLER_TOOLS_ACTIONS.get(sub_choice)
+        if not handler_name:
+            print("Invalid selection.")
+            continue
+        handler = HANDLERS.get(handler_name)
+        if handler is None:
+            print(f"Handler missing: {handler_name}")
+            continue
+        try:
+            handler(controller)
+        except RuntimeError as exc:
+            print(str(exc))
+    return False
 
 
 def _prune_old_runs(_: Controller) -> None:
@@ -408,6 +485,53 @@ def action_update_repo(controller: Controller) -> None:
     _run_controller_action(controller, "U")
 
 
+def action_prune_old_runs(controller: Controller) -> None:
+    _prune_old_runs(controller)
+
+
+def action_manage_consents(controller: Controller) -> None:
+    _manage_plugin_scopes(controller)
+
+
+def action_about_versions(controller: Controller) -> None:
+    status_payload = boot_sequence()
+    core_block = status_payload.get("core", {}) or {}
+    plugin_block = status_payload.get("plugins", {}) or {}
+    summary = plugin_block.get("summary", {}) or {}
+    items = plugin_block.get("items", []) or []
+
+    print(f"{brand.NAME} core version: {CORE_VERSION}")
+    ready_flag = bool(core_block.get("ready"))
+    print(f"Core ready: {ready_flag}")
+    log_path = core_block.get("logging", {}).get("path")
+    if log_path:
+        print(f"Unified log path: {log_path}")
+    print()
+
+    total_plugins = summary.get("total", len(items))
+    enabled_plugins = summary.get("enabled", total_plugins)
+    ok_plugins = summary.get("ok", 0)
+    print(
+        "Plugins OK: {ok}/{enabled} (total discovered: {total})".format(
+            ok=ok_plugins,
+            enabled=enabled_plugins,
+            total=total_plugins,
+        )
+    )
+    if not items:
+        print("No plugins discovered.")
+    else:
+        print("Discovered plugins:")
+        for item in sorted(items, key=lambda it: str(it.get("name"))):
+            name = item.get("name") or "(unknown)"
+            version = item.get("version") or "?"
+            enabled = "enabled" if item.get("enabled") else "disabled"
+            health = (item.get("health", {}) or {}).get("status") or "unknown"
+            print(f"- {name}@{version} — {enabled}, health={health}")
+    print()
+    print("Manage plugin configuration via option 3 (Plugins Hub).")
+
+
 HANDLERS: Dict[str, Callable[[Controller], None]] = {
     "action_system_check": action_system_check,
     "action_discover_audit": action_discover_audit,
@@ -423,4 +547,7 @@ HANDLERS: Dict[str, Callable[[Controller], None]] = {
     "action_settings_ids": action_settings_ids,
     "action_logs_reports": action_logs_reports,
     "action_update_repo": action_update_repo,
+    "action_prune_old_runs": action_prune_old_runs,
+    "action_manage_consents": action_manage_consents,
+    "action_about_versions": action_about_versions,
 }
