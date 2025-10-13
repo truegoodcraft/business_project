@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from core.capabilities import REGISTRY
+from core import retention
 from core.plugin_api import Result
 from core.runtime import run_capability
 
@@ -225,12 +227,31 @@ class MasterIndexAction(SimpleAction):
         if message:
             notes.append(f"Message: {message}")
 
-        return ActionResult(
+        action_result = ActionResult(
             plan_text=plan_text,
             changes=changes,
             errors=[],
             notes=notes,
         )
+
+        if context.apply and retention.retention_enabled():
+            status_value = summary.get("status")
+            if status_value not in {"error", "unavailable"}:
+                verbose = logging.getLogger().isEnabledFor(logging.DEBUG)
+                try:
+                    retention.prune_old_runs(
+                        dry_run=False,
+                        current_run_id=context.run_id,
+                        verbose=verbose,
+                    )
+                except Exception as exc:  # pragma: no cover - defensive
+                    from core.unilog import write as log_event
+
+                    log_event("retention.error", {"path": "auto", "error": str(exc)})
+                    if verbose:
+                        print(f"Retention auto-run failed: {exc}")
+
+        return action_result
 
     def _limits_from_context(self, context: RunContext) -> Optional[TraversalLimits]:
         options = getattr(context, "options", {}) or {}

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Callable, Dict, Iterable, List, Optional
 
+from core import retention
 from core.consent_cli import current_consents, grant_scopes, list_scopes, revoke_scopes
 from core.system_check import system_check as _plugin_system_check
 from .controller import Controller
@@ -45,6 +46,11 @@ def run_cli(controller: Controller) -> None:
             "Manage Plugin Scopes (grant/revoke/view)",
             "Review and update stored plugin consents",
             _manage_plugin_scopes,
+        ),
+        "17": (
+            "Prune old runs (keep last N)",
+            "Preview or prune historical run artifacts",
+            _prune_old_runs,
         ),
     }
 
@@ -150,6 +156,49 @@ def _manage_plugin_scopes(_: Controller) -> None:
             print(f"Revoked scopes {', '.join(scopes)} from {plugin}.")
             continue
         print("Invalid selection. Use g, r, v, or q.")
+
+
+def _prune_old_runs(_: Controller) -> None:
+    while True:
+        answer = input("Preview only? (y/n): ").strip().lower()
+        if answer in {"", "y", "yes"}:
+            dry_run = True
+            break
+        if answer in {"n", "no"}:
+            dry_run = False
+            break
+        print("Invalid selection. Use y or n.")
+
+    report = retention.prune_old_runs(dry_run=dry_run, verbose=True)
+    print(report.summary_line())
+
+    paths = report.planned_prune_paths if dry_run else report.pruned_paths
+    if dry_run and not paths:
+        paths = report.planned_prune_paths
+    if paths:
+        label = "Would remove" if dry_run else "Removed"
+        for path in paths:
+            print(f"- {label}: {path}")
+
+    if report.planned_truncations:
+        if dry_run:
+            print(
+                f"- Would truncate logs to last {report.max_log_lines} lines: "
+                + ", ".join(str(path) for path in report.planned_truncations)
+            )
+        elif report.truncated_files:
+            print(
+                f"- Truncated logs to last {report.max_log_lines} lines: "
+                + ", ".join(str(path) for path in report.truncated_files)
+            )
+
+    if report.errors:
+        print("Errors encountered:")
+        for message in report.errors:
+            print(f"- {message}")
+
+    if dry_run:
+        print("Dry-run complete. No files were deleted.")
 
 
 def _print_master_index_snapshot(controller: Controller) -> None:
