@@ -453,3 +453,24 @@ Example submenu (Status & Health):
 ```
 
 Submenus use digits `1`–`9`; press `0` to go back and `q` from the root menu to exit. Legacy numeric shortcuts continue to work for now so scripts and muscle memory stay compatible during the transition.
+
+## Navigation Model
+
+1) Status & Plugins — Read-only overview (no actions). Shows:
+   - Core readiness (SafeMode/Subprocess)
+   - API status (Notion/Drive/Sheets)
+   - Installed plugins with health/config status
+   - Indexing capabilities available (not executed)
+
+2) Data Operations — Where you run things:
+   - 12) Build Master Index
+   - 15) Build Sheets Index
+   - 2) Import from Gmail
+   - 3) Import CSV → Inventory
+   - 4) Sync metrics → Google Sheets
+   - 5) Link Drive PDFs to Notion
+   - 6) Contacts/Vendors
+
+3) Plugins Hub — Configure plugins (discover, auto-connect, test, enable/disable, view env schema)
+
+4) Controller Config & Tools — Base controller settings only (System Check, Logs, Retention, Update, Consents)
