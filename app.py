@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except Exception:
+    pass
+
 import argparse
 import logging
 import sys
@@ -15,6 +22,29 @@ from tgc.menu import run_cli
 from tgc.organization import configure_profile_interactive
 from tgc.master_index_controller import MasterIndexController, TraversalLimits
 from tgc.util.serialization import safe_serialize
+
+from core.plugin_manager import load_plugins
+from core.runtime import generate_run_id, get_runtime_limits, run_capability, set_runtime_limits
+from core.safelog import logger
+from core.system_check import system_check as _system_check
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+
+def _run_id() -> str:
+    return generate_run_id()
+
+
+def _limits() -> Dict[str, object]:
+    return get_runtime_limits()
+
+
+def run_cap(cap_name: str, **params):
+    return run_capability(cap_name, **params)
+
+
+def system_check() -> None:
+    _system_check()
 
 
 def main() -> None:
@@ -97,6 +127,7 @@ def main() -> None:
         return
 
     controller = bootstrap_controller()
+    load_plugins()
 
     def _positive(value: Optional[float]) -> Optional[float]:
         if value is None:
@@ -126,6 +157,7 @@ def main() -> None:
     if rows_value is not None:
         runtime_limits["max_rows"] = int(rows_value)
     controller.runtime_limits = runtime_limits
+    set_runtime_limits(runtime_limits)
     traversal_limits = TraversalLimits(**limit_kwargs) if limit_kwargs else None
 
     if args.update:
@@ -195,9 +227,6 @@ def main() -> None:
         return
 
     run_cli(controller)
-
-
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 
 def _run_main():

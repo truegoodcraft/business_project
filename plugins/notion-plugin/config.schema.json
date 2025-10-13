@@ -1,6 +1,1 @@
-{
-  "env": [
-    "NOTION_TOKEN",
-    "NOTION_DB_INVENTORY_ID"
-  ]
-}
+{ "env": ["NOTION_TOKEN", "NOTION_DB_INVENTORY_ID"] }

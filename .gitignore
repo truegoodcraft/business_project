@@ -1,6 +1,11 @@
 __pycache__/
 *.pyc
+*.env
+*.local.env
 .env
+.venv/
+consents.json
+plugins/*-plugin/plugin.secrets.local.env
+plugins/**/plugin.secrets.local.env
 reports/
 staging/
-plugins/**/plugin.secrets.local.env

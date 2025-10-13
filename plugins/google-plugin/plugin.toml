@@ -1,0 +1,17 @@
+name = "google-plugin"
+version = "0.1.0"
+publisher = "truegoodcraft"
+plugin_api = "1.0"
+
+[entrypoint]
+module = "plugins.google_plugin.src.main"
+
+[[capabilities]]
+name = "google.list_drive_files"
+callable = "list_drive_files"
+scopes = ["drive.read"]
+
+[[capabilities]]
+name = "google.sheets_index"
+callable = "sheets_index"
+scopes = ["sheets.read"]
