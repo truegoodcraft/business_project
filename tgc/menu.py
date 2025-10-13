@@ -9,6 +9,7 @@ from core.consent_cli import current_consents, grant_scopes, list_scopes, revoke
 from core.menu_render import format_banner, format_help_lines, render_menu
 from core.menu_spec import MENU_SPEC
 from core.system_check import system_check as _plugin_system_check
+from core.plugins_hub import run_plugins_hub
 from .controller import Controller
 from .health import format_health_table, system_health
 from .integration_support import service_account_email, sheets_share_hint
@@ -57,6 +58,11 @@ def run_cli(controller: Controller, *, quiet: bool = False, debug: bool = False)
             "Retention Cleanup",
             "Preview or prune historical run artifacts",
             _prune_old_runs,
+        ),
+        "20": (
+            "Plugins Hub",
+            "Discover / Auto-connect / Debug / Configure",
+            _open_plugins_hub,
         ),
     }
 
@@ -177,6 +183,10 @@ def _manage_plugin_scopes(_: Controller) -> None:
             print(f"Revoked scopes {', '.join(scopes)} from {plugin}.")
             continue
         print("Invalid selection. Use g, r, v, or q.")
+
+
+def _open_plugins_hub(_: Controller) -> None:
+    run_plugins_hub()
 
 
 def _prune_old_runs(_: Controller) -> None:

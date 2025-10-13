@@ -15,3 +15,7 @@ name = "notion.index_pages"
 callable = "index_pages"
 scopes = ["notion.read"]
 network = true
+
+[health]
+capability = "notion.health"
+timeout_s = 3

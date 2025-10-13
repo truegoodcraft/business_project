@@ -26,18 +26,17 @@ from tgc.organization import configure_profile_interactive
 from tgc.master_index_controller import MasterIndexController, TraversalLimits
 from tgc.util.serialization import safe_serialize
 
-from core import policy_engine
+from core import brand, policy_engine, retention
 from core.audit import write_audit
 from core.capabilities import REGISTRY, meta, resolve
 from core.config import load_core_config, plugin_env_whitelist
 from core.isolate import run_isolated
 from core.permissions import require
 from core.plugin_api import Context
-from core.plugin_manager import load_plugins
 from core.policy_log import log_policy
 from core.menu_render import render_menu
-from core import retention
 from core.runtime import get_runtime_limits, set_runtime_limits
+from core.runtime_state import boot_sequence
 from core.safelog import logger
 from core.system_check import system_check as _system_check
 from core.unilog import write as uni_write
@@ -216,6 +215,49 @@ def main() -> None:
         level = logging.WARNING
     logging.getLogger().setLevel(level)
 
+    status_payload = boot_sequence()
+
+    core_status = status_payload.get("core", {})
+    plugin_block = status_payload.get("plugins", {})
+    summary = plugin_block.get("summary", {})
+    items = plugin_block.get("items", [])
+    flags = core_status.get("isolation", {}).get("flags", {})
+
+    def _api_status(plugin_name: str, required_keys: Optional[list[str]] = None) -> str:
+        plugin_item = next((it for it in items if it.get("name") == plugin_name), None)
+        if not plugin_item:
+            return "MISSING"
+        if not plugin_item.get("enabled") or not plugin_item.get("manifest_ok"):
+            return "MISSING"
+        missing_env = set(plugin_item.get("config", {}).get("missing_env") or [])
+        if required_keys is None:
+            if missing_env:
+                return "MISSING"
+        else:
+            if any(key in missing_env for key in required_keys):
+                return "MISSING"
+        return "READY"
+
+    notion_status = _api_status("notion-plugin")
+    drive_status = _api_status("google-plugin", ["GOOGLE_APPLICATION_CREDENTIALS", "DRIVE_ROOT_FOLDER_ID"])
+    sheets_status = _api_status("google-plugin", ["GOOGLE_APPLICATION_CREDENTIALS", "SHEET_INVENTORY_ID"])
+
+    ready_flag = core_status.get("ready")
+    safe_mode_flag = "ON" if flags.get("OFFLINE_SAFE_MODE") else "OFF"
+    subprocess_flag = "ON" if flags.get("PLUGIN_SUBPROCESS") else "OFF"
+    plugins_ok = summary.get("ok", 0)
+    plugins_total = summary.get("enabled", summary.get("total", 0))
+
+    print(
+        f"{brand.NAME} — Ready: {bool(ready_flag)} • "
+        f"Plugins OK: {plugins_ok}/{plugins_total} • "
+        f"SafeMode: {safe_mode_flag} • Subprocess: {subprocess_flag}"
+    )
+    print(f"APIs: Notion={notion_status} • Drive={drive_status} • Sheets={sheets_status}")
+    print('Tip: open "Plugins Hub" to discover, auto-connect, and debug.')
+
+    uni_write("boot.status", None, payload=status_payload)
+
     if args.menu_only and not args.action:
         render_menu(quiet=("--quiet" in sys.argv))
         return
@@ -267,7 +309,6 @@ def main() -> None:
         return
 
     controller = bootstrap_controller()
-    load_plugins()
 
     if args.debug_capabilities:
         table = _format_capabilities_table()

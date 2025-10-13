@@ -209,6 +209,27 @@ python app.py
 python app.py --status
 ```
 
+## Startup & Plugins Hub
+
+At launch, TGC Frame prints a readiness banner:
+
+```
+TGC Frame — Ready: <True/False> • Plugins OK: <X/Y> • SafeMode: <ON/OFF> • Subprocess: <ON/OFF>
+APIs: Notion=<READY/MISSING> • Drive=<READY/MISSING> • Sheets=<READY/MISSING>
+```
+
+Open **Plugins Hub** to:
+- Discover installed plugins and view health
+- Auto-connect (checks required env keys; shows what’s missing)
+- Test a plugin (health check)
+- Configure (see env schema and secret file locations)
+- Enable/Disable plugins
+- Debug broken connections (batch health hints)
+
+Secrets are not captured in the CLI. Set them via:
+- `.env` (global), or
+- `plugins/<plugin>/plugin.secrets.local.env` (gitignored)
+
 ## 🧮 CLI Layout
 
 The interactive CLI now shows a normalized banner and grouped menu. Behavior is unchanged; the same keys trigger the same actions.

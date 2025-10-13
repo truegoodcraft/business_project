@@ -32,3 +32,8 @@ def index_pages(ctx, **kw) -> Result:
         return Result(ok=False, notes=[str(exc)])
 
     return Result(ok=True, data=traversal)
+
+
+def health(ctx) -> Result:  # pragma: no cover - lightweight placeholder
+    _ = ctx
+    return Result(ok=None, notes=["Health check not implemented"])
