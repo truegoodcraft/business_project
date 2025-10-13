@@ -3,6 +3,10 @@ version = "0.1.0"
 publisher = "truegoodcraft"
 plugin_api = "1.0"
 
+[compat]
+min_core = "0.1.0"
+max_core = "0.1.0"
+
 [entrypoint]
 module = "plugins.notion_plugin.src.main"
 

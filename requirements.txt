@@ -4,4 +4,6 @@ google-api-python-client>=2.120.0
 google-auth>=2.30.0
 google-auth-oauthlib>=1.2.0
 requests>=2.32.0
+# Cryptography utilities for plugin signing.
+PyNaCl>=1.5.0
 # The Notion module otherwise relies on the Python standard library.

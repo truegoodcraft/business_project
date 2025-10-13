@@ -5,6 +5,10 @@ import types
 import tomllib
 
 from core.capabilities import register
+from core.signing import PUBLIC_KEY_HEX, verify_plugin_signature
+
+CORE_VERSION = "0.1.0"
+SECURITY_LOG = pathlib.Path("reports/security.log")
 
 
 def discover_plugins(root: str = "plugins"):
@@ -55,9 +59,50 @@ def load_plugins(root: str = "plugins"):
         api = str(man.get("plugin_api", ""))
         if not api.startswith("1."):
             continue
+        if not _is_compatible(man):
+            _log_security_event(
+                f"[compat] Skipped {man.get('name', path.name)}: incompatible with core {CORE_VERSION}"
+            )
+            continue
+        if not verify_plugin_signature(path, PUBLIC_KEY_HEX):
+            _log_security_event(
+                f"[signature] Skipped {man.get('name', path.name)}: signature verification failed"
+            )
+            continue
         module_name = man["entrypoint"]["module"]
         _prepare_packages(module_name, root_path, path)
         mod = importlib.import_module(module_name)
         for cap in man["capabilities"]:
             func = getattr(mod, cap["callable"])
             register(cap["name"], man["name"], man["version"], cap.get("scopes", []), func)
+
+
+def _log_security_event(message: str) -> None:
+    SECURITY_LOG.parent.mkdir(parents=True, exist_ok=True)
+    with SECURITY_LOG.open("a", encoding="utf-8") as fh:
+        fh.write(f"{message}\n")
+
+
+def _is_compatible(manifest: dict) -> bool:
+    compat = manifest.get("compat") or {}
+    min_core = compat.get("min_core")
+    max_core = compat.get("max_core")
+
+    try:
+        if min_core and _version_tuple(CORE_VERSION) < _version_tuple(min_core):
+            return False
+        if max_core and _version_tuple(CORE_VERSION) > _version_tuple(max_core):
+            return False
+    except ValueError:
+        return False
+    return True
+
+
+def _version_tuple(value: str) -> tuple[int, ...]:
+    parts = value.split(".")
+    if not parts:
+        raise ValueError("empty version")
+    try:
+        return tuple(int(part) for part in parts)
+    except ValueError as exc:  # pragma: no cover - invalid manifest data
+        raise ValueError("invalid version component") from exc
