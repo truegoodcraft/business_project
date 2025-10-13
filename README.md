@@ -370,3 +370,38 @@ The controller can prune old runs to keep the repo tidy.
 
 Unified events are written to `reports/all.log` with types:
 `retention.scan` • `retention.prune` • `retention.truncate` • `retention.summary` • `retention.error`
+
+## CLI Layout (normalized)
+
+Banner:
+TGC Frame — Controller Menu
+made by: TGC Systems
+
+Sample menu:
+Core
+  0)  System Check — Validate credentials and status
+  0U) Update from repository — Fetch and merge latest code
+  1)  Discover & Audit — Read-only adapter audit
+
+Build
+  12) Build Master Index — Notion, Drive, (Sheets) → Markdown
+  15) Build Sheets Index — Enumerate spreadsheets & tabs
+
+Imports & Sync
+  2)  Import from Gmail — Stage vendor quotes/orders
+  3)  Import CSV → Inventory — Map CSV columns
+  4)  Sync metrics → Google Sheets — Preview/push
+
+Linking & Data
+  5)  Link Drive PDFs to Notion — Match and attach
+  6)  Contacts/Vendors — Normalize & dedupe
+
+Config & Reports
+  7)  Settings & IDs — View environment and saved queries
+  8)  Logs & Reports — List recent run directories
+
+Optional
+  9)  Wave — Discover Wave data and plan exports
+
+Exit
+  q)  Quit

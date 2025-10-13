@@ -35,6 +35,7 @@ from core.permissions import require
 from core.plugin_api import Context
 from core.plugin_manager import load_plugins
 from core.policy_log import log_policy
+from core.menu_render import render_menu
 from core import retention
 from core.runtime import get_runtime_limits, set_runtime_limits
 from core.safelog import logger
@@ -214,6 +215,10 @@ def main() -> None:
     if args.quiet:
         level = logging.WARNING
     logging.getLogger().setLevel(level)
+
+    if args.menu_only and not args.action:
+        render_menu(quiet=("--quiet" in sys.argv))
+        return
 
     if args.prune_only:
         report = retention.prune_old_runs(
