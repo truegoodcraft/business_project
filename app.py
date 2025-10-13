@@ -35,6 +35,7 @@ from core.permissions import require
 from core.plugin_api import Context
 from core.plugin_manager import load_plugins
 from core.policy_log import log_policy
+from core import retention
 from core.runtime import get_runtime_limits, set_runtime_limits
 from core.safelog import logger
 from core.system_check import system_check as _system_check
@@ -186,6 +187,16 @@ def main() -> None:
         type=int,
         help="Stop Sheets reads after this many rows",
     )
+    parser.add_argument(
+        "--prune-only",
+        action="store_true",
+        help="Prune old run artifacts and exit",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview retention deletions without removing files (use with --prune-only)",
+    )
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     parser.add_argument("--quiet", action="store_true", help="Suppress informational logging")
     parser.add_argument(
@@ -201,6 +212,39 @@ def main() -> None:
     if args.quiet:
         level = logging.WARNING
     logging.getLogger().setLevel(level)
+
+    if args.prune_only:
+        report = retention.prune_old_runs(
+            dry_run=args.dry_run,
+            verbose=True,
+        )
+        print(report.summary_line())
+        if report.planned_prune_paths:
+            targets = report.planned_prune_paths if args.dry_run else report.pruned_paths
+            if not targets and args.dry_run:
+                targets = report.planned_prune_paths
+            if targets:
+                label = "Would remove" if args.dry_run else "Removed"
+                for path in targets:
+                    print(f"- {label}: {path}")
+        if report.planned_truncations:
+            if args.dry_run:
+                print(
+                    f"- Would truncate logs to last {report.max_log_lines} lines: "
+                    + ", ".join(str(path) for path in report.planned_truncations)
+                )
+            elif report.truncated_files:
+                print(
+                    f"- Truncated logs to last {report.max_log_lines} lines: "
+                    + ", ".join(str(path) for path in report.truncated_files)
+                )
+        if report.errors:
+            print("Errors encountered:")
+            for message in report.errors:
+                print(f"- {message}")
+        if args.dry_run:
+            print("Dry-run complete. No files were deleted.")
+        return
 
     if args.init_org:
         configure_profile_interactive()

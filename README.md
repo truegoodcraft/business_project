@@ -308,3 +308,17 @@ We want a stable surface to iterate safety rules while we build features. Once r
 - Denylist + compatibility gate integration
 - Optional enforcement mode
 - Red-team tests in CI
+
+## Retention (keep last N runs)
+
+The controller can prune old runs to keep the repo tidy.
+
+- Env:
+  - `LOG_RETENTION_RUNS=20` (default)
+  - `RETENTION_ENABLE=true` (default)
+  - `UNIFIED_MAX_LINES=25000` (truncate long logs)
+- Menu: “Prune old runs (keep last N)” supports a preview (dry-run).
+- Auto-prune: after successful apply, if `RETENTION_ENABLE=true`.
+
+Unified events are written to `reports/all.log` with types:
+`retention.scan` • `retention.prune` • `retention.truncate` • `retention.summary` • `retention.error`
