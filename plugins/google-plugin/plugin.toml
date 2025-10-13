@@ -21,3 +21,7 @@ name = "google.sheets_index"
 callable = "sheets_index"
 scopes = ["sheets.read"]
 network = true
+
+[health]
+capability = "google.health"
+timeout_s = 3

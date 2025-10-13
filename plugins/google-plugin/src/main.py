@@ -75,3 +75,8 @@ def sheets_index(ctx, **kw) -> Result:
         return Result(ok=False, data=rows or None, notes=notes)
 
     return Result(ok=True, data=rows)
+
+
+def health(ctx) -> Result:  # pragma: no cover - lightweight placeholder
+    _ = ctx
+    return Result(ok=None, notes=["Health check not implemented"])

@@ -5,7 +5,8 @@ import sys
 import types
 import tomllib
 
-from core.capabilities import register
+from core.capabilities import declare, register
+from core.plugins_state import is_enabled as _plugin_enabled
 from core.signing import PUBLIC_KEY_HEX, verify_plugin_signature
 from core.unilog import write as uni_write
 
@@ -65,6 +66,13 @@ def load_plugins(root: str = "plugins"):
             _log_security_event(
                 f"[compat] Skipped {man.get('name', path.name)}: incompatible plugin_api '{api}'"
             )
+            continue
+        declare(man.get("name", path.name), man.get("version", ""), man.get("capabilities", []))
+        plugin_name = man.get("name", path.name)
+        if not _plugin_enabled(plugin_name):
+            message = f"[disabled] Skipped {plugin_name}: disabled via plugins_state"
+            _log_security_event(message)
+            uni_write("plugin.skipped_disabled", None, plugin=plugin_name)
             continue
         if not _is_compatible(man):
             _log_security_event(

@@ -36,6 +36,7 @@ MENU_SPEC = [
         [
             ("7", "Settings & IDs — View environment and saved queries"),
             ("8", "Logs & Reports — List recent run directories"),
+            ("20", "Plugins Hub — Discover / Auto-connect / Debug / Configure"),
         ],
     ),
     (
