@@ -7,6 +7,7 @@ import tomllib
 
 from core.capabilities import register
 from core.signing import PUBLIC_KEY_HEX, verify_plugin_signature
+from core.unilog import write as uni_write
 
 CORE_VERSION = "0.1.0"
 SECURITY_LOG = pathlib.Path("reports/security.log")
@@ -99,6 +100,7 @@ def _log_security_event(message: str) -> None:
     SECURITY_LOG.parent.mkdir(parents=True, exist_ok=True)
     with SECURITY_LOG.open("a", encoding="utf-8") as fh:
         fh.write(f"{message}\n")
+    uni_write("security.note", None, message=message)
 
 
 def _load_denylist() -> set[tuple[str, str]]:

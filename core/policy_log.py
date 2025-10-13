@@ -19,4 +19,4 @@ def log_policy(raw_text: str, decision: dict) -> None:
     }
     with LOG.open("a", encoding="utf-8") as f:
         f.write(json.dumps(entry) + "\n")
-    uni_write("policy.decision", None, user_hash=user_hash, decision=decision)
+    uni_write("policy.decision", decision.get("run_id"), user_hash=user_hash, decision=decision)
