@@ -6,8 +6,8 @@ from typing import Callable, Dict, Iterable, List, Optional
 
 from core import brand, retention
 from core.consent_cli import current_consents, grant_scopes, list_scopes, revoke_scopes
-from core.menu_render import format_banner, format_help_lines, render_menu
-from core.menu_spec import MENU_SPEC
+from core.menu_render import render_root, render_submenu
+from core.menu_spec import LEGACY_SHIMS, SUBMENUS
 from core.system_check import system_check as _plugin_system_check
 from core.plugins_hub import run_plugins_hub
 from .controller import Controller
@@ -17,11 +17,25 @@ from .master_index_controller import MasterIndexController
 from .util.serialization import safe_serialize
 
 
+def _format_banner(*, debug: bool = False) -> str:
+    title = f"{brand.NAME} — Controller Menu"
+    if debug:
+        title += " (debug)"
+    return "\n".join([title, f"made by: {brand.VENDOR}"])
+
+
+def _format_help_lines(*, debug: bool = False) -> Iterable[str]:
+    yield _format_banner(debug=debug)
+    yield f"tagline: {brand.TAGLINE}"
+    yield "Common flags: --quiet, --debug, --max-seconds, --max-items, --max-requests"
+    yield "Press a number, letter action ID, or 'q' to quit."
+
+
 def run_cli(controller: Controller, *, quiet: bool = False, debug: bool = False) -> None:
     """Display an interactive menu for manual operation."""
 
     if not quiet:
-        print(format_banner(debug=debug))
+        print(_format_banner(debug=debug))
         print(f"tagline: {brand.TAGLINE}")
         print()
 
@@ -33,84 +47,69 @@ def run_cli(controller: Controller, *, quiet: bool = False, debug: bool = False)
         print("Short code: XXX (placeholder) · Run `python app.py --init-org` to customize.")
     print("Press a menu key to continue. Type '?' for help.\n")
 
-    advanced_options: Dict[str, tuple[str, str, Callable[[Controller], None]]] = {
-        "0": (
-            "System Check",
-            "Validate credentials and status",
-            _run_system_check,
-        ),
-        "13": (
-            "Master Index Snapshot (debug)",
-            "Print JSON for inspection",
-            _print_master_index_snapshot,
-        ),
-        "14": (
-            "Build Sheets Index (debug)",
-            "Enumerate spreadsheets & tabs",
-            _inspect_sheets_debug,
-        ),
-        "15": (
-            "Plugin Consents",
-            "Grant or revoke stored plugin scopes",
-            _manage_plugin_scopes,
-        ),
-        "17": (
-            "Retention Cleanup",
-            "Preview or prune historical run artifacts",
-            _prune_old_runs,
-        ),
-        "20": (
-            "Plugins Hub",
-            "Discover / Auto-connect / Debug / Configure",
-            _open_plugins_hub,
-        ),
-    }
-
-    def _available_entries() -> Dict[str, tuple[str, str]]:
-        entries: Dict[str, tuple[str, str]] = {
-            key: (name, description) for key, (name, description, _) in advanced_options.items()
-        }
-        for action in controller.available_actions():
-            entries[action.id] = (action.name, action.description)
-        entries["q"] = ("Quit", "")
-        return entries
-
-    first_loop = True
+    loop_index = 0
     while True:
-        if not first_loop:
+        if loop_index:
             print()
-        first_loop = False
-        menu_text = render_menu(MENU_SPEC, available=_available_entries())
-        print(menu_text)
-        choice = input("Select an option (number/letter, q to quit, ? for help): ").strip()
+        render_root(quiet=True)
+        choice = input().strip()
+        loop_index += 1
         if choice == "?":
-            for line in format_help_lines(debug=debug):
+            for line in _format_help_lines(debug=debug):
                 print(line)
             print()
             continue
         if choice.lower() in {"q", "quit", "exit"}:
             print("Goodbye!")
             return
-        if choice in advanced_options:
-            name, _, handler = advanced_options[choice]
-            print(f"\n=== {name.upper()} ===")
-            handler(controller)
+        if _dispatch_legacy(controller, choice):
             continue
-        if choice not in controller.actions:
-            print("Invalid choice. Try again.\n")
-            continue
-        plan_text = controller.build_plan(choice)
-        print("\n=== PLAN ===")
-        print(plan_text)
-        mode = _prompt_mode()
-        if mode is None:
-            print("Cancelled.\n")
-            continue
-        apply = mode == "apply"
-        result = controller.run_action(choice, apply=apply)
-        print("\n=== RESULT ===")
-        print(result.summary())
-        print(f"Reports stored in: {controller.reports_root}\n")
+        if choice in SUBMENUS:
+            while True:
+                render_submenu(choice)
+                sub_choice = input().strip()
+                if sub_choice == "?":
+                    for line in _format_help_lines(debug=debug):
+                        print(line)
+                    print()
+                    continue
+                if sub_choice.lower() in {"q", "quit", "exit"}:
+                    print("Goodbye!")
+                    return
+                if sub_choice == "0":
+                    break
+                submenu_keys = {item_key for item_key, _label, _handler in SUBMENUS.get(choice, [])}
+                if sub_choice in submenu_keys:
+                    try:
+                        _dispatch_by_path(controller, choice, sub_choice)
+                    except RuntimeError as exc:
+                        print(str(exc))
+                    except KeyError:
+                        print("Invalid selection.")
+                else:
+                    print("Invalid selection.")
+        else:
+            print("Invalid selection.")
+
+
+def _dispatch_by_path(controller: Controller, section_key: str, item_key: str):
+    items = SUBMENUS.get(section_key, [])
+    for key, _label, handler_name in items:
+        if key == item_key:
+            handler = HANDLERS.get(handler_name)
+            if handler is None:
+                raise RuntimeError(f"Handler missing: {handler_name}")
+            return handler(controller)
+    raise KeyError(f"No such menu item {section_key}.{item_key}")
+
+
+def _dispatch_legacy(controller: Controller, input_key: str) -> bool:
+    mapping = LEGACY_SHIMS.get(input_key)
+    if not mapping:
+        return False
+    section_key, item_key = mapping
+    _dispatch_by_path(controller, section_key, item_key)
+    return True
 
 
 def _prompt_mode() -> Optional[str]:
@@ -333,3 +332,95 @@ def _sheets_share_message(controller: Controller, adapter: object) -> Optional[s
             except Exception:  # pragma: no cover - defensive
                 email = None
     return sheets_share_hint(email)
+
+
+def _run_controller_action(controller: Controller, action_id: str) -> None:
+    if action_id not in controller.actions:
+        print("Action not available. Try another selection.")
+        return
+    plan_text = controller.build_plan(action_id)
+    print("\n=== PLAN ===")
+    print(plan_text)
+    mode = _prompt_mode()
+    if mode is None:
+        print("Cancelled.\n")
+        return
+    apply = mode == "apply"
+    result = controller.run_action(action_id, apply=apply)
+    print("\n=== RESULT ===")
+    print(result.summary())
+    print(f"Reports stored in: {controller.reports_root}\n")
+
+
+def action_system_check(controller: Controller) -> None:
+    _run_system_check(controller)
+
+
+def action_discover_audit(controller: Controller) -> None:
+    _run_controller_action(controller, "1")
+
+
+def action_plugins_hub(controller: Controller) -> None:
+    _open_plugins_hub(controller)
+
+
+def action_build_master_index(controller: Controller) -> None:
+    _run_controller_action(controller, "12")
+
+
+def action_build_sheets_index(controller: Controller) -> None:
+    _inspect_sheets_debug(controller)
+
+
+def action_import_gmail(controller: Controller) -> None:
+    _run_controller_action(controller, "2")
+
+
+def action_import_csv(controller: Controller) -> None:
+    _run_controller_action(controller, "3")
+
+
+def action_sync_metrics(controller: Controller) -> None:
+    _run_controller_action(controller, "4")
+
+
+def action_link_drive_pdfs(controller: Controller) -> None:
+    _run_controller_action(controller, "5")
+
+
+def action_contacts_vendors(controller: Controller) -> None:
+    _run_controller_action(controller, "6")
+
+
+def action_wave(controller: Controller) -> None:
+    _run_controller_action(controller, "9")
+
+
+def action_settings_ids(controller: Controller) -> None:
+    _run_controller_action(controller, "7")
+
+
+def action_logs_reports(controller: Controller) -> None:
+    _run_controller_action(controller, "8")
+
+
+def action_update_repo(controller: Controller) -> None:
+    _run_controller_action(controller, "U")
+
+
+HANDLERS: Dict[str, Callable[[Controller], None]] = {
+    "action_system_check": action_system_check,
+    "action_discover_audit": action_discover_audit,
+    "action_plugins_hub": action_plugins_hub,
+    "action_build_master_index": action_build_master_index,
+    "action_build_sheets_index": action_build_sheets_index,
+    "action_import_gmail": action_import_gmail,
+    "action_import_csv": action_import_csv,
+    "action_sync_metrics": action_sync_metrics,
+    "action_link_drive_pdfs": action_link_drive_pdfs,
+    "action_contacts_vendors": action_contacts_vendors,
+    "action_wave": action_wave,
+    "action_settings_ids": action_settings_ids,
+    "action_logs_reports": action_logs_reports,
+    "action_update_repo": action_update_repo,
+}
