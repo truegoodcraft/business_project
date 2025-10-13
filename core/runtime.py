@@ -1,6 +1,6 @@
 import time
 import uuid
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from core.capabilities import meta, resolve
 from core.config import load_core_config
@@ -24,12 +24,12 @@ def generate_run_id() -> str:
     return time.strftime("%Y%m%dT%H%M%SZ") + "-" + str(uuid.uuid4())[:8]
 
 
-def run_capability(cap_name: str, **params):
+def run_capability(cap_name: str, run_id: Optional[str] = None, **params):
     fn = resolve(cap_name)
     m = meta(cap_name)
     require(m["plugin"], m["scopes"])
     ctx = Context(
-        run_id=generate_run_id(),
+        run_id=run_id or generate_run_id(),
         config=load_core_config(),
         limits=get_runtime_limits(),
         logger=logger,

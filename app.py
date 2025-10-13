@@ -12,6 +12,7 @@ except Exception:
 import argparse
 import logging
 import sys
+import time
 import traceback
 from typing import Dict, Optional
 
@@ -23,6 +24,8 @@ from tgc.organization import configure_profile_interactive
 from tgc.master_index_controller import MasterIndexController, TraversalLimits
 from tgc.util.serialization import safe_serialize
 
+from core.audit import write_audit
+from core.capabilities import meta as capability_meta
 from core.plugin_manager import load_plugins
 from core.runtime import generate_run_id, get_runtime_limits, run_capability, set_runtime_limits
 from core.safelog import logger
@@ -40,7 +43,33 @@ def _limits() -> Dict[str, object]:
 
 
 def run_cap(cap_name: str, **params):
-    return run_capability(cap_name, **params)
+    run_id = generate_run_id()
+    plugin = "unknown"
+    scopes: list[str] = []
+    start = time.perf_counter()
+    outcome = "success"
+    try:
+        meta = capability_meta(cap_name)
+        plugin = str(meta.get("plugin", "unknown"))
+        meta_scopes = meta.get("scopes") or []
+        scopes = [str(scope) for scope in meta_scopes]
+        return run_capability(cap_name, run_id=run_id, **params)
+    except Exception:
+        outcome = "failure"
+        raise
+    finally:
+        duration_ms = (time.perf_counter() - start) * 1000.0
+        try:
+            write_audit(
+                run_id=run_id,
+                plugin=plugin,
+                capability=cap_name,
+                scopes=scopes,
+                outcome=outcome,
+                ms=duration_ms,
+            )
+        except Exception as audit_error:  # pragma: no cover - defensive
+            logger.warning("Failed to write audit log: %s", audit_error)
 
 
 def system_check() -> None:

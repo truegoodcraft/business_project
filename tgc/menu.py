@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Callable, Dict, Iterable, List, Optional
 
+from core.consent_cli import current_consents, grant_scopes, list_scopes, revoke_scopes
 from core.system_check import system_check as _plugin_system_check
 from .controller import Controller
 from .master_index_controller import MasterIndexController
@@ -39,6 +40,11 @@ def run_cli(controller: Controller) -> None:
             "Inspect Sheets (debug)",
             "List sheet tabs and read a limited preview",
             _inspect_sheets_debug,
+        ),
+        "15": (
+            "Manage Plugin Scopes (grant/revoke/view)",
+            "Review and update stored plugin consents",
+            _manage_plugin_scopes,
         ),
     }
 
@@ -84,6 +90,66 @@ def _prompt_mode() -> Optional[str]:
         if answer in {"c", "cancel"}:
             return None
         print("Invalid selection. Use d, a, or c.")
+
+
+def _manage_plugin_scopes(_: Controller) -> None:
+    def _format_scope_list(values: List[str]) -> str:
+        return ", ".join(values) if values else "(none)"
+
+    def _parse_scopes(raw: str) -> List[str]:
+        return [scope for scope in raw.replace(",", " ").split() if scope]
+
+    while True:
+        available = list_scopes()
+        granted = current_consents()
+        if not available:
+            print("No capabilities are registered; nothing to manage.")
+        else:
+            print("Current plugin consent state:")
+            for plugin in sorted(available):
+                granted_scopes = granted.get(plugin, [])
+                print(
+                    f"- {plugin}: granted {_format_scope_list(granted_scopes)} | "
+                    f"available {_format_scope_list(available[plugin])}"
+                )
+        action = input("Choose action [g=grant, r=revoke, v=view, q=quit]: ").strip().lower()
+        if action in {"q", "quit"}:
+            break
+        if action in {"v", "view", ""}:
+            continue
+        if action in {"g", "grant"}:
+            plugin = input("Plugin to grant scopes for: ").strip()
+            if plugin not in available:
+                print(f"Unknown plugin '{plugin}'.")
+                continue
+            print(
+                "Available scopes: "
+                + _format_scope_list(available.get(plugin, []))
+            )
+            scope_input = input("Scopes to grant (comma or space separated): ").strip()
+            scopes = _parse_scopes(scope_input)
+            if not scopes:
+                print("No scopes provided.")
+                continue
+            grant_scopes(plugin, scopes)
+            print(f"Granted scopes {', '.join(scopes)} to {plugin}.")
+            continue
+        if action in {"r", "revoke"}:
+            plugin = input("Plugin to revoke scopes from: ").strip()
+            plugin_granted = granted.get(plugin, [])
+            if not plugin_granted:
+                print(f"No granted scopes recorded for '{plugin}'.")
+                continue
+            print("Granted scopes: " + _format_scope_list(plugin_granted))
+            scope_input = input("Scopes to revoke (comma or space separated): ").strip()
+            scopes = _parse_scopes(scope_input)
+            if not scopes:
+                print("No scopes provided.")
+                continue
+            revoke_scopes(plugin, scopes)
+            print(f"Revoked scopes {', '.join(scopes)} from {plugin}.")
+            continue
+        print("Invalid selection. Use g, r, v, or q.")
 
 
 def _print_master_index_snapshot(controller: Controller) -> None:
