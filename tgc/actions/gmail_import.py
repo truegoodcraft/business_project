@@ -14,7 +14,7 @@ from .base import SimpleAction
 class GmailImportAction(SimpleAction):
     id: str = "2"
     name: str = "Import from Gmail"
-    description: str = "Ingest quotes/orders from Gmail into staging"
+    description: str = "Stage vendor quotes/orders (optional)"
 
     def build_plan(self, controller: Controller) -> str:
         gmail = controller.adapters.get("gmail")

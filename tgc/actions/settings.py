@@ -14,7 +14,7 @@ from .base import SimpleAction
 class SettingsAction(SimpleAction):
     id: str = "7"
     name: str = "Settings & IDs"
-    description: str = "View environment configuration and saved queries"
+    description: str = "View environment and saved queries"
 
     def build_plan(self, controller: Controller) -> str:
         steps = [

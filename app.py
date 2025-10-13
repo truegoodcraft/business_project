@@ -380,7 +380,7 @@ def main() -> None:
         return
 
     _policy_trace("cli menu: run_cli", command="menu", args={})
-    run_cli(controller)
+    run_cli(controller, quiet=args.quiet, debug=args.debug)
 
 
 def _run_main():

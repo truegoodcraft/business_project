@@ -1,11 +1,12 @@
 <div align="center">
 
-# 🤖 TGC Systems — True Good Craft Controller  
-### _Universal AI-Driven Business Controller for Makers, Builders & Brave Souls_
+# 🤖 TGC Frame
+### _Owner-core controller with open plugins_
+**made by TGC Systems**
 
 ---
 
-> 🧠 *An experiment in automation, curiosity, and accidental intelligence.*  
+> 🧠 *An experiment in automation, curiosity, and accidental intelligence.*
 > *Built by TGC Systems — powered by GPT-fu, caffeine, and a healthy dose of luck.*
 
 ---
@@ -29,7 +30,7 @@ Proceed with curiosity. ⚙️ Tinker responsibly. 🧤
 
 ## 🚀 Overview
 
-The **TGC Systems Controller** is a universal, modular, **AI-assisted business automation platform** for creative workshops and small businesses.  
+**TGC Frame** is a universal, modular, **AI-assisted business automation platform** for creative workshops and small businesses.
 It unifies **Notion**, **Google Drive**, **Google Sheets**, and more — under one local-first control system.
 
 It’s for curious makers who want a smart assistant that helps manage their workflow… not run it.
@@ -175,7 +176,7 @@ Low-cost subscription model ($1–$2 / month).
 ### Clone
 
 ```bash
-git clone https://github.com/truegoodcraft/business_project.git
+git clone https://github.com/tgc-systems/business_project.git
 cd business_project
 ```
 
@@ -206,6 +207,49 @@ python app.py
 
 ```bash
 python app.py --status
+```
+
+## 🧮 CLI Layout
+
+The interactive CLI now shows a normalized banner and grouped menu. Behavior is unchanged; the same keys trigger the same actions.
+
+```
+TGC Frame — Controller Menu
+made by: TGC Systems
+tagline: Owner-core controller with open plugins
+
+Core
+  0   System Check — Validate credentials and status
+  1   Discover & Audit — Read-only adapter audit
+  U   Update from repository — Fetch and merge latest code
+
+Build
+  12  Build Master Index — Notion, Drive, (Sheets) → Markdown
+  13  Master Index Snapshot (debug) — Print JSON for inspection
+  14  Build Sheets Index — Enumerate spreadsheets & tabs
+
+Imports & Sync
+  2   Import from Gmail — Stage vendor quotes/orders (optional)
+  3   Import CSV → Inventory — Map CSV columns
+  4   Sync metrics → Google Sheets — Preview/push
+
+Linking & Data
+  5   Link Drive PDFs to Notion — Match and attach
+  6   Contacts & Vendors — Normalize & dedupe
+
+Config & Reports
+  7   Settings & IDs — View environment and saved queries
+  8   Logs & Reports — List recent run directories
+  10  Google Drive Module — Configure sharing & validation
+  11  Notion Module — Review access & troubleshooting
+  15  Plugin Consents — Grant or revoke scopes
+  17  Retention Cleanup — Preview or prune historical runs
+
+Optional
+  9   Wave — Discover Wave data and plan exports
+
+Exit
+  q   Quit
 ```
 
 ### 🔐 Plugin configuration
@@ -243,21 +287,25 @@ NOTION_DB_SOURCES_ID=your_sources_database_id
 
 ### 💬 Command Palette
 
-| Command   | Action                                           |
-|-----------|--------------------------------------------------|
-| `update`  | Pull latest GitHub changes (dry-run first).      |
-| `discover`| Rebuild indexes and verify structure.            |
-| `gmail`   | Import vendor quotes/orders.                     |
-| `csv`     | Import inventory data.                           |
-| `sheets`  | Sync metrics with Google Sheets.                 |
-| `drive`   | Link Drive files by SKU/reference.               |
-| `contacts`| Normalize vendor contacts.                       |
-| `settings`| Manage configuration & credentials.              |
+| Command    | Action                                                |
+|------------|-------------------------------------------------------|
+| `update`   | Fetch and merge latest code (dry-run first).           |
+| `discover` | Read-only adapter audit.                               |
+| `gmail`    | Stage vendor quotes/orders (optional).                 |
+| `csv`      | Map CSV columns into inventory.                        |
+| `sheets`   | Preview/push metrics to Google Sheets.                 |
+| `drive`    | Match and attach Drive PDFs to inventory.              |
+| `contacts` | Normalize & dedupe contact records.                    |
+| `settings` | View environment and saved queries.                    |
+| `logs`     | List recent run directories.                           |
+| `wave`     | Discover Wave data and plan exports.                   |
+| `drive-mod`| Configure Google Drive module sharing & validation.    |
+| `notion`   | Review Notion module access & troubleshooting prompts. |
 
 🧭 **Author**  
 TGC Systems  
 🎩 Maker. Tinkerer. Possibly the entity that accidentally builds Skynet.  
-🔗 https://github.com/truegoodcraft
+🔗 https://github.com/tgc-systems
 
 🪙 **License & Contribution**  
 Licensed under the MIT License.  
@@ -271,7 +319,7 @@ It’s meant to be explored, broken, rebuilt, and improved — safely, curiously
 🧠 May your logs be clean and your GPTs merciful.
 
 If you found this project useful or entertaining, consider fueling the chaos with a coffee ☕  
-[**paypal.me/truegoodcraft**](https://paypal.me/truegoodcraft)
+[**paypal.me/tgcsystems**](https://paypal.me/tgcsystems)
 
 “**If it ain’t broke, don’t fix it… or was it ‘If it ain’t fixed, don’t broke it?’**”  
 “**If it’s stupid but it works, it’s not stupid.**”  

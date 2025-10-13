@@ -16,7 +16,7 @@ from .base import SimpleAction
 class DiscoverAuditAction(SimpleAction):
     id: str = "1"
     name: str = "Discover & Audit"
-    description: str = "Read-only audit of configured adapters"
+    description: str = "Read-only adapter audit"
 
     def build_plan(self, controller: Controller) -> str:
         steps = [

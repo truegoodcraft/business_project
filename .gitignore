@@ -8,4 +8,6 @@ consents.json
 plugins/*-plugin/plugin.secrets.local.env
 plugins/**/plugin.secrets.local.env
 reports/
+!reports/branding/
+!reports/branding/**
 staging/

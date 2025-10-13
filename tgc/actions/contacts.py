@@ -13,8 +13,8 @@ from .base import SimpleAction
 @dataclass
 class ContactsAction(SimpleAction):
     id: str = "6"
-    name: str = "Contacts/Vendors"
-    description: str = "Normalize, dedupe, and link contacts"
+    name: str = "Contacts & Vendors"
+    description: str = "Normalize & dedupe contact records"
 
     def build_plan(self, controller: Controller) -> str:
         steps = [

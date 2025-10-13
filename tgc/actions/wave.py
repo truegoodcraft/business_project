@@ -13,7 +13,7 @@ from .base import SimpleAction
 @dataclass
 class WaveAction(SimpleAction):
     id: str = "9"
-    name: str = "Wave (optional)"
+    name: str = "Wave"
     description: str = "Discover Wave data and plan exports"
 
     def build_plan(self, controller: Controller) -> str:

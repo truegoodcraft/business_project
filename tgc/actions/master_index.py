@@ -50,8 +50,8 @@ def _normalise_sheets_payload(payload: Any, errors: List[str]) -> List[Dict[str,
 @dataclass
 class MasterIndexAction(SimpleAction):
     id: str = "12"
-    name: str = "Build Master Index — Notion pages & Drive files → Markdown"
-    description: str = "Generate Markdown indexes for configured Notion pages and Drive files"
+    name: str = "Build Master Index — Notion, Drive, (Sheets) → Markdown"
+    description: str = "Generate Markdown indexes for configured Notion, Drive, and Sheets sources"
 
     def build_plan(self, controller: Controller) -> str:
         steps = [

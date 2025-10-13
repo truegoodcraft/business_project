@@ -14,8 +14,8 @@ from .base import SimpleAction
 @dataclass
 class DriveModuleAction(SimpleAction):
     id: str = "10"
-    name: str = "Configure Google Drive module"
-    description: str = "Enable the standalone Drive module and validate credentials"
+    name: str = "Google Drive Module"
+    description: str = "Configure sharing & validation"
 
     def build_plan(self, controller: Controller) -> str:
         module = controller.get_module("drive")

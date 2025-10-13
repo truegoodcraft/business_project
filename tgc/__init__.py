@@ -1,4 +1,4 @@
-"""True Good Craft controller package."""
+"""TGC Frame controller package."""
 """Controller package exports."""
 
 from importlib.metadata import version, PackageNotFoundError
