@@ -34,7 +34,16 @@ def _load_plugin(name: str):
     module_path = _PLUGIN_MODULES.get(name)
     if module_path is None:
         raise KeyError(f"Unknown plugin '{name}'")
-    return importlib.import_module(module_path)
+    try:
+        return importlib.import_module(module_path)
+    except ModuleNotFoundError as exc:
+        if module_path.startswith("plugins."):
+            fallback = f"tgc.{module_path}"
+            try:
+                return importlib.import_module(fallback)
+            except ModuleNotFoundError:
+                raise exc
+        raise
 
 
 def _normalise_finding(plugin: str, payload) -> PluginFinding:
