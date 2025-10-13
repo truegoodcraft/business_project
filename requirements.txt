@@ -8,3 +8,6 @@ requests>=2.32.0
 # Optional for plugin signature verification
 # pynacl>=1.5,<2
 # The Notion module otherwise relies on the Python standard library.
+fastapi
+uvicorn[standard]
+pydantic

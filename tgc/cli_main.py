@@ -81,6 +81,24 @@ def _start_full_crawl(context: CommandContext, effective_options: Dict[str, obje
     return _run_master_index(context, options=effective_options)
 
 
+def serve_cmd(args):
+    from core.api.http import build_app
+    import uvicorn
+
+    app, token = build_app()
+    host = "127.0.0.1"
+    port = int(getattr(args, "port", 8765) or 8765)
+    print(f"Serving on http://{host}:{port}")
+    print(f"Session token (also saved to data/session_token.txt): {token}")
+    uvicorn.run(app, host=host, port=port, log_level="warning")
+
+
+def _wire_serve(subparsers):
+    parser = subparsers.add_parser("serve", help="Start Alpha Core HTTP server on localhost")
+    parser.add_argument("--port", type=int, default=8765)
+    parser.set_defaults(func=serve_cmd)
+
+
 def alpha_boot(args):
     output = print
     bootstrap = ensure_first_run()
@@ -217,6 +235,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command")
     _wire_setup(subparsers)
     _wire_alpha(subparsers)
+    _wire_serve(subparsers)
     parser.set_defaults(func=alpha_boot)
     return parser
 
@@ -232,4 +251,4 @@ def main(argv: Optional[List[str]] = None) -> int:
     return 0 if result is None else int(result)
 
 
-__all__ = ["alpha_boot", "build_parser", "main"]
+__all__ = ["alpha_boot", "build_parser", "main", "serve_cmd"]
