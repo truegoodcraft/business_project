@@ -41,6 +41,19 @@ python app.py alpha --crawl --fast --timeout 60 --max-files 500 --max-pages 5000
 
 ---
 
+## First Run (Alpha)
+
+1. Run: `python app.py` → creates `credentials/`, `data/`, `logs/`, and `.env` with helpful defaults.
+2. Drop your Google **service-account.json** into `credentials/` (or set an absolute path in `.env`).
+3. Set `DRIVE_ROOT_IDS` and `SHEET_INVENTORY_ID` in `.env` (optional for boot; required for crawl).
+4. Re-run: `python app.py` → status shows OK/PENDING along with hints.
+5. Start crawl on demand: `python app.py alpha --crawl --fast --max-files 500 --timeout 60`.
+
+### Troubleshooting
+
+- Shared Drives: invite the service account email as a member of each shared drive you want indexed.
+
+## Plugin API (v2)
 ## Commands
 
 * `alpha` → boot + probe + status ✅
@@ -143,6 +156,9 @@ python app.py alpha --crawl --fast --timeout 60 --max-files 500 --max-pages 5000
 
 ## Plugin v2 (Alpha)
 
+Place plugins in `plugins_alpha/` and export them via a `Plugin` subclass of `PluginV2` to have them auto-discovered during boot.
+
+## Connection Broker
 A minimal contract for integrations:
 
 ```python
