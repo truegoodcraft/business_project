@@ -39,6 +39,22 @@ python app.py alpha
 python app.py alpha --crawl --fast --timeout 60 --max-files 500 --max-pages 5000 --page-size 100
 ```
 
+## Alpha HTTP Quickstart
+
+```bash
+python -m pip install -r requirements.txt
+python app.py serve
+# Copy the session token from console or data\session_token.txt
+```
+
+```powershell
+# Test (PowerShell):
+$token = Get-Content .\data\session_token.txt
+irm "http://127.0.0.1:8765/health" -Headers @{'X-Session-Token'=$token}
+irm "http://127.0.0.1:8765/plugins" -Headers @{'X-Session-Token'=$token}
+irm "http://127.0.0.1:8765/probe" -Method Post -Headers @{'X-Session-Token'=$token} -ContentType "application/json" -Body "{}"
+```
+
 ---
 
 ## First Run (Alpha)

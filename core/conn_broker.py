@@ -124,14 +124,13 @@ class ConnectionBroker:
             hint: Optional[str] = None
             service_lower = service.lower()
             if service_lower == "drive":
-                creds_path = resolve_service_account_path()
-                if not creds_path.is_file():
-                    detail = "creds_path_missing"
-                    hint = (
-                        f"Credentials path is not a file: {creds_path}"
-                        if creds_path.exists()
-                        else f"File not found: {creds_path}"
-                    )
+                creds = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
+                if not creds:
+                    return {"service": service, "ok": False, "detail": "missing_credentials", "hint": "Set GOOGLE_APPLICATION_CREDENTIALS or edit .env"}
+                creds_path = Path(creds).expanduser().resolve()
+                if not creds_path.exists():
+                    return {"service": service, "ok": False, "detail": "creds_path_missing", "hint": f"File not found: {creds_path}"}
+                return {"service": service, "ok": False, "detail": "client_unavailable"}
             elif service_lower == "sheets":
                 adapter = self._controller_adapter("sheets")
                 if adapter is None:
