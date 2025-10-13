@@ -203,13 +203,6 @@ Generates `/docs/organization_reference.md`.
 python app.py
 ```
 
-### Quick Start (Fast Mode)
-
-```bash
-python app.py go --dev --fast
-# Confirms connections instantly, runs a limited discovery you can expand later with 'f'
-```
-
 ### Check Status
 
 ```bash

@@ -138,20 +138,10 @@ def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "go":
         go_parser = argparse.ArgumentParser(prog="app.py go", description="Apply proposals end-to-end")
         go_parser.add_argument("--dev", action="store_true", help="Use development configuration overrides")
-        go_parser.add_argument("--fast", action="store_true", help="Enable fast discovery mode")
-        go_parser.add_argument("--no-drive", action="store_true", help="Disable Drive discovery for this run")
-        go_parser.add_argument("--no-notion", action="store_true", help="Disable Notion discovery for this run")
-        go_parser.add_argument("--no-sheets", action="store_true", help="Disable Sheets discovery for this run")
         go_args = go_parser.parse_args(sys.argv[2:])
         from tgc.cli_main import cmd_go
 
-        cmd_go(
-            dev=go_args.dev,
-            fast=go_args.fast,
-            disable_drive=go_args.no_drive,
-            disable_notion=go_args.no_notion,
-            disable_sheets=go_args.no_sheets,
-        )
+        cmd_go(dev=go_args.dev)
         return
 
     parser = argparse.ArgumentParser(description="Workflow controller")

@@ -1,8 +1,4 @@
-import faulthandler
-import sys
-import threading
-import time
-from typing import Optional
+import sys, threading, time, faulthandler
 
 
 def with_watchdog(seconds: int = 45):
@@ -30,11 +26,3 @@ def with_watchdog(seconds: int = 45):
         return inner
 
     return deco
-
-
-def within_timeout(start_ts: float, timeout_sec: Optional[float]) -> bool:
-    """Return ``True`` while ``timeout_sec`` has not elapsed from ``start_ts``."""
-
-    if not timeout_sec or timeout_sec <= 0:
-        return True
-    return (time.perf_counter() - start_ts) <= timeout_sec
