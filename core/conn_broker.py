@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
+from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
@@ -66,7 +68,40 @@ class ConnectionBroker:
 
         handle = self.get_client(service, scope="read_base")
         if handle is None:
-            return {"service": service, "ok": False, "detail": "client_unavailable"}
+            detail = "client_unavailable"
+            hint: Optional[str] = None
+            service_lower = service.lower()
+            if service_lower == "drive":
+                creds = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
+                if not creds:
+                    detail = "missing_credentials"
+                    hint = "Set GOOGLE_APPLICATION_CREDENTIALS or edit .env"
+                elif not Path(creds).exists():
+                    detail = "creds_path_missing"
+                    hint = f"File not found: {creds}"
+            elif service_lower == "sheets":
+                adapter = self._controller_adapter("sheets")
+                if adapter is None:
+                    detail = "adapter_missing"
+                    hint = "Sheets adapter not available"
+                elif not getattr(adapter, "is_configured", lambda: False)():
+                    detail = "not_configured"
+                    inventory_id = getattr(getattr(adapter, "config", None), "inventory_sheet_id", None)
+                    hint = "Set SHEET_INVENTORY_ID in .env" if not inventory_id else None
+            elif service_lower == "notion":
+                module = self._controller_module("notion_access")
+                if module is None:
+                    detail = "module_missing"
+                    hint = "Notion module not available"
+                else:
+                    token = getattr(module, "_token", None)
+                    if not token:
+                        detail = "missing_credentials"
+                        hint = "Set NOTION_TOKEN in .env"
+            result = {"service": service, "ok": False, "detail": detail}
+            if hint:
+                result["hint"] = hint
+            return result
         probe_fn = getattr(self, f"_probe_{handle.service}", None)
         if probe_fn is None:
             return {"service": service, "ok": True, "metadata": handle.metadata}
@@ -118,6 +153,13 @@ class ConnectionBroker:
         if module is None:
             self._logger.warning("broker.drive.missing_module")
             return None
+        creds = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
+        if not creds:
+            self._logger.warning("broker.drive.missing_creds_env")
+            return None
+        if not Path(creds).exists():
+            self._logger.warning("broker.drive.creds_path_missing", extra={"path": creds})
+            return None
         require_write = scope == "write"
         service, error = module.ensure_service(require_write=require_write)
         if not service:
@@ -161,23 +203,17 @@ class ConnectionBroker:
     # Probe helpers
 
     def _probe_drive(self, handle: ClientHandle) -> Dict[str, Any]:
-        service = handle.handle
-        metadata = dict(handle.metadata)
-        roots = metadata.get("roots") or []
-        target = roots[0] if roots else "root"
         try:
-            request = service.files().list(  # type: ignore[call-arg]
+            service = handle.handle
+            service.files().list(  # type: ignore[call-arg]
                 pageSize=1,
-                q=f"'{target}' in parents and trashed = false" if target and target != "root" else None,
                 includeItemsFromAllDrives=True,
                 supportsAllDrives=True,
                 fields="files(id)",
-            )
-            response = request.execute()
-            count = len(response.get("files", [])) if isinstance(response, dict) else 0
+            ).execute()
+            return {"service": "drive", "ok": True}
         except Exception as exc:  # pragma: no cover - network guard
-            return {"service": "drive", "ok": False, "detail": str(exc)}
-        return {"service": "drive", "ok": True, "metadata": {"root": target, "count": count}}
+            return {"service": "drive", "ok": False, "detail": "probe_error", "error": str(exc)}
 
     def _probe_notion(self, handle: ClientHandle) -> Dict[str, Any]:
         client = handle.handle

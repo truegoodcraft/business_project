@@ -11,6 +11,7 @@ from core.bus.models import CommandContext
 from core.conn_broker import ConnectionBroker
 from core.plugins_alpha import discover_alpha_plugins as _discover_alpha_plugins
 from tgc.bootstrap import bootstrap_controller
+from tgc.bootstrap_fs import ensure_first_run
 
 
 def _mk_context(controller, run_id: str, *, dry_run: bool = False) -> CommandContext:
@@ -35,22 +36,26 @@ def _effective_config(args) -> Dict[str, object]:
 
 
 def _print_status(output, run_id: str, services: Dict[str, dict], plugins: List[str], effective: Dict[str, object]):
-    ok = sum(1 for v in services.values() if isinstance(v, dict) and v.get("ok"))
-    total = len(services)
+    def _fmt_status(value: Dict[str, object]) -> str:
+        if value.get("ok"):
+            return "OK"
+        detail = value.get("detail", "")
+        if detail in {"missing_credentials", "creds_path_missing", "not_configured"}:
+            return "PENDING"
+        return "FAIL"
+
     output(
         f"[run:{run_id}] mode=alpha fast={bool(effective.get('fast'))} "
         f"timeout_sec={effective.get('timeout_sec')} max_files={effective.get('max_files')} "
         f"max_pages={effective.get('max_pages')} page_size={effective.get('page_size')}"
     )
-    output(f"Services: {ok}/{total} reachable")
+    output("Services:")
     for service, result in sorted(services.items()):
-        badge = "OK" if isinstance(result, dict) and result.get("ok") else "FAIL"
-        detail = ""
+        badge = _fmt_status(result if isinstance(result, dict) else {"ok": False})
+        hint = ""
         if isinstance(result, dict):
-            info = result.get("detail")
-            if info:
-                detail = f" ({info})"
-        output(f"  - {service}: {badge}{detail}")
+            hint = result.get("hint") or result.get("error") or result.get("detail") or ""
+        output(f"  - {service}: {badge}{f' ({hint})' if hint else ''}")
     output(f"Plugins enabled: {len(plugins)}")
     for plugin in sorted(plugins):
         output(f"  - {plugin}")
@@ -65,6 +70,15 @@ def _start_full_crawl(context: CommandContext, effective_options: Dict[str, obje
 
 def alpha_boot(args):
     output = print
+    bootstrap = ensure_first_run()
+    output("=== TGC Alpha Boot ===")
+    project = f" project={bootstrap['creds_project']}" if bootstrap.get("creds_project") else ""
+    email = f" email={bootstrap['creds_email']}" if bootstrap.get("creds_email") else ""
+    output(
+        f"Setup: env_created={bootstrap['env_created']} creds_present={bootstrap['creds_present']}{project}{email}"
+    )
+    if bootstrap.get("hint"):
+        output(f"Hint: {bootstrap['hint']}")
     controller = bootstrap_controller()
     run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     context = _mk_context(controller, run_id, dry_run=bool(getattr(args, "dry_run", False)))
@@ -120,9 +134,24 @@ def _wire_alpha(subparsers):
     alpha.set_defaults(func=alpha_boot)
 
 
+def setup_cmd(args):
+    status = ensure_first_run()
+    print("Setup complete.")
+    for key, value in status.items():
+        print(f"  {key}: {value}")
+
+
+def _wire_setup(subparsers):
+    setup_parser = subparsers.add_parser(
+        "setup", help="Create folders and .env, check credentials presence"
+    )
+    setup_parser.set_defaults(func=setup_cmd)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Alpha Core controller")
     subparsers = parser.add_subparsers(dest="command")
+    _wire_setup(subparsers)
     _wire_alpha(subparsers)
     parser.set_defaults(func=alpha_boot)
     return parser

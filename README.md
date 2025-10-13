@@ -12,6 +12,18 @@ python app.py alpha --fast --max-files 500 --timeout 60 --crawl
 
 `--fast`, `--timeout`, `--max-files`, `--max-pages`, and `--page-size` constrain crawl workloads only. The boot/probe flow always runs with the same semantics. `--dry-run` is reserved for future write actions during crawl execution.
 
+## First Run (Alpha)
+
+1. Run: `python app.py` → creates `credentials/`, `data/`, `logs/`, and `.env` with helpful defaults.
+2. Drop your Google **service-account.json** into `credentials/` (or set an absolute path in `.env`).
+3. Set `DRIVE_ROOT_IDS` and `SHEET_INVENTORY_ID` in `.env` (optional for boot; required for crawl).
+4. Re-run: `python app.py` → status shows OK/PENDING along with hints.
+5. Start crawl on demand: `python app.py alpha --crawl --fast --max-files 500 --timeout 60`.
+
+### Troubleshooting
+
+- Shared Drives: invite the service account email as a member of each shared drive you want indexed.
+
 ## Plugin API (v2)
 
 Alpha plugins must implement the `PluginV2` interface defined in `core/contracts/plugin_v2.py`:
@@ -50,6 +62,8 @@ class Plugin(PluginV2):
 ```
 
 Plugins should list the services they depend on via `describe().services`. The core will call `ConnectionBroker.probe(service)` for each service before invoking `plugin.probe(broker)` to allow additional validation.
+
+Place plugins in `plugins_alpha/` and export them via a `Plugin` subclass of `PluginV2` to have them auto-discovered during boot.
 
 ## Connection Broker
 
