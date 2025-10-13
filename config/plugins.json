@@ -1,0 +1,6 @@
+{
+  "discovery.drive": true,
+  "discovery.notion": true,
+  "discovery.sheets": true,
+  "writer.markdown": true
+}

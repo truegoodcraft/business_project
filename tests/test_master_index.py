@@ -415,7 +415,7 @@ def test_master_index_action_writes_sheets_index(monkeypatch, tmp_path):
         def __init__(self, controller):
             self.controller = controller
 
-        def run_master_index(self, dry_run, *, limits=None):
+        def run_master_index(self, dry_run, *, limits=None, run_context=None):
             return {
                 "status": "ok",
                 "dry_run": dry_run,

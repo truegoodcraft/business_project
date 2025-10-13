@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
+from core.bus.models import CommandContext
 from core.capabilities import REGISTRY
 from core.plugin_api import Result
 from core.runtime import run_capability
@@ -23,7 +24,6 @@ from .integration_support import (
 from .notion.api import NotionAPIError
 from .util.stage import stage, stage_done
 from .util.watchdog import with_watchdog
-from .reporting import write_drive_files_markdown
 
 try:  # Optional Google dependencies are managed by the Drive module
     from googleapiclient.errors import HttpError
@@ -188,6 +188,7 @@ class MasterIndexController:
 
     def __init__(self, controller: "Controller") -> None:
         self.controller = controller
+        self._last_command_context: Optional[CommandContext] = None
 
     def _invoke_traversal_capability(
         self,
@@ -239,11 +240,36 @@ class MasterIndexController:
     ) -> Dict[str, object]:
         """Collect the live Master Index data without writing to disk."""
 
-        data = self._collect_master_index(placeholders=False, limits=limits)
+        run_id = datetime.now(UTC).strftime("snapshot_%Y%m%d_%H%M%S")
+        command_ctx = self._make_command_context(run_id=run_id, dry_run=False, limits=limits)
+        data = self._collect_master_index(
+            placeholders=False, limits=limits, command_ctx=command_ctx
+        )
         return data.snapshot()
 
+    def _make_command_context(
+        self,
+        *,
+        run_id: str,
+        dry_run: bool,
+        limits: Optional[TraversalLimits],
+        options: Optional[Dict[str, object]] = None,
+    ) -> CommandContext:
+        return CommandContext(
+            controller=self.controller,
+            run_id=run_id,
+            dry_run=dry_run,
+            limits=limits,
+            options=options or {},
+            logger=logging.getLogger(__name__),
+        )
+
     def _collect_master_index(
-        self, *, placeholders: bool, limits: Optional[TraversalLimits] = None
+        self,
+        *,
+        placeholders: bool,
+        limits: Optional[TraversalLimits] = None,
+        command_ctx: Optional[CommandContext] = None,
     ) -> MasterIndexData:
         traversal_limits = limits or TraversalLimits()
         ready, detail = self._adapters_ready()
@@ -281,7 +307,19 @@ class MasterIndexController:
         notion_roots = self._notion_root_ids(notion_module)
         drive_roots = self._drive_root_ids(drive_module)
 
-        notion_start = time.perf_counter()
+        if command_ctx is None:
+            run_id = datetime.now(UTC).strftime("collect_%Y%m%d_%H%M%S")
+            command_ctx = self._make_command_context(
+                run_id=run_id, dry_run=placeholders, limits=traversal_limits
+            )
+        else:
+            command_ctx.dry_run = placeholders
+            command_ctx.limits = traversal_limits
+        command_ctx.extras.update({
+            "notion_roots": notion_roots,
+            "drive_roots": drive_roots,
+        })
+
         if notion_roots:
             print(
                 f"Collecting Notion pages from {len(notion_roots)} root(s)...",
@@ -294,56 +332,6 @@ class MasterIndexController:
                 "[dry-run] Skipping Notion API calls and generating placeholder rows.",
                 flush=True,
             )
-            notion_records = [
-                {
-                    "title": f"(dry-run placeholder for root {root[:8]}…)",
-                    "page_id": root,
-                    "url": "",
-                    "parent": "/",
-                    "last_edited": "",
-                }
-                for root in notion_roots
-            ]
-            notion_errors: List[str] = []
-            notion_partial = False
-            notion_reason: Optional[str] = None
-        else:
-            plugin_kwargs: Dict[str, object] = {
-                "module": notion_module,
-                "root_ids": notion_roots,
-                "max_depth": notion_module.config.max_depth,
-                "page_size": notion_module.config.page_size,
-                "limits": traversal_limits,
-            }
-            if traversal_limits is None:
-                plugin_kwargs.pop("limits")
-            fallback_kwargs = {
-                "max_depth": notion_module.config.max_depth,
-                "page_size": notion_module.config.page_size,
-                "limits": traversal_limits,
-            }
-            if traversal_limits is None:
-                fallback_kwargs.pop("limits")
-            notion_result = self._invoke_traversal_capability(
-                "notion.index_pages",
-                plugin_kwargs,
-                collect_notion_pages,
-                (notion_module, notion_roots),
-                fallback_kwargs,
-            )
-            notion_records = notion_result.records
-            notion_errors = notion_result.errors
-            notion_partial = notion_result.partial
-            notion_reason = notion_result.reason
-        notion_elapsed = time.perf_counter() - notion_start
-        print(
-            "Collected {} Notion page(s) in {:.1f}s".format(
-                len(notion_records), notion_elapsed
-            ),
-            flush=True,
-        )
-
-        drive_start = time.perf_counter()
         if drive_roots:
             print(
                 f"Collecting Drive files from {len(drive_roots)} root(s)...",
@@ -351,69 +339,37 @@ class MasterIndexController:
             )
         else:
             print("No Drive roots configured; skipping file traversal.", flush=True)
-        progress_enabled = logging.getLogger().isEnabledFor(logging.INFO)
-        drive_stage: Optional[float] = None
         if placeholders and drive_roots:
             print(
                 "[dry-run] Skipping Drive API calls and generating placeholder rows.",
                 flush=True,
             )
-            drive_records = [
-                {
-                    "name": f"(dry-run placeholder for root {root[:8]}…)",
-                    "file_id": root,
-                    "path_or_link": "/",
-                    "mimeType": "",
-                    "modifiedTime": "",
-                    "size": "",
-                }
-                for root in drive_roots
-            ]
-            drive_errors: List[str] = []
-            drive_partial = False
-            drive_reason: Optional[str] = None
-        else:
-            if drive_roots and progress_enabled:
-                drive_stage = stage("Drive → list files")
-            drive_records = []
-            drive_errors = []
-            drive_partial = False
-            drive_reason = None
-            try:
-                mime_whitelist = list(drive_module.config.mime_whitelist) or None
-                plugin_kwargs: Dict[str, object] = {
-                    "module": drive_module,
-                    "root_ids": drive_roots,
-                    "mime_whitelist": mime_whitelist,
-                    "max_depth": drive_module.config.max_depth,
-                    "page_size": drive_module.config.page_size,
-                    "limits": traversal_limits,
-                }
-                if traversal_limits is None:
-                    plugin_kwargs.pop("limits")
-                fallback_kwargs = {
-                    "mime_whitelist": mime_whitelist,
-                    "max_depth": drive_module.config.max_depth,
-                    "page_size": drive_module.config.page_size,
-                    "limits": traversal_limits,
-                }
-                if traversal_limits is None:
-                    fallback_kwargs.pop("limits")
-                drive_result = self._invoke_traversal_capability(
-                    "google.list_drive_files",
-                    plugin_kwargs,
-                    collect_drive_files,
-                    (drive_module, drive_roots),
-                    fallback_kwargs,
-                )
-                drive_records = drive_result.records
-                drive_errors = drive_result.errors
-                drive_partial = drive_result.partial
-                drive_reason = drive_result.reason
-            finally:
-                if drive_stage is not None:
-                    stage_done(drive_stage, f"(files: {len(drive_records)})")
-        drive_elapsed = time.perf_counter() - drive_start
+
+        from core.bus import command_bus
+
+        findings = command_bus.discover(command_ctx)
+
+        notion_finding = findings.get("discovery.notion")
+        drive_finding = findings.get("discovery.drive")
+
+        notion_records = list(notion_finding.records) if notion_finding else []
+        drive_records = list(drive_finding.records) if drive_finding else []
+        notion_errors = list(notion_finding.errors) if notion_finding else []
+        drive_errors = list(drive_finding.errors) if drive_finding else []
+
+        notion_elapsed = float(notion_finding.metadata.get("elapsed") or 0.0) if notion_finding else 0.0
+        drive_elapsed = float(drive_finding.metadata.get("elapsed") or 0.0) if drive_finding else 0.0
+        notion_partial = bool(notion_finding.metadata.get("partial")) if notion_finding else False
+        drive_partial = bool(drive_finding.metadata.get("partial")) if drive_finding else False
+        notion_reason = notion_finding.metadata.get("reason") if notion_finding else None
+        drive_reason = drive_finding.metadata.get("reason") if drive_finding else None
+
+        print(
+            "Collected {} Notion page(s) in {:.1f}s".format(
+                len(notion_records), notion_elapsed
+            ),
+            flush=True,
+        )
         print(
             "Collected {} Drive file(s) in {:.1f}s".format(
                 len(drive_records), drive_elapsed
@@ -433,6 +389,8 @@ class MasterIndexController:
         status = "partial" if partial_messages else "ok"
         message = "\n".join(partial_messages) if partial_messages else None
 
+        self._last_command_context = command_ctx
+
         return MasterIndexData(
             status=status,
             dry_run=placeholders,
@@ -449,90 +407,31 @@ class MasterIndexController:
         )
 
     def run_master_index(
-        self, dry_run: bool, *, limits: Optional[TraversalLimits] = None
+        self,
+        dry_run: bool,
+        *,
+        limits: Optional[TraversalLimits] = None,
+        run_context: Optional[object] = None,
     ) -> Dict[str, object]:
-        data = self._collect_master_index(placeholders=dry_run, limits=limits)
+        options = getattr(run_context, "options", {}) if run_context else {}
+        run_id = getattr(run_context, "run_id", None)
+        if not run_id:
+            run_id = f"master_index_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}"
+        command_ctx = self._make_command_context(
+            run_id=run_id,
+            dry_run=dry_run,
+            limits=limits,
+            options=options,
+        )
+
+        data = self._collect_master_index(
+            placeholders=dry_run, limits=limits, command_ctx=command_ctx
+        )
+
         if data.status == "unavailable":
             summary = MasterIndexSummary(status="unavailable", dry_run=dry_run, message=data.message)
             self._append_log(summary)
-            return summary.to_dict()
-
-        if data.status == "error":
-            summary = MasterIndexSummary(
-                status="error",
-                dry_run=dry_run,
-                notion_count=len(data.notion_records),
-                drive_count=len(data.drive_records),
-                notion_errors=data.notion_errors or None,
-                drive_errors=data.drive_errors or None,
-                message=data.message,
-            )
-            self._append_log(summary)
-            return summary.to_dict()
-
-        notion_records = list(data.notion_records)
-        drive_records = list(data.drive_records)
-
-        timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-        output_dir = Path("docs") / "master_index_reports" / f"master_index_{timestamp}"
-        notion_path = output_dir / "notion_pages.md"
-        notion_markdown = render_markdown(
-            notion_records, "Master Index — Notion Pages", NOTION_COLUMNS, data.generated_at
-        )
-
-        notion_errors = list(data.notion_errors)
-        drive_errors = list(data.drive_errors)
-        drive_paths: List[Path] = []
-
-        if dry_run:
-            print(f"[dry-run] Would write Notion index to: {notion_path}", flush=True)
-            drive_chunks = (len(drive_records) + 4_999) // 5_000
-            if drive_chunks <= 1:
-                print(
-                    f"[dry-run] Would write Drive index to: {output_dir / 'drive_files.md'}",
-                    flush=True,
-                )
-            else:
-                print(
-                    f"[dry-run] Would write Drive index chunks ({drive_chunks}) in: {output_dir}",
-                    flush=True,
-                )
-        else:
-            try:
-                output_dir.mkdir(parents=True, exist_ok=True)
-            except OSError as exc:
-                message = f"Unable to prepare report directory {output_dir}: {exc}"
-                notion_errors.append(message)
-                drive_errors.append(message)
-            else:
-                try:
-                    notion_path.write_text(notion_markdown, encoding="utf-8")
-                except OSError as exc:
-                    notion_errors.append(f"Failed to write Notion index: {exc}")
-                try:
-                    drive_paths = write_drive_files_markdown(output_dir, drive_records)
-                except OSError as exc:
-                    drive_errors.append(f"Failed to write Drive index: {exc}")
-
-        status = "partial" if data.status == "partial" else "ok"
-        if status != "partial" and (notion_errors or drive_errors):
-            status = "error"
-
-        summary = MasterIndexSummary(
-            status=status,
-            dry_run=dry_run,
-            notion_count=len(notion_records),
-            drive_count=len(drive_records),
-            output_dir=output_dir,
-            notion_output=None if dry_run else notion_path,
-            drive_output=None if dry_run else (drive_paths[0] if drive_paths else None),
-            drive_outputs=None if dry_run else (drive_paths or None),
-            notion_errors=notion_errors or None,
-            drive_errors=drive_errors or None,
-            message=data.message,
-        )
-        self._append_log(summary)
-        return summary.to_dict()
+    
 
     # ------------------------------------------------------------------
     # Helpers
