@@ -1,4 +1,5 @@
 import importlib
+import json
 import pathlib
 import sys
 import types
@@ -9,6 +10,7 @@ from core.signing import PUBLIC_KEY_HEX, verify_plugin_signature
 
 CORE_VERSION = "0.1.0"
 SECURITY_LOG = pathlib.Path("reports/security.log")
+DENYLIST_PATH = pathlib.Path("registry/denylist.json")
 
 
 def discover_plugins(root: str = "plugins"):
@@ -55,9 +57,13 @@ def load_plugins(root: str = "plugins"):
     if not root_path.exists():
         return
     _ensure_namespace("plugins", root_path)
+    denylist = _load_denylist()
     for path, man in discover_plugins(root):
         api = str(man.get("plugin_api", ""))
         if not api.startswith("1."):
+            _log_security_event(
+                f"[compat] Skipped {man.get('name', path.name)}: incompatible plugin_api '{api}'"
+            )
             continue
         if not _is_compatible(man):
             _log_security_event(
@@ -67,6 +73,11 @@ def load_plugins(root: str = "plugins"):
         if not verify_plugin_signature(path, PUBLIC_KEY_HEX):
             _log_security_event(
                 f"[signature] Skipped {man.get('name', path.name)}: signature verification failed"
+            )
+            continue
+        if _is_blocked(man, denylist):
+            _log_security_event(
+                f"[denylist] Skipped {man.get('name', path.name)}: blocked by registry"
             )
             continue
         module_name = man["entrypoint"]["module"]
@@ -88,6 +99,31 @@ def _log_security_event(message: str) -> None:
     SECURITY_LOG.parent.mkdir(parents=True, exist_ok=True)
     with SECURITY_LOG.open("a", encoding="utf-8") as fh:
         fh.write(f"{message}\n")
+
+
+def _load_denylist() -> set[tuple[str, str]]:
+    try:
+        data = json.loads(DENYLIST_PATH.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return set()
+    except json.JSONDecodeError:
+        _log_security_event("[denylist] Failed to parse denylist file")
+        return set()
+    blocked = set()
+    for entry in data.get("blocked", []):
+        name = entry.get("name")
+        version = entry.get("version")
+        if isinstance(name, str) and isinstance(version, str):
+            blocked.add((name, version))
+    return blocked
+
+
+def _is_blocked(manifest: dict, denylist: set[tuple[str, str]]) -> bool:
+    name = manifest.get("name")
+    version = manifest.get("version")
+    if not isinstance(name, str) or not isinstance(version, str):
+        return False
+    return (name, version) in denylist
 
 
 def _is_compatible(manifest: dict) -> bool:
