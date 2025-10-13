@@ -11,9 +11,11 @@ except Exception:
 
 import argparse
 import logging
+import os
 import sys
 import time
 import traceback
+from pathlib import Path
 from typing import Dict, Optional
 
 from tgc.actions.master_index import MasterIndexAction
@@ -25,51 +27,93 @@ from tgc.master_index_controller import MasterIndexController, TraversalLimits
 from tgc.util.serialization import safe_serialize
 
 from core.audit import write_audit
-from core.capabilities import meta as capability_meta
+from core.capabilities import REGISTRY, meta, resolve
+from core.config import load_core_config, plugin_env_whitelist
+from core.isolate import run_isolated
+from core.permissions import require
+from core.plugin_api import Context
 from core.plugin_manager import load_plugins
-from core.runtime import generate_run_id, get_runtime_limits, run_capability, set_runtime_limits
+from core.runtime import get_runtime_limits, set_runtime_limits
 from core.safelog import logger
 from core.system_check import system_check as _system_check
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 
-def _run_id() -> str:
-    return generate_run_id()
-
-
 def _limits() -> Dict[str, object]:
     return get_runtime_limits()
 
 
+def _format_capabilities_table() -> str:
+    headers = ("Capability", "Plugin", "Scopes", "Network")
+    rows = []
+    for name in sorted(REGISTRY.keys()):
+        info = REGISTRY[name]
+        scopes = ", ".join(info.get("scopes") or [])
+        network = str(bool(info.get("network", False))).lower()
+        rows.append((name, info.get("plugin", ""), scopes, network))
+
+    widths = [len(h) for h in headers]
+    for row in rows:
+        for idx, value in enumerate(row):
+            widths[idx] = max(widths[idx], len(value))
+
+    def _fmt(row: tuple[str, str, str, str]) -> str:
+        return "  ".join(value.ljust(widths[idx]) for idx, value in enumerate(row))
+
+    lines = [_fmt(headers), "  ".join("-" * w for w in widths)]
+    lines.extend(_fmt(row) for row in rows)
+    return "\n".join(lines)
+
+
+def _write_capabilities_doc(table: str) -> None:
+    docs_dir = Path("docs")
+    docs_dir.mkdir(parents=True, exist_ok=True)
+    path = docs_dir / "capabilities.md"
+    content = "# Capabilities\n\n```\n" + table + "\n```\n"
+    path.write_text(content, encoding="utf-8")
+
+
 def run_cap(cap_name: str, **params):
-    run_id = generate_run_id()
-    plugin = "unknown"
-    scopes: list[str] = []
-    start = time.perf_counter()
-    outcome = "success"
+    m = meta(cap_name)
+    plugin = m["plugin"]
+    scopes = m["scopes"]
+    require(plugin, scopes)  # enforce consent
+
+    # SAFE MODE: block networked capabilities if OFFLINE_SAFE_MODE=true and manifest marks network=true
+    safe_mode = (os.getenv("OFFLINE_SAFE_MODE", "false").lower() == "true")
+    if safe_mode and m.get("network", False):
+        raise RuntimeError(f"SAFE MODE: capability '{cap_name}' requires network and is blocked.")
+
+    run_id = time.strftime("%Y%m%dT%H%M%SZ")
+    ctx = Context(run_id=run_id, config=load_core_config(), limits=_limits(), logger=logger)
+
+    use_subproc = (os.getenv("PLUGIN_SUBPROCESS", "false").lower() == "true")
+    timeout_s = int(os.getenv("PLUGIN_TIMEOUT_S", "60"))
+
+    t0 = time.perf_counter()
     try:
-        meta = capability_meta(cap_name)
-        plugin = str(meta.get("plugin", "unknown"))
-        meta_scopes = meta.get("scopes") or []
-        scopes = [str(scope) for scope in meta_scopes]
-        return run_capability(cap_name, run_id=run_id, **params)
-    except Exception:
-        outcome = "failure"
+        if use_subproc:
+            payload = {"run_id": ctx.run_id, "limits": ctx.limits, "params": params}
+            env_keys = plugin_env_whitelist(plugin)
+            rc, out, err = run_isolated(plugin, cap_name, payload, env_keys, timeout_s=timeout_s)
+            if rc != 0:
+                write_audit(run_id, plugin, cap_name, scopes, "error", int((time.perf_counter()-t0)*1000), f"rc={rc}; {err[:300]}")
+                raise RuntimeError(f"Plugin subprocess failed (rc={rc}): {err}")
+            import json
+            res = json.loads(out or "{}")
+            ok = bool(res.get("ok"))
+            data, notes = res.get("data"), res.get("notes")
+            write_audit(run_id, plugin, cap_name, scopes, "ok" if ok else "error", int((time.perf_counter()-t0)*1000))
+            return type("Result", (), {"ok": ok, "data": data, "notes": notes})
+        else:
+            fn = resolve(cap_name)
+            res = fn(ctx, **params)
+            write_audit(run_id, plugin, cap_name, scopes, "ok" if res.ok else "error", int((time.perf_counter()-t0)*1000))
+            return res
+    except Exception as e:
+        write_audit(run_id, plugin, cap_name, scopes, "error", int((time.perf_counter()-t0)*1000), notes=str(e)[:300])
         raise
-    finally:
-        duration_ms = (time.perf_counter() - start) * 1000.0
-        try:
-            write_audit(
-                run_id=run_id,
-                plugin=plugin,
-                capability=cap_name,
-                scopes=scopes,
-                outcome=outcome,
-                ms=duration_ms,
-            )
-        except Exception as audit_error:  # pragma: no cover - defensive
-            logger.warning("Failed to write audit log: %s", audit_error)
 
 
 def system_check() -> None:
@@ -133,6 +177,11 @@ def main() -> None:
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     parser.add_argument("--quiet", action="store_true", help="Suppress informational logging")
+    parser.add_argument(
+        "--debug-capabilities",
+        action="store_true",
+        help="Print capabilities registry details and exit",
+    )
     args = parser.parse_args()
 
     level = logging.INFO
@@ -157,6 +206,12 @@ def main() -> None:
 
     controller = bootstrap_controller()
     load_plugins()
+
+    if args.debug_capabilities:
+        table = _format_capabilities_table()
+        print(table)
+        _write_capabilities_doc(table)
+        return
 
     def _positive(value: Optional[float]) -> Optional[float]:
         if value is None:

@@ -14,3 +14,4 @@ module = "plugins.notion_plugin.src.main"
 name = "notion.index_pages"
 callable = "index_pages"
 scopes = ["notion.read"]
+network = true

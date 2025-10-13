@@ -278,3 +278,15 @@ If you found this project useful or entertaining, consider fueling the chaos wit
 **MTFY**
 
 </div>
+
+## Transparency & Architecture
+
+The Core controller is owned and kept private to protect integrity and user data. All integrations are plugins that declare:
+- what they can access (scopes),
+- what they can do (capabilities),
+- and whether they require network access.
+
+Nothing runs unless scopes are explicitly granted, and every run is audited to `reports/audit.log`. Secrets are not logged. You can enable:
+
+- **SAFE MODE**: `OFFLINE_SAFE_MODE=true` blocks networked capabilities.
+- **Subprocess Isolation**: `PLUGIN_SUBPROCESS=true` runs plugins in a separate process with a whitelisted environment and an enforced timeout (`PLUGIN_TIMEOUT_S`, default 60s).
