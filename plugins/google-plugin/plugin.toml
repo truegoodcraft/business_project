@@ -14,8 +14,10 @@ module = "plugins.google_plugin.src.main"
 name = "google.list_drive_files"
 callable = "list_drive_files"
 scopes = ["drive.read"]
+network = true
 
 [[capabilities]]
 name = "google.sheets_index"
 callable = "sheets_index"
 scopes = ["sheets.read"]
+network = true

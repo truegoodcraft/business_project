@@ -74,7 +74,14 @@ def load_plugins(root: str = "plugins"):
         mod = importlib.import_module(module_name)
         for cap in man["capabilities"]:
             func = getattr(mod, cap["callable"])
-            register(cap["name"], man["name"], man["version"], cap.get("scopes", []), func)
+            register(
+                cap["name"],
+                man["name"],
+                man["version"],
+                cap.get("scopes", []),
+                func,
+                cap.get("network", False),
+            )
 
 
 def _log_security_event(message: str) -> None:
