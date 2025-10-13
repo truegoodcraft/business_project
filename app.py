@@ -39,8 +39,10 @@ from core import retention
 from core.runtime import get_runtime_limits, set_runtime_limits
 from core.safelog import logger
 from core.system_check import system_check as _system_check
+from core.unilog import write as uni_write
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+uni_write("app.start", None, version="1.0", cwd=os.getcwd())
 
 
 POLICY_PLACEHOLDER = os.getenv("POLICY_PLACEHOLDER_ENABLED", "true").lower() == "true"  # logs only

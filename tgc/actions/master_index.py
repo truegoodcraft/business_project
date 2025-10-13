@@ -11,6 +11,7 @@ from core.capabilities import REGISTRY
 from core import retention
 from core.plugin_api import Result
 from core.runtime import run_capability
+from core.unilog import write as uni_write
 
 from ..controller import Controller
 from ..master_index_controller import MasterIndexController, TraversalLimits
@@ -79,6 +80,7 @@ class MasterIndexAction(SimpleAction):
         output_dir_path = Path(output_dir) if output_dir else None
         status = summary.get("status", "unknown")
         message = summary.get("message")
+        mode = "apply" if context.apply else "dry_run"
 
         lines = [
             f"status: {status}",
@@ -97,6 +99,17 @@ class MasterIndexAction(SimpleAction):
         if summary.get("status") == "unavailable":
             detail = message or "Master Index unavailable: run 'Discover & Audit' and verify Notion + Drive readiness."
             errors = [detail]
+            uni_write(
+                "master_index.result",
+                context.run_id,
+                mode=mode,
+                notion_count=notion_count,
+                drive_count=drive_count,
+                sheets_tabs=0,
+                output_dir=str(output_dir) if output_dir else None,
+                ok=False,
+                errors_count=len(errors),
+            )
             return ActionResult(
                 plan_text=plan_text,
                 changes=[],
@@ -108,6 +121,17 @@ class MasterIndexAction(SimpleAction):
         if summary.get("status") == "error":
             if not errors:
                 errors = [message or "Unable to initialise Master Index modules."]
+            uni_write(
+                "master_index.result",
+                context.run_id,
+                mode=mode,
+                notion_count=notion_count,
+                drive_count=drive_count,
+                sheets_tabs=0,
+                output_dir=str(output_dir) if output_dir else None,
+                ok=False,
+                errors_count=len(errors),
+            )
             return ActionResult(
                 plan_text=plan_text,
                 changes=[],
@@ -130,6 +154,7 @@ class MasterIndexAction(SimpleAction):
         sheets_errors: List[str] = []
         sheets_notes: List[str] = []
         sheets_changes: List[str] = []
+        sheets_rows: List[Dict[str, Any]] = []
 
         if context.apply:
             notion_path = summary.get("notion_output")
@@ -161,7 +186,6 @@ class MasterIndexAction(SimpleAction):
                 if fallback_root:
                     root_ids = [fallback_root]
 
-            sheets_rows: List[Dict[str, Any]] = []
             used_capability = False
             if root_ids:
                 if "google.sheets_index" in REGISTRY:
@@ -247,9 +271,23 @@ class MasterIndexAction(SimpleAction):
                 except Exception as exc:  # pragma: no cover - defensive
                     from core.unilog import write as log_event
 
-                    log_event("retention.error", {"path": "auto", "error": str(exc)})
+                    log_event("retention.error", None, path="auto", error=str(exc))
                     if verbose:
                         print(f"Retention auto-run failed: {exc}")
+
+        sheets_tabs_count = len(sheets_rows)
+        errors_count = len(notion_errors) + len(drive_errors) + len(sheets_errors)
+        uni_write(
+            "master_index.result",
+            context.run_id,
+            mode=mode,
+            notion_count=notion_count,
+            drive_count=drive_count,
+            sheets_tabs=sheets_tabs_count,
+            output_dir=str(output_dir_path) if output_dir_path else output_dir,
+            ok=(errors_count == 0),
+            errors_count=errors_count,
+        )
 
         return action_result
 
