@@ -34,7 +34,7 @@ from core.isolate import run_isolated
 from core.permissions import require
 from core.plugin_api import Context
 from core.policy_log import log_policy
-from core.menu_render import render_menu
+from core.menu_render import render_root
 from core.runtime import get_runtime_limits, set_runtime_limits
 from core.runtime_state import boot_sequence
 from core.safelog import logger
@@ -259,7 +259,8 @@ def main() -> None:
     uni_write("boot.status", None, payload=status_payload)
 
     if args.menu_only and not args.action:
-        render_menu(quiet=("--quiet" in sys.argv))
+        render_root(quiet=("--quiet" in sys.argv))
+        print()
         return
 
     if args.prune_only:

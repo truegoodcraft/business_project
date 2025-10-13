@@ -432,3 +432,24 @@ Optional
 
 Exit
   q)  Quit
+
+### Menu Layout
+
+Root menu keys:
+
+- `1` — Status & Health
+- `2` — Build & Indexing
+- `3` — Data Operations
+- `4` — Config & Tools
+- `q` — Quit
+
+Example submenu (Status & Health):
+
+```
+  1) System Check — Validate credentials and status
+  2) Discover & Audit — Read-only adapter audit
+  3) Plugins Hub — Discover / Auto-connect / Debug / Configure
+  0) Back
+```
+
+Submenus use digits `1`–`9`; press `0` to go back and `q` from the root menu to exit. Legacy numeric shortcuts continue to work for now so scripts and muscle memory stay compatible during the transition.
