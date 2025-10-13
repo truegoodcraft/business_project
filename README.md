@@ -208,6 +208,19 @@ python app.py
 python app.py --status
 ```
 
+### 🔐 Plugin configuration
+
+Each integration plugin now declares the environment variables it needs in
+`plugins/<name>/config.schema.json`. To configure credentials locally:
+
+1. Copy the checked-in `plugin.secrets.example.env` file to
+   `plugin.secrets.local.env` within the same plugin directory.
+2. Provide values only for the keys listed in the corresponding
+   `config.schema.json` file.
+
+The local secrets files are gitignored so that credentials stay on your
+machine, while the schema keeps the whitelist of supported variables obvious.
+
 ### Notion setup
 
 Create a **Sources** database in Notion to catalog linked systems alongside the inventory tracker. Configure these lean properties:
