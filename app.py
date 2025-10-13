@@ -26,6 +26,7 @@ from tgc.organization import configure_profile_interactive
 from tgc.master_index_controller import MasterIndexController, TraversalLimits
 from tgc.util.serialization import safe_serialize
 
+from core import policy_engine
 from core.audit import write_audit
 from core.capabilities import REGISTRY, meta, resolve
 from core.config import load_core_config, plugin_env_whitelist
@@ -33,11 +34,21 @@ from core.isolate import run_isolated
 from core.permissions import require
 from core.plugin_api import Context
 from core.plugin_manager import load_plugins
+from core.policy_log import log_policy
 from core.runtime import get_runtime_limits, set_runtime_limits
 from core.safelog import logger
 from core.system_check import system_check as _system_check
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+
+POLICY_PLACEHOLDER = os.getenv("POLICY_PLACEHOLDER_ENABLED", "true").lower() == "true"  # logs only
+
+
+def _policy_trace(raw_text: str, command: str, args: dict) -> None:
+    if POLICY_PLACEHOLDER:
+        dec = policy_engine.evaluate(raw_text, command, args)
+        log_policy(raw_text, dec)
 
 
 def _limits() -> Dict[str, object]:
@@ -245,6 +256,7 @@ def main() -> None:
     traversal_limits = TraversalLimits(**limit_kwargs) if limit_kwargs else None
 
     if args.update:
+        _policy_trace("cli flag: --update", command="update", args={"apply": bool(args.apply)})
         action_id = "U"
         plan_text = controller.build_plan(action_id)
         print("=== PLAN ===")
@@ -256,6 +268,7 @@ def main() -> None:
         return
 
     if args.status:
+        _policy_trace("cli flag: --status", command="status", args={})
         print("=== ORGANIZATION ===")
         for line in controller.organization_summary():
             print(f"- {line}")
@@ -286,12 +299,22 @@ def main() -> None:
         return
 
     if args.print_index:
+        _policy_trace("cli flag: --print-index", command="print-index", args=limit_kwargs)
         master = MasterIndexController(controller)
         snapshot = master.build_index_snapshot(limits=traversal_limits)
         print(safe_serialize(snapshot))
         return
 
     if args.action and not args.menu_only:
+        _policy_trace(
+            f"cli action: {args.action}",
+            command="action",
+            args={
+                "action_id": args.action,
+                "apply": bool(args.apply),
+                "limits": limit_kwargs if limit_kwargs else None,
+            },
+        )
         action_id = args.action
         if action_id not in controller.actions:
             raise SystemExit(f"Unknown action '{action_id}'. Use --menu-only to list actions.")
@@ -310,6 +333,7 @@ def main() -> None:
         print(f"Reports stored in: {controller.reports_root}")
         return
 
+    _policy_trace("cli menu: run_cli", command="menu", args={})
     run_cli(controller)
 
 

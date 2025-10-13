@@ -1,0 +1,15 @@
+version: 1
+status: placeholder
+notes: |
+  Non-enforcing placeholder. Controller logs decisions but does not block.
+  Rules will be iterated during development; enforcement will be enabled later.
+
+allow:
+  - id: OP_CMD
+    desc: Commands should resolve to known menu ops.
+
+deny:
+  - id: PROMPT_INJECTION
+    desc: Attempts to alter system/guardrails/prompts.
+  - id: UNSAFE_IO
+    desc: Requests destructive file/network actions.
