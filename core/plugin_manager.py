@@ -7,12 +7,14 @@ import tomllib
 
 from core.capabilities import declare, register
 from core.plugins_state import is_enabled as _plugin_enabled
-from core.signing import PUBLIC_KEY_HEX, verify_plugin_signature
+from core.signing import PUBLIC_KEY_HEX, SIGNING_AVAILABLE, verify_plugin_signature
 from core.unilog import write as uni_write
 
 CORE_VERSION = "0.1.0"
 SECURITY_LOG = pathlib.Path("reports/security.log")
 DENYLIST_PATH = pathlib.Path("registry/denylist.json")
+
+_SIGNING_STATUS_LOGGED = False
 
 
 def discover_plugins(root: str = "plugins"):
@@ -59,6 +61,8 @@ def load_plugins(root: str = "plugins"):
     if not root_path.exists():
         return
     _ensure_namespace("plugins", root_path)
+    if not SIGNING_AVAILABLE:
+        _log_signing_disabled_once()
     denylist = _load_denylist()
     for path, man in discover_plugins(root):
         api = str(man.get("plugin_api", ""))
@@ -79,7 +83,7 @@ def load_plugins(root: str = "plugins"):
                 f"[compat] Skipped {man.get('name', path.name)}: incompatible with core {CORE_VERSION}"
             )
             continue
-        if not verify_plugin_signature(path, PUBLIC_KEY_HEX):
+        if SIGNING_AVAILABLE and not verify_plugin_signature(path, PUBLIC_KEY_HEX):
             _log_security_event(
                 f"[signature] Skipped {man.get('name', path.name)}: signature verification failed"
             )
@@ -109,6 +113,16 @@ def _log_security_event(message: str) -> None:
     with SECURITY_LOG.open("a", encoding="utf-8") as fh:
         fh.write(f"{message}\n")
     uni_write("security.note", None, message=message)
+
+
+def _log_signing_disabled_once() -> None:
+    global _SIGNING_STATUS_LOGGED
+    if _SIGNING_STATUS_LOGGED:
+        return
+    _SIGNING_STATUS_LOGGED = True
+    message = "[signature] Plugin signing disabled: PyNaCl not installed"
+    _log_security_event(message)
+    uni_write("plugin.signing.disabled", None)
 
 
 def _load_denylist() -> set[tuple[str, str]]:

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List
 
+from core.signing import SIGNING_AVAILABLE
 from core.unilog import write as uni_write
 
 from ..controller import Controller
@@ -32,6 +33,13 @@ class DiscoverAuditAction(SimpleAction):
 
     def run(self, controller: Controller, context: RunContext) -> ActionResult:
         lines: List[str] = []
+        lines.append("Security / Validation:")
+        if SIGNING_AVAILABLE:
+            lines.append("  - Plugin signing: enabled (Ed25519)")
+            plugin_signing_status = "enabled"
+        else:
+            lines.append("  - Plugin signing: disabled (PyNaCl not installed)")
+            plugin_signing_status = "disabled"
         notes: List[str] = []
         warnings_list: List[str] = []
         errors_list: List[str] = []
@@ -104,6 +112,7 @@ class DiscoverAuditAction(SimpleAction):
         uni_write(
             "discover_audit.result",
             context.run_id,
+            security={"plugin_signing": plugin_signing_status},
             notion=notion_status_dict,
             drive=drive_status_dict,
             sheets=sheets_status_dict,
