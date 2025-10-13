@@ -1,0 +1,7 @@
+{
+  "env": [
+    "GOOGLE_APPLICATION_CREDENTIALS",
+    "DRIVE_ROOT_FOLDER_ID",
+    "SHEET_INVENTORY_ID"
+  ]
+}
