@@ -15,8 +15,8 @@ from .base import SimpleAction
 @dataclass
 class NotionModuleAction(SimpleAction):
     id: str = "11"
-    name: str = "Notion Access Module"
-    description: str = "Enable, test, and inspect Notion connectivity"
+    name: str = "Notion Module"
+    description: str = "Review access & troubleshooting"
 
     def build_plan(self, controller: Controller) -> str:
         steps = [

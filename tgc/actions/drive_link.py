@@ -14,7 +14,7 @@ from .base import SimpleAction
 class DriveLinkAction(SimpleAction):
     id: str = "5"
     name: str = "Link Drive PDFs to Notion"
-    description: str = "Match PDFs by reference and link to inventory items"
+    description: str = "Match and attach Drive PDFs to inventory items"
 
     def build_plan(self, controller: Controller) -> str:
         steps = [

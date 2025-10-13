@@ -20,7 +20,7 @@ from .base import SimpleAction
 class SheetsSyncAction(SimpleAction):
     id: str = "4"
     name: str = "Sync metrics → Google Sheets"
-    description: str = "Preview and optionally push metrics to dashboard sheet"
+    description: str = "Preview/push metrics to Google Sheets"
 
     def build_plan(self, controller: Controller) -> str:
         steps = [

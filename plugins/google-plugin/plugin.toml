@@ -1,6 +1,6 @@
 name = "google-plugin"
 version = "0.1.0"
-publisher = "truegoodcraft"
+publisher = "TGC Systems"
 plugin_api = "1.0"
 
 [compat]

@@ -15,7 +15,7 @@ from .base import SimpleAction
 class CsvImportAction(SimpleAction):
     id: str = "3"
     name: str = "Import CSV → Inventory"
-    description: str = "Map CSV columns to canonical inventory fields"
+    description: str = "Map CSV columns into inventory fields"
 
     def build_plan(self, controller: Controller) -> str:
         steps = [

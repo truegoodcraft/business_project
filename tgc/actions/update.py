@@ -19,7 +19,7 @@ class UpdateAction(SimpleAction):
 
     id: str = "U"
     name: str = "Update from repository"
-    description: str = "Fetch and merge the latest code without leaving the session"
+    description: str = "Fetch and merge latest code"
 
     def build_plan(self, controller: Controller) -> str:  # noqa: D401 - simple delegation
         steps = [

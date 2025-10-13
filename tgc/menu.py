@@ -4,62 +4,84 @@ from __future__ import annotations
 
 from typing import Callable, Dict, Iterable, List, Optional
 
-from core import retention
+from core import brand, retention
 from core.consent_cli import current_consents, grant_scopes, list_scopes, revoke_scopes
+from core.menu_render import format_banner, format_help_lines, render_menu
+from core.menu_spec import MENU_SPEC
 from core.system_check import system_check as _plugin_system_check
 from .controller import Controller
-from .master_index_controller import MasterIndexController
 from .health import format_health_table, system_health
 from .integration_support import service_account_email, sheets_share_hint
+from .master_index_controller import MasterIndexController
 from .util.serialization import safe_serialize
 
 
-def run_cli(controller: Controller) -> None:
+def run_cli(controller: Controller, *, quiet: bool = False, debug: bool = False) -> None:
     """Display an interactive menu for manual operation."""
 
-    print("True Good Craft — Controller Menu")
+    if not quiet:
+        print(format_banner(debug=debug))
+        print(f"tagline: {brand.TAGLINE}")
+        print()
+
     org = controller.organization
-    print(f"{org.display_name()} — Controller Menu")
+    print(f"Organization: {org.display_name()}")
     if org.has_custom_short_code():
         print(f"Short code: {org.short_code} · SKU example: {org.sku_example()}")
     else:
         print("Short code: XXX (placeholder) · Run `python app.py --init-org` to customize.")
-    print("Type the menu number to continue, or 'q' to quit.\n")
+    print("Press a menu key to continue. Type '?' for help.\n")
 
     advanced_options: Dict[str, tuple[str, str, Callable[[Controller], None]]] = {
         "0": (
             "System Check",
-            "Validate credentials and show READY/MISSING status",
+            "Validate credentials and status",
             _run_system_check,
         ),
         "13": (
-            "Print Master Index (debug)",
-            "Build the Master Index snapshot and dump it as JSON",
+            "Master Index Snapshot (debug)",
+            "Print JSON for inspection",
             _print_master_index_snapshot,
         ),
         "14": (
-            "Inspect Sheets (debug)",
-            "List sheet tabs and read a limited preview",
+            "Build Sheets Index (debug)",
+            "Enumerate spreadsheets & tabs",
             _inspect_sheets_debug,
         ),
         "15": (
-            "Manage Plugin Scopes (grant/revoke/view)",
-            "Review and update stored plugin consents",
+            "Plugin Consents",
+            "Grant or revoke stored plugin scopes",
             _manage_plugin_scopes,
         ),
         "17": (
-            "Prune old runs (keep last N)",
+            "Retention Cleanup",
             "Preview or prune historical run artifacts",
             _prune_old_runs,
         ),
     }
 
-    while True:
-        for key, (name, description, _) in advanced_options.items():
-            print(f"{key}) {name} — {description}")
+    def _available_entries() -> Dict[str, tuple[str, str]]:
+        entries: Dict[str, tuple[str, str]] = {
+            key: (name, description) for key, (name, description, _) in advanced_options.items()
+        }
         for action in controller.available_actions():
-            print(f"{action.id}) {action.name} — {action.description}")
-        choice = input("Select an option (or q to quit): ").strip()
+            entries[action.id] = (action.name, action.description)
+        entries["q"] = ("Quit", "")
+        return entries
+
+    first_loop = True
+    while True:
+        if not first_loop:
+            print()
+        first_loop = False
+        menu_text = render_menu(MENU_SPEC, available=_available_entries())
+        print(menu_text)
+        choice = input("Select an option (number/letter, q to quit, ? for help): ").strip()
+        if choice == "?":
+            for line in format_help_lines(debug=debug):
+                print(line)
+            print()
+            continue
         if choice.lower() in {"q", "quit", "exit"}:
             print("Goodbye!")
             return
@@ -67,7 +89,6 @@ def run_cli(controller: Controller) -> None:
             name, _, handler = advanced_options[choice]
             print(f"\n=== {name.upper()} ===")
             handler(controller)
-            print()
             continue
         if choice not in controller.actions:
             print("Invalid choice. Try again.\n")
