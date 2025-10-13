@@ -72,7 +72,9 @@ class MasterIndexAction(SimpleAction):
         plan_text = controller.build_plan(self.id)
         master = MasterIndexController(controller)
         limits = self._limits_from_context(context)
-        summary = master.run_master_index(dry_run=not context.apply, limits=limits)
+        summary = master.run_master_index(
+            dry_run=not context.apply, limits=limits, run_context=context
+        )
 
         notion_count = int(summary.get("notion_count", 0))
         drive_count = int(summary.get("drive_count", 0))

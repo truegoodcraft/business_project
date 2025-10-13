@@ -474,3 +474,15 @@ Submenus use digits `1`–`9`; press `0` to go back and `q` from the root menu t
 3) Plugins Hub — Configure plugins (discover, auto-connect, test, enable/disable, view env schema)
 
 4) Controller Config & Tools — Base controller settings only (System Check, Logs, Retention, Update, Consents)
+
+## Architecture: Thin Core / Fat Plugins (Phase 1)
+
+Core provides contracts, action cards, approvals, backup snapshots, a command bus, and a plugin registry.
+Plugins implement effects via a standard interface:
+
+discover → propose → apply → rollback → health
+
+“Build Master Index” now runs as:
+discover (drive/notion/sheets) → plan (cards) → apply (writer.markdown)
+
+Phase 1 keeps outputs identical to previous versions.
