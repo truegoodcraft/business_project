@@ -1,4 +1,8 @@
 import types
+from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from core.conn_broker import ConnectionBroker
 
@@ -67,8 +71,8 @@ def test_conn_broker_scopes():
 
     assert drive_base.scope == "read_base"
     assert drive_crawl.scope == "read_crawl"
-    assert drive_write.scope == "write"
-    assert controller.modules["drive"].calls == [False, False, True]
+    assert drive_write is None
+    assert controller.modules["drive"].calls == [False, False]
 
     notion_client = broker.get_client("notion", scope="read_base")
     assert notion_client.service == "notion"

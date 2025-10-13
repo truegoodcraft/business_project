@@ -38,9 +38,26 @@ class ConnectionBroker:
         if supplier is None:
             self._logger.warning("broker.issue.unsupported", extra={"service": service, "scope": scope})
             return None
+        if not hasattr(self, "_grants"):
+            self._grants: Dict[str, str] = {}
+        if not hasattr(self, "_escalation_logged"):
+            self._escalation_logged: set[str] = set()
+        _order = {"read_base": 0, "read_crawl": 1, "write": 2}
+        prev = self._grants.get(service)
+        escalation = prev is not None and _order.get(scope, 0) > _order.get(prev, 0)
+        if escalation and scope == "write":
+            if service not in self._escalation_logged:
+                self._logger.warning(
+                    "broker.escalation.denied",
+                    extra={"service": service, "from": prev, "to": scope},
+                )
+                self._escalation_logged.add(service)
+            return None
         handle = supplier(scope)
         if handle is None:
             return None
+        if prev is None or _order.get(scope, 0) >= _order.get(prev, 0):
+            self._grants[service] = scope
         self._log_issuance(handle, ok=True)
         return handle
 
