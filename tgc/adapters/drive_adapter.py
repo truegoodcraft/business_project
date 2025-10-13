@@ -7,9 +7,9 @@ import sys
 import time
 from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Optional, Union
 
-from requests import Response
+from requests import Response, Session
 
-from tgc.util.http import default_client
+from tgc.util.google_auth import google_session
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +20,9 @@ _LIST_FIELDS = (
 )
 _GET_FIELDS = "id, name, mimeType, size, modifiedTime, parents, driveId"
 _SHORTCUT_MIME = "application/vnd.google-apps.shortcut"
+
+
+_SESSION: Optional[Session] = None
 
 
 ConfigLike = Union[Mapping[str, Any], object, None]
@@ -46,6 +49,16 @@ def _limit_value(limits: LimitsLike, key: str) -> Any:
     return getattr(limits, key, None)
 
 
+def _resolve_session(config: ConfigLike) -> Session:
+    candidate = _config_value(config, "session")
+    if candidate is not None and hasattr(candidate, "get"):
+        return candidate  # type: ignore[return-value]
+    global _SESSION
+    if _SESSION is None:
+        _SESSION = google_session()
+    return _SESSION
+
+
 def list_drive_files(
     root_ids: Iterable[str],
     limits: LimitsLike = None,
@@ -53,12 +66,8 @@ def list_drive_files(
 ) -> List[Dict[str, Any]]:
     """List files for the provided Drive roots using the REST API."""
 
-    access_token = _config_value(config, "access_token") or _config_value(config, "token")
-    if not access_token:
-        raise ValueError("Google Drive access token is required")
-
     drive_id = _config_value(config, "drive_id") or _config_value(config, "driveId")
-    timeout = _config_value(config, "timeout") or _config_value(config, "timeout_seconds") or 30
+    timeout = _config_value(config, "timeout") or _config_value(config, "timeout_seconds") or 15
     fallback_root = _config_value(config, "fallback_root_id") or _config_value(
         config, "DRIVE_ROOT_FOLDER_ID"
     )
@@ -70,7 +79,7 @@ def list_drive_files(
         else:
             roots = [None]
 
-    headers = {"Authorization": f"Bearer {access_token}"}
+    session = _resolve_session(config)
     max_seconds = _limit_value(limits, "max_seconds")
     max_requests = _limit_value(limits, "max_requests")
     max_items = _limit_value(limits, "max_items")
@@ -132,7 +141,7 @@ def list_drive_files(
         _check_requests_before()
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug("drive.request", extra={"url": url, "params": dict(params)})
-        response: Response = default_client.get(url, headers=headers, params=params, timeout=timeout)
+        response: Response = session.get(url, params=params, timeout=timeout)
         stats["requests"] += 1
         if ticker_enabled:
             ticker["requests"] += 1
