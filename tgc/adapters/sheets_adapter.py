@@ -11,19 +11,11 @@ from urllib.parse import quote
 
 from requests import Response, Session
 
-from ..util.http import default_client
-
-try:  # Optional dependency kept consistent with other Google integrations
-    from google.auth.transport.requests import Request as GoogleAuthRequest
-    from google.oauth2.service_account import Credentials as ServiceAccountCredentials
-except Exception:  # pragma: no cover - fallback when google-auth is unavailable
-    GoogleAuthRequest = None  # type: ignore
-    ServiceAccountCredentials = None  # type: ignore
+from ..util.google_auth import google_session
 
 
 logger = logging.getLogger(__name__)
 
-SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets.readonly"
 SHEETS_ENDPOINT = "https://sheets.googleapis.com/v4/spreadsheets"
 
 LimitsLike = Union[Mapping[str, Any], object, None]
@@ -37,9 +29,20 @@ class SheetsAPIError(RuntimeError):
 class SheetsRequestContext:
     """Configuration for issuing authorised Sheets API requests."""
 
-    credentials_info: Mapping[str, Any]
+    session: Session
     timeout: int = 30
-    client: Session = default_client
+
+
+_SESSION: Optional[Session] = None
+
+
+def _shared_session(client: Optional[Session]) -> Session:
+    if client is not None:
+        return client
+    global _SESSION
+    if _SESSION is None:
+        _SESSION = google_session()
+    return _SESSION
 
 
 def _limit_value(limits: LimitsLike, key: str) -> Optional[float]:
@@ -58,46 +61,15 @@ def _limit_value(limits: LimitsLike, key: str) -> Optional[float]:
     return numeric
 
 
-def _ensure_credentials(context: SheetsRequestContext) -> ServiceAccountCredentials:
-    if ServiceAccountCredentials is None or GoogleAuthRequest is None:  # pragma: no cover - dependency guard
-        raise SheetsAPIError(
-            "google-auth is required to access Sheets. Run `pip install -r requirements.txt`."
-        )
-    try:
-        credentials = ServiceAccountCredentials.from_service_account_info(
-            dict(context.credentials_info), scopes=[SHEETS_SCOPE]
-        )
-    except Exception as exc:  # pragma: no cover - defensive guard for malformed JSON
-        raise SheetsAPIError(f"Unable to load service account credentials: {exc}") from exc
-
-    if not credentials.valid or credentials.expired or not credentials.token:
-        request = GoogleAuthRequest(session=context.client)
-        try:
-            credentials.refresh(request)
-        except Exception as exc:  # pragma: no cover - network dependent
-            raise SheetsAPIError(f"Unable to refresh Sheets access token: {exc}") from exc
-    return credentials
-
-
-def _authorised_headers(context: SheetsRequestContext) -> Dict[str, str]:
-    credentials = _ensure_credentials(context)
-    token = credentials.token
-    if not token:
-        raise SheetsAPIError("Sheets credentials did not provide an access token.")
-    return {"Authorization": f"Bearer {token}"}
-
-
 def _perform_get(
     url: str,
     *,
     params: Optional[MutableMapping[str, Any]] = None,
     context: SheetsRequestContext,
 ) -> Dict[str, Any]:
-    headers = _authorised_headers(context)
     try:
-        response: Response = context.client.get(
+        response: Response = context.session.get(
             url,
-            headers=headers,
             params=params,
             timeout=context.timeout,
         )
@@ -168,10 +140,10 @@ def get_spreadsheet_metadata(
 
     if not spreadsheet_id:
         raise ValueError("Spreadsheet ID is required")
+    _ = credentials  # Legacy compatibility; session auth handled via google_session().
     context = SheetsRequestContext(
-        credentials_info=credentials,
+        session=_shared_session(client),
         timeout=timeout,
-        client=client or default_client,
     )
     params = {
         "includeGridData": "false",
@@ -210,10 +182,10 @@ def read_range(
     if not range_a1:
         raise ValueError("Range (A1 notation) is required")
 
+    _ = credentials  # Legacy compatibility; session auth handled via google_session().
     context = SheetsRequestContext(
-        credentials_info=credentials,
+        session=_shared_session(client),
         timeout=timeout,
-        client=client or default_client,
     )
 
     max_seconds = _limit_value(limits, "max_seconds")
