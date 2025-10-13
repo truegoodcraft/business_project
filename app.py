@@ -135,6 +135,15 @@ def system_check() -> None:
 
 
 def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1] == "go":
+        go_parser = argparse.ArgumentParser(prog="app.py go", description="Apply proposals end-to-end")
+        go_parser.add_argument("--dev", action="store_true", help="Use development configuration overrides")
+        go_args = go_parser.parse_args(sys.argv[2:])
+        from tgc.cli_main import cmd_go
+
+        cmd_go(dev=go_args.dev)
+        return
+
     parser = argparse.ArgumentParser(description="Workflow controller")
     parser.add_argument("--menu-only", action="store_true", help="Always show the interactive menu")
     parser.add_argument("--action", help="Run a specific action ID without entering the menu")
