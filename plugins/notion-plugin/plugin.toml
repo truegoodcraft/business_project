@@ -1,0 +1,12 @@
+name = "notion-plugin"
+version = "0.1.0"
+publisher = "truegoodcraft"
+plugin_api = "1.0"
+
+[entrypoint]
+module = "plugins.notion_plugin.src.main"
+
+[[capabilities]]
+name = "notion.index_pages"
+callable = "index_pages"
+scopes = ["notion.read"]

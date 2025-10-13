@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Callable, Dict, Iterable, List, Optional
 
+from core.system_check import system_check as _plugin_system_check
 from .controller import Controller
 from .master_index_controller import MasterIndexController
 from .health import format_health_table, system_health
@@ -92,6 +93,7 @@ def _print_master_index_snapshot(controller: Controller) -> None:
 
 
 def _run_system_check(_: Controller) -> None:
+    _plugin_system_check()
     checks, _ = system_health()
     print(format_health_table(checks))
 

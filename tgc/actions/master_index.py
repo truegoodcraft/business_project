@@ -6,11 +6,42 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from core.capabilities import REGISTRY
+from core.plugin_api import Result
+from core.runtime import run_capability
+
 from ..controller import Controller
 from ..master_index_controller import MasterIndexController, TraversalLimits
 from ..reporting import ActionResult, RunContext
 from .base import SimpleAction
 from .sheets_index import build_sheets_index, write_sheets_index_markdown
+
+
+def _normalise_sheets_payload(payload: Any, errors: List[str]) -> List[Dict[str, Any]]:
+    if isinstance(payload, Result):
+        if payload.ok:
+            return _normalise_sheets_payload(payload.data, errors)
+        errors.extend(payload.notes or ["Sheets capability failed"])
+        return _normalise_sheets_payload(payload.data, errors) if payload.data else []
+    if isinstance(payload, list):
+        rows: List[Dict[str, Any]] = []
+        for row in payload:
+            if isinstance(row, dict):
+                rows.append(dict(row))
+            else:
+                try:
+                    rows.append(dict(row))
+                except Exception:
+                    continue
+        return rows
+    if isinstance(payload, dict):
+        rows_value = payload.get("rows")
+        if isinstance(rows_value, list):
+            return _normalise_sheets_payload(rows_value, errors)
+        data_value = payload.get("data")
+        if isinstance(data_value, list):
+            return _normalise_sheets_payload(data_value, errors)
+    return []
 
 
 @dataclass
@@ -129,14 +160,32 @@ class MasterIndexAction(SimpleAction):
                     root_ids = [fallback_root]
 
             sheets_rows: List[Dict[str, Any]] = []
+            used_capability = False
             if root_ids:
-                for root_id in root_ids:
+                if "google.sheets_index" in REGISTRY:
                     try:
-                        sheets_rows.extend(build_sheets_index(limits, root_id, controller.config))
-                    except Exception as exc:
-                        sheets_errors.append(
-                            f"Sheets index traversal failed for Drive root {root_id}: {exc}"
+                        payload = run_capability(
+                            "google.sheets_index",
+                            root_ids=root_ids,
+                            config=controller.config,
+                            limits=limits,
                         )
+                    except PermissionError as exc:
+                        sheets_errors.append(str(exc))
+                    else:
+                        rows = _normalise_sheets_payload(payload, sheets_errors)
+                        sheets_rows.extend(rows)
+                        used_capability = True
+                if not used_capability:
+                    for root_id in root_ids:
+                        try:
+                            sheets_rows.extend(
+                                build_sheets_index(limits, root_id, controller.config)
+                            )
+                        except Exception as exc:
+                            sheets_errors.append(
+                                f"Sheets index traversal failed for Drive root {root_id}: {exc}"
+                            )
             else:
                 sheets_notes.append(
                     "Sheets index skipped: no Drive root IDs configured for traversal."

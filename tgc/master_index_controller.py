@@ -11,6 +11,10 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
+from core.capabilities import REGISTRY
+from core.plugin_api import Result
+from core.runtime import run_capability
+
 from .integration_support import (
     format_drive_share_message,
     is_drive_permission_error,
@@ -185,6 +189,48 @@ class MasterIndexController:
     def __init__(self, controller: "Controller") -> None:
         self.controller = controller
 
+    def _invoke_traversal_capability(
+        self,
+        capability: str,
+        plugin_kwargs: Dict[str, object],
+        fallback: Callable,
+        fallback_args: Tuple[object, ...],
+        fallback_kwargs: Optional[Dict[str, object]] = None,
+    ) -> "TraversalResult":
+        if capability in REGISTRY:
+            try:
+                result = run_capability(capability, **plugin_kwargs)
+            except PermissionError as exc:
+                message = str(exc)
+                return TraversalResult(records=[], errors=[message], partial=True, reason=message)
+            return self._normalise_traversal_result(capability, result)
+        return fallback(*fallback_args, **(fallback_kwargs or {}))
+
+    def _normalise_traversal_result(self, capability: str, payload) -> "TraversalResult":
+        if isinstance(payload, Result):
+            if payload.ok:
+                return self._normalise_traversal_result(capability, payload.data)
+            notes = list(payload.notes or [f"{capability} failed"])
+            return TraversalResult(records=[], errors=notes, partial=True, reason="capability-error")
+        if isinstance(payload, TraversalResult):
+            return payload
+        if isinstance(payload, dict):
+            records = list(payload.get("records") or [])
+            errors = list(payload.get("errors") or [])
+            partial = bool(payload.get("partial"))
+            reason = payload.get("reason")
+            return TraversalResult(records=records, errors=errors, partial=partial, reason=reason)
+        if isinstance(payload, list):
+            return TraversalResult(records=list(payload), errors=[])
+        if payload is None:
+            return TraversalResult(records=[], errors=[])
+        return TraversalResult(
+            records=[],
+            errors=[f"Unsupported data from {capability}"],
+            partial=True,
+            reason="unsupported-data",
+        )
+
     # ------------------------------------------------------------------
     # Public entry point
 
@@ -262,12 +308,28 @@ class MasterIndexController:
             notion_partial = False
             notion_reason: Optional[str] = None
         else:
-            notion_result = collect_notion_pages(
-                notion_module,
-                notion_roots,
-                max_depth=notion_module.config.max_depth,
-                page_size=notion_module.config.page_size,
-                limits=traversal_limits,
+            plugin_kwargs: Dict[str, object] = {
+                "module": notion_module,
+                "root_ids": notion_roots,
+                "max_depth": notion_module.config.max_depth,
+                "page_size": notion_module.config.page_size,
+                "limits": traversal_limits,
+            }
+            if traversal_limits is None:
+                plugin_kwargs.pop("limits")
+            fallback_kwargs = {
+                "max_depth": notion_module.config.max_depth,
+                "page_size": notion_module.config.page_size,
+                "limits": traversal_limits,
+            }
+            if traversal_limits is None:
+                fallback_kwargs.pop("limits")
+            notion_result = self._invoke_traversal_capability(
+                "notion.index_pages",
+                plugin_kwargs,
+                collect_notion_pages,
+                (notion_module, notion_roots),
+                fallback_kwargs,
             )
             notion_records = notion_result.records
             notion_errors = notion_result.errors
@@ -318,13 +380,31 @@ class MasterIndexController:
             drive_partial = False
             drive_reason = None
             try:
-                drive_result = collect_drive_files(
-                    drive_module,
-                    drive_roots,
-                    mime_whitelist=list(drive_module.config.mime_whitelist) or None,
-                    max_depth=drive_module.config.max_depth,
-                    page_size=drive_module.config.page_size,
-                    limits=traversal_limits,
+                mime_whitelist = list(drive_module.config.mime_whitelist) or None
+                plugin_kwargs: Dict[str, object] = {
+                    "module": drive_module,
+                    "root_ids": drive_roots,
+                    "mime_whitelist": mime_whitelist,
+                    "max_depth": drive_module.config.max_depth,
+                    "page_size": drive_module.config.page_size,
+                    "limits": traversal_limits,
+                }
+                if traversal_limits is None:
+                    plugin_kwargs.pop("limits")
+                fallback_kwargs = {
+                    "mime_whitelist": mime_whitelist,
+                    "max_depth": drive_module.config.max_depth,
+                    "page_size": drive_module.config.page_size,
+                    "limits": traversal_limits,
+                }
+                if traversal_limits is None:
+                    fallback_kwargs.pop("limits")
+                drive_result = self._invoke_traversal_capability(
+                    "google.list_drive_files",
+                    plugin_kwargs,
+                    collect_drive_files,
+                    (drive_module, drive_roots),
+                    fallback_kwargs,
                 )
                 drive_records = drive_result.records
                 drive_errors = drive_result.errors
