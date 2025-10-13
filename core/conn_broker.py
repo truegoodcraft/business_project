@@ -5,9 +5,41 @@ from __future__ import annotations
 import logging
 import os
 import time
+from functools import lru_cache
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
+
+
+_ROOT = Path(__file__).resolve().parents[1]
+_DEFAULT_CREDENTIALS_PATH = (_ROOT / "credentials" / "service-account.json").resolve(strict=False)
+
+
+def _normalize_credentials_path(path: Path) -> Path:
+    """Return ``path`` expanded with vars and relative segments resolved."""
+
+    expanded = Path(os.path.expandvars(str(path.expanduser())))
+    if not expanded.is_absolute():
+        expanded = (_ROOT / expanded).resolve(strict=False)
+    else:
+        expanded = expanded.resolve(strict=False)
+    return expanded
+
+
+@lru_cache(maxsize=1)
+def resolve_service_account_path() -> Path:
+    """Return the canonical service-account credentials path."""
+
+    if _DEFAULT_CREDENTIALS_PATH.exists():
+        os.environ.setdefault("GOOGLE_APPLICATION_CREDENTIALS", str(_DEFAULT_CREDENTIALS_PATH))
+        return _DEFAULT_CREDENTIALS_PATH
+    env_value = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+    if env_value:
+        candidate = _normalize_credentials_path(Path(env_value))
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(candidate)
+        return candidate
+    os.environ.setdefault("GOOGLE_APPLICATION_CREDENTIALS", str(_DEFAULT_CREDENTIALS_PATH))
+    return _DEFAULT_CREDENTIALS_PATH
 
 
 @dataclass
@@ -27,6 +59,7 @@ class ConnectionBroker:
     def __init__(self, controller: Any, *, logger: Optional[logging.Logger] = None) -> None:
         self._controller = controller
         self._logger = logger or logging.getLogger(__name__)
+        self._drive_creds_missing_logged = False
 
     # ------------------------------------------------------------------
     # Public API
@@ -72,13 +105,14 @@ class ConnectionBroker:
             hint: Optional[str] = None
             service_lower = service.lower()
             if service_lower == "drive":
-                creds = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
-                if not creds:
-                    detail = "missing_credentials"
-                    hint = "Set GOOGLE_APPLICATION_CREDENTIALS or edit .env"
-                elif not Path(creds).exists():
+                creds_path = resolve_service_account_path()
+                if not creds_path.is_file():
                     detail = "creds_path_missing"
-                    hint = f"File not found: {creds}"
+                    hint = (
+                        f"Credentials path is not a file: {creds_path}"
+                        if creds_path.exists()
+                        else f"File not found: {creds_path}"
+                    )
             elif service_lower == "sheets":
                 adapter = self._controller_adapter("sheets")
                 if adapter is None:
@@ -153,12 +187,13 @@ class ConnectionBroker:
         if module is None:
             self._logger.warning("broker.drive.missing_module")
             return None
-        creds = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
-        if not creds:
-            self._logger.warning("broker.drive.missing_creds_env")
-            return None
-        if not Path(creds).exists():
-            self._logger.warning("broker.drive.creds_path_missing", extra={"path": creds})
+        creds_path = resolve_service_account_path()
+        if not creds_path.is_file():
+            if not self._drive_creds_missing_logged:
+                self._logger.warning(
+                    "broker.drive.creds_path_missing", extra={"path": str(creds_path)}
+                )
+                self._drive_creds_missing_logged = True
             return None
         require_write = scope == "write"
         service, error = module.ensure_service(require_write=require_write)
