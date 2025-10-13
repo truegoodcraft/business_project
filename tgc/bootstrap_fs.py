@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from typing import Dict, Tuple
+
+from core.conn_broker import resolve_service_account_path
 
 ROOT = Path(__file__).resolve().parent.parent
 CREDENTIALS = ROOT / "credentials"
@@ -56,30 +57,21 @@ def _read_json_head(path: Path) -> Dict[str, str]:
 def detect_credentials() -> Tuple[bool, Dict[str, str], str]:
     """Returns (present, meta, hint)."""
 
-    env_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
-    if env_path and not Path(env_path).is_absolute():
-        env_path = str((ROOT / env_path).resolve())
-        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = env_path
-
-    candidates = []
-    if env_path:
-        candidates.append(Path(env_path))
-    candidates.append(CREDENTIALS / "service-account.json")
-
-    for cand in candidates:
-        if cand.exists():
-            meta = _read_json_head(cand)
-            if meta.get("type") == "service_account":
-                return True, meta, f"Using credentials at: {cand}"
-            return False, meta, (
-                "Credentials file found but not a service account JSON: " f"{cand}"
-            )
+    creds_path = resolve_service_account_path()
+    if creds_path.is_file():
+        meta = _read_json_head(creds_path)
+        if meta.get("type") == "service_account":
+            return True, meta, f"Using credentials at: {creds_path}"
+        return False, meta, (
+            "Credentials file found but not a service account JSON: " f"{creds_path}"
+        )
+    if creds_path.exists():
+        return False, {}, f"Credentials path is not a file: {creds_path}"
     return (
         False,
         {},
-        "Missing credentials. Drop your service account JSON at: "
-        f"{CREDENTIALS / 'service-account.json'} and set GOOGLE_APPLICATION_CREDENTIALS "
-        "accordingly (see .env).",
+        "Missing credentials. Place your service account JSON at: "
+        f"{creds_path} or set GOOGLE_APPLICATION_CREDENTIALS (see .env).",
     )
 
 
@@ -92,8 +84,8 @@ def ensure_first_run() -> Dict[str, str]:
     status = {
         "env_created": "yes" if created_env else "no",
         "creds_present": "yes" if present else "no",
-        "creds_email": meta.get("client_email", ""),
-        "creds_project": meta.get("project_id", ""),
+        "creds_email": meta.get("client_email", "") if present else "",
+        "creds_project": meta.get("project_id", "") if present else "",
         "hint": hint,
     }
     return status
