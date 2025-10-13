@@ -1,36 +1,30 @@
+"""Unified logging helpers."""
+
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Mapping, Sequence
+import os
+import pathlib
+import time
+from typing import Any
 
-_LOG_PATH = Path("reports/all.log")
-
-
-def _ensure_log_dir() -> None:
-    _LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+_DEFAULT_PATH = "reports/all.log"
 
 
-def _normalise(value: Any) -> Any:
-    if value is None or isinstance(value, (str, int, float, bool)):
-        return value
-    if isinstance(value, Mapping):
-        return {str(key): _normalise(val) for key, val in value.items()}
-    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
-        return [_normalise(item) for item in value]
-    return str(value)
+def _log_path() -> pathlib.Path:
+    path_value = os.getenv("UNIFIED_LOG_PATH", _DEFAULT_PATH)
+    path = pathlib.Path(path_value)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
 
 
-def write(event: str, payload: Mapping[str, Any] | None = None) -> None:
-    """Append an event to the unified log."""
-
-    record: dict[str, Any] = {
-        "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+def write(event: str, run_id: str | None = None, **fields: Any) -> None:
+    record = {
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "event": event,
+        "run_id": run_id,
+        **fields,
     }
-    if payload:
-        record["data"] = _normalise(dict(payload))
-    _ensure_log_dir()
-    with _LOG_PATH.open("a", encoding="utf-8") as handle:
+    with _log_path().open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+

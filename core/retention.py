@@ -76,13 +76,12 @@ def prune_old_runs(
 
     log_event(
         "retention.scan",
-        {
-            "keep_count": keep_value,
-            "prune_count": len(report.planned_prune_paths),
-            "keep_paths": _string_list(report.kept_paths, limit=50),
-            "prune_paths": _string_list(report.planned_prune_paths, limit=50),
-            "dry_run": dry_run,
-        },
+        None,
+        keep_count=keep_value,
+        prune_count=len(report.planned_prune_paths),
+        keep_paths=_string_list(report.kept_paths, limit=50),
+        prune_paths=_string_list(report.planned_prune_paths, limit=50),
+        dry_run=dry_run,
     )
 
     if verbose:
@@ -105,12 +104,12 @@ def prune_old_runs(
         except OSError as exc:
             message = f"Failed to delete {path}: {exc}"
             report.errors.append(message)
-            log_event("retention.error", {"path": str(path), "error": str(exc)})
+            log_event("retention.error", None, path=str(path), error=str(exc))
             if verbose:
                 print(message)
         else:
             report.pruned_paths.append(path)
-            log_event("retention.prune", {"path": str(path), "kind": candidate.kind})
+            log_event("retention.prune", None, path=str(path), kind=candidate.kind)
             if verbose:
                 print(f"Deleted {path}")
 
@@ -120,12 +119,11 @@ def prune_old_runs(
 
     log_event(
         "retention.summary",
-        {
-            "kept_dirs": len(report.kept_paths),
-            "pruned_dirs": len(report.pruned_paths) if not dry_run else 0,
-            "truncated_files": len(report.truncated_files),
-            "dry_run": dry_run,
-        },
+        None,
+        kept_dirs=len(report.kept_paths),
+        pruned_dirs=len(report.pruned_paths) if not dry_run else 0,
+        truncated_files=len(report.truncated_files),
+        dry_run=dry_run,
     )
 
     if dry_run and verbose and report.planned_prune_paths:
@@ -238,7 +236,7 @@ def _truncate_logs(
         except OSError as exc:
             message = f"Failed to read {path}: {exc}"
             report.errors.append(message)
-            log_event("retention.error", {"path": str(path), "error": str(exc)})
+            log_event("retention.error", None, path=str(path), error=str(exc))
             if verbose:
                 print(message)
             continue
@@ -257,12 +255,12 @@ def _truncate_logs(
         except OSError as exc:
             message = f"Failed to truncate {path}: {exc}"
             report.errors.append(message)
-            log_event("retention.error", {"path": str(path), "error": str(exc)})
+            log_event("retention.error", None, path=str(path), error=str(exc))
             if verbose:
                 print(message)
             continue
         truncated.append(path)
-        log_event("retention.truncate", {"path": str(path), "kept_lines": len(tail)})
+        log_event("retention.truncate", None, path=str(path), kept_lines=len(tail))
         if verbose:
             print(f"Truncated {path} to {len(tail)} lines (was {line_count})")
     return planned, truncated
