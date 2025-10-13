@@ -58,21 +58,22 @@ def detect_credentials() -> Tuple[bool, Dict[str, str], str]:
     """Returns (present, meta, hint)."""
 
     creds_path = resolve_service_account_path()
+    meta: Dict[str, str] = {"path": str(creds_path)}
     if creds_path.is_file():
-        meta = _read_json_head(creds_path)
+        meta.update(_read_json_head(creds_path))
         if meta.get("type") == "service_account":
             return True, meta, f"Using credentials at: {creds_path}"
         return False, meta, (
-            "Credentials file found but not a service account JSON: " f"{creds_path}"
+            "Credentials file found but not a service account JSON: "
+            f"{creds_path}"
         )
     if creds_path.exists():
-        return False, {}, f"Credentials path is not a file: {creds_path}"
-    return (
-        False,
-        {},
-        "Missing credentials. Place your service account JSON at: "
-        f"{creds_path} or set GOOGLE_APPLICATION_CREDENTIALS (see .env).",
-    )
+        return False, meta, f"Credentials path is not a file: {creds_path}"
+    hint_lines = [
+        f"Missing credentials at {creds_path}",
+        "Place your Google service account JSON there or set GOOGLE_APPLICATION_CREDENTIALS.",
+    ]
+    return False, meta, "\n".join(hint_lines)
 
 
 def ensure_first_run() -> Dict[str, str]:
@@ -86,6 +87,7 @@ def ensure_first_run() -> Dict[str, str]:
         "creds_present": "yes" if present else "no",
         "creds_email": meta.get("client_email", "") if present else "",
         "creds_project": meta.get("project_id", "") if present else "",
+        "creds_path": meta.get("path", ""),
         "hint": hint,
     }
     return status

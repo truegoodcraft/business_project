@@ -2,44 +2,63 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import time
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
-from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
 
-_ROOT = Path(__file__).resolve().parents[1]
-_DEFAULT_CREDENTIALS_PATH = (_ROOT / "credentials" / "service-account.json").resolve(strict=False)
+def _repo_root() -> Path:
+    """Return the repository root path for the running core."""
+
+    return Path(__file__).resolve().parents[1]
 
 
-def _normalize_credentials_path(path: Path) -> Path:
-    """Return ``path`` expanded with vars and relative segments resolved."""
+def _resolve_creds_path() -> Path:
+    """Return the preferred credentials path honoring explicit overrides."""
 
-    expanded = Path(os.path.expandvars(str(path.expanduser())))
-    if not expanded.is_absolute():
-        expanded = (_ROOT / expanded).resolve(strict=False)
-    else:
-        expanded = expanded.resolve(strict=False)
-    return expanded
+    envp = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+    if envp:
+        return Path(envp).expanduser().expandvars()
+    return _repo_root() / "credentials" / "service-account.json"
+
+
+def _read_service_account_email(path: Path) -> Optional[str]:
+    """Return the ``client_email`` from ``path`` if readable."""
+
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    email = data.get("client_email")
+    if isinstance(email, str):
+        trimmed = email.strip()
+        if trimmed:
+            return trimmed
+    return None
 
 
 @lru_cache(maxsize=1)
 def resolve_service_account_path() -> Path:
     """Return the canonical service-account credentials path."""
 
-    if _DEFAULT_CREDENTIALS_PATH.exists():
-        os.environ.setdefault("GOOGLE_APPLICATION_CREDENTIALS", str(_DEFAULT_CREDENTIALS_PATH))
-        return _DEFAULT_CREDENTIALS_PATH
-    env_value = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-    if env_value:
-        candidate = _normalize_credentials_path(Path(env_value))
-        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(candidate)
-        return candidate
-    os.environ.setdefault("GOOGLE_APPLICATION_CREDENTIALS", str(_DEFAULT_CREDENTIALS_PATH))
-    return _DEFAULT_CREDENTIALS_PATH
+    path = _resolve_creds_path()
+    os.environ.setdefault("GOOGLE_APPLICATION_CREDENTIALS", str(path))
+    return path
+
+
+@lru_cache(maxsize=1)
+def resolved_service_account_email() -> Optional[str]:
+    """Return the resolved service-account email if the file is readable."""
+
+    path = resolve_service_account_path()
+    if not path.is_file():
+        return None
+    return _read_service_account_email(path)
 
 
 @dataclass
