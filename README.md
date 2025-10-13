@@ -290,3 +290,21 @@ Nothing runs unless scopes are explicitly granted, and every run is audited to `
 
 - **SAFE MODE**: `OFFLINE_SAFE_MODE=true` blocks networked capabilities.
 - **Subprocess Isolation**: `PLUGIN_SUBPROCESS=true` runs plugins in a separate process with a whitelisted environment and an enforced timeout (`PLUGIN_TIMEOUT_S`, default 60s).
+
+## Prompt Firewall (Placeholder)
+
+This repo includes a **non-enforcing** Prompt Firewall scaffold:
+
+- Policy files (versioned): `registry/policy.rules.yaml`, `registry/commands.allowlist.json`, `registry/denylist.json`
+- Evaluator: `core/policy_engine.py` (currently **always ALLOW**)
+- Logging: `reports/policy.log` records inputs (hashed) and decisions
+- Environment switch: `POLICY_PLACEHOLDER_ENABLED=true` (default). This only logs; it does **not** block or change behavior.
+
+### Why now?
+We want a stable surface to iterate safety rules while we build features. Once rules are ready, we will enable enforcement behind a separate flag and CI checks.
+
+### Roadmap
+- Add schema validation per command
+- Denylist + compatibility gate integration
+- Optional enforcement mode
+- Red-team tests in CI
