@@ -1,28 +1,36 @@
-"""Capability registry with plugin metadata."""
+"""Runtime capability registry internals."""
 
 from __future__ import annotations
 
 import os
-from typing import Dict
+from typing import Any, Callable, Dict
 
 from core.plugins_state import is_enabled as _plugin_enabled
 from core.unilog import write as uni_write
 
-REGISTRY: dict[str, dict] = {}  # name -> {plugin, version, scopes, func, network}
-_DECLARED: Dict[str, dict] = {}
+_CAPABILITIES: Dict[str, Dict[str, Any]] = {}
+_DECLARED: Dict[str, Dict[str, Any]] = {}
 
 
-def register(name: str, plugin: str, version: str, scopes: list[str], func, network: bool = False):
-    REGISTRY[name] = {
+def publish_capability(
+    name: str,
+    *,
+    plugin: str,
+    version: str,
+    scopes: list[str],
+    func: Callable[..., Any],
+    network: bool = False,
+) -> None:
+    _CAPABILITIES[name] = {
         "plugin": plugin,
         "version": version,
-        "scopes": scopes,
+        "scopes": list(scopes),
         "func": func,
         "network": bool(network),
     }
 
 
-def declare(plugin: str, version: str, capabilities: list[dict]):
+def declare_capabilities(plugin: str, version: str, capabilities: list[dict[str, Any]]) -> None:
     """Record capability metadata even if the plugin is disabled."""
 
     for cap in capabilities:
@@ -36,13 +44,17 @@ def declare(plugin: str, version: str, capabilities: list[dict]):
         }
 
 
-def resolve(name: str):
-    return meta(name)["func"]
+def unpublish_capability(name: str) -> None:
+    _CAPABILITIES.pop(name, None)
 
 
-def meta(name: str):
+def resolve_capability(name: str) -> Callable[..., Any]:
+    return capability_meta(name)["func"]
+
+
+def capability_meta(name: str) -> Dict[str, Any]:
     try:
-        return REGISTRY[name]
+        return _CAPABILITIES[name]
     except KeyError:
         info = _DECLARED.get(name)
         if info is None:
@@ -81,3 +93,12 @@ def meta(name: str):
                     reason="not_loaded",
                 )
         raise KeyError(f"Capability '{name}' is not available.") from None
+
+
+def list_published_capabilities() -> Dict[str, Dict[str, Any]]:
+    return {name: dict(meta) for name, meta in _CAPABILITIES.items()}
+
+
+def reset_runtime_capabilities() -> None:
+    _CAPABILITIES.clear()
+    _DECLARED.clear()

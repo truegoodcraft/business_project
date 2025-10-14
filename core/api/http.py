@@ -10,9 +10,8 @@ from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 from starlette.responses import StreamingResponse
-
 from core.auth.google_sa import validate_google_service_account
-from core.capabilities import REGISTRY
+from core.capabilities import registry
 from core.conn_broker import ConnectionBroker
 from core.version import VERSION
 from tgc.bootstrap_fs import DATA, LOGS, ensure_first_run
@@ -74,7 +73,7 @@ def _probe_services(broker: ConnectionBroker, services: List[str]) -> Dict[str, 
 
 def _bootstrap_capabilities() -> None:
     ok, meta = validate_google_service_account()
-    REGISTRY.upsert(
+    registry.upsert(
         "auth.google.service_account",
         provider="core",
         status="ready" if ok else "blocked",
@@ -98,27 +97,27 @@ def _bootstrap_capabilities() -> None:
             provides[cap] = pid
 
     for cap, pid in provides.items():
-        REGISTRY.upsert(cap, provider=pid, status="pending", policy={"allowed": True})
+        registry.upsert(cap, provider=pid, status="pending", policy={"allowed": True})
 
-    current = {c.cap: c for c in REGISTRY.list()}
+    current = {c.cap: c for c in registry.list()}
     for pid, reqs in requires.items():
         missing = [r for r in reqs if r not in current or current[r].status != "ready"]
         if missing:
             for cap, provider in provides.items():
                 if provider == pid:
-                    REGISTRY.upsert(
+                    registry.upsert(
                         cap,
                         provider=pid,
                         status="blocked",
                         policy={"allowed": False, "reason": f"requires_missing:{','.join(missing)}"},
                     )
 
-    current = {c.cap: c for c in REGISTRY.list()}
+    current = {c.cap: c for c in registry.list()}
     for cap, capability in current.items():
         if capability.status == "pending":
-            REGISTRY.upsert(cap, provider=capability.provider, status="ready", policy={"allowed": True})
+            registry.upsert(cap, provider=capability.provider, status="ready", policy={"allowed": True})
 
-    REGISTRY.emit_manifest()
+    registry.emit_manifest()
 
 
 def _start_crawl_async(run_id: str, limits: Dict[str, Any]) -> None:
@@ -194,14 +193,14 @@ def probe(body: ProbeReq, x_session_token: Optional[str] = Header(default=None))
         elif svc == "echo":
             cap_name = "echo.service"
         if cap_name:
-            REGISTRY.upsert(
+            registry.upsert(
                 cap_name,
                 provider="auto",
                 status="ready" if result.get("ok") else "blocked",
                 policy={"allowed": bool(result.get("ok"))},
                 meta={},
             )
-    REGISTRY.emit_manifest()
+    registry.emit_manifest()
     return {"bootstrap": bootstrap, "results": results}
 
 
@@ -230,7 +229,7 @@ def logs(x_session_token: Optional[str] = Header(default=None)) -> str:
 @APP.get("/capabilities")
 def get_capabilities(x_session_token: Optional[str] = Header(default=None)) -> Dict[str, Any]:
     _require_token(x_session_token)
-    return REGISTRY.emit_manifest()
+    return registry.emit_manifest()
 
 
 @APP.get("/capabilities/stream")
@@ -241,7 +240,7 @@ def stream_capabilities(x_session_token: Optional[str] = Header(default=None)) -
         import asyncio
 
         while True:
-            data = REGISTRY.emit_manifest()
+            data = registry.emit_manifest()
             yield f"event: CAPABILITY_UPDATE\ndata: {json.dumps(data)}\n\n"
             await asyncio.sleep(5)
 

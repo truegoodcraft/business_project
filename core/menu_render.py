@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, Iterable
 
 from core.brand import NAME, VENDOR
-from core.capabilities import REGISTRY
+from core.capabilities import list_caps
 from core.menu_spec import (
     CONTROLLER_CONFIG_MENU,
     MAIN_MENU,
@@ -126,7 +126,7 @@ def render_status_plugins_overview(payload: Dict[str, Any]) -> None:
 
     index_caps = []
     print(f"{caps_label}:")
-    for capability, meta in sorted(REGISTRY.items()):
+    for capability, meta in sorted(list_caps().items()):
         if ".index" not in capability:
             continue
         index_caps.append(capability)

@@ -1,3 +1,5 @@
+"""Internal runtime helpers for capability execution."""
+
 import time
 import uuid
 from typing import Any, Dict, Optional
