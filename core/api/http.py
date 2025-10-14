@@ -71,32 +71,31 @@ def _register_providers(broker: ConnectionBroker, plugins: List[Any]) -> None:
                 pass
 
 
-def _probe_one(broker: ConnectionBroker, svc: str) -> Dict[str, Any]:
+def _probe_one(broker: ConnectionBroker, svc: str) -> dict:
     t0 = _time.time()
     try:
         res = broker.probe(svc)
-        res = res if isinstance(res, dict) else {"ok": bool(res)}
+        if not isinstance(res, dict):
+            res = {"ok": bool(res)}
         res.setdefault("elapsed_ms", int((_time.time() - t0) * 1000))
         return res
-    except Exception as exc:
+    except Exception as e:
         return {
             "ok": False,
             "detail": "probe_exception",
-            "error": str(exc),
+            "error": str(e),
             "elapsed_ms": int((_time.time() - t0) * 1000),
         }
 
 
-def _probe_services(broker: ConnectionBroker, services: List[str]) -> Dict[str, Dict[str, Any]]:
-    results: Dict[str, Dict[str, Any]] = {}
+def _probe_services(broker: ConnectionBroker, services: list[str]) -> dict[str, dict]:
+    results: dict[str, dict] = {}
     if not services:
         return results
     max_workers = min(8, max(1, len(services)))
     wall_timeout = PROBE_TIMEOUT_SEC * max(1, len(services))
     t_start = _time.time()
-    log(
-        f"[probe] services={services} start wall_timeout={wall_timeout}s"
-    )
+    log(f"[probe] start services={services} per={PROBE_TIMEOUT_SEC}s wall={wall_timeout}s")
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
         futs = {pool.submit(_probe_one, broker, svc): svc for svc in services}
         try:
@@ -110,11 +109,11 @@ def _probe_services(broker: ConnectionBroker, services: List[str]) -> Dict[str, 
                         "detail": "probe_timeout",
                         "timeout_sec": PROBE_TIMEOUT_SEC,
                     }
-                except Exception as exc:
+                except Exception as e:
                     results[svc] = {
                         "ok": False,
                         "detail": "probe_exception",
-                        "error": str(exc),
+                        "error": str(e),
                     }
         except concurrent.futures.TimeoutError:
             pass
@@ -126,8 +125,8 @@ def _probe_services(broker: ConnectionBroker, services: List[str]) -> Dict[str, 
                 "timeout_sec": PROBE_TIMEOUT_SEC,
             }
     log(
-        f"[probe] done elapsed_ms={int((_time.time() - t_start) * 1000)} results="
-        f"{ {k: v.get('detail', 'ok') for k, v in results.items()} }"
+        f"[probe] done elapsed_ms={int((_time.time()-t_start)*1000)} results="
+        f"{ {k:v.get('detail','ok') for k,v in results.items()} }"
     )
     return results
 
@@ -202,13 +201,13 @@ def _start_crawl_async(run_id: str, limits: Dict[str, Any]) -> None:
 
 
 @APP.get("/health")
-def health(x_session_token: Optional[str] = Header(default=None)) -> Dict[str, Any]:
+def health(x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token")) -> Dict[str, Any]:
     _require_token(x_session_token)
     return {"ok": True, "version": APP.version, "run_id": RUN_ID}
 
 
 @APP.get("/plugins")
-def plugins(x_session_token: Optional[str] = Header(default=None)) -> List[Dict[str, Any]]:
+def plugins(x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token")) -> List[Dict[str, Any]]:
     _require_token(x_session_token)
     plugs = _discover_plugins()
     out: List[Dict[str, Any]] = []
@@ -241,11 +240,11 @@ def probe(
     declared = sorted(
         {
             svc
-            for plugin in plugs
-            for svc in (getattr(plugin, "describe", lambda: {})() or {}).get("services", [])
+            for p in plugs
+            for svc in (getattr(p, "describe", lambda: {})() or {}).get("services", [])
         }
     )
-    services = body.services or declared
+    services = body.services if body and body.services is not None else declared
     if not services:
         return {"bootstrap": bootstrap, "results": {}}
     results = _probe_services(broker, services)
@@ -268,7 +267,9 @@ def probe(
 
 
 @APP.post("/crawl")
-def crawl(body: CrawlReq, x_session_token: Optional[str] = Header(default=None)) -> Dict[str, str]:
+def crawl(
+    body: CrawlReq, x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token")
+) -> Dict[str, str]:
     _require_token(x_session_token)
     run_id = f"crawl-{int(time.time())}"
     _start_crawl_async(run_id, body.limits or {})
@@ -276,13 +277,15 @@ def crawl(body: CrawlReq, x_session_token: Optional[str] = Header(default=None))
 
 
 @APP.get("/crawl/{run_id}/status")
-def crawl_status(run_id: str, x_session_token: Optional[str] = Header(default=None)) -> Dict[str, Any]:
+def crawl_status(
+    run_id: str, x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token")
+) -> Dict[str, Any]:
     _require_token(x_session_token)
     return _CRAWLS.get(run_id, {"state": "unknown"})
 
 
 @APP.get("/logs")
-def logs(x_session_token: Optional[str] = Header(default=None)) -> str:
+def logs(x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token")) -> str:
     _require_token(x_session_token)
     if not LOG_FILE.exists():
         return "no logs yet"
@@ -290,13 +293,17 @@ def logs(x_session_token: Optional[str] = Header(default=None)) -> str:
 
 
 @APP.get("/capabilities")
-def get_capabilities(x_session_token: Optional[str] = Header(default=None)) -> Dict[str, Any]:
+def get_capabilities(
+    x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token")
+) -> Dict[str, Any]:
     _require_token(x_session_token)
     return registry.emit_manifest()
 
 
 @APP.get("/capabilities/stream")
-def stream_capabilities(x_session_token: Optional[str] = Header(default=None)) -> StreamingResponse:
+def stream_capabilities(
+    x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token")
+) -> StreamingResponse:
     _require_token(x_session_token)
 
     async def event_gen():
