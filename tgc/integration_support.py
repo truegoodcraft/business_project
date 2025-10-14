@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import json
-import os
+import os, json
 from pathlib import Path
 from typing import Optional
 
@@ -12,35 +11,40 @@ from .modules.google_drive import DriveModuleConfig
 _DEFAULT_SERVICE_ACCOUNT_PLACEHOLDER = "service-account@example.com"
 
 
-def _repo_root() -> Path:
+def _project_root() -> Path:
+    # tgc/ -> project root
     return Path(__file__).resolve().parents[1]
 
 
-def _service_account_credentials_path() -> Optional[Path]:
+def _service_account_credentials_path() -> str:
+    """
+    Resolve GOOGLE_APPLICATION_CREDENTIALS robustly on Windows/macOS/Linux:
+    - expand %VARS% and ~
+    - if relative, resolve against project root
+    - default to credentials/service-account.json
+    """
+
     envp = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
     if envp:
-        path = Path(envp).expanduser().expandvars()
-        if not path.is_absolute():
-            path = (_repo_root() / envp).resolve()
-        return path
-    default = (_repo_root() / "credentials" / "service-account.json").resolve()
-    return default if default.exists() else None
+        expanded = os.path.expandvars(os.path.expanduser(str(envp)))
+        p = Path(expanded)
+        if not p.is_absolute():
+            p = (_project_root() / p).resolve()
+        return str(p)
+    return str((_project_root() / "credentials" / "service-account.json").resolve())
 
 
 def resolved_service_account_email() -> Optional[str]:
-    creds_path = _service_account_credentials_path()
-    if not creds_path or not creds_path.exists():
-        return None
+    """Return service account client_email if credentials JSON exists, else None."""
+
     try:
-        data = json.loads(creds_path.read_text(encoding="utf-8"))
+        path = Path(_service_account_credentials_path())
+        if not path.exists():
+            return None
+        obj = json.loads(path.read_text(encoding="utf-8"))
+        return obj.get("client_email")
     except Exception:
         return None
-    email = data.get("client_email")
-    if isinstance(email, str):
-        trimmed = email.strip()
-        if trimmed:
-            return trimmed
-    return None
 
 
 def load_drive_module_config(path: Path) -> DriveModuleConfig:

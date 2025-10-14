@@ -77,6 +77,9 @@ def _wire_serve(subparsers):
 
 
 def alpha_boot(args):
+    import os
+
+    os.environ.setdefault("TGC_SHOW_INTEGRATION_HINTS", "0")
     output = print
     bootstrap = ensure_first_run()
     output("=== TGC Alpha Boot ===")

@@ -136,7 +136,8 @@ class AppConfig:
         if not sheets.is_configured() and "sheets" not in _WARNED_CONFIG_KEYS:
             module_config = load_drive_module_config(drive.module_config_path)
             email = service_account_email(module_config)
-            print(format_sheets_missing_env_message(email))
+            if os.getenv("TGC_SHOW_INTEGRATION_HINTS", "0") == "1":
+                print(format_sheets_missing_env_message(email))
             _WARNED_CONFIG_KEYS.add("sheets")
         gmail = GmailConfig(query=_clean_env("GMAIL_QUERY"))
         wave = WaveConfig(
