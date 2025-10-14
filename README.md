@@ -98,6 +98,17 @@ class Plugin(PluginV2):
 
 Drop your plugin under `plugins_alpha/<name>/` and restart the core. Core discovers packages automatically and keeps Google/Notion details outside of the main runtime.
 
+## Public API Contract (for plugins)
+
+Plugins may only import:
+- `core.contracts.plugin_v2`          (plugin base class & interface)
+- `core.conn_broker`                  (broker types & client handle)
+- `core.capabilities`                 (facade: publish/resolve/list_caps/emit_manifest/meta)
+
+Plugins that import any other `core.*` modules are rejected at load time by the import guard.
+Core internals live under `core/_internal/*` and are private.
+HTTP endpoints are stable; do not rely on undocumented fields.
+
 ---
 
 ## Commands

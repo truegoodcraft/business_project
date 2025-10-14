@@ -1,7 +1,19 @@
-from __future__ import annotations
-from .registry import CapabilityRegistry
+from .api import (
+    registry,
+    publish,
+    unpublish,
+    list_caps,
+    resolve,
+    emit_manifest,
+    meta,
+)
 
-# Single global registry instance for the whole process
-REGISTRY = CapabilityRegistry(plugin_api_version="2")
-
-__all__ = ["REGISTRY", "CapabilityRegistry"]
+__all__ = [
+    "registry",
+    "publish",
+    "unpublish",
+    "list_caps",
+    "resolve",
+    "emit_manifest",
+    "meta",
+]

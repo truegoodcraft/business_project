@@ -28,14 +28,14 @@ from tgc.util.serialization import safe_serialize
 
 from core import brand, policy_engine, retention
 from core.audit import write_audit
-from core.capabilities import REGISTRY, meta, resolve
+from core.capabilities import list_caps, meta, resolve
 from core.config import load_core_config, plugin_env_whitelist
 from core.isolate import run_isolated
 from core.permissions import require
 from core.plugin_api import Context
 from core.policy_log import log_policy
 from core.menu_render import render_root
-from core.runtime import get_runtime_limits, set_runtime_limits
+from core._internal.runtime import get_runtime_limits, set_runtime_limits
 from core.runtime_state import boot_sequence
 from core.safelog import logger
 from core.system_check import system_check as _system_check
@@ -61,8 +61,9 @@ def _limits() -> Dict[str, object]:
 def _format_capabilities_table() -> str:
     headers = ("Capability", "Plugin", "Scopes", "Network")
     rows = []
-    for name in sorted(REGISTRY.keys()):
-        info = REGISTRY[name]
+    caps = list_caps()
+    for name in sorted(caps.keys()):
+        info = caps[name]
         scopes = ", ".join(info.get("scopes") or [])
         network = str(bool(info.get("network", False))).lower()
         rows.append((name, info.get("plugin", ""), scopes, network))

@@ -12,9 +12,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from core.bus.models import CommandContext
-from core.capabilities import REGISTRY
+from core.capabilities import list_caps
 from core.plugin_api import Result
-from core.runtime import run_capability
+from core._internal.runtime import run_capability
 
 from .integration_support import (
     format_drive_share_message,
@@ -198,7 +198,7 @@ class MasterIndexController:
         fallback_args: Tuple[object, ...],
         fallback_kwargs: Optional[Dict[str, object]] = None,
     ) -> "TraversalResult":
-        if capability in REGISTRY:
+        if capability in list_caps():
             try:
                 result = run_capability(capability, **plugin_kwargs)
             except PermissionError as exc:

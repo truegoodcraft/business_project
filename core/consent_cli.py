@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Dict, Iterable, List
 
-from core.capabilities import REGISTRY
+from core.capabilities import list_caps
 from core.permissions import grant as grant_scopes
 import core.permissions as _permissions
 
@@ -43,7 +43,7 @@ def current_consents() -> Dict[str, List[str]]:
 
 def list_scopes() -> Dict[str, List[str]]:
     plugins: Dict[str, set[str]] = {}
-    for metadata in REGISTRY.values():
+    for metadata in list_caps().values():
         plugin = metadata.get("plugin")
         scopes = metadata.get("scopes") or []
         if not plugin:

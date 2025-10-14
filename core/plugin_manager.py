@@ -5,7 +5,8 @@ import sys
 import types
 import tomllib
 
-from core.capabilities import declare, register
+from core._internal.capabilities_runtime import declare_capabilities
+from core.capabilities import publish
 from core.plugins_state import is_enabled as _plugin_enabled
 from core.signing import PUBLIC_KEY_HEX, SIGNING_AVAILABLE, verify_plugin_signature
 from core.unilog import write as uni_write
@@ -71,7 +72,11 @@ def load_plugins(root: str = "plugins"):
                 f"[compat] Skipped {man.get('name', path.name)}: incompatible plugin_api '{api}'"
             )
             continue
-        declare(man.get("name", path.name), man.get("version", ""), man.get("capabilities", []))
+        declare_capabilities(
+            man.get("name", path.name),
+            man.get("version", ""),
+            man.get("capabilities", []),
+        )
         plugin_name = man.get("name", path.name)
         if not _plugin_enabled(plugin_name):
             message = f"[disabled] Skipped {plugin_name}: disabled via plugins_state"
@@ -101,13 +106,13 @@ def load_plugins(root: str = "plugins"):
             setattr(mod, "api_version", declared_version)
         for cap in man["capabilities"]:
             func = getattr(mod, cap["callable"])
-            register(
+            publish(
                 cap["name"],
-                man["name"],
-                man["version"],
-                cap.get("scopes", []),
-                func,
-                cap.get("network", False),
+                plugin=man["name"],
+                version=man["version"],
+                scopes=cap.get("scopes", []),
+                func=func,
+                network=cap.get("network", False),
             )
 
 

@@ -7,10 +7,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from core.capabilities import REGISTRY
+from core.capabilities import list_caps
 from core import retention
 from core.plugin_api import Result
-from core.runtime import run_capability
+from core._internal.runtime import run_capability
 from core.unilog import write as uni_write
 
 from ..controller import Controller
@@ -190,7 +190,7 @@ class MasterIndexAction(SimpleAction):
 
             used_capability = False
             if root_ids:
-                if "google.sheets_index" in REGISTRY:
+                if "google.sheets_index" in list_caps():
                     try:
                         payload = run_capability(
                             "google.sheets_index",
