@@ -4,82 +4,38 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from core.conn_broker import ConnectionBroker
-
-
-class _DriveService:
-    def files(self):
-        return types.SimpleNamespace(
-            list=lambda **kwargs: types.SimpleNamespace(execute=lambda: {"files": [{"id": "1"}]}),
-            get=lambda **kwargs: types.SimpleNamespace(execute=lambda: {"id": "1"}),
-        )
-
-
-class _DriveModule:
-    def __init__(self):
-        self.config = types.SimpleNamespace(
-            mime_whitelist=[],
-            max_depth=0,
-            page_size=100,
-            root_ids=["root"],
-        )
-        self.calls = []
-
-    def ensure_service(self, require_write: bool = False):
-        self.calls.append(require_write)
-        return _DriveService(), None
-
-    def root_ids(self):
-        return ["root"]
-
-
-class _NotionModule:
-    def __init__(self):
-        self.config = types.SimpleNamespace(root_ids=["notion-root"], max_depth=0, page_size=10)
-
-    def _build_client(self):
-        return types.SimpleNamespace(
-            databases_retrieve=lambda _id: {"title": []},
-            users_me=lambda: {"name": "bot"},
-        ), None
-
-
-class _SheetsAdapter:
-    def __init__(self):
-        self.config = types.SimpleNamespace(inventory_sheet_id="sheet")
-
-    def is_configured(self):
-        return True
-
-    def inventory_metadata(self, *, force_refresh: bool = False):
-        return {"spreadsheetId": "sheet", "title": "Demo", "sheets": []}
-
-
-class _Controller:
-    def __init__(self):
-        self.modules = {"drive": _DriveModule(), "notion_access": _NotionModule()}
-        self.adapters = {"sheets": _SheetsAdapter()}
+from core.conn_broker import ClientHandle, ConnectionBroker
 
 
 def test_conn_broker_scopes():
-    controller = _Controller()
-    broker = ConnectionBroker(controller)
+    broker = ConnectionBroker(controller=None)
 
-    drive_base = broker.get_client("drive", scope="read_base")
-    drive_crawl = broker.get_client("drive", scope="read_crawl")
-    drive_write = broker.get_client("drive", scope="write")
+    issued_scopes: list[str] = []
 
-    assert drive_base.scope == "read_base"
-    assert drive_crawl.scope == "read_crawl"
-    assert drive_write is None
-    assert controller.modules["drive"].calls == [False, False]
+    def drive_provider(scope: str) -> ClientHandle:
+        issued_scopes.append(scope)
+        return ClientHandle(service="drive", scope=scope, handle=object(), metadata={})
 
-    notion_client = broker.get_client("notion", scope="read_base")
-    assert notion_client.service == "notion"
+    def drive_probe(handle: ClientHandle | None):
+        if handle is None:
+            return {"ok": False, "detail": "no_client"}
+        return {"ok": True, "scope": handle.scope}
 
-    sheets_client = broker.get_client("sheets", scope="read_base")
-    assert sheets_client.service == "sheets"
+    broker.register("drive", provider=drive_provider, probe=drive_probe)
 
-    assert broker.probe("drive")["ok"] is True
-    assert broker.probe("notion")["ok"] is True
-    assert broker.probe("sheets")["ok"] is True
+    base = broker.get_client("drive", scope="read_base")
+    crawl = broker.get_client("drive", scope="read_crawl")
+    denied = broker.get_client("drive", scope="write")
+
+    assert base and base.scope == "read_base"
+    assert crawl is None
+    assert denied is None
+    assert issued_scopes == ["read_base"]
+
+    probe_ok = broker.probe("drive")
+    assert probe_ok["ok"] is True
+    assert probe_ok["scope"] == "read_base"
+
+    missing = broker.probe("notion")
+    assert missing["ok"] is False
+    assert missing["detail"] == "no_provider"

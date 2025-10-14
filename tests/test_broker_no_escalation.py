@@ -9,10 +9,14 @@ from core.conn_broker import ClientHandle, ConnectionBroker
 def test_no_escalation_rule():
     broker = ConnectionBroker(controller=None)
 
-    def _issue_drive_client(scope):
+    def _drive_provider(scope: str) -> ClientHandle:
         return ClientHandle(service="drive", scope=scope, handle=object(), metadata={})
 
-    broker._issue_drive_client = _issue_drive_client  # type: ignore[attr-defined]
+    broker.register(
+        "drive",
+        provider=_drive_provider,
+        probe=lambda handle: {"ok": handle is not None, "scope": getattr(handle, "scope", None)},
+    )
 
     base = broker.get_client("drive", "read_base")
     assert base is not None

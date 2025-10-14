@@ -51,29 +51,6 @@ def _plugin_display_name(plugin) -> str:
     return plugin.__class__.__name__
 
 
-def _summarize_probe_result(result: object) -> Dict[str, Optional[str]]:
-    summary: Dict[str, Optional[str]] = {"status": "OK", "note": None, "detail": None}
-    if not isinstance(result, dict):
-        summary.update({"status": "WARN", "note": "unexpected probe response"})
-        return summary
-    ok_value = result.get("ok")
-    detail = str(result.get("detail", "") or "").strip()
-    hint = str(result.get("hint", "") or "").strip() or None
-    if ok_value in (True, None):
-        summary.update({"detail": detail or None})
-        return summary
-    if detail in {"creds_path_missing", "missing_credentials", "client_unavailable"}:
-        summary.update({"status": "ERROR", "note": "see log", "detail": detail or None})
-        return summary
-    if detail == "not_configured":
-        note = "no SHEET_INVENTORY_ID" if hint and "SHEET_INVENTORY_ID" in hint else "not configured"
-        summary.update({"status": "WARN", "note": note, "detail": detail})
-        return summary
-    note = hint or detail or None
-    summary.update({"status": "WARN", "note": note, "detail": detail or None})
-    return summary
-
-
 def _start_full_crawl(context: CommandContext, effective_options: Dict[str, object]):
     from tgc.master_index_controller import run_master_index as _run_master_index
 
@@ -142,17 +119,30 @@ def alpha_boot(args):
             plugin_summaries.append(summary)
             continue
         services_list = [svc for svc in description.get("services", []) if isinstance(svc, str)]
-        pending_services = [svc for svc in services_list if svc not in services]
         try:
-            probe_result = plugin.probe(broker)
+            if hasattr(plugin, "register_broker"):
+                plugin.register_broker(broker)
         except Exception:
-            logger.exception("alpha.plugin.probe_failed", extra={"plugin": display_name})
-            summary.update({"status": "ERROR", "note": "see log", "detail": "probe_failed"})
+            logger.exception("alpha.plugin.register_failed", extra={"plugin": display_name})
+            summary.update({"status": "ERROR", "note": "see log", "detail": "register_failed"})
             plugin_summaries.append(summary)
             continue
-        probe_summary = _summarize_probe_result(probe_result)
-        summary.update(probe_summary)
-        if summary.get("status") != "OK":
+        service_results: Dict[str, Dict[str, object]] = {}
+        for svc in services_list:
+            if svc not in services:
+                services[svc] = broker.probe(svc)
+            service_results[svc] = services[svc]
+        summary["services"] = service_results
+        failing = [res for res in service_results.values() if not res.get("ok")]
+        if failing:
+            first = failing[0]
+            summary.update(
+                {
+                    "status": "WARN" if first.get("detail") not in {"missing_credentials", "creds_path_missing"} else "ERROR",
+                    "note": first.get("hint") or first.get("detail"),
+                    "detail": first.get("detail"),
+                }
+            )
             logger.warning(
                 "alpha.plugin.probe_status",
                 extra={
@@ -161,17 +151,6 @@ def alpha_boot(args):
                     "detail": summary.get("detail") or summary.get("note"),
                 },
             )
-        if isinstance(probe_result, dict):
-            summary["probe"] = probe_result
-            service_name = probe_result.get("service")
-            if isinstance(service_name, str) and service_name not in services:
-                services[service_name] = probe_result
-                if service_name in pending_services:
-                    pending_services.remove(service_name)
-        else:
-            summary["probe"] = None
-        for svc in pending_services:
-            services[svc] = broker.probe(svc)
         plugin_summaries.append(summary)
 
     output("Services:")
@@ -185,7 +164,13 @@ def alpha_boot(args):
     else:
         output("  - (no plugins discovered)")
 
+    output(f"Plugins enabled: {len(plugin_names)}")
+    for name in plugin_names:
+        output(f"  - {name}")
+
     effective = _effective_config(args)
+
+    output(f"[run:{run_id}] mode=alpha")
 
     if getattr(args, "json", False):
         summary = {

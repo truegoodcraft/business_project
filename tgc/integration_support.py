@@ -3,14 +3,44 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Optional
-
-from core.conn_broker import resolved_service_account_email
 
 from .modules.google_drive import DriveModuleConfig
 
 _DEFAULT_SERVICE_ACCOUNT_PLACEHOLDER = "service-account@example.com"
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
+def _service_account_credentials_path() -> Optional[Path]:
+    envp = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
+    if envp:
+        path = Path(envp).expanduser().expandvars()
+        if not path.is_absolute():
+            path = (_repo_root() / envp).resolve()
+        return path
+    default = (_repo_root() / "credentials" / "service-account.json").resolve()
+    return default if default.exists() else None
+
+
+def resolved_service_account_email() -> Optional[str]:
+    creds_path = _service_account_credentials_path()
+    if not creds_path or not creds_path.exists():
+        return None
+    try:
+        data = json.loads(creds_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    email = data.get("client_email")
+    if isinstance(email, str):
+        trimmed = email.strip()
+        if trimmed:
+            return trimmed
+    return None
 
 
 def load_drive_module_config(path: Path) -> DriveModuleConfig:
