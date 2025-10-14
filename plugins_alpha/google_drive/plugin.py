@@ -15,3 +15,11 @@ class Plugin(PluginV2):
 
     def register_broker(self, broker: ConnectionBroker):
         return None
+
+    def capabilities(self):
+        return {
+            "provides": ["drive.files.read"],
+            "requires": ["auth.google.service_account"],
+            "trust_tier": 1,
+            "stages": ["service"],
+        }

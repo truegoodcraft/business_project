@@ -17,3 +17,13 @@ class PluginV2:
 
     def run(self, broker: ConnectionBroker, options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         return {"ok": True}
+
+    def capabilities(self) -> Dict[str, Any]:
+        """Return a declarative capability manifest block."""
+
+        return {
+            "provides": [],
+            "requires": [],
+            "trust_tier": 1,
+            "stages": ["service"],
+        }
