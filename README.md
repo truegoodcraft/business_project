@@ -24,24 +24,36 @@ Google Drive, Sheets, Notion, and any other integrations live entirely in plugin
 
 ---
 
-## Quickstart (HTTP)
+## Alpha Core (HTTP) — v.a0.01.2
 
-```bash
+Install deps:
+
+```
 python -m pip install -r requirements.txt
+python -m pip install fastapi uvicorn[standard] pydantic
+```
+
+Start server:
+
+```
 python app.py serve
-# Copy the session token from console or data\session_token.txt
+# or: python app.py alpha --serve
 ```
 
-```powershell
-$token = type .\data\session_token.txt
-irm http://127.0.0.1:8765/health -Headers @{ 'X-Session-Token' = $token }
-irm http://127.0.0.1:8765/plugins -Headers @{ 'X-Session-Token' = $token }
-irm http://127.0.0.1:8765/probe -Method Post -Headers @{ 'X-Session-Token' = $token } -ContentType "application/json" -Body "{}"
+Auth:
+
+```
+$token = Get-Content .\data\session_token.txt
+irm http://127.0.0.1:8765/health  -Headers @{ 'X-Session-Token'=$token }
+irm http://127.0.0.1:8765/plugins -Headers @{ 'X-Session-Token'=$token }
+irm http://127.0.0.1:8765/probe   -Method Post -Headers @{ 'X-Session-Token'=$token } -ContentType application/json -Body "{}"
 ```
 
-* `/health` reports the running version and session.
-* `/plugins` lists the plugins that registered providers.
-* `/probe` asks the broker to check each requested service.
+Plugins:
+
+* Put plugins under `plugins_alpha/<your_plugin>/plugin.py`
+* Implement `Plugin(PluginV2)` with `describe()` and `register_broker()`
+* Core remains silent until a plugin declares services.
 
 ---
 

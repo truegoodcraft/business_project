@@ -187,6 +187,10 @@ def alpha_boot(args):
         output("\nStarting full crawl/index...")
         _start_full_crawl(context, effective)
 
+    if getattr(args, "serve", False):
+        serve_cmd(args)
+        return
+
 
 def _wire_alpha(subparsers):
     alpha = subparsers.add_parser("alpha", help="Alpha boot: setup, probe, list plugins; crawl only when requested")
@@ -198,6 +202,8 @@ def _wire_alpha(subparsers):
     alpha.add_argument("--page-size", type=int, default=None)
     alpha.add_argument("--dry-run", action="store_true")
     alpha.add_argument("--json", action="store_true")
+    alpha.add_argument("--serve", action="store_true", help="After boot, start HTTP server on localhost")
+    alpha.add_argument("--port", type=int, default=8765)
     alpha.set_defaults(func=alpha_boot)
 
 
