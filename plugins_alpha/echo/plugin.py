@@ -16,7 +16,7 @@ class Plugin(PluginV2):
             return ClientHandle(service="echo", scope=scope, handle={"scope": scope})
 
         def probe(handle):
-            return {"ok": True, "detail": "echo_ready"}
+            return {"ok": True, "detail": "echo_ready"}  # instantaneous
 
         broker.register("echo", provider=provider, probe=probe)
 
