@@ -143,13 +143,13 @@ def _start_crawl_async(run_id: str, limits: Dict[str, Any]) -> None:
 
 
 @APP.get("/health")
-def health(x_session_token: Optional[str] = Header(default=None, convert_underscores=False)) -> Dict[str, Any]:
+def health(x_session_token: Optional[str] = Header(default=None)) -> Dict[str, Any]:
     _require_token(x_session_token)
     return {"ok": True, "version": APP.version, "run_id": RUN_ID}
 
 
 @APP.get("/plugins")
-def plugins(x_session_token: Optional[str] = Header(default=None, convert_underscores=False)) -> List[Dict[str, Any]]:
+def plugins(x_session_token: Optional[str] = Header(default=None)) -> List[Dict[str, Any]]:
     _require_token(x_session_token)
     plugs = _discover_plugins()
     out: List[Dict[str, Any]] = []
@@ -171,7 +171,7 @@ def plugins(x_session_token: Optional[str] = Header(default=None, convert_unders
 
 
 @APP.post("/probe")
-def probe(body: ProbeReq, x_session_token: Optional[str] = Header(default=None, convert_underscores=False)) -> Dict[str, Any]:
+def probe(body: ProbeReq, x_session_token: Optional[str] = Header(default=None)) -> Dict[str, Any]:
     _require_token(x_session_token)
     bootstrap = ensure_first_run()
     plugs = _discover_plugins()
@@ -207,7 +207,7 @@ def probe(body: ProbeReq, x_session_token: Optional[str] = Header(default=None, 
 
 
 @APP.post("/crawl")
-def crawl(body: CrawlReq, x_session_token: Optional[str] = Header(default=None, convert_underscores=False)) -> Dict[str, str]:
+def crawl(body: CrawlReq, x_session_token: Optional[str] = Header(default=None)) -> Dict[str, str]:
     _require_token(x_session_token)
     run_id = f"crawl-{int(time.time())}"
     _start_crawl_async(run_id, body.limits or {})
@@ -215,13 +215,13 @@ def crawl(body: CrawlReq, x_session_token: Optional[str] = Header(default=None, 
 
 
 @APP.get("/crawl/{run_id}/status")
-def crawl_status(run_id: str, x_session_token: Optional[str] = Header(default=None, convert_underscores=False)) -> Dict[str, Any]:
+def crawl_status(run_id: str, x_session_token: Optional[str] = Header(default=None)) -> Dict[str, Any]:
     _require_token(x_session_token)
     return _CRAWLS.get(run_id, {"state": "unknown"})
 
 
 @APP.get("/logs")
-def logs(x_session_token: Optional[str] = Header(default=None, convert_underscores=False)) -> str:
+def logs(x_session_token: Optional[str] = Header(default=None)) -> str:
     _require_token(x_session_token)
     if not LOG_FILE.exists():
         return "no logs yet"
@@ -229,13 +229,13 @@ def logs(x_session_token: Optional[str] = Header(default=None, convert_underscor
 
 
 @APP.get("/capabilities")
-def get_capabilities(x_session_token: Optional[str] = Header(default=None, convert_underscores=False)) -> Dict[str, Any]:
+def get_capabilities(x_session_token: Optional[str] = Header(default=None)) -> Dict[str, Any]:
     _require_token(x_session_token)
     return REGISTRY.emit_manifest()
 
 
 @APP.get("/capabilities/stream")
-def stream_capabilities(x_session_token: Optional[str] = Header(default=None, convert_underscores=False)) -> StreamingResponse:
+def stream_capabilities(x_session_token: Optional[str] = Header(default=None)) -> StreamingResponse:
     _require_token(x_session_token)
 
     async def event_gen():
