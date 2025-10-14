@@ -1,8 +1,10 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Callable
-import logging
-import time
+import logging, time
+
+
+default_logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -15,20 +17,20 @@ class ClientHandle:
 
 
 ProviderFn = Callable[[str], Optional[ClientHandle]]
-ProbeFn = Callable[[ClientHandle | None], Dict[str, Any]]
+ProbeFn = Callable[[Optional[ClientHandle]], Dict[str, Any]]
 
 
 class ConnectionBroker:
     """
-    Pluggable broker. Plugins register service providers + probes.
-    Core never knows Google/Notion specifics.
+    Pluggable broker. Plugins must register providers and probes.
+    Core is integration-agnostic.
     """
 
-    def __init__(self, controller: Any, *, logger: Optional[logging.Logger] = None) -> None:
+    def __init__(self, controller: Any = None, *, logger: Optional[logging.Logger] = None) -> None:
         self._controller = controller
-        self._logger = logger or logging.getLogger(__name__)
-        self._providers: Dict[str, Dict[str, Any]] = {}
-        self._grants: Dict[str, str] = {}
+        self._logger = logger or default_logger
+        self._providers: Dict[str, Dict[str, Any]] = {}  # service -> {"provider": ProviderFn, "probe": ProbeFn}
+        self._grants: Dict[str, str] = {}  # service -> max scope
 
     def register(self, service: str, *, provider: ProviderFn, probe: ProbeFn) -> None:
         service = service.lower()
@@ -36,8 +38,7 @@ class ConnectionBroker:
         self._logger.info("broker.registered", extra={"service": service})
 
     def get_client(self, service: str, scope: str = "read_base") -> Optional[ClientHandle]:
-        service = service.lower()
-        scope = scope.lower()
+        service, scope = service.lower(), scope.lower()
         _order = {"read_base": 0, "read_crawl": 1, "write": 2}
         prev = self._grants.get(service)
         if prev is not None and _order.get(scope, 0) > _order.get(prev, 0):
