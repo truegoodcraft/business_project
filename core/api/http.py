@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import secrets
 import threading
 import time
+import time as _time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -24,6 +26,8 @@ SESSION_TOKEN = secrets.token_urlsafe(24)
 LOG_FILE = LOGS / f"core_{RUN_ID}.log"
 
 _SUBSCRIBERS: set[Any] = set()
+
+PROBE_TIMEOUT_SEC = 5  # per-service timeout
 
 
 def log(msg: str) -> None:
@@ -67,8 +71,65 @@ def _register_providers(broker: ConnectionBroker, plugins: List[Any]) -> None:
                 pass
 
 
+def _probe_one(broker: ConnectionBroker, svc: str) -> Dict[str, Any]:
+    t0 = _time.time()
+    try:
+        res = broker.probe(svc)
+        res = res if isinstance(res, dict) else {"ok": bool(res)}
+        res.setdefault("elapsed_ms", int((_time.time() - t0) * 1000))
+        return res
+    except Exception as exc:
+        return {
+            "ok": False,
+            "detail": "probe_exception",
+            "error": str(exc),
+            "elapsed_ms": int((_time.time() - t0) * 1000),
+        }
+
+
 def _probe_services(broker: ConnectionBroker, services: List[str]) -> Dict[str, Dict[str, Any]]:
-    return {service: broker.probe(service) for service in services}
+    results: Dict[str, Dict[str, Any]] = {}
+    if not services:
+        return results
+    max_workers = min(8, max(1, len(services)))
+    wall_timeout = PROBE_TIMEOUT_SEC * max(1, len(services))
+    t_start = _time.time()
+    log(
+        f"[probe] services={services} start wall_timeout={wall_timeout}s"
+    )
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futs = {pool.submit(_probe_one, broker, svc): svc for svc in services}
+        try:
+            for fut in concurrent.futures.as_completed(futs, timeout=wall_timeout):
+                svc = futs[fut]
+                try:
+                    results[svc] = fut.result(timeout=0)
+                except concurrent.futures.TimeoutError:
+                    results[svc] = {
+                        "ok": False,
+                        "detail": "probe_timeout",
+                        "timeout_sec": PROBE_TIMEOUT_SEC,
+                    }
+                except Exception as exc:
+                    results[svc] = {
+                        "ok": False,
+                        "detail": "probe_exception",
+                        "error": str(exc),
+                    }
+        except concurrent.futures.TimeoutError:
+            pass
+    for fut, svc in futs.items():
+        if svc not in results:
+            results[svc] = {
+                "ok": False,
+                "detail": "probe_timeout",
+                "timeout_sec": PROBE_TIMEOUT_SEC,
+            }
+    log(
+        f"[probe] done elapsed_ms={int((_time.time() - t_start) * 1000)} results="
+        f"{ {k: v.get('detail', 'ok') for k, v in results.items()} }"
+    )
+    return results
 
 
 def _bootstrap_capabilities() -> None:
@@ -169,7 +230,9 @@ def plugins(x_session_token: Optional[str] = Header(default=None)) -> List[Dict[
 
 
 @APP.post("/probe")
-def probe(body: ProbeReq, x_session_token: Optional[str] = Header(default=None)) -> Dict[str, Any]:
+def probe(
+    body: ProbeReq, x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token")
+) -> Dict[str, Any]:
     _require_token(x_session_token)
     bootstrap = ensure_first_run()
     plugs = _discover_plugins()
