@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from starlette.responses import StreamingResponse
 
 from core.auth.google_sa import validate_google_service_account
-from core.capabilities.registry import CapabilityRegistry
+from core.capabilities import REGISTRY
 from core.conn_broker import ConnectionBroker
 from core.version import VERSION
 from tgc.bootstrap_fs import DATA, LOGS, ensure_first_run
@@ -24,7 +24,6 @@ SESSION_TOKEN = secrets.token_urlsafe(24)
 
 LOG_FILE = LOGS / f"core_{RUN_ID}.log"
 
-REGISTRY = CapabilityRegistry(plugin_api_version="2")
 _SUBSCRIBERS: set[Any] = set()
 
 
