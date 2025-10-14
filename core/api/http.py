@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import secrets
 import threading
 import time
@@ -8,12 +9,13 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
+from starlette.responses import StreamingResponse
 
+from core.auth.google_sa import validate_google_service_account
+from core.capabilities.registry import CapabilityRegistry
 from core.conn_broker import ConnectionBroker
 from core.version import VERSION
 from tgc.bootstrap_fs import DATA, LOGS, ensure_first_run
-
-ensure_first_run()
 
 APP = FastAPI(title="TGC Alpha Core", version=VERSION)
 RUN_ID = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -21,6 +23,9 @@ SESSION_TOKEN = secrets.token_urlsafe(24)
 (DATA / "session_token.txt").write_text(SESSION_TOKEN, encoding="utf-8")
 
 LOG_FILE = LOGS / f"core_{RUN_ID}.log"
+
+REGISTRY = CapabilityRegistry(plugin_api_version="2")
+_SUBSCRIBERS: set[Any] = set()
 
 
 def log(msg: str) -> None:
@@ -66,6 +71,55 @@ def _register_providers(broker: ConnectionBroker, plugins: List[Any]) -> None:
 
 def _probe_services(broker: ConnectionBroker, services: List[str]) -> Dict[str, Dict[str, Any]]:
     return {service: broker.probe(service) for service in services}
+
+
+def _bootstrap_capabilities() -> None:
+    ok, meta = validate_google_service_account()
+    REGISTRY.upsert(
+        "auth.google.service_account",
+        provider="core",
+        status="ready" if ok else "blocked",
+        policy={"allowed": ok, "mode": "read-only"},
+        meta={k: v for k, v in meta.items() if k in ("project_id", "client_email", "path_exists")},
+    )
+
+    plugs = _discover_plugins()
+    provides: Dict[str, str] = {}
+    requires: Dict[str, List[str]] = {}
+    for plugin in plugs:
+        pid = getattr(plugin, "id", plugin.__class__.__name__)
+        try:
+            caps = plugin.capabilities() or {}
+        except Exception:
+            caps = {}
+        prov = [str(item) for item in caps.get("provides", [])]
+        req = [str(item) for item in caps.get("requires", [])]
+        requires[pid] = req
+        for cap in prov:
+            provides[cap] = pid
+
+    for cap, pid in provides.items():
+        REGISTRY.upsert(cap, provider=pid, status="pending", policy={"allowed": True})
+
+    current = {c.cap: c for c in REGISTRY.list()}
+    for pid, reqs in requires.items():
+        missing = [r for r in reqs if r not in current or current[r].status != "ready"]
+        if missing:
+            for cap, provider in provides.items():
+                if provider == pid:
+                    REGISTRY.upsert(
+                        cap,
+                        provider=pid,
+                        status="blocked",
+                        policy={"allowed": False, "reason": f"requires_missing:{','.join(missing)}"},
+                    )
+
+    current = {c.cap: c for c in REGISTRY.list()}
+    for cap, capability in current.items():
+        if capability.status == "pending":
+            REGISTRY.upsert(cap, provider=capability.provider, status="ready", policy={"allowed": True})
+
+    REGISTRY.emit_manifest()
 
 
 def _start_crawl_async(run_id: str, limits: Dict[str, Any]) -> None:
@@ -134,6 +188,21 @@ def probe(body: ProbeReq, x_session_token: Optional[str] = Header(default=None, 
     if not services:
         return {"bootstrap": bootstrap, "results": {}}
     results = _probe_services(broker, services)
+    for svc, result in results.items():
+        cap_name: Optional[str] = None
+        if svc == "drive":
+            cap_name = "drive.files.read"
+        elif svc == "echo":
+            cap_name = "echo.service"
+        if cap_name:
+            REGISTRY.upsert(
+                cap_name,
+                provider="auto",
+                status="ready" if result.get("ok") else "blocked",
+                policy={"allowed": bool(result.get("ok"))},
+                meta={},
+            )
+    REGISTRY.emit_manifest()
     return {"bootstrap": bootstrap, "results": results}
 
 
@@ -159,7 +228,29 @@ def logs(x_session_token: Optional[str] = Header(default=None, convert_underscor
     return "\n".join(LOG_FILE.read_text(encoding="utf-8").splitlines()[-200:])
 
 
+@APP.get("/capabilities")
+def get_capabilities(x_session_token: Optional[str] = Header(default=None, convert_underscores=False)) -> Dict[str, Any]:
+    _require_token(x_session_token)
+    return REGISTRY.emit_manifest()
+
+
+@APP.get("/capabilities/stream")
+def stream_capabilities(x_session_token: Optional[str] = Header(default=None, convert_underscores=False)) -> StreamingResponse:
+    _require_token(x_session_token)
+
+    async def event_gen():
+        import asyncio
+
+        while True:
+            data = REGISTRY.emit_manifest()
+            yield f"event: CAPABILITY_UPDATE\ndata: {json.dumps(data)}\n\n"
+            await asyncio.sleep(5)
+
+    return StreamingResponse(event_gen(), media_type="text/event-stream")
+
+
 def build_app():
     ensure_first_run()
+    _bootstrap_capabilities()
     log(f"session_token={SESSION_TOKEN}")
     return APP, SESSION_TOKEN

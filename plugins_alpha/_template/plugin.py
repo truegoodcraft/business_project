@@ -17,3 +17,11 @@ class Plugin(PluginV2):
 
     def run(self, broker: ConnectionBroker, options=None):
         return {"ok": True}
+
+    def capabilities(self):
+        return {
+            "provides": [],
+            "requires": [],
+            "trust_tier": 1,
+            "stages": ["service"],
+        }

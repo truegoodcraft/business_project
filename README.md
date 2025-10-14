@@ -1,6 +1,6 @@
 # 🤖 TGC Alpha Core
 
-**Version: v.a0.01.2**
+**Version: v.a0.01.3**
 
 > A small, opinionated controller that boots, checks connections, shows status — and only digs deeper when you ask.
 
@@ -24,7 +24,7 @@ Google Drive, Sheets, Notion, and any other integrations live entirely in plugin
 
 ---
 
-## Alpha Core (HTTP) — v.a0.01.2
+## Alpha Core (HTTP) — v.a0.01.3
 
 Install deps:
 
@@ -54,6 +54,19 @@ Plugins:
 * Put plugins under `plugins_alpha/<your_plugin>/plugin.py`
 * Implement `Plugin(PluginV2)` with `describe()` and `register_broker()`
 * Core remains silent until a plugin declares services.
+
+## Capability Registry & System Manifest
+
+- Core validates capabilities and writes a signed manifest:
+  - Windows: `%LOCALAPPDATA%\TGC\state\system_manifest.json`
+  - macOS/Linux: `~/.tgc/state/system_manifest.json`
+- Endpoints:
+  - `GET /capabilities`
+  - `GET /capabilities/stream`  (SSE events: `CAPABILITY_UPDATE`)
+- Plugins declare capabilities via `PluginV2.capabilities()`:
+  - `provides`: `["namespace.capability"]`
+  - `requires`: `["other.capability"]`
+- Core is the only writer. No secrets in the manifest. HMAC-SHA256 signature prevents tampering.
 
 ---
 

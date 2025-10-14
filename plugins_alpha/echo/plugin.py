@@ -19,3 +19,11 @@ class Plugin(PluginV2):
             return {"ok": True, "detail": "echo_ready"}
 
         broker.register("echo", provider=provider, probe=probe)
+
+    def capabilities(self):
+        return {
+            "provides": ["echo.service"],
+            "requires": [],
+            "trust_tier": 1,
+            "stages": ["service"],
+        }
