@@ -1,34 +1,27 @@
 from __future__ import annotations
 
-import os
 import secrets
 import threading
 import time
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
 from core.conn_broker import ConnectionBroker
-from tgc.bootstrap_fs import DATA, LOGS, TOKEN_FILE, ensure_first_run
+from core.version import VERSION
+from tgc.bootstrap_fs import LOGS, TOKEN_FILE, ensure_first_run
 
 # Ensure filesystem bootstrap happens before any runtime writes.
 ensure_first_run()
 
-APP = FastAPI(title="TGC Alpha Core", version="0.1.0")
+APP = FastAPI(title="TGC Alpha Core", version=VERSION)
 RUN_ID = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 SESSION_TOKEN = secrets.token_urlsafe(24)
 TOKEN_FILE.write_text(SESSION_TOKEN, encoding="utf-8")
 
 LOG_FILE = LOGS / f"core_{RUN_ID}.log"
-
-
-def _log(msg: str) -> None:
-    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with LOG_FILE.open("a", encoding="utf-8") as fh:
-        fh.write(msg.rstrip() + "\n")
 
 
 class ProbeReq(BaseModel):
@@ -43,75 +36,31 @@ class CrawlReq(BaseModel):
 _CRAWLS: Dict[str, Dict[str, Any]] = {}
 
 
+def _log(msg: str) -> None:
+    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with LOG_FILE.open("a", encoding="utf-8") as fh:
+        fh.write(msg.rstrip() + "\n")
+
+
 def _require_token(token: Optional[str]) -> None:
     if token != SESSION_TOKEN:
         raise HTTPException(status_code=401, detail="Invalid session token")
 
 
-def _discover_plugins() -> List[Dict[str, Any]]:
+def _discover_plugins() -> List[Any]:
     try:
-        from core.plugins_alpha import discover_alpha_plugins
+        from core.plugins_alpha import discover_alpha_plugins  # v2-only loader
 
-        plugins = discover_alpha_plugins()
-        discovered: List[Dict[str, Any]] = []
-        for plugin in plugins:
-            try:
-                description = plugin.describe() or {}
-            except Exception:
-                description = {}
-            services = description.get("services") or []
-            scopes = description.get("scopes") or []
-            discovered.append(
-                {
-                    "id": getattr(plugin, "id", plugin.__class__.__name__),
-                    "name": getattr(plugin, "name", plugin.__class__.__name__),
-                    "services": [str(s) for s in services if isinstance(s, str)],
-                    "scopes": [str(s) for s in scopes if isinstance(s, str)],
-                    "version": getattr(plugin, "version", "0"),
-                }
-            )
-        return discovered
+        return discover_alpha_plugins()
     except Exception:
-        return [
-            {
-                "id": "example",
-                "name": "Example Alpha Plugin",
-                "services": ["drive"],
-                "scopes": ["read_base"],
-                "version": "0",
-            }
-        ]
+        return []
 
 
-def _probe_services(services: List[str]) -> Dict[str, Dict[str, Any]]:
-    try:
-        from tgc.bootstrap import bootstrap_controller
-
-        controller = bootstrap_controller()
-    except Exception:
-        controller = object()
-    broker = ConnectionBroker(controller)
+def _probe_services(broker: ConnectionBroker, services: List[str]) -> Dict[str, Dict[str, Any]]:
     results: Dict[str, Dict[str, Any]] = {}
     for svc in services:
-        result = broker.probe(svc)
-        if not result.get("ok"):
-            _augment_probe_hint(svc, result)
-        results[svc] = result
+        results[svc] = broker.probe(svc)
     return results
-
-
-def _augment_probe_hint(service: str, result: Dict[str, Any]) -> None:
-    service = service.lower()
-    if "hint" in result and result["hint"]:
-        return
-    creds = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")
-    if service == "drive":
-        if not creds:
-            result.setdefault("hint", "Set GOOGLE_APPLICATION_CREDENTIALS or edit .env")
-        else:
-            path = Path(creds)
-            if not path.exists():
-                result.setdefault("hint", f"File not found: {path}")
 
 
 def _start_crawl_async(run_id: str, limits: Optional[Dict[str, Any]] = None) -> None:
@@ -148,7 +97,23 @@ def health(x_session_token: Optional[str] = Header(default=None, convert_undersc
 @APP.get("/plugins")
 def plugins(x_session_token: Optional[str] = Header(default=None, convert_underscores=False)) -> List[Dict[str, Any]]:
     _require_token(x_session_token)
-    return _discover_plugins()
+    plugs = _discover_plugins()
+    out: List[Dict[str, Any]] = []
+    for p in plugs:
+        try:
+            desc = p.describe() or {}
+        except Exception:
+            desc = {}
+        out.append(
+            {
+                "id": getattr(p, "id", p.__class__.__name__),
+                "name": getattr(p, "name", p.__class__.__name__),
+                "services": list(desc.get("services", [])),
+                "scopes": list(desc.get("scopes", [])),
+                "version": getattr(p, "version", "0"),
+            }
+        )
+    return out
 
 
 @APP.post("/probe")
@@ -158,11 +123,22 @@ def probe(
 ) -> Dict[str, Any]:
     _require_token(x_session_token)
     bootstrap = ensure_first_run()
-    services = body.services
+    plugs = _discover_plugins()
+    broker = ConnectionBroker(controller=None)
+    for p in plugs:
+        if hasattr(p, "register_broker"):
+            p.register_broker(broker)
+    declared = sorted(
+        {
+            svc
+            for p in plugs
+            for svc in (getattr(p, "describe", lambda: {})() or {}).get("services", [])
+        }
+    )
+    services = body.services or declared
     if not services:
-        discovered = _discover_plugins()
-        services = sorted({svc for plugin in discovered for svc in plugin.get("services", [])}) or ["drive"]
-    results = _probe_services(services)
+        return {"bootstrap": bootstrap, "results": {}}
+    results = _probe_services(broker, services)
     return {"bootstrap": bootstrap, "results": results}
 
 

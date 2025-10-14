@@ -1,45 +1,30 @@
 # 🤖 TGC Alpha Core
 
+**Version: v.a0.01.2**
+
 > A small, opinionated controller that boots, checks connections, shows status — and only digs deeper when you ask.
 
 ---
 
 ## What It Is
 
-**TGC Alpha Core** is a lean automation hub. On start it loads plugins, performs **base‑layer probes** via a scoped connection broker, and prints a clear status report. No crawling or writes by default. 🧭
-
-**Use it to:**
-
-* See which integrations are reachable (Notion, Drive, Sheets, etc.)
-* Verify your plugin setup
-* Optionally trigger a crawl or index when you’re ready
+**TGC Alpha Core** is a lean automation hub. On start it loads plugins, performs base-layer probes via a scoped connection broker, and prints a clear status report. No crawling or writes by default.
 
 ---
 
-## Safety & Transparency
+## Pluggable Broker
 
-* 🔒 **Scoped clients**: `read_base`, `read_crawl`, `write`
-* 🚫 **No scope escalation**: a plugin can’t jump from read → write
-* 🧪 **Probe‑only boot**: the default path is read‑only
-* 🧾 **One‑line header + status table** every run
+Alpha Core now ships with a pluggable connection broker. The core stays integration-agnostic:
+
+* Plugins live in `plugins_alpha/` and subclass `core.contracts.plugin_v2.PluginV2`.
+* Each plugin calls `broker.register(...)` to provide services and probes.
+* Core only knows about the services the plugins register and remains silent until they show up.
+
+Google Drive, Sheets, Notion, and any other integrations live entirely in plugins under `plugins_alpha/`. Drop in a plugin package and restart the core to make the service available.
 
 ---
 
-## Quickstart
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-# Boot, list plugins, probe connections, print status, exit
-python app.py alpha
-
-# Start a crawl or index (optional)
-python app.py alpha --crawl --fast --timeout 60 --max-files 500 --max-pages 5000 --page-size 100
-```
-
-## Alpha HTTP Quickstart
+## Quickstart (HTTP)
 
 ```bash
 python -m pip install -r requirements.txt
@@ -48,168 +33,61 @@ python app.py serve
 ```
 
 ```powershell
-# Test (PowerShell):
-$token = Get-Content .\data\session_token.txt
-irm "http://127.0.0.1:8765/health" -Headers @{'X-Session-Token'=$token}
-irm "http://127.0.0.1:8765/plugins" -Headers @{'X-Session-Token'=$token}
-irm "http://127.0.0.1:8765/probe" -Method Post -Headers @{'X-Session-Token'=$token} -ContentType "application/json" -Body "{}"
+$token = type .\data\session_token.txt
+irm http://127.0.0.1:8765/health -Headers @{ 'X-Session-Token' = $token }
+irm http://127.0.0.1:8765/plugins -Headers @{ 'X-Session-Token' = $token }
+irm http://127.0.0.1:8765/probe -Method Post -Headers @{ 'X-Session-Token' = $token } -ContentType "application/json" -Body "{}"
 ```
 
----
-
-## First Run (Alpha)
-
-1. Run: `python app.py` → creates `credentials/`, `data/`, `logs/`, and `.env` with helpful defaults.
-2. Drop your Google **service-account.json** into `credentials/` (or set an absolute path in `.env`).
-3. Set `DRIVE_ROOT_IDS` and `SHEET_INVENTORY_ID` in `.env` (optional for boot; required for crawl).
-4. Re-run: `python app.py` → status shows OK/PENDING along with hints.
-5. Start crawl on demand: `python app.py alpha --crawl --fast --max-files 500 --timeout 60`.
-
-### Troubleshooting
-
-- Shared Drives: invite the service account email as a member of each shared drive you want indexed.
-
-## Plugin API (v2)
-## Commands
-
-* `alpha` → boot + probe + status ✅
-* `alpha --crawl` → perform full index/crawl (respects limits) ⛏️
-* `--fast`, `--timeout`, `--max-files`, `--max-pages`, `--page-size` → constrain crawls ⚙️
-
----
-
-## Plugin v2 (Alpha)
-
-A minimal contract for integrations:
-
-```python
-class PluginV2:
-    id: str
-    name: str
-    def probe(self, broker) -> dict: ...      # return {"ok": bool, "detail"?: str}
-    def describe(self) -> dict: ...           # {"services": ["drive"], "scopes": ["read_base"]}
-    def run(self, broker, options: dict | None = None) -> dict: ...
-```
-
-Guidelines: declare services in `describe()`, keep `probe()` fast, expect **scoped** handles from the broker.
-
----
-
-## Example Output
-
-```
-[run:2025-10-13T19:40:31Z] mode=alpha fast=False timeout_sec=None max_files=None max_pages=None page_size=None
-Services: 2/3 reachable
-  - drive: OK
-  - notion: FAIL (missing token)
-  - sheets: OK
-Plugins enabled: 2
-  - master_index
-  - my_custom_plugin
-```
-
----
-
-## License & Ownership
-
-* 🧿 **Core Ownership**: The **core** is proprietary to True Good Craft (TGC). All rights reserved. I retain control over the core and all decisions related to it.
-* 🔌 **Plugins**: You may create and add plugins for use **within this software’s access scope**. Your plugins remain yours; the core remains mine.
-* ✅ **Permitted**: Build plugins, use the broker, run crawls.
-* ❌ **Not Permitted**: Extracting or re‑licensing the core, or bypassing the broker/safety model.
-
-If this helps you, buy your software a coffee. ☕️
-
-# 🤖 TGC Alpha Core
-
-> A small, opinionated controller that boots, checks connections, shows status — and only digs deeper when you ask.
-
----
-
-## What It Is
-
-**TGC Alpha Core** is a lean automation hub. On start it loads plugins, performs **base‑layer probes** via a scoped connection broker, and prints a clear status report. No crawling or writes by default. 🧭
-
-**Use it to:**
-
-* See which integrations are reachable (Notion, Drive, Sheets, etc.)
-* Verify your plugin setup
-* Optionally trigger a crawl or index when you’re ready
+* `/health` reports the running version and session.
+* `/plugins` lists the plugins that registered providers.
+* `/probe` asks the broker to check each requested service.
 
 ---
 
 ## Safety & Transparency
 
 * 🔒 **Scoped clients**: `read_base`, `read_crawl`, `write`
-* 🚫 **No scope escalation**: a plugin can’t jump from read → write
-* 🧪 **Probe‑only boot**: the default path is read‑only
-* 🧾 **One‑line header + status table** every run
+* 🚫 **No scope escalation**: a plugin can’t jump from read → write during a run
+* 🧪 **Probe-only boot**: the default path is read-only
+* 🧾 **Clear run logs**: every request logged under `logs/`
 
 ---
 
-## Quickstart
+## Developing Plugins
 
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+```python
+from core.contracts.plugin_v2 import PluginV2
 
-# Boot, list plugins, probe connections, print status, exit
-python app.py alpha
+class Plugin(PluginV2):
+    id = "my_plugin"
+    name = "My Provider"
 
-# Start a crawl or index (optional)
-python app.py alpha --crawl --fast --timeout 60 --max-files 500 --max-pages 5000 --page-size 100
+    def register_broker(self, broker):
+        broker.register("myservice", provider=my_provider_fn, probe=my_probe_fn)
 ```
+
+* `describe()` advertises services/scopes.
+* `register_broker()` wires providers and probes into the broker.
+* Optional `run()` hooks remain available for long-running work.
+
+Drop your plugin under `plugins_alpha/<name>/` and restart the core. Core discovers packages automatically and keeps Google/Notion details outside of the main runtime.
 
 ---
 
 ## Commands
 
-* `alpha` → boot + probe + status ✅
-* `alpha --crawl` → perform full index/crawl (respects limits) ⛏️
-* `--fast`, `--timeout`, `--max-files`, `--max-pages`, `--page-size` → constrain crawls ⚙️
-
----
-
-## Plugin v2 (Alpha)
-
-Place plugins in `plugins_alpha/` and export them via a `Plugin` subclass of `PluginV2` to have them auto-discovered during boot.
-
-## Connection Broker
-A minimal contract for integrations:
-
-```python
-class PluginV2:
-    id: str
-    name: str
-    def probe(self, broker) -> dict: ...      # return {"ok": bool, "detail"?: str}
-    def describe(self) -> dict: ...           # {"services": ["drive"], "scopes": ["read_base"]}
-    def run(self, broker, options: dict | None = None) -> dict: ...
-```
-
-Guidelines: declare services in `describe()`, keep `probe()` fast, expect **scoped** handles from the broker.
-
----
-
-## Example Output
-
-```
-[run:2025-10-13T19:40:31Z] mode=alpha fast=False timeout_sec=None max_files=None max_pages=None page_size=None
-Services: 2/3 reachable
-  - drive: OK
-  - notion: FAIL (missing token)
-  - sheets: OK
-Plugins enabled: 2
-  - master_index
-  - my_custom_plugin
-```
+* `python app.py alpha` → boot + probe + status
+* `python app.py alpha --crawl` → perform full index/crawl (respects limits)
+* `python app.py serve` → start the HTTP server on `127.0.0.1:8765`
 
 ---
 
 ## License & Ownership
 
-* 🧿 **Core Ownership**: The **core** is proprietary to True Good Craft (TGC). All rights reserved. I retain control over the core and all decisions related to it.
-* 🔌 **Plugins**: You may create and add plugins for use **within this software’s access scope**. Your plugins remain yours; the core remains mine.
+* 🧿 **Core Ownership**: The core is proprietary to True Good Craft (TGC). All rights reserved.
+* 🔌 **Plugins**: You may create and add plugins for use within this software’s access scope. Your plugins remain yours; the core remains mine.
 * ✅ **Permitted**: Build plugins, use the broker, run crawls.
-* ❌ **Not Permitted**: Extracting or re‑licensing the core, or bypassing the broker/safety model.
+* ❌ **Not Permitted**: Extracting or relicensing the core, or bypassing the broker/safety model.
 
 If this helps you, buy your software a coffee. ☕️
