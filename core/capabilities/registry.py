@@ -1,5 +1,5 @@
 from __future__ import annotations
-import json, os, hmac, hashlib, time, threading
+import json, os, hmac, hashlib, time, threading, tempfile
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
 from typing import Dict, List, Any, Optional
@@ -23,15 +23,6 @@ class Capability:
     status: str = "blocked"           # ready | blocked | pending | deprecated
     policy: Dict[str, Any] = field(default_factory=dict)
     meta: Dict[str, Any] = field(default_factory=dict)  # non-secret metadata
-
-@dataclass
-class Manifest:
-    core_version: str
-    plugin_api_version: str
-    schema_version: str
-    generated_at: str
-    capabilities: List[Capability]
-    signature: Optional[str] = None   # HMAC-SHA256 over JSON (without signature)
 
 class CapabilityRegistry:
     """Core-owned registry. Single writer. Thread-safe. No secrets."""
@@ -61,17 +52,57 @@ class CapabilityRegistry:
         key = KEY_PATH.read_bytes()
         return hmac.new(key, payload, hashlib.sha256).hexdigest()
 
-    def emit_manifest(self) -> Dict[str, Any]:
-        with self._lock:
-            base = asdict(Manifest(
-                core_version=VERSION,
-                plugin_api_version=self._plugin_api_version,
-                schema_version="1",
-                generated_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                capabilities=self.list(),
-            ))
-        base_no_sig = {k: v for k, v in base.items() if k != "signature"}
+    def _manifest_dict(self) -> Dict[str, Any]:
+        """Build the manifest dict WITHOUT signature (internal)."""
+        caps = [asdict(cap) for cap in self.list()]
+        return {
+            "core_version": VERSION,
+            "plugin_api_version": self._plugin_api_version,
+            "schema_version": "1",
+            "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "capabilities": caps,
+        }
+
+    def build_manifest(self) -> Dict[str, Any]:
+        """Return signed manifest JSON dict (no disk writes, no blocking)."""
+        base_no_sig = self._manifest_dict()
         payload = json.dumps(base_no_sig, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-        base_no_sig["signature"] = self._sign(payload)
-        MANIFEST_PATH.write_text(json.dumps(base_no_sig, indent=2), encoding="utf-8")
-        return base_no_sig
+        sig = self._sign(payload)
+        out = dict(base_no_sig)
+        out["signature"] = sig
+        return out
+
+    def _atomic_write(self, path: Path, content: str) -> None:
+        """Windows-safe atomic-ish write: temp file + replace."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8", dir=str(path.parent)) as tf:
+            tf.write(content)
+            tmp_name = tf.name
+        Path(tmp_name).replace(path)
+
+    def emit_manifest(self) -> Dict[str, Any]:
+        """Synchronous write (kept for compatibility)."""
+        out = self.build_manifest()
+        try:
+            self._atomic_write(MANIFEST_PATH, json.dumps(out, indent=2))
+        except Exception as e:
+            out = dict(out)
+            out["_write_error"] = str(e)
+        return out
+
+    def emit_manifest_async(self, timeout_sec: float = 1.5) -> Dict[str, Any]:
+        """
+        Return manifest immediately; write file in a background thread.
+        Never blocks the caller longer than building JSON/signing.
+        """
+        out = self.build_manifest()
+
+        def _writer() -> None:
+            try:
+                self._atomic_write(MANIFEST_PATH, json.dumps(out, indent=2))
+            except Exception:
+                pass
+
+        t = threading.Thread(target=_writer, daemon=True)
+        t.start()
+        return out

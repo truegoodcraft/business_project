@@ -53,3 +53,7 @@ def meta(name: str) -> Dict[str, Any]:
 
 def emit_manifest() -> Dict[str, Any]:
     return registry.emit_manifest()
+
+
+def emit_manifest_async() -> Dict[str, Any]:
+    return registry.emit_manifest_async()
