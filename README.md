@@ -98,6 +98,15 @@ class Plugin(PluginV2):
 
 Drop your plugin under `plugins_alpha/<name>/` and restart the core. Core discovers packages automatically and keeps Google/Notion details outside of the main runtime.
 
+### Notion (read-only) v0.01.0
+Set env:
+- NOTION_TOKEN (required)
+- NOTION_ROOT_PAGE_IDS (optional CSV)
+- NOTION_API_VERSION (optional; default 2022-06-28)
+
+Plugin is hidden until configured. Probe calls GET /v1/users/me (2s timeout).
+Provides capability: notion.pages.read (read-only).
+
 ## Public API Contract (for plugins)
 
 Plugins may only import:
