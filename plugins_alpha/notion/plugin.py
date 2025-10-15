@@ -5,11 +5,17 @@ from typing import Dict, Any, Optional, List
 
 from core.contracts.plugin_v2 import PluginV2
 from core.conn_broker import ConnectionBroker, ClientHandle
+from core.secrets import Secrets
 
 # ---- minimal config (no secrets logged) ----
 _NOTION_VERSION = (os.environ.get("NOTION_API_VERSION") or "2022-06-28").strip()
 
 def _cfg_token() -> str:
+    # prefer persisted secret
+    val = Secrets.get("notion", "token")
+    if val:
+        return val.strip()
+    # fallback for first run / CI
     return (os.environ.get("NOTION_TOKEN") or "").strip()
 
 def _cfg_roots() -> List[str]:

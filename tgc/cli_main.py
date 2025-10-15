@@ -76,6 +76,31 @@ def _wire_serve(subparsers):
     parser.set_defaults(func=serve_cmd)
 
 
+def secrets_set_cmd(args):
+    from core.secrets import Secrets, SecretError
+
+    plugin = args.plugin
+    key = args.key
+    print(
+        f"Enter secret value for {plugin}:{key} (input hidden not supported in PowerShell here):"
+    )
+    value = input().strip()
+    try:
+        Secrets.set(plugin, key, value)
+        print("Saved.")
+    except SecretError as e:
+        print(f"Error: {e}")
+
+
+def _wire_secrets(subparsers):
+    sp = subparsers.add_parser("secrets", help="Manage local secrets (write-only)")
+    sub = sp.add_subparsers()
+    pset = sub.add_parser("set", help="Set a secret from stdin")
+    pset.add_argument("--plugin", required=True)
+    pset.add_argument("--key", required=True)
+    pset.set_defaults(func=secrets_set_cmd)
+
+
 def alpha_boot(args):
     import os
 
@@ -230,6 +255,7 @@ def build_parser() -> argparse.ArgumentParser:
     _wire_setup(subparsers)
     _wire_alpha(subparsers)
     _wire_serve(subparsers)
+    _wire_secrets(subparsers)
     parser.set_defaults(func=alpha_boot)
     return parser
 
