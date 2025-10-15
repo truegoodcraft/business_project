@@ -104,6 +104,46 @@ def _wire_secrets(subparsers):
     pset.set_defaults(func=secrets_set_cmd)
 
 
+def config_status_cmd(args):
+    import json
+    from core.config.tracker import snapshot
+
+    print(json.dumps(snapshot(), indent=2))
+
+
+def config_clear_cmd(args):
+    import json
+    from core.config.tracker import clear_secrets, clear_saved_data
+
+    res = {}
+    if args.what in ("secrets", "all"):
+        res["secrets"] = clear_secrets()
+    if args.what in ("data", "all"):
+        res["data"] = clear_saved_data(keep_settings=True)
+    print(json.dumps(res, indent=2))
+
+
+def config_settings_ro_cmd(args):
+    import json
+    from core.config.tracker import set_settings_readonly
+
+    print(json.dumps(set_settings_readonly(args.plugin, ro=not args.unlock), indent=2))
+
+
+def _wire_config(subparsers):
+    sp = subparsers.add_parser("config", help="Config transparency & maintenance")
+    sub = sp.add_subparsers()
+    p1 = sub.add_parser("status", help="Show managed paths & file sizes")
+    p1.set_defaults(func=config_status_cmd)
+    p2 = sub.add_parser("clear", help="Clear secrets and/or saved data")
+    p2.add_argument("--what", choices=["secrets", "data", "all"], required=True)
+    p2.set_defaults(func=config_clear_cmd)
+    p3 = sub.add_parser("settings-ro", help="Toggle read-only on a plugin settings file")
+    p3.add_argument("--plugin", required=True)
+    p3.add_argument("--unlock", action="store_true")
+    p3.set_defaults(func=config_settings_ro_cmd)
+
+
 def alpha_boot(args):
     import os
 
@@ -259,6 +299,7 @@ def build_parser() -> argparse.ArgumentParser:
     _wire_alpha(subparsers)
     _wire_serve(subparsers)
     _wire_secrets(subparsers)
+    _wire_config(subparsers)
     parser.set_defaults(func=alpha_boot)
     return parser
 
