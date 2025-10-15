@@ -11,30 +11,26 @@ class Plugin(PluginV2):
     api_version = "2"
 
     def describe(self):
-        # only advertise when fully configured
-        import os
+        import os, pathlib
 
-        creds = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
-        root_ids = os.environ.get("DRIVE_ROOT_IDS", "").strip()
-        if not creds or not root_ids:
+        creds = (os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "") or "").strip()
+        root_ids = (os.environ.get("DRIVE_ROOT_IDS", "") or "").strip()
+        if not creds or not root_ids or not pathlib.Path(os.path.expanduser(creds)).exists():
             return {"services": [], "scopes": []}  # hidden until ready
-        return {"services": ["drive"], "scopes": ["read_base"]}  # example
+        return {"services": ["drive"], "scopes": ["read_base"]}
 
     def register_broker(self, broker: ConnectionBroker):
         import os, pathlib
 
-        creds = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
-        root_ids = os.environ.get("DRIVE_ROOT_IDS", "").strip()
-        if not creds or not root_ids or not pathlib.Path(creds).expanduser().exists():
-            return  # do not register; prevents probe hang
+        creds = (os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "") or "").strip()
+        root_ids = (os.environ.get("DRIVE_ROOT_IDS", "") or "").strip()
+        if not creds or not root_ids or not pathlib.Path(os.path.expanduser(creds)).exists():
+            return  # do not register; prevents /probe from touching it
 
-        # else: register lightweight provider+probe with internal short timeouts only
         def provider(scope: str):
-            # lazy initialization only when actually used
-            return ClientHandle(service="drive", scope=scope, handle={"ok": True})
+            return ClientHandle(service="drive", scope=scope, handle={"configured": True})
 
         def probe(handle):
-            # quick, bounded check only
             return {"ok": True, "detail": "drive_config_present"}
 
         broker.register("drive", provider=provider, probe=probe)
