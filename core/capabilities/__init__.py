@@ -5,6 +5,7 @@ from .api import (
     list_caps,
     resolve,
     emit_manifest,
+    emit_manifest_async,
     meta,
 )
 
@@ -15,5 +16,6 @@ __all__ = [
     "list_caps",
     "resolve",
     "emit_manifest",
+    "emit_manifest_async",
     "meta",
 ]

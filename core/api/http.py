@@ -173,7 +173,8 @@ def _bootstrap_capabilities() -> None:
         if capability.status == "pending":
             registry.upsert(cap, provider=capability.provider, status="ready", policy={"allowed": True})
 
-    registry.emit_manifest()
+    registry.emit_manifest_async()
+    log("[capabilities] async manifest write requested after probe")
 
 
 def _start_crawl_async(run_id: str, limits: Dict[str, Any]) -> None:
@@ -296,7 +297,9 @@ def get_capabilities(
     x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token")
 ) -> Dict[str, Any]:
     _require_token(x_session_token)
-    return registry.emit_manifest()
+    out = registry.emit_manifest_async()
+    log("[capabilities] served manifest to client; async write started")
+    return out
 
 
 @APP.get("/capabilities/stream")
