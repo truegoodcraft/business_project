@@ -126,7 +126,7 @@ def _probe_services(broker: ConnectionBroker, services: list[str]) -> dict[str, 
             }
     log(
         f"[probe] done elapsed_ms={int((_time.time()-t_start)*1000)} results="
-        f"{ {k:v.get('detail','ok') for k,v in results.items()} }"
+        f"{ {k:( 'ok' if v.get('ok') else v.get('detail','fail') ) for k,v in results.items()} }"
     )
     return results
 
