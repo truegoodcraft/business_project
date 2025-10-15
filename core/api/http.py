@@ -9,7 +9,7 @@ import time as _time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import Body, FastAPI, Header, HTTPException
+from fastapi import Body, FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel
 from starlette.responses import StreamingResponse
 from core.auth.google_sa import validate_google_service_account
@@ -19,6 +19,8 @@ from core.version import VERSION
 from tgc.bootstrap_fs import DATA, LOGS, ensure_first_run
 
 APP = FastAPI(title="TGC Alpha Core", version=VERSION)
+LICENSE_NAME = "PolyForm-Noncommercial-1.0.0"
+LICENSE_URL = "https://polyformproject.org/licenses/noncommercial/1.0.0/"
 RUN_ID = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 SESSION_TOKEN = secrets.token_urlsafe(24)
 (DATA / "session_token.txt").write_text(SESSION_TOKEN, encoding="utf-8")
@@ -28,6 +30,17 @@ LOG_FILE = LOGS / f"core_{RUN_ID}.log"
 _SUBSCRIBERS: set[Any] = set()
 
 PROBE_TIMEOUT_SEC = 5  # per-service timeout
+
+
+@APP.middleware("http")
+async def _license_header_mw(request: Request, call_next):
+    resp = await call_next(request)
+    try:
+        resp.headers["X-TGC-License"] = LICENSE_NAME
+        resp.headers["X-TGC-License-URL"] = LICENSE_URL
+    except Exception:
+        pass
+    return resp
 
 
 def log(msg: str) -> None:
@@ -203,6 +216,17 @@ def health(x_session_token: Optional[str] = Header(default=None, alias="X-Sessio
     return {"ok": True, "version": APP.version, "run_id": RUN_ID}
 
 
+@APP.get("/license")
+def license_info(x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token")):
+    _require_token(x_session_token)
+    return {
+        "component": "BUS core",
+        "license": LICENSE_NAME,
+        "url": LICENSE_URL,
+        "note": "Noncommercial use only. Commercial use requires permission. Contact Truegoodcraft@gmail.com",
+    }
+
+
 @APP.get("/plugins")
 def plugins(x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token")) -> List[Dict[str, Any]]:
     _require_token(x_session_token)
@@ -298,6 +322,7 @@ def get_capabilities(
 ) -> Dict[str, Any]:
     _require_token(x_session_token)
     out = registry.emit_manifest_async()
+    out.setdefault("license", {"core": LICENSE_NAME, "core_url": LICENSE_URL})
     log("[capabilities] served manifest to client; async write started")
     return out
 
