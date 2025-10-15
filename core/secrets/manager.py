@@ -6,9 +6,21 @@ from pathlib import Path
 from typing import Optional
 
 import getpass  # noqa: F401  # retained for potential future secure input use
-import keyring
+
+try:
+    import keyring
+    from keyring.errors import KeyringError
+
+    KEYRING_AVAILABLE = True
+except Exception:  # pragma: no cover - best-effort optional dependency
+    keyring = None  # type: ignore[assignment]
+
+    class KeyringError(Exception):
+        ...
+
+    KEYRING_AVAILABLE = False
+
 from cryptography.fernet import Fernet, InvalidToken
-from keyring.errors import KeyringError
 
 
 class SecretError(Exception):
@@ -47,11 +59,12 @@ def _load_or_create_master_key() -> bytes:
         return _KEY_PATH.read_bytes()
     key = Fernet.generate_key()
     _KEY_PATH.write_bytes(key)
-    try:
-        # also copy to OS keyring as backup (non-fatal)
-        keyring.set_password(_app_id(), "master_key_backup", key.decode("utf-8"))
-    except Exception:
-        pass
+    if KEYRING_AVAILABLE and keyring is not None:
+        try:
+            # also copy to OS keyring as backup (non-fatal)
+            keyring.set_password(_app_id(), "master_key_backup", key.decode("utf-8"))
+        except KeyringError:
+            pass
     return key
 
 
@@ -113,12 +126,13 @@ class Secrets:
     def get(plugin_id: str, key: str) -> Optional[str]:
         ns = _namespace(plugin_id, key)
         # Try OS keyring
-        try:
-            val = keyring.get_password(_app_id(), ns)
-            if val is not None:
-                return val
-        except KeyringError:
-            pass
+        if KEYRING_AVAILABLE and keyring is not None:
+            try:
+                val = keyring.get_password(_app_id(), ns)
+                if val is not None:
+                    return val
+            except KeyringError:
+                pass
         # Fallback
         return _file_get(plugin_id, key)
 
@@ -128,11 +142,12 @@ class Secrets:
             raise SecretError("Empty secret")
         ns = _namespace(plugin_id, key)
         # Try OS keyring
-        try:
-            keyring.set_password(_app_id(), ns, value)
-            return
-        except KeyringError:
-            pass
+        if KEYRING_AVAILABLE and keyring is not None:
+            try:
+                keyring.set_password(_app_id(), ns, value)
+                return
+            except KeyringError:
+                pass
         # Fallback
         _file_set(plugin_id, key, value)
 
@@ -140,11 +155,12 @@ class Secrets:
     def delete(plugin_id: str, key: str) -> None:
         ns = _namespace(plugin_id, key)
         ok = False
-        try:
-            keyring.delete_password(_app_id(), ns)
-            ok = True
-        except Exception:
-            pass
+        if KEYRING_AVAILABLE and keyring is not None:
+            try:
+                keyring.delete_password(_app_id(), ns)
+                ok = True
+            except KeyringError:
+                pass
         # Update fallback store
         try:
             key_bytes = _load_or_create_master_key()
