@@ -59,7 +59,7 @@ def _start_full_crawl(context: CommandContext, effective_options: Dict[str, obje
 
 
 def serve_cmd(args):
-    from core.api.http import build_app
+    from core.api.http import LICENSE_NAME, LICENSE_URL, build_app
     import uvicorn
 
     app, token = build_app()
@@ -67,6 +67,9 @@ def serve_cmd(args):
     port = int(getattr(args, "port", 8765) or 8765)
     print(f"Serving on http://{host}:{port}")
     print(f"Session token (also saved to data/session_token.txt): {token}")
+    print(
+        f"License: {LICENSE_NAME} — {LICENSE_URL} — commercial use requires permission (Truegoodcraft@gmail.com)"
+    )
     uvicorn.run(app, host=host, port=port, log_level="warning")
 
 

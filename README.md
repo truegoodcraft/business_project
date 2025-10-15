@@ -128,11 +128,24 @@ HTTP endpoints are stable; do not rely on undocumented fields.
 
 ---
 
-## License & Ownership
+## Licensing
 
-* 🧿 **Core Ownership**: The core is proprietary to True Good Craft (TGC). All rights reserved.
-* 🔌 **Plugins**: You may create and add plugins for use within this software’s access scope. Your plugins remain yours; the core remains mine.
-* ✅ **Permitted**: Build plugins, use the broker, run crawls.
-* ❌ **Not Permitted**: Extracting or relicensing the core, or bypassing the broker/safety model.
+- **Core (BUS)**: Source-available **Polyform Noncommercial 1.0.0**. Commercial/production use requires a separate license. See `/core/LICENSE` and `COMMERCIAL-LICENSE.md`. Contact: **Truegoodcraft@gmail.com**.
+- **Plugins**: **Apache-2.0** unless otherwise noted in their plugin folders.
 
-If this helps you, buy your software a coffee. ☕️
+| Component        | Path               | License                          |
+|------------------|--------------------|----------------------------------|
+| Core (BUS)       | `/core`            | Polyform Noncommercial 1.0.0     |
+| Example plugins  | `/plugins_alpha/*` | Apache-2.0                       |
+
+### Continuous Integration (CI)
+CI stamps and enforces SPDX headers and runs tests.
+
+Local helpers:
+```bash
+python tools/add_spdx_headers.py   # stamp headers
+python tools/check_spdx_headers.py # verify headers
+python tools/check_licenses.py     # verify plugin LICENSE files
+```
+
+---

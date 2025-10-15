@@ -83,6 +83,13 @@ class CapabilityRegistry:
     def emit_manifest(self) -> Dict[str, Any]:
         """Synchronous write (kept for compatibility)."""
         out = self.build_manifest()
+        out.setdefault(
+            "license",
+            {
+                "core": "PolyForm-Noncommercial-1.0.0",
+                "core_url": "https://polyformproject.org/licenses/noncommercial/1.0.0/",
+            },
+        )
         try:
             self._atomic_write(MANIFEST_PATH, json.dumps(out, indent=2))
         except Exception as e:
@@ -96,6 +103,13 @@ class CapabilityRegistry:
         Never blocks the caller longer than building JSON/signing.
         """
         out = self.build_manifest()
+        out.setdefault(
+            "license",
+            {
+                "core": "PolyForm-Noncommercial-1.0.0",
+                "core_url": "https://polyformproject.org/licenses/noncommercial/1.0.0/",
+            },
+        )
 
         def _writer() -> None:
             try:
