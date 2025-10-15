@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import json
+import os
 import secrets
 import threading
 import time
@@ -15,6 +16,7 @@ from starlette.responses import StreamingResponse
 from core.auth.google_sa import validate_google_service_account
 from core.capabilities import registry
 from core.conn_broker import ConnectionBroker
+from core.secrets import Secrets
 from core.version import VERSION
 from tgc.bootstrap_fs import DATA, LOGS, ensure_first_run
 
@@ -34,6 +36,14 @@ def log(msg: str) -> None:
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
     with LOG_FILE.open("a", encoding="utf-8") as handle:
         handle.write(msg.rstrip() + "\n")
+
+
+def _maybe_migrate_env_secret() -> None:
+    # Notion
+    token = (os.environ.get("NOTION_TOKEN") or "").strip()
+    if token and not Secrets.get("notion", "token"):
+        Secrets.set("notion", "token", token)
+        log("[secrets] migrated NOTION_TOKEN env -> secrets store")
 
 
 class CrawlReq(BaseModel):
@@ -321,6 +331,7 @@ def stream_capabilities(
 
 def build_app():
     ensure_first_run()
+    _maybe_migrate_env_secret()
     _bootstrap_capabilities()
     log(f"session_token={SESSION_TOKEN}")
     return APP, SESSION_TOKEN

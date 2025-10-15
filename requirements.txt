@@ -4,6 +4,9 @@ google-api-python-client>=2.120.0
 google-auth>=2.30.0
 google-auth-oauthlib>=1.2.0
 requests>=2.32.0
+# Secret storage
+keyring>=24.3.1
+cryptography>=42.0.0
 # Cryptography utilities for plugin signing.
 # Optional for plugin signature verification
 # pynacl>=1.5,<2
