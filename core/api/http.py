@@ -9,7 +9,7 @@ import time as _time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import Body, FastAPI, Header, HTTPException
 from pydantic import BaseModel
 from starlette.responses import StreamingResponse
 from core.auth.google_sa import validate_google_service_account
@@ -34,10 +34,6 @@ def log(msg: str) -> None:
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
     with LOG_FILE.open("a", encoding="utf-8") as handle:
         handle.write(msg.rstrip() + "\n")
-
-
-class ProbeReq(BaseModel):
-    services: Optional[List[str]] = None
 
 
 class CrawlReq(BaseModel):
@@ -126,7 +122,7 @@ def _probe_services(broker: ConnectionBroker, services: list[str]) -> dict[str, 
             }
     log(
         f"[probe] done elapsed_ms={int((_time.time()-t_start)*1000)} results="
-        f"{ {k:( 'ok' if v.get('ok') else v.get('detail','fail') ) for k,v in results.items()} }"
+        f"{ {k: ('ok' if v.get('ok') else v.get('detail','fail')) for k,v in results.items()} }"
     )
     return results
 
@@ -230,39 +226,42 @@ def plugins(x_session_token: Optional[str] = Header(default=None, alias="X-Sessi
 
 @APP.post("/probe")
 def probe(
-    body: ProbeReq, x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token")
+    x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token"),
+    body: Any = Body(default=None),
 ) -> Dict[str, Any]:
     _require_token(x_session_token)
     bootstrap = ensure_first_run()
+
     plugs = _discover_plugins()
     broker = ConnectionBroker(controller=None)
     _register_providers(broker, plugs)
+
     declared = sorted(
         {
             svc
             for p in plugs
-            for svc in (getattr(p, "describe", lambda: {})() or {}).get("services", [])
+            for svc in ((getattr(p, "describe", lambda: {})() or {}).get("services", []) or [])
         }
     )
-    services = body.services if body and body.services is not None else declared
+
+    services: list[str] = []
+    try:
+        if body is None:
+            services = declared
+        elif isinstance(body, dict) and "services" in body:
+            s = body.get("services") or []
+            services = list(s) if isinstance(s, list) else []
+        elif isinstance(body, list):
+            services = list(body)
+        else:
+            services = declared
+    except Exception:
+        services = declared
+
     if not services:
         return {"bootstrap": bootstrap, "results": {}}
+
     results = _probe_services(broker, services)
-    for svc, result in results.items():
-        cap_name: Optional[str] = None
-        if svc == "drive":
-            cap_name = "drive.files.read"
-        elif svc == "echo":
-            cap_name = "echo.service"
-        if cap_name:
-            registry.upsert(
-                cap_name,
-                provider="auto",
-                status="ready" if result.get("ok") else "blocked",
-                policy={"allowed": bool(result.get("ok"))},
-                meta={},
-            )
-    registry.emit_manifest()
     return {"bootstrap": bootstrap, "results": results}
 
 
