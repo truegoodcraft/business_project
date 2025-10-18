@@ -198,6 +198,45 @@ button:disabled {
   margin: 0 clamp(1rem, 3vw, 2.5rem) 1.5rem;
 }
 
+.row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.row .label {
+  font-weight: 600;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.08);
+  font-weight: 600;
+  color: rgba(60, 60, 60, 0.85);
+}
+
+.status-pill.ok {
+  color: #0a8754;
+  background: rgba(10, 135, 84, 0.12);
+}
+
+.btn {
+  font-weight: 600;
+}
+
+.btn-danger {
+  background: var(--error);
+}
+
+.check {
+  font-weight: 600;
+  color: #0a8754;
+}
+
 .panel.logs .panel-content {
   max-height: 260px;
   white-space: pre-wrap;
