@@ -27,3 +27,17 @@ class PluginV2:
             "trust_tier": 1,
             "stages": ["service"],
         }
+
+    def plan_transform(self, fn: str, payload: Dict[str, Any], *, limits: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        raise NotImplementedError("transform planning not implemented")
+
+    def manifest(self) -> Dict[str, Any]:
+        block = self.capabilities() or {}
+        return {
+            "id": getattr(self, "id", self.__class__.__name__),
+            "version": getattr(self, "version", "0"),
+            "provides": list(block.get("provides", [])),
+            "requires": list(block.get("requires", [])),
+            "stages": list(block.get("stages", [])),
+            "trust_tier": block.get("trust_tier", 1),
+        }

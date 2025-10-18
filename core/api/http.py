@@ -1,70 +1,67 @@
 from __future__ import annotations
 
-import concurrent.futures
 import json
-import os
 import secrets
-import threading
 import time
-import time as _time
-from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import Body, FastAPI, Header, HTTPException, Request
-from pydantic import BaseModel
-from starlette.responses import StreamingResponse
-from core.auth.google_sa import validate_google_service_account
-from core.capabilities import registry
-from core.conn_broker import ConnectionBroker
-from core.secrets import Secrets
-from core.version import VERSION
-from tgc.bootstrap_fs import DATA, LOGS, ensure_first_run
 
-APP = FastAPI(title="TGC Alpha Core", version=VERSION)
+from core.capabilities import registry
+from core.capabilities.registry import MANIFEST_PATH
+from core.runtime.core_alpha import CoreAlpha
+from core.runtime.policy import PolicyDecision
+from core.runtime.probe import PROBE_TIMEOUT_SEC
+from core.version import VERSION
+from tgc.bootstrap_fs import DATA, LOGS
+
+APP = FastAPI(title="BUS Core Alpha", version=VERSION)
 LICENSE_NAME = "PolyForm-Noncommercial-1.0.0"
 LICENSE_URL = "https://polyformproject.org/licenses/noncommercial/1.0.0/"
-RUN_ID = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-SESSION_TOKEN = secrets.token_urlsafe(24)
-(DATA / "session_token.txt").write_text(SESSION_TOKEN, encoding="utf-8")
 
-LOG_FILE = LOGS / f"core_{RUN_ID}.log"
+CORE: CoreAlpha | None = None
+RUN_ID: str = ""
+SESSION_TOKEN: str = ""
+LOG_FILE: Path | None = None
 
-_SUBSCRIBERS: set[Any] = set()
 
-PROBE_TIMEOUT_SEC = 5  # per-service timeout
+def log(msg: str) -> None:
+    path = LOG_FILE or (LOGS / "core.log")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(msg.rstrip() + "\n")
 
 
 @APP.middleware("http")
 async def _license_header_mw(request: Request, call_next):
-    resp = await call_next(request)
+    start = time.time()
+    response = None
     try:
-        resp.headers["X-TGC-License"] = LICENSE_NAME
-        resp.headers["X-TGC-License-URL"] = LICENSE_URL
-    except Exception:
-        pass
-    return resp
+        response = await call_next(request)
+        return response
+    finally:
+        elapsed_ms = int((time.time() - start) * 1000)
+        summary = {
+            "path": request.url.path,
+            "method": request.method,
+            "elapsed_ms": elapsed_ms,
+            "run_id": RUN_ID,
+            "status": getattr(response, "status_code", 0),
+        }
+        try:
+            if response is not None:
+                response.headers["X-TGC-License"] = LICENSE_NAME
+                response.headers["X-TGC-License-URL"] = LICENSE_URL
+        except Exception:
+            pass
+        log(f"[request] {json.dumps(summary, separators=(',', ':'))}")
 
 
-def log(msg: str) -> None:
-    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with LOG_FILE.open("a", encoding="utf-8") as handle:
-        handle.write(msg.rstrip() + "\n")
-
-
-def _maybe_migrate_env_secret() -> None:
-    # Notion
-    token = (os.environ.get("NOTION_TOKEN") or "").strip()
-    if token and not Secrets.get("notion", "token"):
-        Secrets.set("notion", "token", token)
-        log("[secrets] migrated NOTION_TOKEN env -> secrets store")
-
-
-class CrawlReq(BaseModel):
-    limits: Optional[Dict[str, Any]] = None
-    targets: Optional[Dict[str, Any]] = None
-
-
-_CRAWLS: Dict[str, Dict[str, Any]] = {}
+def _require_core() -> CoreAlpha:
+    if CORE is None:
+        raise HTTPException(status_code=503, detail="core_not_initialized")
+    return CORE
 
 
 def _require_token(token: Optional[str]) -> None:
@@ -72,291 +69,159 @@ def _require_token(token: Optional[str]) -> None:
         raise HTTPException(status_code=401, detail="Invalid session token")
 
 
-def _discover_plugins() -> List[Any]:
-    try:
-        from core.plugins_alpha import discover_alpha_plugins
-
-        return discover_alpha_plugins()
-    except Exception:
-        return []
-
-
-def _register_providers(broker: ConnectionBroker, plugins: List[Any]) -> None:
-    for plugin in plugins:
-        if hasattr(plugin, "register_broker"):
-            try:
-                plugin.register_broker(broker)
-            except Exception:
-                pass
-
-
-def _probe_one(broker: ConnectionBroker, svc: str) -> dict:
-    t0 = _time.time()
-    try:
-        res = broker.probe(svc)
-        if not isinstance(res, dict):
-            res = {"ok": bool(res)}
-        res.setdefault("elapsed_ms", int((_time.time() - t0) * 1000))
-        return res
-    except Exception as e:
-        return {
-            "ok": False,
-            "detail": "probe_exception",
-            "error": str(e),
-            "elapsed_ms": int((_time.time() - t0) * 1000),
-        }
-
-
-def _probe_services(broker: ConnectionBroker, services: list[str]) -> dict[str, dict]:
-    results: dict[str, dict] = {}
-    if not services:
-        return results
-    max_workers = min(8, max(1, len(services)))
-    wall_timeout = PROBE_TIMEOUT_SEC * max(1, len(services))
-    t_start = _time.time()
-    log(f"[probe] start services={services} per={PROBE_TIMEOUT_SEC}s wall={wall_timeout}s")
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
-        futs = {pool.submit(_probe_one, broker, svc): svc for svc in services}
-        try:
-            for fut in concurrent.futures.as_completed(futs, timeout=wall_timeout):
-                svc = futs[fut]
-                try:
-                    results[svc] = fut.result(timeout=0)
-                except concurrent.futures.TimeoutError:
-                    results[svc] = {
-                        "ok": False,
-                        "detail": "probe_timeout",
-                        "timeout_sec": PROBE_TIMEOUT_SEC,
-                    }
-                except Exception as e:
-                    results[svc] = {
-                        "ok": False,
-                        "detail": "probe_exception",
-                        "error": str(e),
-                    }
-        except concurrent.futures.TimeoutError:
-            pass
-    for fut, svc in futs.items():
-        if svc not in results:
-            results[svc] = {
-                "ok": False,
-                "detail": "probe_timeout",
-                "timeout_sec": PROBE_TIMEOUT_SEC,
-            }
-    log(
-        f"[probe] done elapsed_ms={int((_time.time()-t_start)*1000)} results="
-        f"{ {k: ('ok' if v.get('ok') else v.get('detail','fail')) for k,v in results.items()} }"
-    )
-    return results
-
-
-def _bootstrap_capabilities() -> None:
-    ok, meta = validate_google_service_account()
-    registry.upsert(
-        "auth.google.service_account",
-        provider="core",
-        status="ready" if ok else "blocked",
-        policy={"allowed": ok, "mode": "read-only"},
-        meta={k: v for k, v in meta.items() if k in ("project_id", "client_email", "path_exists")},
-    )
-
-    plugs = _discover_plugins()
-    provides: Dict[str, str] = {}
-    requires: Dict[str, List[str]] = {}
-    for plugin in plugs:
-        pid = getattr(plugin, "id", plugin.__class__.__name__)
-        try:
-            caps = plugin.capabilities() or {}
-        except Exception:
-            caps = {}
-        prov = [str(item) for item in caps.get("provides", [])]
-        req = [str(item) for item in caps.get("requires", [])]
-        requires[pid] = req
-        for cap in prov:
-            provides[cap] = pid
-
-    for cap, pid in provides.items():
-        registry.upsert(cap, provider=pid, status="pending", policy={"allowed": True})
-
-    current = {c.cap: c for c in registry.list()}
-    for pid, reqs in requires.items():
-        missing = [r for r in reqs if r not in current or current[r].status != "ready"]
-        if missing:
-            for cap, provider in provides.items():
-                if provider == pid:
-                    registry.upsert(
-                        cap,
-                        provider=pid,
-                        status="blocked",
-                        policy={"allowed": False, "reason": f"requires_missing:{','.join(missing)}"},
-                    )
-
-    current = {c.cap: c for c in registry.list()}
-    for cap, capability in current.items():
-        if capability.status == "pending":
-            registry.upsert(cap, provider=capability.provider, status="ready", policy={"allowed": True})
-
-    registry.emit_manifest_async()
-    log("[capabilities] async manifest write requested after probe")
-
-
-def _start_crawl_async(run_id: str, limits: Dict[str, Any]) -> None:
-    state = _CRAWLS[run_id] = {"state": "running", "progress": 0, "stats": {}, "last_error": None}
-
-    def work() -> None:
-        try:
-            for index in range(1, 11):
-                time.sleep(0.5)
-                state["progress"] = index * 10
-                log(f"[{run_id}] progress={state['progress']}")
-            state["state"] = "done"
-            state["stats"] = {"items": 123, "duration_sec": 5}
-            log(f"[{run_id}] done")
-        except Exception as exc:  # pragma: no cover - defensive guard
-            state["state"] = "error"
-            state["last_error"] = str(exc)
-            log(f"[{run_id}] error: {exc}")
-
-    threading.Thread(target=work, daemon=True).start()
+def _with_run_id(payload: Dict[str, Any]) -> Dict[str, Any]:
+    payload = dict(payload)
+    payload.setdefault("run_id", RUN_ID)
+    return payload
 
 
 @APP.get("/health")
 def health(x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token")) -> Dict[str, Any]:
     _require_token(x_session_token)
-    return {"ok": True, "version": APP.version, "run_id": RUN_ID}
-
-
-@APP.get("/license")
-def license_info(x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token")):
-    _require_token(x_session_token)
-    return {
-        "component": "BUS core",
-        "license": LICENSE_NAME,
-        "url": LICENSE_URL,
-        "note": "Noncommercial use only. Commercial use requires permission. Contact Truegoodcraft@gmail.com",
-    }
+    return _with_run_id({"ok": True, "version": VERSION})
 
 
 @APP.get("/plugins")
-def plugins(x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token")) -> List[Dict[str, Any]]:
+def plugins(x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token")) -> Dict[str, Any]:
     _require_token(x_session_token)
-    plugs = _discover_plugins()
-    out: List[Dict[str, Any]] = []
-    for plugin in plugs:
-        try:
-            desc = plugin.describe() or {}
-        except Exception:
-            desc = {}
-        out.append(
-            {
-                "id": getattr(plugin, "id", plugin.__class__.__name__),
-                "name": getattr(plugin, "name", plugin.__class__.__name__),
-                "services": list(desc.get("services", [])),
-                "scopes": list(desc.get("scopes", [])),
-                "version": getattr(plugin, "version", "0"),
-            }
-        )
-    return out
+    core = _require_core()
+    out = core.plugin_list()
+    return _with_run_id({"plugins": out})
 
 
 @APP.post("/probe")
 def probe(
-    x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token"),
     body: Any = Body(default=None),
+    x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token"),
 ) -> Dict[str, Any]:
     _require_token(x_session_token)
-    bootstrap = ensure_first_run()
-
-    plugs = _discover_plugins()
-    broker = ConnectionBroker(controller=None)
-    _register_providers(broker, plugs)
-
-    declared = sorted(
-        {
-            svc
-            for p in plugs
-            for svc in ((getattr(p, "describe", lambda: {})() or {}).get("services", []) or [])
-        }
-    )
-
-    services: list[str] = []
-    try:
-        if body is None:
-            services = declared
-        elif isinstance(body, dict) and "services" in body:
-            s = body.get("services") or []
-            services = list(s) if isinstance(s, list) else []
-        elif isinstance(body, list):
-            services = list(body)
-        else:
-            services = declared
-    except Exception:
-        services = declared
-
-    if not services:
-        return {"bootstrap": bootstrap, "results": {}}
-
-    results = _probe_services(broker, services)
-    return {"bootstrap": bootstrap, "results": results}
-
-
-@APP.post("/crawl")
-def crawl(
-    body: CrawlReq, x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token")
-) -> Dict[str, str]:
-    _require_token(x_session_token)
-    run_id = f"crawl-{int(time.time())}"
-    _start_crawl_async(run_id, body.limits or {})
-    return {"run_id": run_id}
-
-
-@APP.get("/crawl/{run_id}/status")
-def crawl_status(
-    run_id: str, x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token")
-) -> Dict[str, Any]:
-    _require_token(x_session_token)
-    return _CRAWLS.get(run_id, {"state": "unknown"})
-
-
-@APP.get("/logs")
-def logs(x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token")) -> str:
-    _require_token(x_session_token)
-    if not LOG_FILE.exists():
-        return "no logs yet"
-    return "\n".join(LOG_FILE.read_text(encoding="utf-8").splitlines()[-200:])
+    core = _require_core()
+    services: List[str]
+    if body is None:
+        services = sorted({svc for item in core.plugin_list() for svc in item.get("services", [])})
+    elif isinstance(body, dict) and isinstance(body.get("services"), list):
+        services = [str(s) for s in body.get("services", [])]
+    elif isinstance(body, list):
+        services = [str(s) for s in body]
+    else:
+        services = []
+    results = core.probe_services(services)
+    payload = {
+        "bootstrap": core.bootstrap,
+        "results": results,
+        "probe_timeout_sec": PROBE_TIMEOUT_SEC,
+    }
+    return _with_run_id(payload)
 
 
 @APP.get("/capabilities")
-def get_capabilities(
-    x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token")
+def get_capabilities(x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token")) -> Dict[str, Any]:
+    _require_token(x_session_token)
+    manifest = registry.emit_manifest_async()
+    manifest.setdefault("license", {"core": LICENSE_NAME, "core_url": LICENSE_URL})
+    return _with_run_id(manifest)
+
+
+@APP.post("/execTransform")
+def exec_transform(
+    body: Dict[str, Any] = Body(...),
+    x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token"),
 ) -> Dict[str, Any]:
     _require_token(x_session_token)
-    out = registry.emit_manifest_async()
-    out.setdefault("license", {"core": LICENSE_NAME, "core_url": LICENSE_URL})
-    log("[capabilities] served manifest to client; async write started")
-    return out
+    core = _require_core()
+    plugin = str(body.get("plugin") or "").strip()
+    fn = str(body.get("fn") or "").strip()
+    idempotency_key = str(body.get("idempotency_key") or "").strip()
+    if not plugin or not fn or not idempotency_key:
+        raise HTTPException(status_code=400, detail="Missing plugin/fn/idempotency_key")
+    input_payload = body.get("input") or {}
+    limits = body.get("limits") or {}
+    outcome = core.transform(
+        plugin_id=plugin,
+        fn=fn,
+        input_payload=input_payload,
+        limits=limits,
+        idempotency_key=idempotency_key,
+    )
+    proposal = outcome.get("proposal")
+    policy = outcome.get("policy")
+    if isinstance(policy, PolicyDecision):
+        policy_block = {"decision": policy.decision, "reasons": list(policy.reasons)}
+    elif isinstance(policy, dict):
+        policy_block = {
+            "decision": str(policy.get("decision", "deny")),
+            "reasons": list(policy.get("reasons", [])),
+        }
+    else:
+        policy_block = {"decision": "deny", "reasons": ["unknown_policy"]}
+    return _with_run_id({"proposal": proposal, "policy": policy_block})
 
 
-@APP.get("/capabilities/stream")
-def stream_capabilities(
-    x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token")
-) -> StreamingResponse:
+@APP.post("/policy.simulate")
+def policy_simulate(
+    body: Dict[str, Any] = Body(...),
+    x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token"),
+) -> Dict[str, Any]:
     _require_token(x_session_token)
+    core = _require_core()
+    intent = str(body.get("intent") or "").strip()
+    metadata = body.get("metadata") or {}
+    decision = core.policy.simulate(intent, metadata)
+    payload = {
+        "decision": decision.decision,
+        "reasons": list(decision.reasons),
+    }
+    return _with_run_id(payload)
 
-    async def event_gen():
-        import asyncio
 
-        while True:
-            data = registry.emit_manifest()
-            yield f"event: CAPABILITY_UPDATE\ndata: {json.dumps(data)}\n\n"
-            await asyncio.sleep(5)
+@APP.post("/nodes.manifest.sync")
+def manifest_sync(
+    body: Dict[str, Any] = Body(...),
+    x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token"),
+) -> Dict[str, Any]:
+    _require_token(x_session_token)
+    manifest = body.get("manifest")
+    if not isinstance(manifest, dict):
+        raise HTTPException(status_code=400, detail="invalid_manifest")
+    if not registry.validate_signature(manifest):
+        raise HTTPException(status_code=400, detail="signature_invalid")
+    return _with_run_id({"ok": True})
 
-    return StreamingResponse(event_gen(), media_type="text/event-stream")
+
+@APP.get("/transparency.report")
+def transparency_report(x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token")) -> Dict[str, Any]:
+    _require_token(x_session_token)
+    core = _require_core()
+    report = core.transparency_report()
+    report["manifest_path"] = str(MANIFEST_PATH)
+    return _with_run_id(report)
+
+
+@APP.get("/logs")
+def logs(x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token")) -> Dict[str, Any]:
+    _require_token(x_session_token)
+    path = LOG_FILE or (LOGS / "core.log")
+    if not path.exists():
+        return _with_run_id({"logs": []})
+    lines = path.read_text(encoding="utf-8").splitlines()[-200:]
+    return _with_run_id({"logs": lines})
 
 
 def build_app():
-    ensure_first_run()
-    _maybe_migrate_env_secret()
-    _bootstrap_capabilities()
-    log(f"session_token={SESSION_TOKEN}")
+    global CORE, RUN_ID, SESSION_TOKEN, LOG_FILE
+    policy_path = Path("config/policy.json")
+    CORE = CoreAlpha(policy_path=policy_path)
+    RUN_ID = CORE.run_id
+    SESSION_TOKEN = secrets.token_urlsafe(24)
+    DATA.mkdir(parents=True, exist_ok=True)
+    (DATA / "session_token.txt").write_text(SESSION_TOKEN, encoding="utf-8")
+    CORE.configure_session_token(SESSION_TOKEN)
+    LOG_FILE = LOGS / f"core_{RUN_ID}.log"
+    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    banner = f"[trust] mode={CORE.policy.mode} telemetry=off data={DATA} logs={LOGS}"
+    print(banner)
+    log(banner)
     return APP, SESSION_TOKEN
+
+
+__all__ = ["APP", "build_app", "SESSION_TOKEN"]

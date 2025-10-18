@@ -22,3 +22,9 @@ class Plugin(PluginV2):
             return {"ok": True, "detail": "echo_ready"}  # returns immediately
 
         broker.register("echo", provider=provider, probe=probe)
+
+    def plan_transform(self, fn: str, payload, *, limits=None):
+        if fn != "noop":
+            raise ValueError("unknown_transform")
+        summary = {"echo": payload}
+        return {"operations": [], "summary": summary}

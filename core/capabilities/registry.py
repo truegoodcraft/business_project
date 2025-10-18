@@ -120,3 +120,13 @@ class CapabilityRegistry:
         t = threading.Thread(target=_writer, daemon=True)
         t.start()
         return out
+
+    def validate_signature(self, manifest: Dict[str, Any]) -> bool:
+        signature = manifest.get("signature")
+        if not isinstance(signature, str):
+            return False
+        base = dict(manifest)
+        base.pop("signature", None)
+        payload = json.dumps(base, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        expected = self._sign(payload)
+        return hmac.compare_digest(signature, expected)
