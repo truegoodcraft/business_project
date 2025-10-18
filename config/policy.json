@@ -1,0 +1,16 @@
+{
+  "version": "alpha-2024-08-01",
+  "mode": "enforce",
+  "rules": [
+    {
+      "id": "allow-echo-noop",
+      "intent": "transform",
+      "conditions": {
+        "plugin": "echo",
+        "fn": "noop"
+      },
+      "decision": "allow",
+      "reason": "builtin_echo"
+    }
+  ]
+}
