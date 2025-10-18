@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Core Dashboard</title>
+    <link rel="stylesheet" href="/ui/static/styles.css" />
+  </head>
+  <body>
+    <header class="page-header">
+      <div class="header-main">
+        <h1>Core Dashboard</h1>
+        <button id="refresh-all" type="button">Refresh All</button>
+      </div>
+      <div class="token-controls">
+        <label for="token-input">Session Token</label>
+        <input type="password" id="token-input" autocomplete="off" />
+        <button id="save-token" type="button">Save Token</button>
+      </div>
+    </header>
+
+    <div class="banner info" id="local-banner">
+      <strong>Local &amp; Transparent:</strong> data never leaves your machine. HTTP is
+      localhost-only. Telemetry is off.
+    </div>
+
+    <div class="banner error hidden" id="token-banner">Invalid or missing token</div>
+
+    <main class="panels">
+      <section class="panel" data-panel="health">
+        <div class="panel-header">
+          <h2>Health</h2>
+          <div class="panel-actions">
+            <span class="panel-meta" data-role="timing">&mdash;</span>
+            <span class="panel-meta" data-role="timestamp">&mdash;</span>
+            <button type="button" data-action="refresh">Refresh</button>
+          </div>
+        </div>
+        <pre class="panel-content" data-role="content"></pre>
+        <div class="panel-error" data-role="error"></div>
+      </section>
+
+      <section class="panel" data-panel="plugins">
+        <div class="panel-header">
+          <h2>Plugins</h2>
+          <div class="panel-actions">
+            <span class="panel-meta" data-role="timing">&mdash;</span>
+            <span class="panel-meta" data-role="timestamp">&mdash;</span>
+            <button type="button" data-action="refresh">Refresh</button>
+          </div>
+        </div>
+        <pre class="panel-content" data-role="content"></pre>
+        <div class="panel-error" data-role="error"></div>
+      </section>
+
+      <section class="panel" data-panel="capabilities">
+        <div class="panel-header">
+          <h2>Capabilities</h2>
+          <div class="panel-actions">
+            <span class="panel-meta" data-role="timing">&mdash;</span>
+            <span class="panel-meta" data-role="timestamp">&mdash;</span>
+            <button type="button" data-action="refresh">Refresh</button>
+          </div>
+        </div>
+        <pre class="panel-content" data-role="content"></pre>
+        <div class="panel-error" data-role="error"></div>
+      </section>
+
+      <section class="panel" data-panel="probe">
+        <div class="panel-header">
+          <h2>Probe</h2>
+          <div class="panel-actions">
+            <span class="panel-meta" data-role="timing">&mdash;</span>
+            <span class="panel-meta" data-role="timestamp">&mdash;</span>
+            <button type="button" data-action="refresh">Run Probe</button>
+          </div>
+        </div>
+        <div class="probe-controls">
+          <label for="probe-services">Services (JSON array)</label>
+          <textarea id="probe-services" rows="3">["echo"]</textarea>
+          <button id="run-probe" type="button">Run Probe</button>
+        </div>
+        <pre class="panel-content" data-role="content"></pre>
+        <div class="panel-error" data-role="error"></div>
+      </section>
+    </main>
+
+    <section class="panel logs" data-panel="logs">
+      <div class="panel-header">
+        <h2>Logs</h2>
+        <div class="panel-actions">
+          <span class="panel-meta" data-role="timing">&mdash;</span>
+          <span class="panel-meta" data-role="timestamp">&mdash;</span>
+          <label class="autoscale">
+            <input type="checkbox" id="logs-autoscroll" /> Auto-scroll
+          </label>
+          <button type="button" data-action="refresh">Refresh</button>
+        </div>
+      </div>
+      <pre class="panel-content" data-role="content" id="logs-content"></pre>
+      <div class="panel-error" data-role="error"></div>
+    </section>
+
+    <script src="/ui/static/app.js" defer></script>
+  </body>
+</html>
