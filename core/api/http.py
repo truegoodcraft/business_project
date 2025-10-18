@@ -5,16 +5,20 @@ import secrets
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlencode
 
 from fastapi import Body, FastAPI, Header, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+
+import requests
 
 from core.capabilities import registry
 from core.capabilities.registry import MANIFEST_PATH
 from core.runtime.core_alpha import CoreAlpha
 from core.runtime.policy import PolicyDecision
 from core.runtime.probe import PROBE_TIMEOUT_SEC
+from core.secrets.manager import SecretError, Secrets
 from core.version import VERSION
 from tgc.bootstrap_fs import DATA, LOGS
 
@@ -27,6 +31,7 @@ CORE: CoreAlpha | None = None
 RUN_ID: str = ""
 SESSION_TOKEN: str = ""
 LOG_FILE: Path | None = None
+_OAUTH_STATES: Dict[str, Dict[str, Any]] = {}
 
 
 def log(msg: str) -> None:
@@ -78,9 +83,145 @@ def _with_run_id(payload: Dict[str, Any]) -> Dict[str, Any]:
     return payload
 
 
+def _prune_oauth_states() -> None:
+    if not _OAUTH_STATES:
+        return
+    now = time.time()
+    expired = [key for key, meta in _OAUTH_STATES.items() if meta.get("expires_at", 0) <= now]
+    for key in expired:
+        _OAUTH_STATES.pop(key, None)
+
+
 @APP.get("/ui")
 def ui_index() -> FileResponse:
     return FileResponse("core/ui/index.html")
+
+
+def _load_google_client() -> tuple[str, str]:
+    client_id = Secrets.get("google_drive", "client_id")
+    client_secret = Secrets.get("google_drive", "client_secret")
+    if not client_id or not client_secret:
+        raise ValueError("missing_client")
+    return client_id, client_secret
+
+
+@APP.post("/oauth/google/start")
+def oauth_google_start(
+    body: Optional[Dict[str, Any]] = Body(default=None),
+    x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token"),
+) -> Dict[str, Any]:
+    _require_token(x_session_token)
+    _prune_oauth_states()
+    try:
+        client_id, _ = _load_google_client()
+    except ValueError:
+        return {"error": "missing_client"}
+
+    redirect_uri = "http://127.0.0.1:8765/oauth/google/callback"
+    if isinstance(body, dict):
+        candidate = str(body.get("redirect") or "").strip()
+        if candidate:
+            redirect_uri = candidate
+
+    state = secrets.token_urlsafe(24)
+    _OAUTH_STATES[state] = {
+        "redirect": redirect_uri,
+        "expires_at": time.time() + 600,
+    }
+
+    params = {
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "response_type": "code",
+        "scope": "https://www.googleapis.com/auth/drive.readonly",
+        "access_type": "offline",
+        "include_granted_scopes": "true",
+        "prompt": "consent",
+        "state": state,
+    }
+    auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(params)
+    return {"auth_url": auth_url, "state": state}
+
+
+@APP.get("/oauth/google/callback")
+def oauth_google_callback(code: str = "", state: str = "") -> RedirectResponse:
+    if not code:
+        raise HTTPException(status_code=400, detail="missing_code")
+    if not state:
+        raise HTTPException(status_code=400, detail="missing_state")
+
+    _prune_oauth_states()
+    meta = _OAUTH_STATES.pop(state, None)
+    if not meta:
+        raise HTTPException(status_code=400, detail="invalid_state")
+
+    try:
+        client_id, client_secret = _load_google_client()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="missing_client") from None
+
+    redirect_uri = str(meta.get("redirect") or "http://127.0.0.1:8765/oauth/google/callback")
+    data = {
+        "code": code,
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "redirect_uri": redirect_uri,
+        "grant_type": "authorization_code",
+    }
+
+    try:
+        response = requests.post(
+            "https://oauth2.googleapis.com/token",
+            data=data,
+            timeout=5,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except Exception as exc:  # pragma: no cover - network failure path
+        raise HTTPException(status_code=502, detail="oauth_exchange_failed") from exc
+
+    refresh_token = payload.get("refresh_token")
+    if not refresh_token:
+        raise HTTPException(status_code=400, detail="missing_refresh_token")
+
+    try:
+        Secrets.set("google_drive", "oauth_refresh", refresh_token)
+    except SecretError as exc:
+        raise HTTPException(status_code=500, detail="secret_store_error") from exc
+
+    return RedirectResponse(url="/ui?connected=google_drive", status_code=302)
+
+
+@APP.post("/oauth/google/revoke")
+def oauth_google_revoke(
+    x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token"),
+) -> Dict[str, Any]:
+    _require_token(x_session_token)
+    token = Secrets.get("google_drive", "oauth_refresh")
+    if token:
+        try:
+            requests.post(
+                "https://oauth2.googleapis.com/revoke",
+                data={"token": token},
+                timeout=5,
+            )
+        except Exception:
+            pass
+        try:
+            Secrets.delete("google_drive", "oauth_refresh")
+        except SecretError:
+            pass
+    return {"ok": True}
+
+
+@APP.get("/oauth/google/status")
+def oauth_google_status(
+    x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token"),
+) -> Dict[str, Any]:
+    _require_token(x_session_token)
+    token = Secrets.get("google_drive", "oauth_refresh")
+    connected = bool(token)
+    return {"connected": connected}
 
 
 @APP.get("/health")

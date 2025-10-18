@@ -2,6 +2,7 @@
   const TOKEN_STORAGE_KEY = "tgc_token";
   const panels = {};
   let currentToken = "";
+  let googleRowInitialized = false;
 
   const tokenInput = document.getElementById("token-input");
   const saveTokenBtn = document.getElementById("save-token");
@@ -39,7 +40,21 @@
     updateTokenBanner(!currentToken);
     if (currentToken) {
       refreshAll();
+      initGoogleRow();
+    } else {
+      renderGdUI(false);
     }
+  }
+
+  function hasToken() {
+    return Boolean(currentToken);
+  }
+
+  function tokenHeader() {
+    if (!currentToken) {
+      throw new Error("Session token required");
+    }
+    return { "X-Session-Token": currentToken };
   }
 
   function updateTokenBanner(show) {
@@ -219,6 +234,105 @@
     refreshLogs();
   }
 
+  async function gdStatus() {
+    const headers = tokenHeader();
+    const response = await fetch(`/oauth/google/status`, { headers });
+    if (!response.ok) {
+      throw new Error("status failed");
+    }
+    return response.json();
+  }
+
+  async function gdStart() {
+    const headers = { ...tokenHeader(), "Content-Type": "application/json" };
+    const redirect = `${window.location.origin}/oauth/google/callback`;
+    const response = await fetch(`/oauth/google/start`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ redirect }),
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.auth_url) {
+      throw new Error(payload.error || "auth failed");
+    }
+    window.open(payload.auth_url, "_blank");
+  }
+
+  async function gdRevoke() {
+    const headers = tokenHeader();
+    const response = await fetch(`/oauth/google/revoke`, {
+      method: "POST",
+      headers,
+    });
+    if (!response.ok) {
+      throw new Error("revoke failed");
+    }
+  }
+
+  function renderGdUI(connected) {
+    const statusEl = document.getElementById("google-status");
+    const connectBtn = document.getElementById("google-connect");
+    const disconnectBtn = document.getElementById("google-disconnect");
+    const checkEl = document.getElementById("google-check");
+    if (!statusEl || !connectBtn || !disconnectBtn || !checkEl) {
+      return;
+    }
+    if (connected) {
+      statusEl.textContent = "Connected";
+      statusEl.classList.add("ok");
+      connectBtn.style.display = "none";
+      disconnectBtn.style.display = "inline-block";
+      checkEl.style.display = "inline-block";
+    } else {
+      statusEl.textContent = "Not connected";
+      statusEl.classList.remove("ok");
+      connectBtn.style.display = "inline-block";
+      disconnectBtn.style.display = "none";
+      checkEl.style.display = "none";
+    }
+  }
+
+  async function initGoogleRow() {
+    const connectBtn = document.getElementById("google-connect");
+    const disconnectBtn = document.getElementById("google-disconnect");
+    if (!connectBtn || !disconnectBtn) {
+      return;
+    }
+
+    if (!googleRowInitialized) {
+      connectBtn.onclick = async () => {
+        try {
+          await gdStart();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          window.alert(message);
+        }
+      };
+      disconnectBtn.onclick = async () => {
+        try {
+          await gdRevoke();
+          renderGdUI(false);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          window.alert(message);
+        }
+      };
+      googleRowInitialized = true;
+    }
+
+    if (!hasToken()) {
+      renderGdUI(false);
+      return;
+    }
+
+    try {
+      const status = await gdStatus();
+      renderGdUI(Boolean(status?.connected));
+    } catch (error) {
+      renderGdUI(false);
+    }
+  }
+
   function attachEvents() {
     if (saveTokenBtn) {
       saveTokenBtn.addEventListener("click", saveToken);
@@ -259,4 +373,12 @@
   if (currentToken) {
     refreshAll();
   }
+
+  window.addEventListener("DOMContentLoaded", () => {
+    if (hasToken()) {
+      initGoogleRow();
+    } else {
+      renderGdUI(false);
+    }
+  });
 })();
