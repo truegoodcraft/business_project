@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import Body, FastAPI, Header, HTTPException, Request
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from core.capabilities import registry
 from core.capabilities.registry import MANIFEST_PATH
@@ -17,6 +19,7 @@ from core.version import VERSION
 from tgc.bootstrap_fs import DATA, LOGS
 
 APP = FastAPI(title="BUS Core Alpha", version=VERSION)
+APP.mount("/ui/static", StaticFiles(directory="core/ui"), name="ui-static")
 LICENSE_NAME = "PolyForm-Noncommercial-1.0.0"
 LICENSE_URL = "https://polyformproject.org/licenses/noncommercial/1.0.0/"
 
@@ -73,6 +76,11 @@ def _with_run_id(payload: Dict[str, Any]) -> Dict[str, Any]:
     payload = dict(payload)
     payload.setdefault("run_id", RUN_ID)
     return payload
+
+
+@APP.get("/ui")
+def ui_index() -> FileResponse:
+    return FileResponse("core/ui/index.html")
 
 
 @APP.get("/health")
