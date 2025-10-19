@@ -1,83 +1,107 @@
 """
 Reader plugin: multi-source read-only catalog (Drive + Local MVP).
-Capabilities: catalog.list, catalog.search
+Safe version that does NOT depend on broker.http_session to avoid AttributeError.
 """
-from __future__ import annotations
 
-import base64
+from __future__ import annotations
 import os
 import time
+import base64
 import urllib.parse
 from typing import Any, Dict, List, Optional, Tuple
 
+import requests  # assumed available; if not, please `pip install requests`
+
 SERVICE_ID = "reader"
-VERSION = "0.1.0"
+VERSION = "0.1.1"  # bumped
 
 _broker = None
 _log = None
 
+# ---------------- utils ----------------
 
-# ---- utils
+def _b64u(s: str) -> str:
+    return base64.urlsafe_b64encode(s.encode()).decode().rstrip("=")
 
-def _b64u(value: str) -> str:
-    return base64.urlsafe_b64encode(value.encode()).decode().rstrip("=")
+def _ub64u(s: str) -> str:
+    pad = "=" * (-len(s) % 4)
+    return base64.urlsafe_b64decode(s + pad).decode()
 
+def _logger():
+    return _log
 
-def _ub64u(value: str) -> str:
-    pad = "=" * (-len(value) % 4)
-    return base64.urlsafe_b64decode(value + pad).decode()
+def _http_session(name: str) -> requests.Session:
+    """
+    Prefer a local session; do not call broker.http_session (it may not exist).
+    """
+    s = requests.Session()
+    s.headers.update({"User-Agent": f"TGC/{SERVICE_ID}-{VERSION}"})
+    # conservative timeouts via mount adapters could be added later
+    return s
 
+def _get_secret(ns: str, key: str) -> Optional[str]:
+    get = getattr(_broker, "get_secret", None)
+    if callable(get):
+        try:
+            return get(ns, key)
+        except Exception:
+            return None
+    return None
 
 def _settings() -> Dict[str, Any]:
+    # Mirror defaults; Core Settings UI may override behavior server-side.
     return {
         "enabled": {"drive": True, "local": True, "notion": False, "smb": False},
-        "local_roots": [],
+        "local_roots": []
     }
 
-
-# ---- Google auth helpers (read-only)
+# ---------------- Google helpers ----------------
 
 def _google_client() -> Tuple[Optional[str], Optional[str], Optional[str]]:
-    cid = (
-        _broker.get_secret("google", "client_id")
-        or _broker.get_secret("google_oauth", "client_id")
-    )
-    cs = (
-        _broker.get_secret("google", "client_secret")
-        or _broker.get_secret("google_oauth", "client_secret")
-    )
-    rt = _broker.get_secret("google_drive", "refresh_token")
+    # Try a few common namespaces for compatibility
+    cid = (_get_secret("google_oauth", "client_id")
+           or _get_secret("google", "client_id")
+           or _get_secret("oauth.google", "client_id"))
+    cs = (_get_secret("google_oauth", "client_secret")
+          or _get_secret("google", "client_secret")
+          or _get_secret("oauth.google", "client_secret"))
+    rt = (_get_secret("google_drive", "refresh_token")
+          or _get_secret("google", "refresh_token"))
     return cid, cs, rt
 
-
 def _google_access_token() -> Optional[str]:
-    if _broker is None:
-        return None
     cid, cs, rt = _google_client()
     if not (cid and cs and rt):
         return None
-    session = _broker.http_session(SERVICE_ID)
-    response = session.post(
-        "https://oauth2.googleapis.com/token",
-        data={
-            "client_id": cid,
-            "client_secret": cs,
-            "grant_type": "refresh_token",
-            "refresh_token": rt,
-        },
-        timeout=6,
-    )
-    if response.status_code != 200:
+    try:
+        s = _http_session("reader.oauth")
+        resp = s.post(
+            "https://oauth2.googleapis.com/token",
+            data={
+                "client_id": cid,
+                "client_secret": cs,
+                "grant_type": "refresh_token",
+                "refresh_token": rt,
+            },
+            timeout=8,
+        )
+        if resp.status_code != 200:
+            return None
+        return resp.json().get("access_token")
+    except Exception:
         return None
-    payload = response.json()
-    if not isinstance(payload, dict):
-        return None
-    return payload.get("access_token")
 
-
-# ---- Source: Drive
+# ---------------- Drive adapter ----------------
 
 def _drive_children(params: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    params: { parent_id: str, page_size: int=200, page_token?: str }
+    parent_id:
+      - 'drive:root'          -> My Drive root + synthetic 'Shared drives'
+      - 'drive:shared'        -> lists shared drives
+      - 'drive:drive/<id>:root' -> root of a specific shared drive
+      - 'drive:<fileId>'      -> children of a folder/file id
+    """
     token = _google_access_token()
     if not token:
         return {"children": [], "next_page_token": None}
@@ -85,107 +109,105 @@ def _drive_children(params: Dict[str, Any]) -> Dict[str, Any]:
     parent_id = params.get("parent_id", "drive:root")
     page_size = int(params.get("page_size", 200))
     page_token = params.get("page_token")
-    session = _broker.http_session("reader.drive")
-    session.headers.update({"Authorization": f"Bearer {token}"})
+    s = _http_session("reader.drive")
+    s.headers.update({"Authorization": f"Bearer {token}"})
 
-    def _files_list(query: str, corpora: str = "allDrives", drive_id: Optional[str] = None):
-        base = "https://www.googleapis.com/drive/v3/files"
-        request_params = {
-            "q": query,
-            "fields": "nextPageToken,files(id,name,mimeType,parents,driveId,shortcutDetails,modifiedTime,size)",
-            "includeItemsFromAllDrives": "true",
-            "supportsAllDrives": "true",
-            "corpora": corpora,
-            "pageSize": page_size,
-        }
-        if page_token:
-            request_params["pageToken"] = page_token
-        if drive_id:
-            request_params["driveId"] = drive_id
-        url = f"{base}?{urllib.parse.urlencode(request_params)}"
-        response = session.get(url, timeout=8)
-        response.raise_for_status()
-        return response.json()
+    def _files_list(q: str, corpora: str = "allDrives", drive_id: Optional[str] = None) -> Dict[str, Any]:
+        try:
+            base = "https://www.googleapis.com/drive/v3/files"
+            query = {
+                "q": q,
+                "fields": "nextPageToken,files(id,name,mimeType,parents,driveId,shortcutDetails,modifiedTime,size)",
+                "includeItemsFromAllDrives": "true",
+                "supportsAllDrives": "true",
+                "corpora": corpora,
+                "pageSize": page_size,
+            }
+            if page_token:
+                query["pageToken"] = page_token
+            if drive_id:
+                query["driveId"] = drive_id
+            url = f"{base}?{urllib.parse.urlencode(query)}"
+            r = s.get(url, timeout=10)
+            r.raise_for_status()
+            return r.json()
+        except Exception:
+            return {"files": [], "nextPageToken": None}
 
     def _node(obj: Dict[str, Any]) -> Dict[str, Any]:
         mime = obj.get("mimeType", "")
         is_folder = mime == "application/vnd.google-apps.folder"
         is_shortcut = mime == "application/vnd.google-apps.shortcut"
-        node_id = f"drive:{obj['id']}"
-        size_raw = obj.get("size")
-        try:
-            size_value = int(size_raw) if size_raw is not None else None
-        except (TypeError, ValueError):
-            size_value = None
         return {
-            "id": node_id,
+            "id": f"drive:{obj['id']}",
             "name": obj.get("name", obj["id"]),
             "type": "folder" if is_folder else ("shortcut" if is_shortcut else "file"),
             "mimeType": mime,
             "has_children": bool(is_folder or is_shortcut),
             "modifiedTime": obj.get("modifiedTime"),
-            "size": size_value,
+            "size": int(obj["size"]) if str(obj.get("size", "")).isdigit() else None,
             "driveId": obj.get("driveId"),
         }
 
+    # 1) Synthetic list of Shared drives
     if parent_id == "drive:shared":
-        response = session.get(
-            "https://www.googleapis.com/drive/v3/drives?fields=nextPageToken,drives(id,name)&pageSize=100",
-            timeout=8,
-        )
-        response.raise_for_status()
-        payload = response.json()
-        drives = payload.get("drives", []) if isinstance(payload, dict) else []
-        children = [
-            {
-                "id": f"drive:drive/{drive['id']}:root",
-                "name": drive.get("name", drive.get("id")),
+        try:
+            r = s.get(
+                "https://www.googleapis.com/drive/v3/drives"
+                "?fields=nextPageToken,drives(id,name)&pageSize=100",
+                timeout=10,
+            )
+            r.raise_for_status()
+            data = r.json()
+            children = [{
+                "id": f"drive:drive/{d['id']}:root",
+                "name": d["name"],
                 "type": "folder",
                 "mimeType": "application/vnd.google-apps.folder",
                 "has_children": True,
-                "driveId": drive.get("id"),
-            }
-            for drive in drives
-            if isinstance(drive, dict) and drive.get("id")
-        ]
-        return {"children": children, "next_page_token": payload.get("nextPageToken") if isinstance(payload, dict) else None}
+                "driveId": d["id"],
+            } for d in data.get("drives", [])]
+            return {"children": children, "next_page_token": data.get("nextPageToken")}
+        except Exception:
+            return {"children": [], "next_page_token": None}
 
+    # 2) My Drive root, plus synthetic Shared drives entry
     if parent_id == "drive:root":
         data = _files_list("'root' in parents and trashed=false")
-        files = data.get("files", []) if isinstance(data, dict) else []
-        children = [
-            {
-                "id": "drive:shared",
-                "name": "Shared drives",
-                "type": "folder",
-                "mimeType": "application/vnd.google-apps.folder",
-                "has_children": True,
-            }
-        ]
-        children.extend(_node(item) for item in files if isinstance(item, dict))
-        return {"children": children, "next_page_token": data.get("nextPageToken") if isinstance(data, dict) else None}
+        files = data.get("files", [])
+        children = [{
+            "id": "drive:shared",
+            "name": "Shared drives",
+            "type": "folder",
+            "mimeType": "application/vnd.google-apps.folder",
+            "has_children": True
+        }] + [_node(f) for f in files]
+        return {"children": children, "next_page_token": data.get("nextPageToken")}
 
+    # 3) Specific shared drive root
     if parent_id.startswith("drive:drive/") and parent_id.endswith(":root"):
-        drive_id = parent_id.split("/", 1)[1].split(":", 1)[0]
+        drive_id = parent_id.split("/")[1].split(":")[0]
         data = _files_list("'root' in parents and trashed=false", corpora="drive", drive_id=drive_id)
-        files = data.get("files", []) if isinstance(data, dict) else []
-        return {"children": [_node(item) for item in files if isinstance(item, dict)], "next_page_token": data.get("nextPageToken") if isinstance(data, dict) else None}
+        return {"children": [_node(f) for f in data.get("files", [])],
+                "next_page_token": data.get("nextPageToken")}
 
+    # 4) Generic folder children
     if parent_id.startswith("drive:"):
-        file_id = parent_id.split(":", 1)[1]
-        query = f"'{file_id}' in parents and trashed=false"
-        data = _files_list(query)
-        files = data.get("files", []) if isinstance(data, dict) else []
-        return {"children": [_node(item) for item in files if isinstance(item, dict)], "next_page_token": data.get("nextPageToken") if isinstance(data, dict) else None}
+        fid = parent_id.split(":", 1)[1]
+        data = _files_list(f"'{fid}' in parents and trashed=false")
+        return {"children": [_node(f) for f in data.get("files", [])],
+                "next_page_token": data.get("nextPageToken")}
 
     return {"children": [], "next_page_token": None}
 
-
-# ---- Source: Local (read-only listing)
+# ---------------- Local adapter ----------------
 
 def _local_children(params: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    params: { parent_id: 'local:root' | 'local:<b64-abs-path>' }
+    """
     cfg = _settings()
-    roots: List[str] = [os.path.abspath(path) for path in cfg.get("local_roots", []) if isinstance(path, str)]
+    roots: List[str] = [os.path.abspath(p) for p in cfg.get("local_roots", [])]
     parent_id = params.get("parent_id", "local:root")
 
     def _mk_node(path: str) -> Dict[str, Any]:
@@ -200,46 +222,35 @@ def _local_children(params: Dict[str, Any]) -> Dict[str, Any]:
             "name": name,
             "type": "folder" if is_dir else "file",
             "mimeType": None,
-            "has_children": bool(is_dir),
+            "has_children": is_dir,
             "size": size,
         }
 
     if parent_id == "local:root":
-        return {"children": [_mk_node(root) for root in roots], "next_page_token": None}
+        return {"children": [_mk_node(p) for p in roots], "next_page_token": None}
 
     if parent_id.startswith("local:"):
-        encoded = parent_id.split(":", 1)[1]
-        try:
-            path = os.path.abspath(_ub64u(encoded))
-        except Exception:
-            return {"children": [], "next_page_token": None}
-        allowed = False
-        for root in roots:
-            try:
-                if os.path.commonpath([path, root]) == root:
-                    allowed = True
-                    break
-            except ValueError:
-                continue
-        if not allowed:
+        path = _ub64u(parent_id.split(":", 1)[1])
+        apath = os.path.abspath(path)
+        # must stay within an allow-listed root
+        if not any(os.path.commonpath([apath, r]) == r for r in roots):
             return {"children": [], "next_page_token": None}
         try:
             entries: List[Dict[str, Any]] = []
-            with os.scandir(path) as handle:
-                for entry in handle:
-                    if entry.is_symlink():
+            with os.scandir(apath) as it:
+                for e in it:
+                    if e.is_symlink():
                         continue
-                    full_path = os.path.join(path, entry.name)
-                    entries.append(_mk_node(full_path))
-            entries.sort(key=lambda item: (item.get("type") != "folder", item.get("name", "").lower()))
+                    full = os.path.join(apath, e.name)
+                    entries.append(_mk_node(full))
+            entries.sort(key=lambda x: (x["type"] != "folder", x["name"].lower()))
             return {"children": entries, "next_page_token": None}
         except Exception:
             return {"children": [], "next_page_token": None}
 
     return {"children": [], "next_page_token": None}
 
-
-# ---- Public PluginV2 surface
+# ---------------- PluginV2 surface ----------------
 
 def describe() -> Dict[str, Any]:
     return {
@@ -250,83 +261,80 @@ def describe() -> Dict[str, Any]:
         "requires": ["oauth_refresh_token (drive) or local_roots (local)"],
     }
 
-
 def register_broker(broker) -> None:
     global _broker, _log
     _broker = broker
-    _log = broker.logger(SERVICE_ID)
-    try:
-        if _log:
+    _log = getattr(broker, "logger", lambda *_: None)(SERVICE_ID)
+    if _log and hasattr(_log, "info"):
+        try:
             _log.info("registered", service=SERVICE_ID, version=VERSION)
-    except Exception:
-        pass
-
+        except Exception:
+            pass
 
 def probe(timeout_s: float = 0.9) -> Dict[str, Any]:
     start = time.perf_counter()
     cfg = _settings()
-    enabled = cfg.get("enabled", {})
-    ok_sources: List[str] = []
-    if enabled.get("drive") and _broker is not None:
+    enabled = cfg["enabled"]
+    ok_sources = []
+    if enabled.get("drive"):
         cid, cs, rt = _google_client()
         if cid and cs and rt:
             ok_sources.append("drive")
     if enabled.get("local"):
         if cfg.get("local_roots"):
             ok_sources.append("local")
-    elapsed = int((time.perf_counter() - start) * 1000)
     status = "ok" if ok_sources else "unconfigured"
     return {
         "ok": bool(ok_sources),
         "status": status,
-        "latency_ms": elapsed,
+        "latency_ms": int((time.perf_counter() - start) * 1000),
         "details": ",".join(ok_sources) or "no sources configured",
     }
 
-
 def views() -> List[Dict[str, Any]]:
-    return [
-        {"id": "reader", "title": "Reader", "ui": "tree", "op": "children"},
-    ]
+    return [{
+        "id": "reader",
+        "title": "Reader",
+        "ui": "tree",
+        "op": "children"
+    }]
 
-
-def read(op: Optional[str], params: Dict[str, Any]) -> Dict[str, Any]:
-    op = op or "children"
-    params = params or {}
+def read(op: str, params: Dict[str, Any]) -> Dict[str, Any]:
     cfg = _settings()
-    enabled = cfg.get("enabled", {})
+    enabled = cfg["enabled"]
     source = params.get("source", "drive")
-    if op == "children":
-        if source == "drive" and enabled.get("drive"):
-            return _drive_children(params)
-        if source == "local" and enabled.get("local"):
-            return _local_children(params)
-        return {"children": [], "next_page_token": None}
-    if op == "search":
-        if source == "drive" and enabled.get("drive") and _broker is not None:
-            token = _google_access_token()
-            if not token:
-                return {"items": []}
-            query = params.get("q", "").strip()
-            if not query:
-                return {"items": []}
-            session = _broker.http_session("reader.drive")
-            session.headers.update({"Authorization": f"Bearer {token}"})
-            limit = int(params.get("limit", 25))
-            url = (
-                "https://www.googleapis.com/drive/v3/files"
-                "?q="
-                + urllib.parse.quote(f"name contains '{query}' and trashed=false")
-                + f"&pageSize={limit}"
-                + "&fields=files(id,name,mimeType,modifiedTime,size)&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives"
-            )
-            response = session.get(url, timeout=8)
-            if response.status_code != 200:
-                return {"items": []}
-            payload = response.json()
-            if not isinstance(payload, dict):
-                return {"items": []}
-            files = payload.get("files", [])
-            return {"items": files if isinstance(files, list) else []}
-        return {"items": []}
+    try:
+        if op == "children":
+            if source == "drive" and enabled.get("drive"):
+                return _drive_children(params)
+            if source == "local" and enabled.get("local"):
+                return _local_children(params)
+            return {"children": [], "next_page_token": None}
+        if op == "search":
+            if source == "drive" and enabled.get("drive"):
+                token = _google_access_token()
+                if not token:
+                    return {"items": []}
+                s = _http_session("reader.drive")
+                s.headers.update({"Authorization": f"Bearer {token}"})
+                q = params.get("q", "").strip()
+                if not q:
+                    return {"items": []}
+                url = (
+                    "https://www.googleapis.com/drive/v3/files"
+                    "?q=" + urllib.parse.quote(f"name contains '{q}' and trashed=false") +
+                    "&pageSize=" + str(int(params.get("limit", 25))) +
+                    "&fields=files(id,name,mimeType,modifiedTime,size)"
+                    "&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives"
+                )
+                try:
+                    r = s.get(url, timeout=10)
+                    r.raise_for_status()
+                    return {"items": r.json().get("files", [])}
+                except Exception:
+                    return {"items": []}
+            return {"items": []}
+    except Exception:
+        # Never leak internal errors or secrets; keep it deterministic
+        return {"children": [], "next_page_token": None} if op == "children" else {"items": []}
     return {"error": "unknown_op"}
