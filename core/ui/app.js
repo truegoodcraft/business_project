@@ -578,6 +578,50 @@
     }
   }
 
+  async function apiCatalogOpen(source, scope, options) {
+    const token = getSessionToken();
+    const response = await fetch(`/catalog/open`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Session-Token": token,
+      },
+      body: JSON.stringify({ source, scope, options }),
+    });
+    if (!response.ok) {
+      throw new Error("catalog open failed");
+    }
+    return response.json();
+  }
+
+  async function apiCatalogNext(streamId, maxItems = 500) {
+    const token = getSessionToken();
+    const response = await fetch(`/catalog/next`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Session-Token": token,
+      },
+      body: JSON.stringify({ stream_id: streamId, max_items: maxItems }),
+    });
+    if (!response.ok) {
+      throw new Error("catalog next failed");
+    }
+    return response.json();
+  }
+
+  async function apiCatalogClose(streamId) {
+    const token = getSessionToken();
+    await fetch(`/catalog/close`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Session-Token": token,
+      },
+      body: JSON.stringify({ stream_id: streamId }),
+    });
+  }
+
   function readerTreeInit() {
     const treeEl = document.getElementById("reader-tree");
     const sourceSelect = document.getElementById("reader-source");
@@ -676,8 +720,45 @@
       renderRoot();
     });
     if (indexBtn) {
-      indexBtn.addEventListener("click", () => {
-        renderRoot();
+      indexBtn.addEventListener("click", async () => {
+        if (!hasToken()) {
+          window.alert("Session token required.");
+          return;
+        }
+        const source = sourceSelect.value;
+        const scope = source === "drive" ? "allDrives" : "local_roots";
+        const provider = source === "drive" ? "google_drive" : "local_fs";
+        let streamId;
+        try {
+          const openPayload = await apiCatalogOpen(provider, scope, {
+            recursive: true,
+            page_size: 500,
+            fingerprint: false,
+          });
+          streamId = openPayload?.stream_id;
+          if (!streamId) {
+            throw new Error("Missing stream id");
+          }
+          try {
+            for (;;) {
+              const { items, done } = await apiCatalogNext(streamId, 500);
+              if (done) {
+                break;
+              }
+              if (!items || !Array.isArray(items) || !items.length) {
+                await new Promise((resolve) => setTimeout(resolve, 50));
+              }
+            }
+          } finally {
+            await apiCatalogClose(streamId);
+          }
+          window.alert("Indexing complete (metadata persisted under data/catalog/)");
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          window.alert(`Indexing failed: ${message}`);
+        } finally {
+          renderRoot();
+        }
       });
     }
     sourceSelect.addEventListener("change", () => {

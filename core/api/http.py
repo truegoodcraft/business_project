@@ -28,6 +28,8 @@ from tgc.bootstrap_fs import DATA, LOGS
 
 from pydantic import BaseModel
 
+from core.settings.reader import load_reader_settings, save_reader_settings
+
 
 def _load_session_token() -> str:
     return Path("data/session_token.txt").read_text(encoding="utf-8").strip()
@@ -60,26 +62,6 @@ def _check_state(state_b64: str) -> bool:
         return hmac.compare_digest(sig, expected)
     except Exception:
         return False
-
-
-READER_SETTINGS_PATH = Path("data/settings_reader.json")
-
-
-def _load_reader_settings() -> dict:
-    if READER_SETTINGS_PATH.exists():
-        try:
-            return json.loads(READER_SETTINGS_PATH.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-    return {
-        "enabled": {"drive": True, "local": True, "notion": False, "smb": False},
-        "local_roots": [],
-    }
-
-
-def _save_reader_settings(settings: dict) -> None:
-    READER_SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    READER_SETTINGS_PATH.write_text(json.dumps(settings, indent=2), encoding="utf-8")
 
 
 APP = FastAPI(title="BUS Core Alpha", version=VERSION)
@@ -170,6 +152,12 @@ def require_token_ctx(
 
 protected = APIRouter(dependencies=[Depends(require_token_ctx)])
 oauth = APIRouter()
+
+
+def _broker():
+    from core.runtime import get_broker
+
+    return get_broker()
 
 
 def _with_run_id(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -282,12 +270,12 @@ def settings_google_delete(response: Response) -> Dict[str, Any]:
 
 @protected.get("/settings/reader", response_model=None)
 def get_reader_settings() -> Dict[str, Any]:
-    return _load_reader_settings()
+    return load_reader_settings()
 
 
 @protected.post("/settings/reader", response_model=None)
 def post_reader_settings(payload: Dict[str, Any] = Body(default={})) -> Dict[str, Any]:  # type: ignore[assignment]
-    current = _load_reader_settings()
+    current = load_reader_settings()
     enabled_payload = current.get("enabled", {})
     local_roots_payload = current.get("local_roots", [])
     if isinstance(payload, dict):
@@ -298,8 +286,38 @@ def post_reader_settings(payload: Dict[str, Any] = Body(default={})) -> Dict[str
         if isinstance(local_roots_candidate, list):
             local_roots_payload = [str(item) for item in local_roots_candidate if isinstance(item, str)]
     settings_payload = {"enabled": enabled_payload, "local_roots": local_roots_payload}
-    _save_reader_settings(settings_payload)
+    save_reader_settings(settings_payload)
     return {"ok": True, "settings": settings_payload}
+
+
+@protected.post("/catalog/open", response_model=None)
+def catalog_open(body: Dict[str, Any]):
+    src = body.get("source") if isinstance(body, dict) else None
+    scope = body.get("scope") if isinstance(body, dict) else None
+    opts = body.get("options") if isinstance(body, dict) else None
+    if not src or not scope:
+        raise HTTPException(status_code=400, detail="missing source/scope")
+    options = opts if isinstance(opts, dict) else {}
+    return _broker().catalog_open(src, scope, options)
+
+
+@protected.post("/catalog/next", response_model=None)
+def catalog_next(body: Dict[str, Any]):
+    payload = body if isinstance(body, dict) else {}
+    sid = payload.get("stream_id")
+    max_items = int(payload.get("max_items", 500) or 500)
+    if not sid:
+        raise HTTPException(status_code=400, detail="missing stream_id")
+    return _broker().catalog_next(str(sid), max_items)
+
+
+@protected.post("/catalog/close", response_model=None)
+def catalog_close(body: Dict[str, Any]):
+    payload = body if isinstance(body, dict) else {}
+    sid = payload.get("stream_id")
+    if not sid:
+        raise HTTPException(status_code=400, detail="missing stream_id")
+    return _broker().catalog_close(str(sid))
 
 
 @oauth.post("/oauth/google/start", response_model=None)

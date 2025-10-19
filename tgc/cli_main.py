@@ -9,8 +9,11 @@ from datetime import UTC, datetime
 from typing import Dict, List, Optional
 
 from core.bus.models import CommandContext
-from core.conn_broker import ConnectionBroker
+from core.broker.runtime import Broker
+from core.capabilities import registry
 from core.plugins_alpha import discover_alpha_plugins as _discover_alpha_plugins
+from core.secrets import Secrets
+from core.settings.reader import load_reader_settings
 from tgc.bootstrap import bootstrap_controller
 from tgc.bootstrap_fs import ensure_first_run
 
@@ -171,7 +174,12 @@ def alpha_boot(args):
     controller = bootstrap_controller()
     run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     context = _mk_context(controller, run_id, dry_run=bool(getattr(args, "dry_run", False)))
-    broker = ConnectionBroker(controller)
+    broker = Broker(
+        Secrets,
+        lambda name: logging.getLogger(f"plugins.{name}" if name else "plugins"),
+        registry,
+        load_reader_settings,
+    )
     context.extras["conn_broker"] = broker
 
     plugins_instances = _discover_alpha_plugins()
