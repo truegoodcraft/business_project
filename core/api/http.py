@@ -231,10 +231,11 @@ def settings_google_delete(
 
 @APP.post("/oauth/google/start", response_model=None)
 def oauth_google_start(
-    body: GoogleStartIn | None = None,
+    body: GoogleStartIn | None = Body(default=None),
     _ctx=Depends(require_token_ctx),
 ):
     _prune_oauth_states()
+    payload = body or GoogleStartIn()
     try:
         client_id, _ = _load_google_client()
     except ValueError:
@@ -243,8 +244,8 @@ def oauth_google_start(
         return error_response
 
     redirect_uri = "http://127.0.0.1:8765/oauth/google/callback"
-    if body and body.redirect:
-        candidate = str(body.redirect).strip()
+    if payload.redirect:
+        candidate = str(payload.redirect).strip()
         if candidate:
             redirect_uri = candidate
 

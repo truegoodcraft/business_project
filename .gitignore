@@ -7,6 +7,8 @@ __pycache__/
 consents.json
 plugins/*-plugin/plugin.secrets.local.env
 plugins/**/plugin.secrets.local.env
+plugins_user/*
+!plugins_user/.gitkeep
 reports/
 !reports/branding/
 !reports/branding/**
