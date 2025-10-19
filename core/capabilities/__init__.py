@@ -6,6 +6,8 @@ from .api import (
     resolve,
     emit_manifest,
     emit_manifest_async,
+    update_from_probe,
+    export,
     meta,
 )
 
@@ -17,5 +19,7 @@ __all__ = [
     "resolve",
     "emit_manifest",
     "emit_manifest_async",
+    "update_from_probe",
+    "export",
     "meta",
 ]

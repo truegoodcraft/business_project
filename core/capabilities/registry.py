@@ -48,6 +48,44 @@ class CapabilityRegistry:
         with self._lock:
             return list(self._caps.values())
 
+    def update_from_probe(
+        self,
+        service_id: str,
+        capabilities: List[str],
+        probe: Dict[str, Any],
+    ) -> None:
+        allowed = bool(probe.get("ok"))
+        status = "ready" if allowed else "blocked"
+        reason = None
+        if not allowed:
+            for key in ("status", "detail", "error"):
+                value = probe.get(key)
+                if value:
+                    reason = str(value)
+                    break
+            if reason is None:
+                reason = "probe_failed"
+        meta_probe = {k: v for k, v in probe.items() if k != "ok"}
+        for capability in capabilities:
+            if not isinstance(capability, str):
+                continue
+            policy = {"allowed": allowed, "reason": reason if not allowed else None}
+            meta = {"probe": meta_probe}
+            self.upsert(capability, provider=service_id, status=status, policy=policy, meta=meta)
+        self.emit_manifest_async()
+
+    def export(self) -> Dict[str, Dict[str, Any]]:
+        with self._lock:
+            return {
+                name: {
+                    "provider": cap.provider,
+                    "status": cap.status,
+                    "policy": dict(cap.policy),
+                    "meta": dict(cap.meta),
+                }
+                for name, cap in self._caps.items()
+            }
+
     def _sign(self, payload: bytes) -> str:
         key = KEY_PATH.read_bytes()
         return hmac.new(key, payload, hashlib.sha256).hexdigest()

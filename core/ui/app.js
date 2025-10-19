@@ -4,6 +4,7 @@
   let currentToken = "";
   let googleRowInitialized = false;
   let settingsInitialized = false;
+  let refreshOutputsPanel = null;
 
   const tokenInput = document.getElementById("token-input");
   const saveTokenBtn = document.getElementById("save-token");
@@ -67,6 +68,13 @@
 
   function hasToken() {
     return Boolean(currentToken);
+  }
+
+  function getSessionToken() {
+    if (!currentToken) {
+      throw new Error("Session token required");
+    }
+    return currentToken;
   }
 
   function tokenHeader() {
@@ -469,6 +477,9 @@
     refreshPlugins();
     refreshCapabilities();
     refreshLogs();
+    if (typeof refreshOutputsPanel === "function") {
+      refreshOutputsPanel();
+    }
   }
 
   async function gdRevoke() {
@@ -545,6 +556,138 @@
     }
   }
 
+  async function apiPluginRead(service, body) {
+    const token = getSessionToken();
+    const response = await fetch(`/plugins/${service}/read`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Session-Token": token,
+      },
+      body: JSON.stringify(body || {}),
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || "Plugin read failed");
+    }
+    try {
+      return await response.json();
+    } catch (error) {
+      return {};
+    }
+  }
+
+  function readerTreeInit() {
+    const treeEl = document.getElementById("reader-tree");
+    const sourceSelect = document.getElementById("reader-source");
+    const refreshBtn = document.getElementById("outputs-refresh");
+    const indexBtn = document.getElementById("reader-index-all");
+    if (!treeEl || !sourceSelect || !refreshBtn) {
+      return;
+    }
+
+    async function loadChildren(nodeId, source) {
+      const data = await apiPluginRead("reader", {
+        op: "children",
+        params: { source, parent_id: nodeId },
+      });
+      const children = data && Array.isArray(data.children) ? data.children : [];
+      return children;
+    }
+
+    function renderList(parentEl, nodes, source) {
+      const listEl = document.createElement("ul");
+      nodes.forEach((node) => {
+        if (!node || typeof node !== "object") {
+          return;
+        }
+        const li = document.createElement("li");
+        const row = document.createElement("div");
+        row.className = "node";
+        const toggle = document.createElement("span");
+        toggle.className = "toggle";
+        toggle.textContent = node.has_children ? "▸" : "•";
+        row.appendChild(toggle);
+        const label = document.createElement("span");
+        label.textContent = node.name || node.id;
+        row.appendChild(label);
+        li.appendChild(row);
+        if (node.has_children) {
+          let expanded = false;
+          let childList = null;
+          toggle.addEventListener("click", async () => {
+            if (!expanded) {
+              toggle.textContent = "▾";
+              try {
+                const children = await loadChildren(node.id, source);
+                if (childList) {
+                  childList.remove();
+                }
+                childList = renderList(li, children, source);
+                expanded = true;
+              } catch (error) {
+                toggle.textContent = "▸";
+                const message = error instanceof Error ? error.message : String(error);
+                li.querySelectorAll(".tree-error").forEach((el) => el.remove());
+                const errNode = document.createElement("div");
+                errNode.className = "tree-error";
+                errNode.textContent = message;
+                li.appendChild(errNode);
+              }
+            } else {
+              if (childList) {
+                childList.remove();
+                childList = null;
+              }
+              toggle.textContent = "▸";
+              expanded = false;
+            }
+          });
+        }
+        listEl.appendChild(li);
+      });
+      parentEl.appendChild(listEl);
+      return listEl;
+    }
+
+    async function renderRoot() {
+      if (!hasToken()) {
+        treeEl.textContent = "Session token required.";
+        return;
+      }
+      treeEl.textContent = "Loading…";
+      const source = sourceSelect.value;
+      const rootId = source === "local" ? "local:root" : "drive:root";
+      try {
+        const nodes = await loadChildren(rootId, source);
+        treeEl.innerHTML = "";
+        if (!nodes.length) {
+          treeEl.textContent = "No entries.";
+          return;
+        }
+        renderList(treeEl, nodes, source);
+      } catch (error) {
+        treeEl.textContent = error instanceof Error ? error.message : String(error);
+      }
+    }
+
+    refreshBtn.addEventListener("click", () => {
+      renderRoot();
+    });
+    if (indexBtn) {
+      indexBtn.addEventListener("click", () => {
+        renderRoot();
+      });
+    }
+    sourceSelect.addEventListener("change", () => {
+      renderRoot();
+    });
+
+    refreshOutputsPanel = renderRoot;
+    renderRoot();
+  }
+
   loadToken();
   attachEvents();
   if (currentToken) {
@@ -558,5 +701,6 @@
       renderGoogleHealthState("Missing token", false);
       renderGsStatus("Not configured");
     }
+    readerTreeInit();
   });
 })();
