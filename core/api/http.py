@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import json
 import secrets
 import time
@@ -8,7 +11,7 @@ import sys
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlencode
 
-from fastapi import Body, Depends, FastAPI, Header, HTTPException, Request, Response
+from fastapi import Body, Depends, FastAPI, Header, HTTPException, Request, Response, APIRouter
 from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -24,6 +27,40 @@ from core.version import VERSION
 from tgc.bootstrap_fs import DATA, LOGS
 
 from pydantic import BaseModel
+
+
+def _load_session_token() -> str:
+    return Path("data/session_token.txt").read_text(encoding="utf-8").strip()
+
+
+def _b64u_encode(b: bytes) -> str:
+    return base64.urlsafe_b64encode(b).decode().rstrip("=")
+
+
+def _b64u_decode(s: str) -> bytes:
+    pad = "=" * (-len(s) % 4)
+    return base64.urlsafe_b64decode(s + pad)
+
+
+def _mk_state() -> str:
+    """
+    Create a per-flow state: base64url(nonce . hmac_sha256(session_token, nonce))
+    """
+
+    nonce = secrets.token_urlsafe(16).encode()
+    sig = hmac.new(_load_session_token().encode(), nonce, hashlib.sha256).digest()
+    return _b64u_encode(nonce + b"." + sig)
+
+
+def _check_state(state_b64: str) -> bool:
+    try:
+        blob = _b64u_decode(state_b64)
+        nonce, sig = blob.split(b".", 1)
+        expected = hmac.new(_load_session_token().encode(), nonce, hashlib.sha256).digest()
+        return hmac.compare_digest(sig, expected)
+    except Exception:
+        return False
+
 
 APP = FastAPI(title="BUS Core Alpha", version=VERSION)
 LICENSE_NAME = "PolyForm-Noncommercial-1.0.0"
@@ -111,6 +148,10 @@ def require_token_ctx(
     return {"token": x_session_token}
 
 
+protected = APIRouter(dependencies=[Depends(require_token_ctx)])
+oauth = APIRouter()
+
+
 def _with_run_id(payload: Dict[str, Any]) -> Dict[str, Any]:
     payload = dict(payload)
     payload.setdefault("run_id", RUN_ID)
@@ -161,12 +202,8 @@ def _mask_secret(value: Optional[str]) -> str | None:
     return "..." + value[-4:]
 
 
-@APP.get("/settings/google", response_model=GoogleSettingsOut)
-def settings_google_get(
-    response: Response,
-    x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token"),
-) -> GoogleSettingsOut:
-    _require_token(x_session_token)
+@protected.get("/settings/google", response_model=GoogleSettingsOut)
+def settings_google_get(response: Response) -> GoogleSettingsOut:
     response.headers["Cache-Control"] = "no-store"
 
     client_id = Secrets.get("google_drive", "client_id") or ""
@@ -185,13 +222,11 @@ def settings_google_get(
     )
 
 
-@APP.post("/settings/google")
+@protected.post("/settings/google")
 def settings_google_post(
     payload: GoogleSettingsIn,
     response: Response,
-    x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token"),
 ) -> Dict[str, Any]:
-    _require_token(x_session_token)
     response.headers["Cache-Control"] = "no-store"
 
     updated: List[str] = []
@@ -211,12 +246,8 @@ def settings_google_post(
     return {"ok": True}
 
 
-@APP.delete("/settings/google")
-def settings_google_delete(
-    response: Response,
-    x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token"),
-) -> Dict[str, Any]:
-    _require_token(x_session_token)
+@protected.delete("/settings/google")
+def settings_google_delete(response: Response) -> Dict[str, Any]:
     response.headers["Cache-Control"] = "no-store"
 
     for key in ("client_id", "client_secret", "oauth_refresh"):
@@ -229,7 +260,7 @@ def settings_google_delete(
     return {"ok": True}
 
 
-@APP.post("/oauth/google/start", response_model=None)
+@oauth.post("/oauth/google/start", response_model=None)
 def oauth_google_start(
     body: GoogleStartIn | None = Body(default=None),
     _ctx=Depends(require_token_ctx),
@@ -249,7 +280,7 @@ def oauth_google_start(
         if candidate:
             redirect_uri = candidate
 
-    state = secrets.token_urlsafe(24)
+    state = _mk_state()
     _OAUTH_STATES[state] = {
         "redirect": redirect_uri,
         "expires_at": time.time() + 600,
@@ -271,28 +302,28 @@ def oauth_google_start(
     return response
 
 
-@APP.get("/oauth/google/callback", response_model=None)
-def oauth_google_callback(
-    code: str,
-    state: str,
-    _ctx=Depends(require_token_ctx),
-):
+@oauth.get("/oauth/google/callback", response_model=None)
+def oauth_google_callback(request: Request):
+    code = request.query_params.get("code")
+    state = request.query_params.get("state")
+    if not state or not _check_state(state):
+        raise HTTPException(status_code=401, detail="Invalid session token")
+
     if not code:
-        raise HTTPException(status_code=400, detail="missing_code")
-    if not state:
-        raise HTTPException(status_code=400, detail="missing_state")
+        raise HTTPException(status_code=400, detail="Missing code")
 
     _prune_oauth_states()
     meta = _OAUTH_STATES.pop(state, None)
     if not meta:
-        raise HTTPException(status_code=400, detail="invalid_state")
+        raise HTTPException(status_code=401, detail="Invalid session token")
 
     try:
         client_id, client_secret = _load_google_client()
     except ValueError:
         raise HTTPException(status_code=400, detail="missing_client") from None
 
-    redirect_uri = str(meta.get("redirect") or "http://127.0.0.1:8765/oauth/google/callback")
+    default_redirect = "http://127.0.0.1:8765/oauth/google/callback"
+    redirect_uri = str(meta.get("redirect") or default_redirect)
     data = {
         "code": code,
         "client_id": client_id,
@@ -324,7 +355,7 @@ def oauth_google_callback(
     return RedirectResponse(url="/ui?connected=google_drive", status_code=302)
 
 
-@APP.post("/oauth/google/revoke", response_model=None)
+@oauth.post("/oauth/google/revoke", response_model=None)
 def oauth_google_revoke(_ctx=Depends(require_token_ctx)):
     token = Secrets.get("google_drive", "oauth_refresh")
     if token:
@@ -345,7 +376,7 @@ def oauth_google_revoke(_ctx=Depends(require_token_ctx)):
     return response
 
 
-@APP.get("/oauth/google/status", response_model=None)
+@oauth.get("/oauth/google/status", response_model=None)
 def oauth_google_status(_ctx=Depends(require_token_ctx)):
     token = Secrets.get("google_drive", "oauth_refresh")
     connected = bool(token)
@@ -354,26 +385,22 @@ def oauth_google_status(_ctx=Depends(require_token_ctx)):
     return response
 
 
-@APP.get("/health")
-def health(x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token")) -> Dict[str, Any]:
-    _require_token(x_session_token)
+@protected.get("/health")
+def health() -> Dict[str, Any]:
     return _with_run_id({"ok": True, "version": VERSION})
 
 
-@APP.get("/plugins")
-def plugins(x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token")) -> Dict[str, Any]:
-    _require_token(x_session_token)
+@protected.get("/plugins")
+def plugins() -> Dict[str, Any]:
     core = _require_core()
     out = core.plugin_list()
     return _with_run_id({"plugins": out})
 
 
-@APP.post("/probe")
+@protected.post("/probe")
 def probe(
     body: Any = Body(default=None),
-    x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token"),
 ) -> Dict[str, Any]:
-    _require_token(x_session_token)
     core = _require_core()
     services: List[str]
     if body is None:
@@ -393,20 +420,17 @@ def probe(
     return _with_run_id(payload)
 
 
-@APP.get("/capabilities")
-def get_capabilities(x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token")) -> Dict[str, Any]:
-    _require_token(x_session_token)
+@protected.get("/capabilities")
+def get_capabilities() -> Dict[str, Any]:
     manifest = registry.emit_manifest_async()
     manifest.setdefault("license", {"core": LICENSE_NAME, "core_url": LICENSE_URL})
     return _with_run_id(manifest)
 
 
-@APP.post("/execTransform")
+@protected.post("/execTransform")
 def exec_transform(
     body: Dict[str, Any] = Body(...),
-    x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token"),
 ) -> Dict[str, Any]:
-    _require_token(x_session_token)
     core = _require_core()
     plugin = str(body.get("plugin") or "").strip()
     fn = str(body.get("fn") or "").strip()
@@ -436,12 +460,10 @@ def exec_transform(
     return _with_run_id({"proposal": proposal, "policy": policy_block})
 
 
-@APP.post("/policy.simulate")
+@protected.post("/policy.simulate")
 def policy_simulate(
     body: Dict[str, Any] = Body(...),
-    x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token"),
 ) -> Dict[str, Any]:
-    _require_token(x_session_token)
     core = _require_core()
     intent = str(body.get("intent") or "").strip()
     metadata = body.get("metadata") or {}
@@ -453,12 +475,10 @@ def policy_simulate(
     return _with_run_id(payload)
 
 
-@APP.post("/nodes.manifest.sync")
+@protected.post("/nodes.manifest.sync")
 def manifest_sync(
     body: Dict[str, Any] = Body(...),
-    x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token"),
 ) -> Dict[str, Any]:
-    _require_token(x_session_token)
     manifest = body.get("manifest")
     if not isinstance(manifest, dict):
         raise HTTPException(status_code=400, detail="invalid_manifest")
@@ -467,23 +487,25 @@ def manifest_sync(
     return _with_run_id({"ok": True})
 
 
-@APP.get("/transparency.report")
-def transparency_report(x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token")) -> Dict[str, Any]:
-    _require_token(x_session_token)
+@protected.get("/transparency.report")
+def transparency_report() -> Dict[str, Any]:
     core = _require_core()
     report = core.transparency_report()
     report["manifest_path"] = str(MANIFEST_PATH)
     return _with_run_id(report)
 
 
-@APP.get("/logs")
-def logs(x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token")) -> Dict[str, Any]:
-    _require_token(x_session_token)
+@protected.get("/logs")
+def logs() -> Dict[str, Any]:
     path = LOG_FILE or (LOGS / "core.log")
     if not path.exists():
         return _with_run_id({"logs": []})
     lines = path.read_text(encoding="utf-8").splitlines()[-200:]
     return _with_run_id({"logs": lines})
+
+
+APP.include_router(oauth)
+APP.include_router(protected)
 
 
 def build_app():
