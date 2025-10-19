@@ -108,6 +108,49 @@ button:disabled {
   display: none;
 }
 
+.tab-bar {
+  display: flex;
+  gap: 0.5rem;
+  margin: 1.5rem clamp(1rem, 3vw, 2.5rem) 0;
+  padding: 0 clamp(1rem, 3vw, 2.5rem);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.tab-button {
+  background: transparent;
+  color: inherit;
+  border: none;
+  border-bottom: 3px solid transparent;
+  border-radius: 6px 6px 0 0;
+  padding: 0.6rem 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tab-button:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.tab-button.active {
+  border-bottom-color: var(--accent);
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--accent);
+}
+
+@media (prefers-color-scheme: dark) {
+  .tab-bar {
+    border-bottom-color: rgba(255, 255, 255, 0.12);
+  }
+  .tab-button:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+  .tab-button.active {
+    background: rgba(255, 255, 255, 0.1);
+    color: #90c2ff;
+  }
+}
+
 .panels {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -212,16 +255,27 @@ button:disabled {
 .status-pill {
   display: inline-flex;
   align-items: center;
-  padding: 0.15rem 0.6rem;
+  padding: 0.2rem 0.65rem;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.08);
   font-weight: 600;
+  font-size: 0.85rem;
+  background: rgba(0, 0, 0, 0.08);
   color: rgba(60, 60, 60, 0.85);
 }
 
 .status-pill.ok {
-  color: #0a8754;
-  background: rgba(10, 135, 84, 0.12);
+  background: #1f9d55;
+  color: #ffffff;
+}
+
+.status-pill.warn {
+  background: #b7791f;
+  color: #ffffff;
+}
+
+.status-pill.bad {
+  background: #c53030;
+  color: #ffffff;
 }
 
 .btn {
@@ -270,4 +324,59 @@ button:disabled {
     border-color: rgba(255, 255, 255, 0.25);
     color: inherit;
   }
+}
+
+.settings-panels {
+  grid-template-columns: minmax(260px, 460px);
+  justify-content: flex-start;
+}
+
+.settings-card {
+  gap: 1rem;
+}
+
+.settings-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.settings-subtitle {
+  margin: 0.25rem 0 0;
+  font-size: 0.9rem;
+  color: rgba(60, 60, 60, 0.7);
+}
+
+@media (prefers-color-scheme: dark) {
+  .settings-subtitle {
+    color: rgba(220, 220, 220, 0.7);
+  }
+}
+
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.form-field label {
+  font-weight: 600;
+}
+
+.field-note {
+  font-size: 0.8rem;
+  color: rgba(60, 60, 60, 0.7);
+}
+
+@media (prefers-color-scheme: dark) {
+  .field-note {
+    color: rgba(220, 220, 220, 0.6);
+  }
+}
+
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
 }
