@@ -8,7 +8,7 @@ import sys
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlencode
 
-from fastapi import Body, FastAPI, Header, HTTPException, Request, Response
+from fastapi import Body, Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -104,6 +104,13 @@ def _require_token(token: Optional[str]) -> None:
         raise HTTPException(status_code=401, detail="Invalid session token")
 
 
+def require_token_ctx(
+    x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token"),
+) -> Dict[str, Optional[str]]:
+    _require_token(x_session_token)
+    return {"token": x_session_token}
+
+
 def _with_run_id(payload: Dict[str, Any]) -> Dict[str, Any]:
     payload = dict(payload)
     payload.setdefault("run_id", RUN_ID)
@@ -130,6 +137,10 @@ def _load_google_client() -> tuple[str, str]:
     if not client_id or not client_secret:
         raise ValueError("missing_client")
     return client_id, client_secret
+
+
+class GoogleStartIn(BaseModel):
+    redirect: str | None = None
 
 
 class GoogleSettingsIn(BaseModel):
@@ -218,13 +229,11 @@ def settings_google_delete(
     return {"ok": True}
 
 
-@APP.post("/oauth/google/start")
+@APP.post("/oauth/google/start", response_model=None)
 def oauth_google_start(
-    response: Response,
-    body: Optional[Dict[str, Any]] = Body(default=None),
-    x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token"),
-) -> Dict[str, Any] | JSONResponse:
-    _require_token(x_session_token)
+    body: GoogleStartIn | None = None,
+    _ctx=Depends(require_token_ctx),
+):
     _prune_oauth_states()
     try:
         client_id, _ = _load_google_client()
@@ -234,8 +243,8 @@ def oauth_google_start(
         return error_response
 
     redirect_uri = "http://127.0.0.1:8765/oauth/google/callback"
-    if isinstance(body, dict):
-        candidate = str(body.get("redirect") or "").strip()
+    if body and body.redirect:
+        candidate = str(body.redirect).strip()
         if candidate:
             redirect_uri = candidate
 
@@ -256,12 +265,17 @@ def oauth_google_start(
         "state": state,
     }
     auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(params)
+    response = JSONResponse({"auth_url": auth_url, "state": state})
     response.headers["Cache-Control"] = "no-store"
-    return {"auth_url": auth_url, "state": state}
+    return response
 
 
-@APP.get("/oauth/google/callback")
-def oauth_google_callback(code: str = "", state: str = "") -> RedirectResponse:
+@APP.get("/oauth/google/callback", response_model=None)
+def oauth_google_callback(
+    code: str,
+    state: str,
+    _ctx=Depends(require_token_ctx),
+):
     if not code:
         raise HTTPException(status_code=400, detail="missing_code")
     if not state:
@@ -309,11 +323,8 @@ def oauth_google_callback(code: str = "", state: str = "") -> RedirectResponse:
     return RedirectResponse(url="/ui?connected=google_drive", status_code=302)
 
 
-@APP.post("/oauth/google/revoke")
-def oauth_google_revoke(
-    x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token"),
-) -> Dict[str, Any]:
-    _require_token(x_session_token)
+@APP.post("/oauth/google/revoke", response_model=None)
+def oauth_google_revoke(_ctx=Depends(require_token_ctx)):
     token = Secrets.get("google_drive", "oauth_refresh")
     if token:
         try:
@@ -328,17 +339,18 @@ def oauth_google_revoke(
             Secrets.delete("google_drive", "oauth_refresh")
         except SecretError:
             pass
-    return {"ok": True}
+    response = JSONResponse({"ok": True})
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
-@APP.get("/oauth/google/status")
-def oauth_google_status(
-    x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token"),
-) -> Dict[str, Any]:
-    _require_token(x_session_token)
+@APP.get("/oauth/google/status", response_model=None)
+def oauth_google_status(_ctx=Depends(require_token_ctx)):
     token = Secrets.get("google_drive", "oauth_refresh")
     connected = bool(token)
-    return {"connected": connected}
+    response = JSONResponse({"connected": connected})
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @APP.get("/health")
