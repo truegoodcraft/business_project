@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import requests  # assumed available; if not, please `pip install requests`
 
 SERVICE_ID = "reader"
-VERSION = "0.1.1"  # bumped
+VERSION = "0.1.2"  # bumped
 
 _broker = None
 _log = None
@@ -58,15 +58,27 @@ def _settings() -> Dict[str, Any]:
 # ---------------- Google helpers ----------------
 
 def _google_client() -> Tuple[Optional[str], Optional[str], Optional[str]]:
-    # Try a few common namespaces for compatibility
-    cid = (_get_secret("google_oauth", "client_id")
-           or _get_secret("google", "client_id")
-           or _get_secret("oauth.google", "client_id"))
-    cs = (_get_secret("google_oauth", "client_secret")
-          or _get_secret("google", "client_secret")
-          or _get_secret("oauth.google", "client_secret"))
-    rt = (_get_secret("google_drive", "refresh_token")
-          or _get_secret("google", "refresh_token"))
+    get = getattr(_broker, "get_secret", lambda *_: None)
+    # client id / secret across common namespaces
+    cid = (
+        get("google_oauth", "client_id")
+        or get("oauth.google", "client_id")
+        or get("google", "client_id")
+        or get("google_drive", "client_id")
+    )
+    cs = (
+        get("google_oauth", "client_secret")
+        or get("oauth.google", "client_secret")
+        or get("google", "client_secret")
+        or get("google_drive", "client_secret")
+    )
+    # refresh token across common namespaces (drive keeps it most often)
+    rt = (
+        get("google_drive", "refresh_token")
+        or get("oauth.google", "refresh_token")
+        or get("google_oauth", "refresh_token")
+        or get("google", "refresh_token")
+    )
     return cid, cs, rt
 
 def _google_access_token() -> Optional[str]:
