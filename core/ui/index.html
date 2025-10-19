@@ -111,11 +111,19 @@
             </div>
           </div>
           <div class="outputs-controls">
-            <label for="reader-source">Source</label>
-            <select id="reader-source">
-              <option value="drive">Drive</option>
-              <option value="local">Local</option>
-            </select>
+            <div style="margin:8px 0;">
+              <div id="reader-status" class="muted" style="margin-bottom:6px;">Checking sources…</div>
+              <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <label>Source:</label>
+                <select id="reader-source">
+                  <option value="drive">Drive</option>
+                  <option value="local">Local</option>
+                </select>
+                <button id="reader-fullpull" class="btn">Start Full Pull</button>
+                <button id="reader-cancelpull" class="btn btn-secondary" disabled>Cancel</button>
+                <span id="reader-progress" class="muted"></span>
+              </div>
+            </div>
             <button id="reader-index-all" type="button" class="btn">Index All</button>
           </div>
           <div id="reader-tree" class="tree"></div>

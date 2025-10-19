@@ -769,6 +769,107 @@
     renderRoot();
   }
 
+  function readerOutputsInit() {
+    const statusEl = document.getElementById("reader-status");
+    const sourceSel = document.getElementById("reader-source");
+    const btnFull = document.getElementById("reader-fullpull");
+    const btnCancel = document.getElementById("reader-cancelpull");
+    const progEl = document.getElementById("reader-progress");
+
+    if (!statusEl || !btnFull || !btnCancel || !progEl) {
+      return;
+    }
+
+    // --- Auto-check on load ---
+    (async () => {
+      try {
+        const s = await apiPluginRead("reader", { op: "autocheck", params: {} });
+        const bits = [];
+        if (s.drive) {
+          const ok = s.drive.configured && s.drive.can_exchange_token;
+          bits.push(`Drive: ${ok ? "ready" : s.drive.configured ? "auth error" : "not configured"}`);
+        }
+        if (s.local) {
+          bits.push(`Local: ${s.local.configured ? "configured" : "not configured"}`);
+        }
+        statusEl.textContent = bits.join(" • ");
+      } catch (error) {
+        statusEl.textContent = "Status: unavailable";
+      }
+    })();
+
+    // --- Full pull state ---
+    let pulling = false;
+    let streamId = null;
+    let total = 0;
+
+    async function doFullPull() {
+      pulling = true;
+      total = 0;
+      btnFull.disabled = true;
+      btnCancel.disabled = true; // enabled after open succeeds
+      progEl.textContent = "Opening…";
+
+      try {
+        const src = sourceSel ? sourceSel.value : "drive";
+        const opened = await apiPluginRead("reader", {
+          op: "start_full_pull",
+          params: { source: src, recursive: true, page_size: 500 },
+        });
+        streamId = opened.stream_id;
+        if (!streamId) {
+          throw new Error("no stream");
+        }
+
+        btnCancel.disabled = false;
+
+        while (pulling) {
+          const page = await apiCatalogNext(streamId, 500);
+          const n = (page.items && page.items.length) || 0;
+          total += n;
+          progEl.textContent = `Fetched ${total} items…`;
+          if (page.done) {
+            progEl.textContent = `Done. Indexed ${total} items.`;
+            break;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+      } catch (error) {
+        progEl.textContent = "Full pull failed";
+      } finally {
+        try {
+          if (streamId) {
+            await apiCatalogClose(streamId);
+          }
+        } catch (closeError) {
+          // ignore
+        }
+        btnFull.disabled = false;
+        btnCancel.disabled = true;
+        pulling = false;
+        streamId = null;
+      }
+    }
+
+    btnFull.onclick = () => {
+      if (pulling) {
+        return;
+      }
+      if (!hasToken()) {
+        window.alert("Session token required.");
+        return;
+      }
+      doFullPull();
+    };
+    btnCancel.onclick = () => {
+      if (!pulling) {
+        return;
+      }
+      pulling = false;
+      progEl.textContent = "Cancelling…";
+    };
+  }
+
   loadToken();
   attachEvents();
   if (currentToken) {
@@ -782,6 +883,7 @@
       renderGoogleHealthState("Missing token", false);
       renderGsStatus("Not configured");
     }
+    readerOutputsInit();
     readerTreeInit();
   });
 })();
