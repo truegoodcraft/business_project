@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlencode
 
-from fastapi import Body, FastAPI, Header, HTTPException, Request
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi import Body, FastAPI, Header, HTTPException, Request, Response
+from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 import requests
@@ -18,9 +18,11 @@ from core.capabilities.registry import MANIFEST_PATH
 from core.runtime.core_alpha import CoreAlpha
 from core.runtime.policy import PolicyDecision
 from core.runtime.probe import PROBE_TIMEOUT_SEC
-from core.secrets.manager import SecretError, Secrets
+from core.secrets import SecretError, Secrets
 from core.version import VERSION
 from tgc.bootstrap_fs import DATA, LOGS
+
+from pydantic import BaseModel
 
 APP = FastAPI(title="BUS Core Alpha", version=VERSION)
 APP.mount("/ui/static", StaticFiles(directory="core/ui"), name="ui-static")
@@ -105,17 +107,106 @@ def _load_google_client() -> tuple[str, str]:
     return client_id, client_secret
 
 
-@APP.post("/oauth/google/start")
-def oauth_google_start(
-    body: Optional[Dict[str, Any]] = Body(default=None),
+class GoogleSettingsIn(BaseModel):
+    client_id: str | None = None
+    client_secret: str | None = None
+
+
+class GoogleSettingsOut(BaseModel):
+    connected: bool
+    has_client_id: bool
+    client_id_mask: str | None
+    has_client_secret: bool
+
+
+def _mask_secret(value: Optional[str]) -> str | None:
+    if not value:
+        return None
+    return "..." + value[-4:]
+
+
+@APP.get("/settings/google", response_model=GoogleSettingsOut)
+def settings_google_get(
+    response: Response,
+    x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token"),
+) -> GoogleSettingsOut:
+    _require_token(x_session_token)
+    response.headers["Cache-Control"] = "no-store"
+
+    client_id = Secrets.get("google_drive", "client_id") or ""
+    client_secret = Secrets.get("google_drive", "client_secret") or ""
+    refresh_token = Secrets.get("google_drive", "oauth_refresh") or ""
+
+    has_client_id = bool(client_id)
+    has_client_secret = bool(client_secret)
+    connected = bool(refresh_token)
+
+    return GoogleSettingsOut(
+        connected=connected,
+        has_client_id=has_client_id,
+        client_id_mask=_mask_secret(client_id) if has_client_id else None,
+        has_client_secret=has_client_secret,
+    )
+
+
+@APP.post("/settings/google")
+def settings_google_post(
+    payload: GoogleSettingsIn,
+    response: Response,
     x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token"),
 ) -> Dict[str, Any]:
+    _require_token(x_session_token)
+    response.headers["Cache-Control"] = "no-store"
+
+    updated: List[str] = []
+    try:
+        if payload.client_id is not None:
+            Secrets.set("google_drive", "client_id", payload.client_id)
+            updated.append("client_id")
+        if payload.client_secret is not None:
+            Secrets.set("google_drive", "client_secret", payload.client_secret)
+            updated.append("client_secret")
+    except SecretError as exc:
+        raise HTTPException(status_code=500, detail="secret_store_error") from exc
+
+    if updated:
+        log(f"settings.google updated: fields={','.join(updated)}")
+
+    return {"ok": True}
+
+
+@APP.delete("/settings/google")
+def settings_google_delete(
+    response: Response,
+    x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token"),
+) -> Dict[str, Any]:
+    _require_token(x_session_token)
+    response.headers["Cache-Control"] = "no-store"
+
+    for key in ("client_id", "client_secret", "oauth_refresh"):
+        try:
+            Secrets.delete("google_drive", key)
+        except SecretError:
+            continue
+
+    log("settings.google cleared")
+    return {"ok": True}
+
+
+@APP.post("/oauth/google/start")
+def oauth_google_start(
+    response: Response,
+    body: Optional[Dict[str, Any]] = Body(default=None),
+    x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token"),
+) -> Dict[str, Any] | JSONResponse:
     _require_token(x_session_token)
     _prune_oauth_states()
     try:
         client_id, _ = _load_google_client()
     except ValueError:
-        return {"error": "missing_client"}
+        error_response = JSONResponse({"error": "missing_client"}, status_code=400)
+        error_response.headers["Cache-Control"] = "no-store"
+        return error_response
 
     redirect_uri = "http://127.0.0.1:8765/oauth/google/callback"
     if isinstance(body, dict):
@@ -140,6 +231,7 @@ def oauth_google_start(
         "state": state,
     }
     auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(params)
+    response.headers["Cache-Control"] = "no-store"
     return {"auth_url": auth_url, "state": state}
 
 
