@@ -62,6 +62,26 @@ def _check_state(state_b64: str) -> bool:
         return False
 
 
+READER_SETTINGS_PATH = Path("data/settings_reader.json")
+
+
+def _load_reader_settings() -> dict:
+    if READER_SETTINGS_PATH.exists():
+        try:
+            return json.loads(READER_SETTINGS_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return {
+        "enabled": {"drive": True, "local": True, "notion": False, "smb": False},
+        "local_roots": [],
+    }
+
+
+def _save_reader_settings(settings: dict) -> None:
+    READER_SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    READER_SETTINGS_PATH.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+
+
 APP = FastAPI(title="BUS Core Alpha", version=VERSION)
 LICENSE_NAME = "PolyForm-Noncommercial-1.0.0"
 LICENSE_URL = "https://polyformproject.org/licenses/noncommercial/1.0.0/"
@@ -260,6 +280,28 @@ def settings_google_delete(response: Response) -> Dict[str, Any]:
     return {"ok": True}
 
 
+@protected.get("/settings/reader", response_model=None)
+def get_reader_settings() -> Dict[str, Any]:
+    return _load_reader_settings()
+
+
+@protected.post("/settings/reader", response_model=None)
+def post_reader_settings(payload: Dict[str, Any] = Body(default={})) -> Dict[str, Any]:  # type: ignore[assignment]
+    current = _load_reader_settings()
+    enabled_payload = current.get("enabled", {})
+    local_roots_payload = current.get("local_roots", [])
+    if isinstance(payload, dict):
+        enabled_candidate = payload.get("enabled", enabled_payload)
+        if isinstance(enabled_candidate, dict):
+            enabled_payload = {str(k): bool(v) for k, v in enabled_candidate.items()}
+        local_roots_candidate = payload.get("local_roots", local_roots_payload)
+        if isinstance(local_roots_candidate, list):
+            local_roots_payload = [str(item) for item in local_roots_candidate if isinstance(item, str)]
+    settings_payload = {"enabled": enabled_payload, "local_roots": local_roots_payload}
+    _save_reader_settings(settings_payload)
+    return {"ok": True, "settings": settings_payload}
+
+
 @oauth.post("/oauth/google/start", response_model=None)
 def oauth_google_start(
     body: GoogleStartIn | None = Body(default=None),
@@ -397,6 +439,29 @@ def plugins() -> Dict[str, Any]:
     return _with_run_id({"plugins": out})
 
 
+def _get_plugin_by_id(service_id: str):
+    try:
+        from core.plugins.loader import get_plugin  # type: ignore
+    except Exception:
+        return None
+    return get_plugin(service_id)
+
+
+@protected.post("/plugins/{service_id}/read", response_model=None)
+def plugin_read(service_id: str, body: Dict[str, Any] = Body(default={})):  # type: ignore[assignment]
+    plugin = _get_plugin_by_id(service_id)
+    if not plugin or not hasattr(plugin, "read"):
+        raise HTTPException(status_code=404, detail="plugin or op not found")
+    op = body.get("op") if isinstance(body, dict) else None
+    params = body.get("params") if isinstance(body, dict) else None
+    if not isinstance(params, dict):
+        params = {}
+    try:
+        return plugin.read(op, params)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"read failed: {type(exc).__name__}") from exc
+
+
 @protected.post("/probe")
 def probe(
     body: Any = Body(default=None),
@@ -412,6 +477,26 @@ def probe(
     else:
         services = []
     results = core.probe_services(services)
+    if "reader" in services:
+        plugin = _get_plugin_by_id("reader")
+        if plugin and hasattr(plugin, "probe"):
+            try:
+                probe_result = plugin.probe()
+            except Exception as exc:
+                probe_result = {
+                    "ok": False,
+                    "detail": "probe_exception",
+                    "error": type(exc).__name__,
+                }
+            results["reader"] = probe_result
+            try:
+                registry.update_from_probe(
+                    "reader",
+                    ["catalog.list", "catalog.search"],
+                    probe_result,
+                )
+            except Exception:
+                pass
     payload = {
         "bootstrap": core.bootstrap,
         "results": results,

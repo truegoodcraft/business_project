@@ -102,6 +102,24 @@
           <pre class="panel-content" data-role="content"></pre>
           <div class="panel-error" data-role="error"></div>
         </section>
+
+        <section class="panel outputs-panel">
+          <div class="panel-header">
+            <h2>Outputs</h2>
+            <div class="panel-actions">
+              <button id="outputs-refresh" type="button">Refresh</button>
+            </div>
+          </div>
+          <div class="outputs-controls">
+            <label for="reader-source">Source</label>
+            <select id="reader-source">
+              <option value="drive">Drive</option>
+              <option value="local">Local</option>
+            </select>
+            <button id="reader-index-all" type="button" class="btn">Index All</button>
+          </div>
+          <div id="reader-tree" class="tree"></div>
+        </section>
       </main>
 
       <section class="panel logs" data-panel="logs">

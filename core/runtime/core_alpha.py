@@ -81,6 +81,18 @@ class CoreAlpha:
                 except Exception:
                     pass
         self._plugins = plugins
+        try:
+            from core.plugins.loader import all_plugins
+
+            for module in all_plugins().values():
+                register_fn = getattr(module, "register_broker", None)
+                if callable(register_fn):
+                    try:
+                        register_fn(self.broker)
+                    except Exception:
+                        continue
+        except Exception:
+            pass
         registry.emit_manifest_async()
 
     def _register_capabilities(self, record: PluginRecord) -> None:

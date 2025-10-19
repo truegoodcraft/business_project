@@ -11,6 +11,7 @@ from typing import Iterator, List, Set
 
 from core.contracts.plugin_v2 import PluginV2
 from core.public_api import PUBLIC_IMPORTS_ALLOWLIST
+from core.plugins.loader import register as register_plugin_module
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -159,6 +160,7 @@ def discover_alpha_plugins() -> List[PluginV2]:
                     if module_name.startswith("core."):
                         sys.modules.pop(module_name, None)
                 continue
+            register_plugin_module(mod)
             cls = getattr(mod, "Plugin", None)
             if cls and issubclass(cls, PluginV2):
                 plugins.append(cls())

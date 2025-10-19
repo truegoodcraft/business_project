@@ -57,3 +57,11 @@ def emit_manifest() -> Dict[str, Any]:
 
 def emit_manifest_async() -> Dict[str, Any]:
     return registry.emit_manifest_async()
+
+
+def update_from_probe(service_id: str, capabilities: list[str], probe: Dict[str, Any]) -> None:
+    registry.update_from_probe(service_id, capabilities, probe)
+
+
+def export() -> Dict[str, Dict[str, Any]]:
+    return registry.export()
