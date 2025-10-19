@@ -198,12 +198,22 @@
       }
       const response = await fetch("/oauth/google/start", {
         method: "POST",
-        headers: tokenHeader(),
+        headers: { ...tokenHeader(), "Content-Type": "application/json" },
         body: "{}",
         cache: "no-store",
       });
-      if (response.status === 200) {
-        window.alert("Client configured. Use your OAuth flow to authorize in the browser.");
+      if (response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        const authUrl = payload && payload.auth_url;
+        window.alert("Client configured. Use Connect in Health to authorize.");
+        if (typeof authUrl === "string" && authUrl) {
+          // Optionally open the consent screen in a new tab for convenience.
+          try {
+            window.open(authUrl, "_blank");
+          } catch (err) {
+            // Ignore window.open failures (popup blockers, etc.).
+          }
+        }
       } else {
         const text = await response.text();
         window.alert(text || "Failed to start OAuth.");
