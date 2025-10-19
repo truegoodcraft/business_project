@@ -49,6 +49,46 @@ irm http://127.0.0.1:8765/plugins -Headers @{ 'X-Session-Token'=$token }
 irm http://127.0.0.1:8765/probe   -Method Post -Headers @{ 'X-Session-Token'=$token } -ContentType application/json -Body "{}"
 ```
 
+## Packaged Dev App (TGC Controller)
+
+Build the development-friendly ONEDIR bundle (PowerShell):
+
+```
+py -3.11 -m venv .venv
+.\\.venv\\Scripts\\Activate.ps1
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+pip install pyinstaller
+
+pyinstaller launcher.py ^
+  --name "TGC Controller" ^
+  --noconsole ^
+  --onedir ^
+  --add-data "core/ui;core/ui" ^
+  --add-data "LICENSE;." ^
+  --hidden-import uvicorn ^
+  --hidden-import fastapi
+```
+
+Launch the packaged controller:
+
+```
+.\\dist\\TGC-Controller\\TGC Controller.exe
+```
+
+On startup it will:
+
+* create (or reuse) `data\\` and `logs\\` beside the executable and save the current session token to `data\\session_token.txt`.
+* print the token path and the resolved UI directory (`core\\ui`) so you can see where files are being served from.
+* wait for the core to report healthy and open `http://127.0.0.1:8765/ui` (or the fallback port if 8765 is busy).
+
+Live UI editing while the app runs:
+
+* Edit the static assets under `.\\dist\\TGC-Controller\\core\\ui\\` (for example `index.html`, `app.js`, or `styles.css`).
+* Refresh the browser tab — changes are served immediately because the ONEDIR layout keeps those files on disk.
+
+To stop the app, close the window or press `Ctrl+C` in the console; the embedded uvicorn server will shut down cleanly.
+
 Plugins:
 
 * Put plugins under `plugins_alpha/<your_plugin>/plugin.py`
