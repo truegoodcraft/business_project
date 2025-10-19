@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import requests  # assumed available; if not, please `pip install requests`
 
 SERVICE_ID = "reader"
-VERSION = "0.1.2"  # bumped
+VERSION = "1.1.0"
 
 _broker = None
 _log = None
@@ -346,7 +346,57 @@ def read(op: str, params: Dict[str, Any]) -> Dict[str, Any]:
                 except Exception:
                     return {"items": []}
             return {"items": []}
+        # --- NEW: auto-check source readiness (no secrets) ---
+        if op == "autocheck":
+            out = {}
+            try:
+                s_drive = _broker.service_call("google_drive", "status", {})
+                out["drive"] = {
+                    "configured": bool(s_drive.get("configured")),
+                    "can_exchange_token": bool(s_drive.get("can_exchange_token")),
+                }
+            except Exception:
+                out["drive"] = {"configured": False, "can_exchange_token": False}
+            try:
+                s_local = _broker.service_call("local_fs", "status", {})
+                out["local"] = {"configured": bool(s_local.get("configured"))}
+            except Exception:
+                out["local"] = {"configured": False}
+            return out
+
+        # --- NEW: start full pull via Core catalog (returns stream_id; no I/O in plugin) ---
+        if op == "start_full_pull":
+            source = params.get("source", "drive")   # "drive" | "local"
+            recursive = bool(params.get("recursive", True))
+            page_size = int(params.get("page_size", 500))
+            fingerprint = bool(params.get("fingerprint", False))  # metadata-only default
+
+            if source == "drive":
+                opened = _broker.catalog_open("google_drive", "allDrives", {
+                    "recursive": recursive,
+                    "page_size": page_size,
+                    "fingerprint": fingerprint
+                })
+                return opened  # {stream_id, cursor}
+            if source == "local":
+                opened = _broker.catalog_open("local_fs", "local_roots", {
+                    "recursive": recursive,
+                    "page_size": page_size,
+                    "fingerprint": fingerprint
+                })
+                return opened
+            return {"error": "unknown_source"}
     except Exception:
         # Never leak internal errors or secrets; keep it deterministic
-        return {"children": [], "next_page_token": None} if op == "children" else {"items": []}
+        if op == "children":
+            return {"children": [], "next_page_token": None}
+        if op == "search":
+            return {"items": []}
+        if op == "autocheck":
+            return {
+                "drive": {"configured": False, "can_exchange_token": False},
+                "local": {"configured": False},
+            }
+        if op == "start_full_pull":
+            return {"error": "failed"}
     return {"error": "unknown_op"}
