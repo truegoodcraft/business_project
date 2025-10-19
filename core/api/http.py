@@ -4,6 +4,7 @@ import json
 import secrets
 import time
 from pathlib import Path
+import sys
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlencode
 
@@ -25,7 +26,6 @@ from tgc.bootstrap_fs import DATA, LOGS
 from pydantic import BaseModel
 
 APP = FastAPI(title="BUS Core Alpha", version=VERSION)
-APP.mount("/ui/static", StaticFiles(directory="core/ui"), name="ui-static")
 LICENSE_NAME = "PolyForm-Noncommercial-1.0.0"
 LICENSE_URL = "https://polyformproject.org/licenses/noncommercial/1.0.0/"
 
@@ -41,6 +41,31 @@ def log(msg: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(msg.rstrip() + "\n")
+
+
+def _resolve_ui_static_dir() -> Path:
+    exe_dir = Path(sys.executable).resolve().parent
+    repo_dir = Path(__file__).resolve().parents[2]
+    meipass_root = getattr(sys, "_MEIPASS", "")
+    candidates = [
+        exe_dir / "core" / "ui",
+        repo_dir / "core" / "ui",
+    ]
+    if meipass_root:
+        candidates.append(Path(meipass_root) / "core" / "ui")
+
+    for candidate in candidates:
+        if candidate.exists():
+            log(f"[ui] static_dir={candidate} exists=True")
+            return candidate
+
+    fallback = candidates[0]
+    log(f"[ui] static_dir={fallback} exists=False")
+    return fallback
+
+
+UI_STATIC_DIR = _resolve_ui_static_dir()
+APP.mount("/ui/static", StaticFiles(directory=str(UI_STATIC_DIR)), name="ui-static")
 
 
 @APP.middleware("http")
@@ -96,7 +121,7 @@ def _prune_oauth_states() -> None:
 
 @APP.get("/ui")
 def ui_index() -> FileResponse:
-    return FileResponse("core/ui/index.html")
+    return FileResponse(UI_STATIC_DIR / "index.html")
 
 
 def _load_google_client() -> tuple[str, str]:
@@ -465,4 +490,4 @@ def build_app():
     return APP, SESSION_TOKEN
 
 
-__all__ = ["APP", "build_app", "SESSION_TOKEN"]
+__all__ = ["APP", "UI_STATIC_DIR", "build_app", "SESSION_TOKEN"]
