@@ -37,20 +37,34 @@ class CatalogManager:
         }
         return {"stream_id": sid, "cursor": cursor}
 
-    def next(self, stream_id: str, max_items: int) -> Dict[str, Any]:
+    def next(
+        self, stream_id: str, max_items: int, time_budget_ms: int = 700
+    ) -> Dict[str, Any]:
         st = self._streams.get(stream_id)
         if not st:
             return {"error": "unknown_stream"}
         pr = self._providers.get(st["source"])
         if not pr:
             return {"error": "unknown_source"}
-        items, cursor, done = pr.stream_next(st["cursor"], int(max_items or 500))
-        st["cursor"] = cursor
-        sanitized = [self._sanitize(i, st) for i in items]
-        sanitized = [i for i in sanitized if i]
-        if sanitized:
-            self._persist(st["source"], sanitized)
-        return {"items": sanitized, "cursor": cursor, "done": bool(done)}
+
+        deadline = time.perf_counter() + max(0.2, (time_budget_ms or 700) / 1000.0)
+        max_items = int(max_items or 500)
+        items_accum: List[Dict[str, Any]] = []
+
+        while len(items_accum) < max_items and time.perf_counter() < deadline:
+            remaining = max_items - len(items_accum)
+            items, cursor, done = pr.stream_next(st["cursor"], remaining)
+            st["cursor"] = cursor
+            if items:
+                sanitized = [self._sanitize(i, st) for i in items]
+                sanitized = [i for i in sanitized if i]
+                if sanitized:
+                    self._persist(st["source"], sanitized)
+                    items_accum.extend(sanitized)
+            if done:
+                return {"items": items_accum, "cursor": cursor, "done": True}
+
+        return {"items": items_accum, "cursor": st["cursor"], "done": False}
 
     def close(self, stream_id: str) -> Dict[str, Any]:
         st = self._streams.pop(stream_id, None)

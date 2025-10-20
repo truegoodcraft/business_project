@@ -1,6 +1,6 @@
 from __future__ import annotations
 import time, urllib.parse
-from typing import Any, Dict, Optional, List, Tuple
+from typing import Any, Callable, Dict, Optional, List, Tuple
 import requests
 
 CANON_CLIENT_NS = "google"
@@ -15,9 +15,10 @@ class GoogleDriveProvider:
     Never exposes tokens or secrets externally.
     """
 
-    def __init__(self, secrets, logger):
+    def __init__(self, secrets, logger, settings_loader: Callable[[], Dict[str, Any]]):
         self._secrets = secrets
         self._log = logger("provider.google_drive")
+        self._settings_loader = settings_loader
         self._sess = requests.Session()
         self._sess.headers.update({"User-Agent": "TGC/drive-provider"})
         self._cached_token: Optional[str] = None
@@ -75,6 +76,27 @@ class GoogleDriveProvider:
             return None, 401
         r = self._sess.get(url, headers={"Authorization": f"Bearer {tok}"}, timeout=timeout)
         return r, r.status_code
+
+    def _drive_includes(self) -> Dict[str, Any]:
+        try:
+            settings = self._settings_loader()
+        except Exception:
+            return {}
+        if not isinstance(settings, dict):
+            return {}
+        di = settings.get("drive_includes", {})
+        return di if isinstance(di, dict) else {}
+
+    def list_drives(self) -> Dict[str, Any]:
+        url = "https://www.googleapis.com/drive/v3/drives?fields=nextPageToken,drives(id,name)&pageSize=100"
+        r, code = self._auth_get(url)
+        if code != 200 or r is None:
+            return {"drives": []}
+        try:
+            data = r.json()
+        except Exception:
+            return {"drives": []}
+        return {"drives": data.get("drives", [])}
 
     # ----- basic status/children (for UI tree) -----
     def status(self) -> Dict[str, Any]:
@@ -173,13 +195,32 @@ class GoogleDriveProvider:
 
     # ----- catalog streaming (recursive, paged, metadata-only) -----
     def stream_open(self, scope: str, recursive: bool, page_size: int) -> Dict[str, Any]:
+        di = self._drive_includes()
+        queue: List[Dict[str, Any]] = []
+
+        if di.get("include_my_drive", True):
+            root_id = di.get("my_drive_root_id") or "drive:root"
+            root_str = str(root_id)
+            if not root_str.startswith("drive:"):
+                root_str = f"drive:{root_str}"
+            queue.append({"parent_id": root_str})
+
+        if di.get("include_shared_drives", True):
+            ids = di.get("shared_drive_ids", [])
+            if isinstance(ids, list) and ids:
+                for drive_id in ids:
+                    did = str(drive_id)
+                    queue.append({"parent_id": f"drive:drive/{did}:root"})
+            else:
+                queue.append({"parent_id": "drive:shared"})
+
         cursor = {
-            "scope": scope,
+            "scope": scope or "allDrives",
             "recursive": bool(recursive),
             "page_size": int(page_size or 200),
-            "queue": [],
+            "queue": queue,
             "page_token": None,
-            "phase": "init",
+            "phase": "walk",
         }
         return cursor
 

@@ -24,7 +24,9 @@ class Broker(ConnectionBroker):
         self._logger_factory = logger_factory
         self.capabilities = capabilities
         self._providers = {
-            "google_drive": GoogleDriveProvider(self._secrets, self._logger_factory),
+            "google_drive": GoogleDriveProvider(
+                self._secrets, self._logger_factory, settings_reader_loader
+            ),
             "local_fs": LocalFSProvider(self._logger_factory, settings_reader_loader),
         }
         self._catalog = CatalogManager(self._logger_factory, self._providers)
@@ -41,6 +43,8 @@ class Broker(ConnectionBroker):
                 return p.status()
             if op == "list_children" and hasattr(p, "list_children"):
                 return p.list_children(**params)
+            if op == "list_drives" and hasattr(p, "list_drives"):
+                return p.list_drives()
             if op == "search" and hasattr(p, "search"):
                 return p.search(**params)
             return {"error": "unknown_op"}
@@ -50,8 +54,10 @@ class Broker(ConnectionBroker):
     def catalog_open(self, source: str, scope: str, options: Dict[str, Any]) -> Dict[str, Any]:
         return self._catalog.open(source, scope, options)
 
-    def catalog_next(self, stream_id: str, max_items: int) -> Dict[str, Any]:
-        return self._catalog.next(stream_id, max_items)
+    def catalog_next(
+        self, stream_id: str, max_items: int, time_budget_ms: int = 700
+    ) -> Dict[str, Any]:
+        return self._catalog.next(stream_id, max_items, time_budget_ms)
 
     def catalog_close(self, stream_id: str) -> Dict[str, Any]:
         return self._catalog.close(stream_id)

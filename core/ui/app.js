@@ -261,6 +261,7 @@
           });
         };
       }
+      settingsDriveScopeInit();
       settingsInitialized = true;
     }
     gsLoad().catch(() => {
@@ -594,7 +595,7 @@
     return response.json();
   }
 
-  async function apiCatalogNext(streamId, maxItems = 500) {
+  async function apiCatalogNext(streamId, maxItems = 500, timeBudgetMs = 600) {
     const token = getSessionToken();
     const response = await fetch(`/catalog/next`, {
       method: "POST",
@@ -602,12 +603,199 @@
         "Content-Type": "application/json",
         "X-Session-Token": token,
       },
-      body: JSON.stringify({ stream_id: streamId, max_items: maxItems }),
+      body: JSON.stringify({
+        stream_id: streamId,
+        max_items: maxItems,
+        time_budget_ms: timeBudgetMs,
+      }),
     });
     if (!response.ok) {
       throw new Error("catalog next failed");
     }
     return response.json();
+  }
+
+  async function loadDriveScope() {
+    const token = getSessionToken();
+    const response = await fetch(`/settings/reader`, {
+      method: "GET",
+      headers: { "X-Session-Token": token },
+    });
+    if (!response.ok) {
+      throw new Error("load drive scope failed");
+    }
+    const data = await response.json();
+    return (data && data.drive_includes) || {};
+  }
+
+  async function saveDriveScope(driveIncludes) {
+    const token = getSessionToken();
+    const response = await fetch(`/settings/reader`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Session-Token": token,
+      },
+      body: JSON.stringify({ drive_includes: driveIncludes }),
+    });
+    if (!response.ok) {
+      throw new Error("save drive scope failed");
+    }
+    return response.json();
+  }
+
+  async function fetchSharedDrives() {
+    const token = getSessionToken();
+    const response = await fetch(`/drive/available_drives`, {
+      method: "GET",
+      headers: { "X-Session-Token": token },
+    });
+    if (!response.ok) {
+      return { drives: [] };
+    }
+    try {
+      return await response.json();
+    } catch (error) {
+      return { drives: [] };
+    }
+  }
+
+  function settingsDriveScopeInit() {
+    const cbMy = document.getElementById("di-my");
+    const cbShared = document.getElementById("di-shared");
+    const listEl = document.getElementById("di-shared-list");
+    const saveBtn = document.getElementById("di-save");
+    const pickBtn = document.getElementById("di-pick-root");
+    const rootLabel = document.getElementById("di-root-label");
+
+    if (!cbMy || !cbShared || !listEl || !saveBtn || !pickBtn || !rootLabel) {
+      return;
+    }
+
+    let model = {
+      include_my_drive: true,
+      my_drive_root_id: null,
+      include_shared_drives: true,
+      shared_drive_ids: [],
+    };
+
+    function updateRootLabel() {
+      rootLabel.textContent = model.my_drive_root_id
+        ? `Root: ${model.my_drive_root_id}`
+        : "Root: actual My Drive root";
+    }
+
+    function syncSharedDisabled() {
+      const disabled = !cbShared.checked;
+      listEl.querySelectorAll("input[type='checkbox']").forEach((node) => {
+        node.disabled = disabled;
+      });
+    }
+
+    (async () => {
+      try {
+        const di = await loadDriveScope();
+        if (di && typeof di === "object") {
+          model = {
+            ...model,
+            ...di,
+            shared_drive_ids: Array.isArray(di.shared_drive_ids)
+              ? Array.from(
+                  new Set(
+                    di.shared_drive_ids.filter((value) => typeof value === "string" && value)
+                  )
+                )
+              : [],
+          };
+        }
+      } catch (error) {
+        // ignore load errors
+      }
+
+      cbMy.checked = Boolean(model.include_my_drive);
+      cbShared.checked = Boolean(model.include_shared_drives);
+      updateRootLabel();
+
+      try {
+        const data = await fetchSharedDrives();
+        listEl.innerHTML = "";
+        (data.drives || []).forEach((drive) => {
+          if (!drive || typeof drive !== "object") {
+            return;
+          }
+          const id = String(drive.id || "");
+          const name = String(drive.name || id);
+          const row = document.createElement("div");
+          row.className = "drive-row";
+          const cb = document.createElement("input");
+          cb.type = "checkbox";
+          cb.checked = model.shared_drive_ids.includes(id);
+          cb.onchange = () => {
+            if (cb.checked) {
+              if (!model.shared_drive_ids.includes(id)) {
+                model.shared_drive_ids.push(id);
+              }
+            } else {
+              model.shared_drive_ids = model.shared_drive_ids.filter((x) => x !== id);
+            }
+          };
+          const label = document.createElement("span");
+          label.textContent = `${name} (${id})`;
+          row.appendChild(cb);
+          row.appendChild(label);
+          listEl.appendChild(row);
+        });
+      } catch (error) {
+        listEl.innerHTML = "<span class='muted'>Unable to load shared drives</span>";
+      }
+
+      syncSharedDisabled();
+    })();
+
+    cbMy.onchange = () => {
+      model.include_my_drive = cbMy.checked;
+    };
+
+    cbShared.onchange = () => {
+      model.include_shared_drives = cbShared.checked;
+      syncSharedDisabled();
+    };
+
+    pickBtn.onclick = () => {
+      const currentValue = model.my_drive_root_id || "";
+      const next = window.prompt(
+        "Enter My Drive folder ID (leave blank for actual My Drive root):",
+        currentValue.startsWith("drive:") ? currentValue : currentValue ? `drive:${currentValue}` : ""
+      );
+      if (next && next.trim()) {
+        const cleaned = next.trim();
+        model.my_drive_root_id = cleaned.startsWith("drive:") ? cleaned : `drive:${cleaned}`;
+      } else {
+        model.my_drive_root_id = null;
+      }
+      updateRootLabel();
+    };
+
+    saveBtn.onclick = async () => {
+      const payload = {
+        include_my_drive: Boolean(model.include_my_drive),
+        my_drive_root_id: model.my_drive_root_id,
+        include_shared_drives: Boolean(model.include_shared_drives),
+        shared_drive_ids: Array.isArray(model.shared_drive_ids)
+          ? Array.from(
+              new Set(
+                model.shared_drive_ids.filter((value) => typeof value === "string" && value)
+              )
+            )
+          : [],
+      };
+      try {
+        await saveDriveScope(payload);
+        window.alert("Drive scope saved.");
+      } catch (error) {
+        window.alert("Failed to save drive scope.");
+      }
+    };
   }
 
   async function apiCatalogClose(streamId) {
@@ -741,7 +929,7 @@
           }
           try {
             for (;;) {
-              const { items, done } = await apiCatalogNext(streamId, 500);
+              const { items, done } = await apiCatalogNext(streamId, 500, 600);
               if (done) {
                 break;
               }
@@ -775,9 +963,29 @@
     const btnFull = document.getElementById("reader-fullpull");
     const btnCancel = document.getElementById("reader-cancelpull");
     const progEl = document.getElementById("reader-progress");
+    const logEl = document.getElementById("reader-log");
 
     if (!statusEl || !btnFull || !btnCancel || !progEl) {
       return;
+    }
+
+    function logReset() {
+      if (!logEl) {
+        return;
+      }
+      logEl.textContent = "No entries.";
+    }
+
+    function logAppend(lines) {
+      if (!logEl) {
+        return;
+      }
+      const text = Array.isArray(lines) ? lines.join("\n") : String(lines);
+      if (logEl.textContent === "No entries.") {
+        logEl.textContent = "";
+      }
+      logEl.textContent += `${text}\n`;
+      logEl.scrollTop = logEl.scrollHeight;
     }
 
     // --- Auto-check on load ---
@@ -809,6 +1017,7 @@
       btnFull.disabled = true;
       btnCancel.disabled = true; // enabled after open succeeds
       progEl.textContent = "Opening…";
+      logReset();
 
       try {
         const src = sourceSel ? sourceSel.value : "drive";
@@ -824,18 +1033,29 @@
         btnCancel.disabled = false;
 
         while (pulling) {
-          const page = await apiCatalogNext(streamId, 500);
-          const n = (page.items && page.items.length) || 0;
-          total += n;
-          progEl.textContent = `Fetched ${total} items…`;
+          const page = await apiCatalogNext(streamId, 500, 600);
+          const items = Array.isArray(page.items) ? page.items : [];
+          total += items.length;
+
+          const preview = items
+            .slice(0, 5)
+            .map((item) => `• ${item.name} (${item.type})`);
+          if (preview.length) {
+            logAppend(preview);
+          }
+
+          progEl.textContent = page.done
+            ? `Done. Indexed ${total} items.`
+            : `Fetched ${total} items…`;
+
           if (page.done) {
-            progEl.textContent = `Done. Indexed ${total} items.`;
             break;
           }
           await new Promise((resolve) => setTimeout(resolve, 50));
         }
       } catch (error) {
         progEl.textContent = "Full pull failed";
+        logAppend("! error during full pull");
       } finally {
         try {
           if (streamId) {

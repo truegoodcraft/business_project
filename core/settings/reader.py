@@ -2,23 +2,70 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Dict
+from typing import Any, Dict, cast
 
 READER_SETTINGS_PATH = Path("data/settings_reader.json")
 
 _DEFAULT_SETTINGS: Dict[str, object] = {
     "enabled": {"drive": True, "local": True, "notion": False, "smb": False},
     "local_roots": [],
+    "drive_includes": {
+        "include_my_drive": True,
+        "my_drive_root_id": None,
+        "include_shared_drives": True,
+        "shared_drive_ids": [],
+    },
 }
 
 
 def load_reader_settings() -> Dict[str, object]:
+    data: Dict[str, object] = {}
     if READER_SETTINGS_PATH.exists():
         try:
-            return json.loads(READER_SETTINGS_PATH.read_text(encoding="utf-8"))
+            loaded = json.loads(READER_SETTINGS_PATH.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                data = loaded
         except Exception:
-            pass
-    return dict(_DEFAULT_SETTINGS)
+            data = {}
+
+    result: Dict[str, object] = {
+        "enabled": dict(_DEFAULT_SETTINGS["enabled"]),
+        "local_roots": list(_DEFAULT_SETTINGS["local_roots"]),
+        "drive_includes": dict(_DEFAULT_SETTINGS["drive_includes"]),
+    }
+
+    enabled = data.get("enabled")
+    if isinstance(enabled, dict):
+        result["enabled"].update({str(k): bool(v) for k, v in enabled.items()})
+
+    local_roots = data.get("local_roots")
+    if isinstance(local_roots, list):
+        result["local_roots"] = [str(item) for item in local_roots if isinstance(item, str)]
+
+    drive_includes = data.get("drive_includes")
+    if isinstance(drive_includes, dict):
+        di_defaults = cast(Dict[str, Any], result["drive_includes"])
+        shared_ids_src = drive_includes.get(
+            "shared_drive_ids", di_defaults.get("shared_drive_ids", [])
+        )
+        if isinstance(shared_ids_src, list):
+            shared_ids = [str(item) for item in shared_ids_src if isinstance(item, str)]
+        else:
+            shared_ids = []
+
+        di: Dict[str, object] = {
+            "include_my_drive": bool(
+                drive_includes.get("include_my_drive", di_defaults["include_my_drive"])
+            ),
+            "my_drive_root_id": drive_includes.get("my_drive_root_id") or None,
+            "include_shared_drives": bool(
+                drive_includes.get("include_shared_drives", di_defaults["include_shared_drives"])
+            ),
+            "shared_drive_ids": shared_ids,
+        }
+        result["drive_includes"] = di
+
+    return result
 
 
 def save_reader_settings(settings: Dict[str, object]) -> None:
