@@ -124,6 +124,7 @@
                 <span id="reader-progress" class="muted"></span>
               </div>
             </div>
+            <pre id="reader-log" style="height:220px;overflow:auto;padding:8px;border:1px solid #333;border-radius:6px;">No entries.</pre>
             <button id="reader-index-all" type="button" class="btn">Index All</button>
           </div>
           <div id="reader-tree" class="tree"></div>
@@ -171,6 +172,25 @@
             <button id="gs-save" class="btn" type="button">Save</button>
             <button id="gs-test" class="btn" type="button">Test Connection</button>
             <button id="gs-remove" class="btn btn-danger" type="button">Remove / Disconnect</button>
+          </div>
+        </section>
+        <section class="panel settings-card">
+          <div class="panel-header">
+            <span>Reader – Drive Scope</span>
+          </div>
+          <div class="panel-body">
+            <label><input type="checkbox" id="di-my" checked /> Include My Drive</label>
+            <div style="margin:6px 0;">
+              <button id="di-pick-root" class="btn btn-secondary" type="button">
+                Select My Drive root folder…
+              </button>
+              <span id="di-root-label" class="muted">Root: actual My Drive root</span>
+            </div>
+            <label><input type="checkbox" id="di-shared" checked /> Include Shared Drives</label>
+            <div id="di-shared-list" style="margin-top:6px;"></div>
+            <div style="margin-top:10px;">
+              <button id="di-save" class="btn" type="button">Save Drive Scope</button>
+            </div>
           </div>
         </section>
       </div>

@@ -276,16 +276,56 @@ def get_reader_settings() -> Dict[str, Any]:
 @protected.post("/settings/reader", response_model=None)
 def post_reader_settings(payload: Dict[str, Any] = Body(default={})) -> Dict[str, Any]:  # type: ignore[assignment]
     current = load_reader_settings()
-    enabled_payload = current.get("enabled", {})
-    local_roots_payload = current.get("local_roots", [])
-    if isinstance(payload, dict):
-        enabled_candidate = payload.get("enabled", enabled_payload)
-        if isinstance(enabled_candidate, dict):
-            enabled_payload = {str(k): bool(v) for k, v in enabled_candidate.items()}
-        local_roots_candidate = payload.get("local_roots", local_roots_payload)
-        if isinstance(local_roots_candidate, list):
-            local_roots_payload = [str(item) for item in local_roots_candidate if isinstance(item, str)]
-    settings_payload = {"enabled": enabled_payload, "local_roots": local_roots_payload}
+    payload = payload if isinstance(payload, dict) else {}
+
+    current_enabled = current.get("enabled", {})
+    enabled_candidate = payload.get("enabled", current_enabled)
+    enabled = {str(k): bool(v) for k, v in current_enabled.items()} if isinstance(current_enabled, dict) else {}
+    if isinstance(enabled_candidate, dict):
+        enabled.update({str(k): bool(v) for k, v in enabled_candidate.items()})
+
+    current_local_roots = current.get("local_roots", [])
+    if isinstance(current_local_roots, list):
+        local_roots_default = [str(item) for item in current_local_roots if isinstance(item, str)]
+    else:
+        local_roots_default = []
+    local_roots_candidate = payload.get("local_roots", local_roots_default)
+    if isinstance(local_roots_candidate, list):
+        local_roots = [str(item) for item in local_roots_candidate if isinstance(item, str)]
+    else:
+        local_roots = local_roots_default
+
+    current_drive_includes = current.get("drive_includes", {})
+    current_drive_includes = current_drive_includes if isinstance(current_drive_includes, dict) else {}
+    di_payload = payload.get("drive_includes", current_drive_includes)
+    di_payload = di_payload if isinstance(di_payload, dict) else {}
+    shared_ids_candidate = di_payload.get(
+        "shared_drive_ids", current_drive_includes.get("shared_drive_ids", [])
+    )
+    if isinstance(shared_ids_candidate, list):
+        shared_drive_ids = [str(item) for item in shared_ids_candidate if isinstance(item, str)]
+    else:
+        existing_ids = current_drive_includes.get("shared_drive_ids", [])
+        shared_drive_ids = [str(item) for item in existing_ids if isinstance(item, str)]
+
+    di = {
+        "include_my_drive": bool(
+            di_payload.get("include_my_drive", current_drive_includes.get("include_my_drive", True))
+        ),
+        "my_drive_root_id": di_payload.get("my_drive_root_id")
+        or current_drive_includes.get("my_drive_root_id")
+        or None,
+        "include_shared_drives": bool(
+            di_payload.get("include_shared_drives", current_drive_includes.get("include_shared_drives", True))
+        ),
+        "shared_drive_ids": shared_drive_ids,
+    }
+
+    settings_payload = {
+        "enabled": enabled,
+        "local_roots": local_roots,
+        "drive_includes": di,
+    }
     save_reader_settings(settings_payload)
     return {"ok": True, "settings": settings_payload}
 
@@ -306,9 +346,10 @@ def catalog_next(body: Dict[str, Any]):
     payload = body if isinstance(body, dict) else {}
     sid = payload.get("stream_id")
     max_items = int(payload.get("max_items", 500) or 500)
+    time_budget_ms = int(payload.get("time_budget_ms", 700) or 700)
     if not sid:
         raise HTTPException(status_code=400, detail="missing stream_id")
-    return _broker().catalog_next(str(sid), max_items)
+    return _broker().catalog_next(str(sid), max_items, time_budget_ms)
 
 
 @protected.post("/catalog/close", response_model=None)
@@ -318,6 +359,11 @@ def catalog_close(body: Dict[str, Any]):
     if not sid:
         raise HTTPException(status_code=400, detail="missing stream_id")
     return _broker().catalog_close(str(sid))
+
+
+@protected.get("/drive/available_drives", response_model=None)
+def drive_available_drives() -> Dict[str, Any]:
+    return _broker().service_call("google_drive", "list_drives", {})
 
 
 @oauth.post("/oauth/google/start", response_model=None)
