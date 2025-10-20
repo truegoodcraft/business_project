@@ -12,13 +12,13 @@ from typing import Any, Dict, List, Optional
 from core.auth.google_sa import validate_google_service_account
 from core.capabilities import registry
 from core.capabilities.registry import MANIFEST_PATH
+from core.domain.bootstrap import set_broker
 from core.domain.broker import Broker
 from core.contracts.plugin_v2 import PluginV2
 from core.runtime.crypto import decrypt, encrypt
 from core.runtime.journal import JournalManager
 from core.runtime.policy import PolicyEngine
 from core.runtime.sandbox import SandboxError, run_transform
-from core.runtime import set_broker
 from core.secrets import Secrets
 from core.settings.reader import load_reader_settings
 from core.version import VERSION

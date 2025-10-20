@@ -28,6 +28,7 @@ from tgc.bootstrap_fs import DATA, LOGS
 
 from pydantic import BaseModel
 
+from core.domain.bootstrap import get_broker
 from core.settings.reader import load_reader_settings, save_reader_settings
 
 
@@ -155,8 +156,6 @@ oauth = APIRouter()
 
 
 def _broker():
-    from core.runtime import get_broker
-
     return get_broker()
 
 
@@ -666,6 +665,7 @@ def build_app():
     DATA.mkdir(parents=True, exist_ok=True)
     (DATA / "session_token.txt").write_text(SESSION_TOKEN, encoding="utf-8")
     CORE.configure_session_token(SESSION_TOKEN)
+    APP.state.broker = get_broker()
     LOG_FILE = LOGS / f"core_{RUN_ID}.log"
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
     banner = f"[trust] mode={CORE.policy.mode} telemetry=off data={DATA} logs={LOGS}"
