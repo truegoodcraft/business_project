@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 from core.auth.google_sa import validate_google_service_account
 from core.capabilities import registry
 from core.capabilities.registry import MANIFEST_PATH
-from core.broker.runtime import Broker
+from core.domain.broker import Broker
 from core.contracts.plugin_v2 import PluginV2
 from core.runtime.crypto import decrypt, encrypt
 from core.runtime.journal import JournalManager

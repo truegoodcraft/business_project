@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from typing import Dict, List, Optional
 
 from core.bus.models import CommandContext
-from core.broker.runtime import Broker
+from core.domain.broker import Broker
 from core.capabilities import registry
 from core.plugins_alpha import discover_alpha_plugins as _discover_alpha_plugins
 from core.secrets import Secrets

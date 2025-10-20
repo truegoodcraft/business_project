@@ -2,9 +2,9 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from core.conn_broker import ConnectionBroker
-from core.providers.google_drive import GoogleDriveProvider
-from core.providers.local_fs import LocalFSProvider
-from core.catalog.manager import CatalogManager
+from core.adapters.drive.provider import GoogleDriveProvider
+from core.adapters.fs.provider import LocalFSProvider
+from core.domain.catalog import CatalogManager
 
 
 class Broker(ConnectionBroker):
