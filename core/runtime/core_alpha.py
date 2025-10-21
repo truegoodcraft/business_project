@@ -9,7 +9,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from core.auth.google_sa import validate_google_service_account
 from core.capabilities import registry
 from core.capabilities.registry import MANIFEST_PATH
 from core.domain.bootstrap import set_broker
@@ -119,14 +118,62 @@ class CoreAlpha:
             registry.upsert(cap, provider=record.id, status=status, policy=policy_block)
 
     def _register_core_capabilities(self) -> None:
-        ok, meta = validate_google_service_account()
+        client_id = Secrets.get("google_drive", "client_id")
+        client_secret = Secrets.get("google_drive", "client_secret")
+        refresh_token = Secrets.get("google_drive", "oauth_refresh")
+        oauth_ready = bool(client_id and client_secret and refresh_token)
         registry.upsert(
-            "auth.google.service_account",
+            "auth.google.oauth",
             provider="core",
-            status="ready" if ok else "blocked",
-            policy={"allowed": ok, "reason": None if ok else meta.get("detail", "missing")},
-            meta={k: v for k, v in meta.items() if k in {"project_id", "client_email", "path_exists"}},
+            status="ready" if oauth_ready else "blocked",
+            policy={
+                "allowed": oauth_ready,
+                "reason": None if oauth_ready else "missing_credentials",
+            },
+            meta={
+                "has_client": bool(client_id and client_secret),
+                "has_refresh": bool(refresh_token),
+            },
         )
+
+        try:
+            drive_status = self.broker.service_call("google_drive", "status", {}) or {}
+        except Exception:
+            drive_status = {}
+        drive_configured = bool(drive_status.get("configured"))
+        drive_exchange = bool(drive_status.get("can_exchange_token"))
+        drive_ready = drive_exchange
+        drive_policy = {"allowed": drive_ready}
+        if not drive_ready:
+            drive_policy["reason"] = "not_configured" if not drive_configured else "token_unavailable"
+        registry.upsert(
+            "drive.files.read",
+            provider="core",
+            status="ready" if drive_ready else "blocked",
+            policy=drive_policy,
+            meta={
+                "configured": drive_configured,
+                "can_exchange_token": drive_exchange,
+            },
+        )
+
+        try:
+            local_status = self.broker.service_call("local_fs", "status", {}) or {}
+        except Exception:
+            local_status = {}
+        local_configured = bool(local_status.get("configured"))
+        roots = local_status.get("roots") if isinstance(local_status.get("roots"), list) else []
+        registry.upsert(
+            "local.files.read",
+            provider="core",
+            status="ready" if local_configured else "blocked",
+            policy={
+                "allowed": local_configured,
+                "reason": None if local_configured else "no_roots",
+            },
+            meta={"configured": local_configured, "roots_count": len(roots or [])},
+        )
+        registry.emit_manifest_async()
 
     def configure_session_token(self, token: str) -> None:
         self.session_token = token
@@ -242,16 +289,50 @@ class CoreAlpha:
 
     def plugin_list(self) -> List[Dict[str, Any]]:
         out: List[Dict[str, Any]] = []
+        descriptors: Dict[str, Dict[str, Any]] = {}
+        try:
+            from core.plugins.loader import iter_descriptors
+
+            descriptors = {str(d.get("id")): d for d in iter_descriptors() if isinstance(d, dict)}
+        except Exception:
+            descriptors = {}
+        seen: set[str] = set()
         for record in self._plugins:
             if not record.configured:
                 continue
+            descriptor = descriptors.get(record.id, {})
+            name = str(descriptor.get("name") or record.name)
+            version = str(descriptor.get("version") or record.version)
+            services = record.services or []
+            scopes = record.scopes or []
+            builtin = bool(descriptor.get("builtin")) if descriptor else False
+            enabled = bool(descriptor.get("enabled", True)) if descriptor else True
             out.append(
                 {
                     "id": record.id,
-                    "name": record.name,
-                    "services": record.services,
-                    "scopes": record.scopes,
-                    "version": record.version,
+                    "name": name,
+                    "services": services,
+                    "scopes": scopes,
+                    "version": version,
+                    "builtin": builtin,
+                    "enabled": enabled,
+                }
+            )
+            seen.add(record.id)
+        for pid, descriptor in descriptors.items():
+            if pid in seen:
+                continue
+            services = descriptor.get("services")
+            scopes = descriptor.get("scopes")
+            out.append(
+                {
+                    "id": pid,
+                    "name": str(descriptor.get("name") or pid),
+                    "services": [str(s) for s in services] if isinstance(services, list) else [],
+                    "scopes": [str(s) for s in scopes] if isinstance(scopes, list) else [],
+                    "version": str(descriptor.get("version") or ""),
+                    "builtin": bool(descriptor.get("builtin")),
+                    "enabled": bool(descriptor.get("enabled", True)),
                 }
             )
         return out

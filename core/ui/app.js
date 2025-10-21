@@ -71,8 +71,26 @@
       body: body ? JSON.stringify(body) : null,
     });
     if (!response.ok) {
-      const text = await response.text().catch(() => "");
-      throw new Error(`${path} failed ${response.status}${text ? `: ${text}` : ""}`);
+      let text = "";
+      try {
+        text = await response.text();
+      } catch (error) {
+        text = "";
+      }
+      const err = new Error(`${path} failed ${response.status}${text ? `: ${text}` : ""}`);
+      err.status = response.status;
+      if (text) {
+        try {
+          const parsed = JSON.parse(text);
+          err.body = parsed;
+          if (parsed && typeof parsed === "object" && "detail" in parsed) {
+            err.detail = parsed.detail;
+          }
+        } catch (parseError) {
+          err.body = text;
+        }
+      }
+      throw err;
     }
     if (response.status === 204) {
       return {};
@@ -738,7 +756,29 @@
       }
       filtered.forEach((item) => {
         const row = document.createElement("div");
-        row.textContent = `${item.id} — ${item.name} (v${item.version || "?"})`;
+        const badge = item.builtin ? " [built-in]" : "";
+        row.textContent = `${item.id} — ${item.name} (v${item.version || "?"})${badge} `;
+
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.checked = !!item.enabled;
+        cb.onchange = async () => {
+          try {
+            await apiJson(`/plugins/${item.id}/enable`, "POST", { enabled: cb.checked });
+            await load();
+          } catch (error) {
+            cb.checked = !cb.checked;
+            window.alert("Failed to update plugin state.");
+          }
+        };
+
+        const enabledText = document.createElement("span");
+        enabledText.textContent = "[Enabled ";
+        enabledText.style.marginLeft = "4px";
+        row.appendChild(enabledText);
+        row.appendChild(cb);
+        const closing = document.createTextNode("]");
+        row.appendChild(closing);
         list.appendChild(row);
       });
     }
@@ -752,7 +792,13 @@
       try {
         const data = await apiJson("/plugins");
         items = Array.isArray(data.plugins)
-          ? data.plugins.map((p) => ({ id: p.id, name: p.name, version: p.version }))
+          ? data.plugins.map((p) => ({
+              id: p.id,
+              name: p.name,
+              version: p.version,
+              builtin: !!p.builtin,
+              enabled: p.enabled !== false,
+            }))
           : [];
         render(filter.value);
       } catch (error) {
@@ -842,20 +888,52 @@
     }
 
     function rootFor(source) {
-      return source === "drive"
-        ? { parent_id: "drive:root", name: "Drive", source: "drive" }
-        : { parent_id: "local:root", name: "Local", source: "local" };
+      if (source === "local") {
+        return { parent_id: "local:root", name: "Local", source: "local" };
+      }
+      if (source === "drive") {
+        return { parent_id: "drive:root", name: "Drive", source: "drive" };
+      }
+      return { parent_id: "drive:root", name: "Reader", source: "reader" };
+    }
+
+    async function loadChildrenBySource(source, parentId) {
+      if (source === "reader") {
+        const response = await apiJson("/plugins/reader/read", "POST", {
+          op: "children",
+          params: { source: "drive", parent_id: parentId, page_size: 200 },
+        });
+        return Array.isArray(response.children) ? response.children : [];
+      }
+      if (source === "drive") {
+        const response = await apiJson("/plugins/google_drive/read", "POST", {
+          op: "children",
+          params: { parent_id: parentId, page_size: 200 },
+        });
+        return Array.isArray(response.children) ? response.children : [];
+      }
+      if (source === "local") {
+        const response = await apiJson("/plugins/local/read", "POST", {
+          op: "children",
+          params: { parent_id: parentId },
+        });
+        return Array.isArray(response.children) ? response.children : [];
+      }
+      return [];
     }
 
     async function loadChildren(source, parentId) {
       if (!currentToken) {
         throw new Error("token_required");
       }
-      const response = await apiJson("/plugins/reader/read", "POST", {
-        op: "children",
-        params: { source, parent_id: parentId, page_size: 200 },
-      });
-      return Array.isArray(response.children) ? response.children : [];
+      try {
+        return await loadChildrenBySource(source, parentId);
+      } catch (error) {
+        if (error && (error.status === 403 || error.detail === "plugin_disabled")) {
+          error.code = "plugin_disabled";
+        }
+        throw error;
+      }
     }
 
     function draw() {
@@ -893,7 +971,11 @@
             } catch (error) {
               stack.pop();
               updateBreadcrumb();
-              setListMessage("Failed to load items.");
+              if (error && error.code === "plugin_disabled") {
+                setListMessage("Plugin disabled.");
+              } else {
+                setListMessage("Failed to load items.");
+              }
             }
           }
         };
@@ -903,8 +985,8 @@
           ctxMenu.innerHTML = "";
           const menuItems = [];
 
-          const source = item.source || srcSel.value;
-          if (source === "google_drive" || srcSel.value === "drive") {
+          const source = item.source || (srcSel.value === "reader" ? "drive" : srcSel.value);
+          if (source === "google_drive" || source === "drive") {
             const isFolder = item.type === "folder" || String(item.mimeType || "").includes("folder");
             const raw = String(item.id || "").replace(/^drive:/, "");
             const url = isFolder
@@ -918,7 +1000,7 @@
             });
           }
 
-          if (source === "local_fs" || srcSel.value === "local") {
+          if (source === "local_fs" || source === "local") {
             menuItems.push({
               label: "Open in Explorer",
               action: async () => {
@@ -980,7 +1062,12 @@
         currentItems = children;
         draw();
       } catch (error) {
-        setListMessage("Failed to load items.");
+        currentItems = [];
+        if (error && error.code === "plugin_disabled") {
+          setListMessage("Plugin disabled.");
+        } else {
+          setListMessage("Failed to load items.");
+        }
       }
     }
 
@@ -1010,10 +1097,36 @@
       const source = srcSel.value;
       log("Full Pull → opening stream …");
       try {
-        const opened = await apiJson("/plugins/reader/read", "POST", {
-          op: "start_full_pull",
-          params: { source, recursive: true, page_size: 500 },
-        });
+        let opened;
+        if (source === "reader") {
+          opened = await apiJson("/plugins/reader/read", "POST", {
+            op: "start_full_pull",
+            params: { source: "drive", recursive: true, page_size: 500 },
+          });
+        } else if (source === "drive") {
+          opened = await apiJson("/plugins/google_drive/read", "POST", {
+            op: "catalog_open",
+            params: {
+              scope: "allDrives",
+              recursive: true,
+              page_size: 500,
+              fingerprint: false,
+            },
+          });
+        } else if (source === "local") {
+          opened = await apiJson("/plugins/local/read", "POST", {
+            op: "catalog_open",
+            params: {
+              scope: "local_roots",
+              recursive: true,
+              page_size: 500,
+              fingerprint: false,
+            },
+          });
+        } else {
+          log("Unknown source.");
+          return;
+        }
         const streamId = opened.stream_id;
         if (!streamId) {
           log("Failed to start stream.");
@@ -1046,7 +1159,11 @@
           await apiJson("/catalog/close", "POST", { stream_id: streamId }).catch(() => {});
         }
       } catch (error) {
-        log("Full Pull failed.");
+        if (error && (error.status === 403 || error.code === "plugin_disabled")) {
+          log("Plugin disabled.");
+        } else {
+          log("Full Pull failed.");
+        }
       }
     };
 
