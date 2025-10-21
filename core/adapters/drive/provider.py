@@ -22,6 +22,7 @@ class GoogleDriveProvider:
         self._sess = requests.Session()
         self._sess.headers.update({"User-Agent": "TGC/drive-provider"})
         self._cached_token: Optional[str] = None
+        self._cached_refresh: Optional[str] = None
         self._expires_at: float = 0.0
 
     # ----- token handling (Core-only) -----
@@ -41,11 +42,16 @@ class GoogleDriveProvider:
         return cid, cs, rt
 
     def _access_token(self) -> Optional[str]:
-        if self._cached_token and self._now() < (self._expires_at - 60):
-            return self._cached_token
         cid, cs, rt = self._get_client()
         if not (cid and cs and rt):
+            self.clear_cache()
             return None
+        if (
+            self._cached_token
+            and self._cached_refresh == rt
+            and self._now() < (self._expires_at - 60)
+        ):
+            return self._cached_token
         try:
             r = self._sess.post(
                 "https://oauth2.googleapis.com/token",
@@ -64,11 +70,17 @@ class GoogleDriveProvider:
             ttl = int(data.get("expires_in", 3600))
             if tok:
                 self._cached_token = tok
+                self._cached_refresh = rt
                 self._expires_at = self._now() + max(300, min(ttl, 3600))
                 return tok
         except Exception:
             pass
         return None
+
+    def clear_cache(self) -> None:
+        self._cached_token = None
+        self._cached_refresh = None
+        self._expires_at = 0.0
 
     def _auth_get(self, url: str, timeout: int = 10):
         tok = self._access_token()
@@ -101,17 +113,22 @@ class GoogleDriveProvider:
     def get_start_page_token(self) -> Dict[str, Any]:
         url = "https://www.googleapis.com/drive/v3/changes/startPageToken?supportsAllDrives=true"
         try:
+            status = self.status()
+            if not (status.get("configured") and status.get("can_exchange_token")):
+                return {"ok": False, "reason": "not_configured", "token": None}
             r, code = self._auth_get(url)
             if code != 200 or r is None:
-                raise ValueError("token request failed")
+                self._log.warning("drive.get_start_page_token http_error %s", code)
+                return {"ok": False, "reason": "http_error", "token": None}
             payload = r.json()
             token = payload.get("startPageToken") if isinstance(payload, dict) else None
             if not token:
-                raise ValueError("missing token")
+                self._log.warning("drive.get_start_page_token missing token")
+                return {"ok": False, "reason": "missing_token", "token": None}
             return {"ok": True, "token": token}
-        except Exception:
-            self._log.exception("drive.get_start_page_token failed")
-            return {"ok": False, "error": "token_failed"}
+        except Exception as exc:
+            self._log.warning("drive.get_start_page_token failed: %s", exc)
+            return {"ok": False, "reason": "exception", "token": None}
 
     # ----- basic status/children (for UI tree) -----
     def status(self) -> Dict[str, Any]:

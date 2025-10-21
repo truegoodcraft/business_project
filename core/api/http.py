@@ -523,30 +523,24 @@ def index_state_set(body: Dict[str, Any] = Body(default={})):  # type: ignore[as
 
 @protected.get("/index/status", response_model=None)
 def index_status():
-    broker = _broker()
+    broker = get_broker()
     state = _load_index_state()
 
-    current_drive_token = None
+    token_result: Dict[str, Any] = {}
     try:
         token_result = broker.service_call("google_drive", "get_start_page_token", {})
-        if isinstance(token_result, dict) and token_result.get("ok"):
-            current_drive_token = token_result.get("token")
     except Exception:
-        current_drive_token = None
-
-    last_drive_token = None
-    drive_state = state.get("drive") if isinstance(state, dict) else {}
-    if isinstance(drive_state, dict):
-        last_drive_token = drive_state.get("token")
+        token_result = {"ok": False, "token": None}
+    current_drive_token = token_result.get("token")
+    last_drive_token = (
+        state.get("drive", {}).get("token") if isinstance(state, dict) else None
+    )
     drive_up_to_date = bool(
         current_drive_token and last_drive_token and current_drive_token == last_drive_token
     )
 
     current_sig = compute_local_roots_signature(broker)
-    last_sig = None
-    local_state = state.get("local") if isinstance(state, dict) else {}
-    if isinstance(local_state, dict):
-        last_sig = local_state.get("roots_sig")
+    last_sig = state.get("local", {}).get("roots_sig") if isinstance(state, dict) else None
     local_up_to_date = bool(current_sig and last_sig and current_sig == last_sig)
 
     return {
@@ -680,6 +674,10 @@ def oauth_google_revoke(_ctx=Depends(require_token_ctx)):
             Secrets.delete("google_drive", "oauth_refresh")
         except SecretError:
             pass
+    try:
+        get_broker().clear_provider_cache("google_drive")
+    except Exception:
+        pass
     response = JSONResponse({"ok": True})
     response.headers["Cache-Control"] = "no-store"
     return response

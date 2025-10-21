@@ -1,17 +1,65 @@
 from __future__ import annotations
+import base64
+import ntpath
 import os
 from typing import Any, Dict, List, Tuple
 
 
+def _is_windows_path(path: str) -> bool:
+    return bool(path) and (
+        path.startswith(("\\\\", "//")) or (len(path) >= 2 and path[1] == ":")
+    )
+
+
+def _norm(path: str) -> str:
+    if _is_windows_path(path):
+        return ntpath.normcase(ntpath.normpath(ntpath.abspath(path)))
+    return os.path.normcase(os.path.normpath(os.path.abspath(path)))
+
+
+def _drive_id(path: str) -> str:
+    splitter = ntpath if _is_windows_path(path) else os.path
+    drive = splitter.splitdrive(path)[0]
+    if drive:
+        return drive.lower()
+    if len(path) >= 2 and path[1] == ":":
+        return path[:2].lower()
+    return ""
+
+
+def _same_drive(a: str, b: str) -> bool:
+    da, db = _drive_id(a), _drive_id(b)
+    if da or db:
+        return da == db
+    return True
+
+
+def _is_under_root(path: str, root: str) -> bool:
+    ap, rp = _norm(path), _norm(root)
+    if not _same_drive(ap, rp):
+        return False
+    try:
+        common = (
+            ntpath.commonpath([ap, rp])
+            if _is_windows_path(path) or _is_windows_path(root)
+            else os.path.commonpath([ap, rp])
+        )
+        return common == rp
+    except Exception:
+        trimmed = rp.rstrip("\\/")
+        if not trimmed:
+            return ap == rp
+        sep = "\\" if ("\\" in trimmed or _is_windows_path(rp)) else os.sep
+        return ap == rp or ap.startswith(trimmed + sep)
+
+
 def _b64u(s: str) -> str:
-    import base64 as _b
-    return _b.urlsafe_b64encode(s.encode()).decode().rstrip("=")
+    return base64.urlsafe_b64encode(s.encode()).decode().rstrip("=")
 
 
 def _ub64u(s: str) -> str:
-    import base64 as _b
     pad = "=" * (-len(s) % 4)
-    return _b.urlsafe_b64decode(s + pad).decode()
+    return base64.urlsafe_b64decode(s + pad).decode()
 
 
 class LocalFSProvider:
@@ -31,7 +79,7 @@ class LocalFSProvider:
     def _roots(self) -> List[str]:
         settings = self._settings()
         roots = settings.get("local_roots", []) if isinstance(settings, dict) else []
-        return [os.path.abspath(p) for p in roots if isinstance(p, str)]
+        return [_norm(p) for p in roots if isinstance(p, str)]
 
     def status(self) -> Dict[str, Any]:
         roots = self._roots()
@@ -60,8 +108,13 @@ class LocalFSProvider:
             return {"children": [mk_node(p) for p in self._roots()], "next_page_token": None}
 
         if parent_id.startswith("local:"):
-            path = os.path.abspath(_ub64u(parent_id.split(":", 1)[1]))
-            if not any(os.path.commonpath([path, r]) == r for r in self._roots()):
+            decoded = _ub64u(parent_id.split(":", 1)[1])
+            path = (
+                ntpath.abspath(decoded)
+                if _is_windows_path(decoded)
+                else os.path.abspath(decoded)
+            )
+            if not any(_is_under_root(path, r) for r in self._roots()):
                 return {"children": [], "next_page_token": None}
             try:
                 entries = []
