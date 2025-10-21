@@ -32,120 +32,91 @@
     </nav>
 
     <section id="tab-dashboard" class="tab-section">
-      <main class="panels">
-        <section class="panel" data-panel="health">
-          <div class="panel-header">
-            <h2>Health</h2>
-            <div class="panel-actions">
-              <span class="panel-meta" data-role="timing">&mdash;</span>
-              <span class="panel-meta" data-role="timestamp">&mdash;</span>
-              <button type="button" data-action="refresh">Refresh</button>
+      <div class="panels">
+        <div class="panel">
+          <div class="panel-header"><span>Health</span></div>
+          <div class="panel-body" id="health-body">
+            <div>
+              <strong>Google Drive</strong>:
+              <span id="health-drive-status" class="muted">Checking…</span>
+              <button id="btn-drive-disconnect" class="btn btn-secondary" style="margin-left:8px;">
+                Disconnect
+              </button>
+            </div>
+            <div style="margin-top:8px;">
+              <strong>Server</strong>:
+              <span>Running</span>
+              <button id="btn-server-restart" class="btn btn-secondary" style="margin-left:8px;">
+                Reboot?
+              </button>
             </div>
           </div>
-          <div id="google-auth-row" class="row">
-            <span class="label">Google Drive</span>
-            <span id="google-status" class="status-pill bad">Missing info</span>
-            <button
-              id="google-disconnect"
-              class="btn btn-danger"
-              type="button"
-              style="display: none;"
-            >
-              ✕ Disconnect
-            </button>
-            <span id="google-check" class="check" style="display: none;">✓ Connected</span>
-          </div>
-          <pre class="panel-content" data-role="content"></pre>
-          <div class="panel-error" data-role="error"></div>
-        </section>
+        </div>
 
-        <section class="panel" data-panel="plugins">
-          <div class="panel-header">
-            <h2>Plugins</h2>
-            <div class="panel-actions">
-              <span class="panel-meta" data-role="timing">&mdash;</span>
-              <span class="panel-meta" data-role="timestamp">&mdash;</span>
-              <button type="button" data-action="refresh">Refresh</button>
-            </div>
+        <div class="panel">
+          <div class="panel-header"><span>Capabilities</span></div>
+          <div class="panel-body">
+            <input
+              id="cap-filter"
+              placeholder="Filter by plugin or ability…"
+              style="width:100%;margin-bottom:6px;"
+            />
+            <div id="cap-list" class="list"></div>
           </div>
-          <pre class="panel-content" data-role="content"></pre>
-          <div class="panel-error" data-role="error"></div>
-        </section>
+        </div>
 
-        <section class="panel" data-panel="capabilities">
-          <div class="panel-header">
-            <h2>Capabilities</h2>
-            <div class="panel-actions">
-              <span class="panel-meta" data-role="timing">&mdash;</span>
-              <span class="panel-meta" data-role="timestamp">&mdash;</span>
-              <button type="button" data-action="refresh">Refresh</button>
-            </div>
+        <div class="panel">
+          <div class="panel-header"><span>Plugins</span></div>
+          <div class="panel-body">
+            <input
+              id="plugin-filter"
+              placeholder="Filter plugins…"
+              style="width:100%;margin-bottom:6px;"
+            />
+            <div id="plugin-list" class="list"></div>
           </div>
-          <pre class="panel-content" data-role="content"></pre>
-          <div class="panel-error" data-role="error"></div>
-        </section>
+        </div>
 
-        <section class="panel" data-panel="probe">
+        <div class="panel">
           <div class="panel-header">
-            <h2>Probe</h2>
-            <div class="panel-actions">
-              <span class="panel-meta" data-role="timing">&mdash;</span>
-              <span class="panel-meta" data-role="timestamp">&mdash;</span>
-              <button type="button" data-action="refresh">Run Probe</button>
+            <span>Outputs</span>
+            <button id="outputs-refresh" class="btn btn-secondary" style="float:right;">Refresh</button>
+          </div>
+          <div class="panel-body">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+              <button id="out-back" class="btn btn-secondary" title="Back">←</button>
+              <span id="out-breadcrumb" class="muted">Drive</span>
+              <span style="flex:1;"></span>
+              <select id="out-source">
+                <option value="drive">Drive</option>
+                <option value="local">Local</option>
+              </select>
+              <button id="out-index-all" class="btn">Index All</button>
+              <button id="out-fullpull" class="btn">Start Full Pull</button>
             </div>
+            <input id="out-search" placeholder="Search…" style="width:100%;margin-bottom:6px;" />
+            <div id="out-list" class="list" style="min-height:220px;"></div>
+            <pre id="out-log" style="height:140px;overflow:auto;margin-top:8px;">No entries.</pre>
+            <div
+              id="ctx-menu"
+              style="position:absolute;display:none;border:1px solid #333;background:#111;padding:6px;border-radius:6px;z-index:1000;"
+            ></div>
           </div>
-          <div class="probe-controls">
-            <label for="probe-services">Services (JSON array)</label>
-            <textarea id="probe-services" rows="3">["echo"]</textarea>
-            <button id="run-probe" type="button">Run Probe</button>
-          </div>
-          <pre class="panel-content" data-role="content"></pre>
-          <div class="panel-error" data-role="error"></div>
-        </section>
+        </div>
+      </div>
 
-        <section class="panel outputs-panel">
-          <div class="panel-header">
-            <h2>Outputs</h2>
-            <div class="panel-actions">
-              <button id="outputs-refresh" type="button">Refresh</button>
-            </div>
-          </div>
-          <div class="outputs-controls">
-            <div style="margin:8px 0;">
-              <div id="reader-status" class="muted" style="margin-bottom:6px;">Checking sources…</div>
-              <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-                <label>Source:</label>
-                <select id="reader-source">
-                  <option value="drive">Drive</option>
-                  <option value="local">Local</option>
-                </select>
-                <button id="reader-fullpull" class="btn">Start Full Pull</button>
-                <button id="reader-cancelpull" class="btn btn-secondary" disabled>Cancel</button>
-                <span id="reader-progress" class="muted"></span>
-              </div>
-            </div>
-            <pre id="reader-log" style="height:220px;overflow:auto;padding:8px;border:1px solid #333;border-radius:6px;">No entries.</pre>
-            <button id="reader-index-all" type="button" class="btn">Index All</button>
-          </div>
-          <div id="reader-tree" class="tree"></div>
-        </section>
-      </main>
-
-      <section class="panel logs" data-panel="logs">
+      <div class="panel logs">
         <div class="panel-header">
-          <h2>Logs</h2>
+          <span>Logs</span>
           <div class="panel-actions">
-            <span class="panel-meta" data-role="timing">&mdash;</span>
-            <span class="panel-meta" data-role="timestamp">&mdash;</span>
             <label class="autoscale">
               <input type="checkbox" id="logs-autoscroll" /> Auto-scroll
             </label>
-            <button type="button" data-action="refresh">Refresh</button>
+            <button id="logs-refresh" type="button">Refresh</button>
           </div>
         </div>
-        <pre class="panel-content" data-role="content" id="logs-content"></pre>
-        <div class="panel-error" data-role="error"></div>
-      </section>
+        <pre class="panel-content" id="logs-content"></pre>
+      </div>
     </section>
 
     <section id="tab-settings" class="tab-section" style="display: none;">
@@ -193,6 +164,35 @@
             </div>
           </div>
         </section>
+        <div class="panel">
+          <div class="panel-header"><span>Settings — Local Sources</span></div>
+          <div class="panel-body">
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+              <button id="ls-scan" class="btn">Scan Drives</button>
+              <input
+                id="ls-folder"
+                placeholder="Add folder path (e.g. C:\Data)"
+                style="flex:1;"
+              />
+              <button id="ls-validate" class="btn btn-secondary">Validate</button>
+              <button id="ls-add" class="btn">Add</button>
+              <span id="ls-msg" class="muted"></span>
+            </div>
+            <div style="display:flex; gap:16px; margin-top:10px; flex-wrap:wrap;">
+              <div style="min-width:260px;">
+                <div class="muted" style="margin-bottom:6px;">Available drives</div>
+                <div id="ls-drives" class="list"></div>
+              </div>
+              <div style="min-width:320px; flex:1;">
+                <div class="muted" style="margin-bottom:6px;">Selected roots (allow-list)</div>
+                <div id="ls-selected" class="list"></div>
+                <div style="margin-top:8px;">
+                  <button id="ls-save" class="btn">Save</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 
