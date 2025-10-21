@@ -1,37 +1,36 @@
 (function () {
   const TOKEN_STORAGE_KEY = "tgc_token";
-  const panels = {};
   let currentToken = "";
-  let googleRowInitialized = false;
   let settingsInitialized = false;
-  let refreshOutputsPanel = null;
 
   const tokenInput = document.getElementById("token-input");
   const saveTokenBtn = document.getElementById("save-token");
   const refreshAllBtn = document.getElementById("refresh-all");
   const tokenBanner = document.getElementById("token-banner");
-  const logsAutoscroll = document.getElementById("logs-autoscroll");
-  const probeServices = document.getElementById("probe-services");
-  const runProbeBtn = document.getElementById("run-probe");
   const tabDashboardBtn = document.getElementById("tab-btn-dashboard");
   const tabSettingsBtn = document.getElementById("tab-btn-settings");
   const tabDashboard = document.getElementById("tab-dashboard");
   const tabSettings = document.getElementById("tab-settings");
+  const logsAutoscroll = document.getElementById("logs-autoscroll");
 
-  document.querySelectorAll(".panel[data-panel]").forEach((section) => {
-    const panelName = section.dataset.panel;
-    if (!panelName) {
+  let healthRefresh = () => {};
+  let capsRefresh = () => {};
+  let pluginsRefresh = () => {};
+  let logsRefresh = () => {};
+  let outputsRefresh = () => {};
+  let settingsLocalRefresh = () => Promise.resolve();
+  let settingsLocalInitialized = false;
+
+  function updateTokenBanner(show) {
+    if (!tokenBanner) {
       return;
     }
-    panels[panelName] = {
-      section,
-      content: section.querySelector('[data-role="content"]'),
-      error: section.querySelector('[data-role="error"]'),
-      timing: section.querySelector('[data-role="timing"]'),
-      timestamp: section.querySelector('[data-role="timestamp"]'),
-      refreshBtn: section.querySelector('button[data-action="refresh"]'),
-    };
-  });
+    if (show) {
+      tokenBanner.classList.remove("hidden");
+    } else {
+      tokenBanner.classList.add("hidden");
+    }
+  }
 
   function loadToken() {
     const stored = window.localStorage.getItem(TOKEN_STORAGE_KEY) || "";
@@ -43,31 +42,11 @@
   }
 
   function saveToken() {
-    const nextToken = (tokenInput ? tokenInput.value.trim() : "");
-    window.localStorage.setItem(TOKEN_STORAGE_KEY, nextToken);
-    currentToken = nextToken;
+    const next = tokenInput ? tokenInput.value.trim() : "";
+    window.localStorage.setItem(TOKEN_STORAGE_KEY, next);
+    currentToken = next;
     updateTokenBanner(!currentToken);
-    if (currentToken) {
-      refreshAll();
-      initGoogleRow();
-    } else {
-      renderGoogleHealthState("Missing token", false);
-      renderGsStatus("Not configured");
-      const clientIdInput = document.getElementById("gs-client-id");
-      const clientSecretInput = document.getElementById("gs-client-secret");
-      if (clientIdInput) {
-        clientIdInput.placeholder = "";
-        clientIdInput.value = "";
-      }
-      if (clientSecretInput) {
-        clientSecretInput.placeholder = "";
-        clientSecretInput.value = "";
-      }
-    }
-  }
-
-  function hasToken() {
-    return Boolean(currentToken);
+    refreshAll();
   }
 
   function getSessionToken() {
@@ -77,212 +56,28 @@
     return currentToken;
   }
 
-  function tokenHeader() {
-    if (!currentToken) {
-      throw new Error("Session token required");
-    }
-    return { "X-Session-Token": currentToken };
+  function latestToken() {
+    return getSessionToken();
   }
 
-  function renderGsStatus(state) {
-    const el = document.getElementById("gs-status");
-    if (!el) {
-      return;
-    }
-    const variant = state === "Connected" ? "ok" : state === "Ready" ? "warn" : state === "Error" ? "bad" : "bad";
-    el.textContent = state;
-    el.className = variant ? `status-pill ${variant}` : "status-pill";
-  }
-
-  function renderGoogleHealthState(state, connected) {
-    const statusEl = document.getElementById("google-status");
-    const disconnectBtn = document.getElementById("google-disconnect");
-    const checkEl = document.getElementById("google-check");
-    if (!statusEl || !disconnectBtn || !checkEl) {
-      return;
-    }
-    let variant = "bad";
-    if (state === "Connected") {
-      variant = "ok";
-    } else if (state === "Ready") {
-      variant = "warn";
-    } else if (state === "Error") {
-      variant = "bad";
-    }
-    statusEl.textContent = state;
-    statusEl.className = variant ? `status-pill ${variant}` : "status-pill";
-    if (connected) {
-      disconnectBtn.style.display = "inline-block";
-      checkEl.style.display = "inline-block";
-    } else {
-      disconnectBtn.style.display = "none";
-      checkEl.style.display = "none";
-    }
-  }
-
-  function applyGoogleSettingsState(data) {
-    if (!data || typeof data !== "object") {
-      renderGsStatus("Not configured");
-      renderGoogleHealthState("Missing info", false);
-      return;
-    }
-    const ready = Boolean(data.has_client_id && data.has_client_secret);
-    const connected = Boolean(data.connected);
-    renderGsStatus(connected ? "Connected" : ready ? "Ready" : "Not configured");
-    renderGoogleHealthState(connected ? "Connected" : ready ? "Ready" : "Missing info", connected);
-  }
-
-  async function gsFetch(method, path, body) {
-    const headers = { ...tokenHeader(), "Content-Type": "application/json" };
+  async function apiJson(path, method = "GET", body = null) {
+    const headers = {
+      "Content-Type": "application/json",
+      "X-Session-Token": latestToken(),
+    };
     const response = await fetch(path, {
       method,
       headers,
-      body: body ? JSON.stringify(body) : undefined,
-      cache: "no-store",
+      body: body ? JSON.stringify(body) : null,
     });
     if (!response.ok) {
-      const text = await response.text();
-      throw new Error(text || `${response.status}`);
+      const text = await response.text().catch(() => "");
+      throw new Error(`${path} failed ${response.status}${text ? `: ${text}` : ""}`);
+    }
+    if (response.status === 204) {
+      return {};
     }
     return response.json();
-  }
-
-  async function gsLoad() {
-    const payload = await gsFetch("GET", "/settings/google");
-    const clientIdInput = document.getElementById("gs-client-id");
-    const clientSecretInput = document.getElementById("gs-client-secret");
-    if (clientIdInput) {
-      clientIdInput.placeholder = payload.has_client_id ? payload.client_id_mask || "••••" : "";
-      clientIdInput.value = "";
-    }
-    if (clientSecretInput) {
-      clientSecretInput.placeholder = payload.has_client_secret ? "••••" : "";
-      clientSecretInput.value = "";
-    }
-    applyGoogleSettingsState(payload);
-  }
-
-  async function gsSave() {
-    const cidEl = document.getElementById("gs-client-id");
-    const secEl = document.getElementById("gs-client-secret");
-    const cid = cidEl ? cidEl.value.trim() : "";
-    const sec = secEl ? secEl.value.trim() : "";
-    const payload = {};
-    if (cid) {
-      payload.client_id = cid;
-    }
-    if (sec) {
-      payload.client_secret = sec;
-    }
-    if (!payload.client_id && !payload.client_secret) {
-      window.alert("Nothing to save.");
-      return;
-    }
-    await gsFetch("POST", "/settings/google", payload);
-    if (cidEl) {
-      cidEl.value = "";
-    }
-    if (secEl) {
-      secEl.value = "";
-    }
-    await gsLoad();
-    window.alert("Saved.");
-  }
-
-  async function gsRemove() {
-    if (!window.confirm("Remove Google OAuth client and disconnect?")) {
-      return;
-    }
-    await gsFetch("DELETE", "/settings/google");
-    await gsLoad();
-  }
-
-  async function gsTest() {
-    try {
-      const status = await gsFetch("GET", "/oauth/google/status");
-      if (status && status.connected) {
-        window.alert("Already connected.");
-        return;
-      }
-      const response = await fetch("/oauth/google/start", {
-        method: "POST",
-        headers: { ...tokenHeader(), "Content-Type": "application/json" },
-        body: "{}",
-        cache: "no-store",
-      });
-      if (response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        const authUrl = payload && payload.auth_url;
-        window.alert("Client configured. Use Connect in Health to authorize.");
-        if (typeof authUrl === "string" && authUrl) {
-          // Optionally open the consent screen in a new tab for convenience.
-          try {
-            window.open(authUrl, "_blank");
-          } catch (err) {
-            // Ignore window.open failures (popup blockers, etc.).
-          }
-        }
-      } else {
-        const text = await response.text();
-        window.alert(text || "Failed to start OAuth.");
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      window.alert("Error: " + message);
-    }
-  }
-
-  function initSettingsTab() {
-    const saveBtn = document.getElementById("gs-save");
-    const removeBtn = document.getElementById("gs-remove");
-    const testBtn = document.getElementById("gs-test");
-    if (!settingsInitialized) {
-      if (saveBtn) {
-        saveBtn.onclick = () => {
-          gsSave().catch((error) => {
-            const message = error instanceof Error ? error.message : String(error);
-            window.alert(message);
-          });
-        };
-      }
-      if (removeBtn) {
-        removeBtn.onclick = () => {
-          gsRemove().catch((error) => {
-            const message = error instanceof Error ? error.message : String(error);
-            window.alert(message);
-          });
-        };
-      }
-      if (testBtn) {
-        testBtn.onclick = () => {
-          gsTest().catch((error) => {
-            const message = error instanceof Error ? error.message : String(error);
-            window.alert(message);
-          });
-        };
-      }
-      settingsDriveScopeInit();
-      settingsInitialized = true;
-    }
-    gsLoad().catch(() => {
-      renderGsStatus("Not configured");
-      renderGoogleHealthState("Missing info", false);
-    });
-  }
-
-  async function refreshGoogleStatus() {
-    if (!hasToken()) {
-      renderGoogleHealthState("Missing token", false);
-      renderGsStatus("Not configured");
-      return;
-    }
-    try {
-      const payload = await gsFetch("GET", "/settings/google");
-      applyGoogleSettingsState(payload);
-    } catch (error) {
-      renderGsStatus("Error");
-      renderGoogleHealthState("Error", false);
-    }
   }
 
   function showTab(name) {
@@ -303,358 +98,121 @@
     }
   }
 
-  function updateTokenBanner(show) {
-    if (!tokenBanner) {
+  function renderGsStatus(state) {
+    const el = document.getElementById("gs-status");
+    if (!el) {
       return;
     }
-    if (show) {
-      tokenBanner.classList.remove("hidden");
-    } else {
-      tokenBanner.classList.add("hidden");
-    }
+    const variant = state === "Connected" ? "ok" : state === "Ready" ? "warn" : state === "Error" ? "bad" : "bad";
+    el.textContent = state;
+    el.className = variant ? `status-pill ${variant}` : "status-pill";
   }
 
-  function updatePanelMeta(panel, elapsedMs) {
-    if (!panel) {
-      return;
-    }
-    panel.timing.textContent = typeof elapsedMs === "number" ? `${elapsedMs} ms` : "—";
-    panel.timestamp.textContent = new Date().toLocaleTimeString();
-  }
-
-  function setPanelError(panel, message) {
-    if (!panel) {
-      return;
-    }
-    panel.error.textContent = message || "";
-  }
-
-  function setPanelContent(panel, text) {
-    if (!panel) {
-      return;
-    }
-    panel.content.textContent = text;
-  }
-
-  function ensureToken(panel) {
+  async function gsLoad() {
     if (!currentToken) {
-      updateTokenBanner(true);
-      setPanelError(panel, "Session token required.");
-      panel.timing.textContent = "—";
-      panel.timestamp.textContent = "—";
-      return false;
+      renderGsStatus("Not configured");
+      return;
     }
-    return true;
+    try {
+      const payload = await apiJson("/settings/google");
+      const clientIdInput = document.getElementById("gs-client-id");
+      const clientSecretInput = document.getElementById("gs-client-secret");
+      if (clientIdInput) {
+        clientIdInput.placeholder = payload.has_client_id ? payload.client_id_mask || "••••" : "";
+        clientIdInput.value = "";
+      }
+      if (clientSecretInput) {
+        clientSecretInput.placeholder = payload.has_client_secret ? "••••" : "";
+        clientSecretInput.value = "";
+      }
+      const ready = Boolean(payload.has_client_id && payload.has_client_secret);
+      const connected = Boolean(payload.connected);
+      renderGsStatus(connected ? "Connected" : ready ? "Ready" : "Not configured");
+    } catch (error) {
+      renderGsStatus("Error");
+    }
   }
 
-  async function requestJSON(path, options, panelName) {
-    const panel = panels[panelName];
-    if (!panel) {
+  async function gsSave() {
+    const cidEl = document.getElementById("gs-client-id");
+    const secEl = document.getElementById("gs-client-secret");
+    const cid = cidEl ? cidEl.value.trim() : "";
+    const sec = secEl ? secEl.value.trim() : "";
+    const payload = {};
+    if (cid) {
+      payload.client_id = cid;
+    }
+    if (sec) {
+      payload.client_secret = sec;
+    }
+    if (!payload.client_id && !payload.client_secret) {
+      window.alert("Nothing to save.");
       return;
     }
-    if (!ensureToken(panel)) {
-      return;
-    }
-
-    const requestOptions = Object.assign({ method: "GET" }, options || {});
-    const headers = Object.assign({}, requestOptions.headers || {}, {
-      "X-Session-Token": currentToken,
-    });
-    if (requestOptions.body && !headers["Content-Type"]) {
-      headers["Content-Type"] = "application/json";
-    }
-    requestOptions.headers = headers;
-
-    setPanelError(panel, "");
-    setPanelContent(panel, "Loading…");
-
-    const start = performance.now();
     try {
-      const response = await fetch(path, requestOptions);
-      const elapsed = Math.round(performance.now() - start);
-      if (!response.ok) {
-        updatePanelMeta(panel, elapsed);
-        let errorText = `${response.status} ${response.statusText}`;
-        try {
-          const payload = await response.clone().json();
-          if (payload && payload.detail) {
-            errorText += ` – ${payload.detail}`;
-          }
-        } catch (err) {
-          // ignore JSON parsing failure for error body
-        }
-        if (response.status === 401) {
-          updateTokenBanner(true);
-        }
-        setPanelError(panel, errorText);
-        setPanelContent(panel, "");
+      await apiJson("/settings/google", "POST", payload);
+      if (cidEl) {
+        cidEl.value = "";
+      }
+      if (secEl) {
+        secEl.value = "";
+      }
+      await gsLoad();
+      window.alert("Saved.");
+    } catch (error) {
+      window.alert("Failed to save settings.");
+    }
+  }
+
+  async function gsRemove() {
+    if (!window.confirm("Remove Google OAuth client and disconnect?")) {
+      return;
+    }
+    try {
+      await apiJson("/settings/google", "DELETE", {});
+      await gsLoad();
+    } catch (error) {
+      window.alert("Failed to remove client.");
+    }
+  }
+
+  async function gsTest() {
+    try {
+      const status = await apiJson("/oauth/google/status");
+      if (status && status.connected) {
+        window.alert("Already connected.");
         return;
       }
-
-      const data = await response.json();
-      updatePanelMeta(panel, Math.round(performance.now() - start));
-      updateTokenBanner(false);
-      renderPanel(panelName, data);
     } catch (error) {
-      panel.timing.textContent = "—";
-      panel.timestamp.textContent = "—";
-      setPanelError(panel, error instanceof Error ? error.message : String(error));
-      setPanelContent(panel, "");
+      // ignore status errors and continue
     }
-  }
-
-  function renderPanel(panelName, data) {
-    const panel = panels[panelName];
-    if (!panel) {
-      return;
-    }
-    setPanelError(panel, "");
-    if (panelName === "logs") {
-      const lines = Array.isArray(data.logs) ? data.logs : [];
-      const text = lines.join("\n");
-      setPanelContent(panel, text);
-      if (logsAutoscroll && logsAutoscroll.checked) {
-        panel.content.scrollTop = panel.content.scrollHeight;
-      }
-      return;
-    }
-    setPanelContent(panel, JSON.stringify(data, null, 2));
-  }
-
-  function getProbeServices() {
     try {
-      const source = probeServices ? probeServices.value : "[]";
-      const parsed = JSON.parse(source || "[]");
-      if (Array.isArray(parsed)) {
-        return parsed.map((item) => String(item));
-      }
-    } catch (error) {
-      // handled by caller
-    }
-    return null;
-  }
-
-  async function refreshHealth() {
-    await requestJSON("/health", { method: "GET" }, "health");
-  }
-
-  async function refreshPlugins() {
-    await requestJSON("/plugins", { method: "GET" }, "plugins");
-  }
-
-  async function refreshCapabilities() {
-    await requestJSON("/capabilities", { method: "GET" }, "capabilities");
-  }
-
-  async function refreshLogs() {
-    await requestJSON("/logs", { method: "GET" }, "logs");
-  }
-
-  async function runProbe() {
-    const panel = panels.probe;
-    if (!panel) {
-      return;
-    }
-    if (!ensureToken(panel)) {
-      return;
-    }
-    const services = getProbeServices();
-    if (!services) {
-      setPanelError(panel, "Services must be a JSON array.");
-      return;
-    }
-    await requestJSON(
-      "/probe",
-      {
-        method: "POST",
-        body: JSON.stringify({ services }),
-      },
-      "probe"
-    );
-  }
-
-  function refreshAll() {
-    refreshHealth();
-    refreshPlugins();
-    refreshCapabilities();
-    refreshLogs();
-    if (typeof refreshOutputsPanel === "function") {
-      refreshOutputsPanel();
-    }
-  }
-
-  async function gdRevoke() {
-    const headers = tokenHeader();
-    const response = await fetch(`/oauth/google/revoke`, {
-      method: "POST",
-      headers,
-      cache: "no-store",
-    });
-    if (!response.ok) {
-      throw new Error("revoke failed");
-    }
-  }
-
-  async function initGoogleRow() {
-    const disconnectBtn = document.getElementById("google-disconnect");
-    if (!disconnectBtn) {
-      return;
-    }
-
-    if (!googleRowInitialized) {
-      disconnectBtn.onclick = () => {
-        gdRevoke()
-          .then(() => refreshGoogleStatus())
-          .catch((error) => {
-            const message = error instanceof Error ? error.message : String(error);
-            window.alert(message);
-          });
-      };
-      googleRowInitialized = true;
-    }
-
-    await refreshGoogleStatus();
-  }
-
-  function attachEvents() {
-    if (saveTokenBtn) {
-      saveTokenBtn.addEventListener("click", saveToken);
-    }
-    if (tokenInput) {
-      tokenInput.addEventListener("keydown", (event) => {
-        if (event.key === "Enter") {
-          event.preventDefault();
-          saveToken();
+      const payload = await apiJson("/oauth/google/start", "POST", {});
+      window.alert("Client configured. Use Connect in Health to authorize.");
+      if (payload && payload.auth_url) {
+        try {
+          window.open(payload.auth_url, "_blank");
+        } catch (err) {
+          // ignore popup blockers
         }
-      });
-    }
-    if (refreshAllBtn) {
-      refreshAllBtn.addEventListener("click", refreshAll);
-    }
-    if (panels.health?.refreshBtn) {
-      panels.health.refreshBtn.addEventListener("click", refreshHealth);
-    }
-    if (panels.plugins?.refreshBtn) {
-      panels.plugins.refreshBtn.addEventListener("click", refreshPlugins);
-    }
-    if (panels.capabilities?.refreshBtn) {
-      panels.capabilities.refreshBtn.addEventListener("click", refreshCapabilities);
-    }
-    if (panels.logs?.refreshBtn) {
-      panels.logs.refreshBtn.addEventListener("click", refreshLogs);
-    }
-    if (panels.probe?.refreshBtn) {
-      panels.probe.refreshBtn.addEventListener("click", runProbe);
-    }
-    if (runProbeBtn) {
-      runProbeBtn.addEventListener("click", runProbe);
-    }
-    if (tabDashboardBtn) {
-      tabDashboardBtn.addEventListener("click", () => showTab("dashboard"));
-    }
-    if (tabSettingsBtn) {
-      tabSettingsBtn.addEventListener("click", () => showTab("settings"));
-    }
-  }
-
-  async function apiPluginRead(service, body) {
-    const token = getSessionToken();
-    const response = await fetch(`/plugins/${service}/read`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Session-Token": token,
-      },
-      body: JSON.stringify(body || {}),
-      cache: "no-store",
-    });
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(text || "Plugin read failed");
-    }
-    try {
-      return await response.json();
+      }
     } catch (error) {
-      return {};
+      window.alert("Failed to start OAuth.");
     }
-  }
-
-  async function apiCatalogOpen(source, scope, options) {
-    const token = getSessionToken();
-    const response = await fetch(`/catalog/open`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Session-Token": token,
-      },
-      body: JSON.stringify({ source, scope, options }),
-    });
-    if (!response.ok) {
-      throw new Error("catalog open failed");
-    }
-    return response.json();
-  }
-
-  async function apiCatalogNext(streamId, maxItems = 500, timeBudgetMs = 600) {
-    const token = getSessionToken();
-    const response = await fetch(`/catalog/next`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Session-Token": token,
-      },
-      body: JSON.stringify({
-        stream_id: streamId,
-        max_items: maxItems,
-        time_budget_ms: timeBudgetMs,
-      }),
-    });
-    if (!response.ok) {
-      throw new Error("catalog next failed");
-    }
-    return response.json();
   }
 
   async function loadDriveScope() {
-    const token = getSessionToken();
-    const response = await fetch(`/settings/reader`, {
-      method: "GET",
-      headers: { "X-Session-Token": token },
-    });
-    if (!response.ok) {
-      throw new Error("load drive scope failed");
-    }
-    const data = await response.json();
+    const data = await apiJson("/settings/reader");
     return (data && data.drive_includes) || {};
   }
 
   async function saveDriveScope(driveIncludes) {
-    const token = getSessionToken();
-    const response = await fetch(`/settings/reader`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Session-Token": token,
-      },
-      body: JSON.stringify({ drive_includes: driveIncludes }),
-    });
-    if (!response.ok) {
-      throw new Error("save drive scope failed");
-    }
-    return response.json();
+    await apiJson("/settings/reader", "POST", { drive_includes: driveIncludes });
   }
 
   async function fetchSharedDrives() {
-    const token = getSessionToken();
-    const response = await fetch(`/drive/available_drives`, {
-      method: "GET",
-      headers: { "X-Session-Token": token },
-    });
-    if (!response.ok) {
-      return { drives: [] };
-    }
     try {
-      return await response.json();
+      return await apiJson("/drive/available_drives");
     } catch (error) {
       return { drives: [] };
     }
@@ -694,15 +252,15 @@
 
     (async () => {
       try {
-        const di = await loadDriveScope();
-        if (di && typeof di === "object") {
+        const includes = await loadDriveScope();
+        if (includes && typeof includes === "object") {
           model = {
             ...model,
-            ...di,
-            shared_drive_ids: Array.isArray(di.shared_drive_ids)
+            ...includes,
+            shared_drive_ids: Array.isArray(includes.shared_drive_ids)
               ? Array.from(
                   new Set(
-                    di.shared_drive_ids.filter((value) => typeof value === "string" && value)
+                    includes.shared_drive_ids.filter((value) => typeof value === "string" && value)
                   )
                 )
               : [],
@@ -783,9 +341,7 @@
         include_shared_drives: Boolean(model.include_shared_drives),
         shared_drive_ids: Array.isArray(model.shared_drive_ids)
           ? Array.from(
-              new Set(
-                model.shared_drive_ids.filter((value) => typeof value === "string" && value)
-              )
+              new Set(model.shared_drive_ids.filter((value) => typeof value === "string" && value))
             )
           : [],
       };
@@ -798,312 +354,752 @@
     };
   }
 
-  async function apiCatalogClose(streamId) {
-    const token = getSessionToken();
-    await fetch(`/catalog/close`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Session-Token": token,
-      },
-      body: JSON.stringify({ stream_id: streamId }),
-    });
-  }
+  async function settingsLocalInit() {
+    const scanBtn = document.getElementById("ls-scan");
+    const folderIn = document.getElementById("ls-folder");
+    const validateBtn = document.getElementById("ls-validate");
+    const addBtn = document.getElementById("ls-add");
+    const msgEl = document.getElementById("ls-msg");
+    const drivesEl = document.getElementById("ls-drives");
+    const selectedEl = document.getElementById("ls-selected");
+    const saveBtn = document.getElementById("ls-save");
 
-  function readerTreeInit() {
-    const treeEl = document.getElementById("reader-tree");
-    const sourceSelect = document.getElementById("reader-source");
-    const refreshBtn = document.getElementById("outputs-refresh");
-    const indexBtn = document.getElementById("reader-index-all");
-    if (!treeEl || !sourceSelect || !refreshBtn) {
+    if (
+      !scanBtn ||
+      !folderIn ||
+      !validateBtn ||
+      !addBtn ||
+      !msgEl ||
+      !drivesEl ||
+      !selectedEl ||
+      !saveBtn
+    ) {
       return;
     }
 
-    async function loadChildren(nodeId, source) {
-      const data = await apiPluginRead("reader", {
-        op: "children",
-        params: { source, parent_id: nodeId },
-      });
-      const children = data && Array.isArray(data.children) ? data.children : [];
-      return children;
+    if (settingsLocalInitialized) {
+      await settingsLocalRefresh().catch(() => {});
+      return;
     }
 
-    function renderList(parentEl, nodes, source) {
-      const listEl = document.createElement("ul");
-      nodes.forEach((node) => {
-        if (!node || typeof node !== "object") {
-          return;
+    settingsLocalInitialized = true;
+
+    let model = { roots: [] };
+
+    function note(text) {
+      msgEl.textContent = text || "";
+    }
+
+    function syncDriveChecks() {
+      drivesEl.querySelectorAll("input[type='checkbox']").forEach((node) => {
+        const path = node.dataset ? node.dataset.path || "" : "";
+        if (path) {
+          node.checked = model.roots.includes(path);
         }
-        const li = document.createElement("li");
-        const row = document.createElement("div");
-        row.className = "node";
-        const toggle = document.createElement("span");
-        toggle.className = "toggle";
-        toggle.textContent = node.has_children ? "▸" : "•";
-        row.appendChild(toggle);
-        const label = document.createElement("span");
-        label.textContent = node.name || node.id;
-        row.appendChild(label);
-        li.appendChild(row);
-        if (node.has_children) {
-          let expanded = false;
-          let childList = null;
-          toggle.addEventListener("click", async () => {
-            if (!expanded) {
-              toggle.textContent = "▾";
-              try {
-                const children = await loadChildren(node.id, source);
-                if (childList) {
-                  childList.remove();
-                }
-                childList = renderList(li, children, source);
-                expanded = true;
-              } catch (error) {
-                toggle.textContent = "▸";
-                const message = error instanceof Error ? error.message : String(error);
-                li.querySelectorAll(".tree-error").forEach((el) => el.remove());
-                const errNode = document.createElement("div");
-                errNode.className = "tree-error";
-                errNode.textContent = message;
-                li.appendChild(errNode);
+      });
+    }
+
+    function renderSelected() {
+      selectedEl.innerHTML = "";
+      if (!model.roots.length) {
+        const empty = document.createElement("div");
+        empty.className = "muted";
+        empty.textContent = "None";
+        selectedEl.appendChild(empty);
+      } else {
+        model.roots.forEach((path) => {
+          const row = document.createElement("div");
+          row.style.display = "flex";
+          row.style.alignItems = "center";
+          row.style.justifyContent = "space-between";
+          row.style.gap = "12px";
+          const label = document.createElement("span");
+          label.textContent = path;
+          const removeBtn = document.createElement("button");
+          removeBtn.className = "btn btn-secondary";
+          removeBtn.textContent = "Remove";
+          removeBtn.onclick = () => {
+            model.roots = model.roots.filter((item) => item !== path);
+            renderSelected();
+          };
+          row.appendChild(label);
+          row.appendChild(removeBtn);
+          selectedEl.appendChild(row);
+        });
+      }
+      syncDriveChecks();
+    }
+
+    async function loadCurrent() {
+      try {
+        const settings = await apiJson("/settings/reader", "GET");
+        const roots = Array.isArray(settings.local_roots)
+          ? settings.local_roots.filter((value) => typeof value === "string" && value)
+          : [];
+        model.roots = Array.from(new Set(roots));
+      } catch (error) {
+        model.roots = [];
+      }
+      renderSelected();
+    }
+
+    scanBtn.onclick = async () => {
+      drivesEl.innerHTML = "Scanning…";
+      try {
+        const response = await apiJson("/local/available_drives", "GET");
+        drivesEl.innerHTML = "";
+        const drives = Array.isArray(response.drives) ? response.drives : [];
+        drives.forEach((drive) => {
+          if (!drive || typeof drive !== "object") {
+            return;
+          }
+          const path = String(drive.path || "").trim();
+          if (!path) {
+            return;
+          }
+          const row = document.createElement("div");
+          row.style.display = "flex";
+          row.style.alignItems = "center";
+          row.style.gap = "6px";
+          const cb = document.createElement("input");
+          cb.type = "checkbox";
+          cb.dataset.path = path;
+          cb.checked = model.roots.includes(path);
+          cb.onchange = () => {
+            if (cb.checked) {
+              if (!model.roots.includes(path)) {
+                model.roots.push(path);
+                model.roots = Array.from(new Set(model.roots));
               }
             } else {
-              if (childList) {
-                childList.remove();
-                childList = null;
-              }
-              toggle.textContent = "▸";
-              expanded = false;
+              model.roots = model.roots.filter((item) => item !== path);
             }
-          });
+            renderSelected();
+          };
+          const label = document.createElement("span");
+          const suffix = drive.label ? ` — ${drive.label}` : "";
+          label.textContent = `${path}${suffix}`;
+          row.appendChild(cb);
+          row.appendChild(label);
+          drivesEl.appendChild(row);
+        });
+        if (!drivesEl.children.length) {
+          const empty = document.createElement("div");
+          empty.className = "muted";
+          empty.textContent = "No drives found";
+          drivesEl.appendChild(empty);
         }
-        listEl.appendChild(li);
-      });
-      parentEl.appendChild(listEl);
-      return listEl;
-    }
+        syncDriveChecks();
+      } catch (error) {
+        drivesEl.textContent = "Failed to scan drives";
+      }
+    };
 
-    async function renderRoot() {
-      if (!hasToken()) {
-        treeEl.textContent = "Session token required.";
+    validateBtn.onclick = async () => {
+      const inputPath = folderIn.value.trim();
+      if (!inputPath) {
+        note("Enter a folder path");
         return;
       }
-      treeEl.textContent = "Loading…";
-      const source = sourceSelect.value;
-      const rootId = source === "local" ? "local:root" : "drive:root";
       try {
-        const nodes = await loadChildren(rootId, source);
-        treeEl.innerHTML = "";
-        if (!nodes.length) {
-          treeEl.textContent = "No entries.";
-          return;
+        const result = await apiJson(
+          `/local/validate_path?path=${encodeURIComponent(inputPath)}`,
+          "GET"
+        );
+        if (result && result.ok) {
+          note(`OK: ${result.path}`);
+          folderIn.value = result.path || inputPath;
+        } else {
+          const reason = result && result.reason ? result.reason : "invalid";
+          note(`Invalid: ${reason}`);
         }
-        renderList(treeEl, nodes, source);
       } catch (error) {
-        treeEl.textContent = error instanceof Error ? error.message : String(error);
+        note("Validate failed");
       }
-    }
+    };
 
-    refreshBtn.addEventListener("click", () => {
-      renderRoot();
-    });
-    if (indexBtn) {
-      indexBtn.addEventListener("click", async () => {
-        if (!hasToken()) {
-          window.alert("Session token required.");
-          return;
-        }
-        const source = sourceSelect.value;
-        const scope = source === "drive" ? "allDrives" : "local_roots";
-        const provider = source === "drive" ? "google_drive" : "local_fs";
-        let streamId;
-        try {
-          const openPayload = await apiCatalogOpen(provider, scope, {
-            recursive: true,
-            page_size: 500,
-            fingerprint: false,
-          });
-          streamId = openPayload?.stream_id;
-          if (!streamId) {
-            throw new Error("Missing stream id");
-          }
-          try {
-            for (;;) {
-              const { items, done } = await apiCatalogNext(streamId, 500, 600);
-              if (done) {
-                break;
-              }
-              if (!items || !Array.isArray(items) || !items.length) {
-                await new Promise((resolve) => setTimeout(resolve, 50));
-              }
-            }
-          } finally {
-            await apiCatalogClose(streamId);
-          }
-          window.alert("Indexing complete (metadata persisted under data/catalog/)");
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          window.alert(`Indexing failed: ${message}`);
-        } finally {
-          renderRoot();
-        }
-      });
-    }
-    sourceSelect.addEventListener("change", () => {
-      renderRoot();
-    });
+    addBtn.onclick = () => {
+      const path = folderIn.value.trim();
+      if (!path) {
+        note("Enter a folder path");
+        return;
+      }
+      if (!model.roots.includes(path)) {
+        model.roots.push(path);
+        model.roots = Array.from(new Set(model.roots));
+      }
+      renderSelected();
+      note("");
+    };
 
-    refreshOutputsPanel = renderRoot;
-    renderRoot();
+    saveBtn.onclick = async () => {
+      try {
+        await apiJson("/settings/reader", "POST", { local_roots: model.roots });
+        note("Saved.");
+        await loadCurrent();
+      } catch (error) {
+        note("Save failed");
+      }
+    };
+
+    settingsLocalRefresh = () => loadCurrent();
+
+    await loadCurrent();
   }
 
-  function readerOutputsInit() {
-    const statusEl = document.getElementById("reader-status");
-    const sourceSel = document.getElementById("reader-source");
-    const btnFull = document.getElementById("reader-fullpull");
-    const btnCancel = document.getElementById("reader-cancelpull");
-    const progEl = document.getElementById("reader-progress");
-    const logEl = document.getElementById("reader-log");
+  function initSettingsTab() {
+    if (settingsInitialized) {
+      gsLoad().catch(() => renderGsStatus("Error"));
+      settingsLocalRefresh().catch(() => {});
+      return;
+    }
+    const saveBtn = document.getElementById("gs-save");
+    const removeBtn = document.getElementById("gs-remove");
+    const testBtn = document.getElementById("gs-test");
+    if (saveBtn) {
+      saveBtn.onclick = () => {
+        gsSave().catch(() => window.alert("Failed to save settings."));
+      };
+    }
+    if (removeBtn) {
+      removeBtn.onclick = () => {
+        gsRemove().catch(() => window.alert("Failed to remove client."));
+      };
+    }
+    if (testBtn) {
+      testBtn.onclick = () => {
+        gsTest().catch(() => window.alert("Failed to start OAuth."));
+      };
+    }
+    settingsDriveScopeInit();
+    settingsLocalInit().catch(() => {});
+    settingsInitialized = true;
+    gsLoad().catch(() => renderGsStatus("Error"));
+    settingsLocalRefresh().catch(() => {});
+  }
 
-    if (!statusEl || !btnFull || !btnCancel || !progEl) {
+  function healthInit() {
+    const driveStatus = document.getElementById("health-drive-status");
+    const btnDisc = document.getElementById("btn-drive-disconnect");
+    const btnReboot = document.getElementById("btn-server-restart");
+    if (!driveStatus || !btnDisc || !btnReboot) {
       return;
     }
 
-    function logReset() {
-      if (!logEl) {
+    async function load() {
+      if (!currentToken) {
+        driveStatus.textContent = "Token required";
+        driveStatus.classList.add("muted");
+        btnDisc.disabled = true;
         return;
       }
-      logEl.textContent = "No entries.";
+      btnDisc.disabled = false;
+      try {
+        const status = await apiJson("/plugins/reader/read", "POST", { op: "autocheck", params: {} });
+        const connected = Boolean(status.drive && status.drive.can_exchange_token);
+        driveStatus.textContent = connected ? "Connected" : "Not connected";
+        driveStatus.classList.toggle("muted", !connected);
+      } catch (error) {
+        driveStatus.textContent = "Unavailable";
+        driveStatus.classList.add("muted");
+      }
     }
 
-    function logAppend(lines) {
-      if (!logEl) {
+    btnDisc.onclick = async () => {
+      if (!currentToken) {
         return;
       }
-      const text = Array.isArray(lines) ? lines.join("\n") : String(lines);
+      try {
+        await apiJson("/oauth/google/revoke", "POST", {});
+        window.alert("Disconnected");
+        await load();
+      } catch (error) {
+        window.alert("Failed to disconnect");
+      }
+    };
+
+    btnReboot.onclick = async () => {
+      if (!window.confirm("Exit process now? Restart manually.")) {
+        return;
+      }
+      try {
+        await apiJson("/server/restart", "POST", {});
+      } catch (error) {
+        // ignore; process may exit before response
+      }
+    };
+
+    load();
+    healthRefresh = load;
+  }
+
+  function capsInit() {
+    const list = document.getElementById("cap-list");
+    const filter = document.getElementById("cap-filter");
+    if (!list || !filter) {
+      return;
+    }
+
+    let caps = [];
+
+    function render(query = "") {
+      list.innerHTML = "";
+      const q = query.toLowerCase();
+      const groups = {};
+      caps.forEach((cap) => {
+        if (!cap || typeof cap !== "object") {
+          return;
+        }
+        const provider = String(cap.provider || "unknown");
+        const ability = String(cap.cap || "");
+        if (q && !(ability.toLowerCase().includes(q) || provider.toLowerCase().includes(q))) {
+          return;
+        }
+        (groups[provider] ||= []).push({ ability, status: cap.status || "" });
+      });
+
+      const providers = Object.keys(groups);
+      if (!providers.length) {
+        const empty = document.createElement("div");
+        empty.className = "muted";
+        empty.textContent = q ? "No matches." : caps.length ? "No capabilities." : "Token required.";
+        list.appendChild(empty);
+        return;
+      }
+
+      providers.forEach((provider) => {
+        const header = document.createElement("div");
+        header.style.cursor = "pointer";
+        header.innerHTML = `<strong>${provider}</strong> <span class="muted">(${groups[provider].length})</span>`;
+        const body = document.createElement("div");
+        body.style.margin = "4px 0 8px 10px";
+        groups[provider].forEach((cap) => {
+          const row = document.createElement("div");
+          const statusIcon = cap.status === "ready" ? "✓" : "•";
+          row.textContent = `${statusIcon} ${cap.ability}`;
+          body.appendChild(row);
+        });
+        let collapsed = false;
+        header.onclick = () => {
+          collapsed = !collapsed;
+          body.style.display = collapsed ? "none" : "block";
+        };
+        list.appendChild(header);
+        list.appendChild(body);
+      });
+    }
+
+    async function load() {
+      if (!currentToken) {
+        caps = [];
+        render(filter.value);
+        return;
+      }
+      try {
+        const data = await apiJson("/capabilities");
+        caps = Array.isArray(data.capabilities) ? data.capabilities : [];
+        render(filter.value);
+      } catch (error) {
+        list.innerHTML = "<div class='muted'>Failed to load capabilities.</div>";
+      }
+    }
+
+    filter.oninput = () => {
+      render(filter.value);
+    };
+
+    load();
+    capsRefresh = load;
+  }
+
+  function pluginsInit() {
+    const list = document.getElementById("plugin-list");
+    const filter = document.getElementById("plugin-filter");
+    if (!list || !filter) {
+      return;
+    }
+
+    let items = [];
+
+    function render(query = "") {
+      list.innerHTML = "";
+      const q = query.toLowerCase();
+      const filtered = items.filter((item) => {
+        const id = String(item.id || "");
+        const name = String(item.name || "");
+        return !q || id.toLowerCase().includes(q) || name.toLowerCase().includes(q);
+      });
+      if (!filtered.length) {
+        const empty = document.createElement("div");
+        empty.className = "muted";
+        empty.textContent = q ? "No matches." : items.length ? "No plugins." : "Token required.";
+        list.appendChild(empty);
+        return;
+      }
+      filtered.forEach((item) => {
+        const row = document.createElement("div");
+        row.textContent = `${item.id} — ${item.name} (v${item.version || "?"})`;
+        list.appendChild(row);
+      });
+    }
+
+    async function load() {
+      if (!currentToken) {
+        items = [];
+        render(filter.value);
+        return;
+      }
+      try {
+        const data = await apiJson("/plugins");
+        items = Array.isArray(data.plugins)
+          ? data.plugins.map((p) => ({ id: p.id, name: p.name, version: p.version }))
+          : [];
+        render(filter.value);
+      } catch (error) {
+        list.innerHTML = "<div class='muted'>Failed to load plugins.</div>";
+      }
+    }
+
+    filter.oninput = () => {
+      render(filter.value);
+    };
+
+    load();
+    pluginsRefresh = load;
+  }
+
+  function logsInit() {
+    const content = document.getElementById("logs-content");
+    const refreshBtn = document.getElementById("logs-refresh");
+    if (!content) {
+      return;
+    }
+
+    async function load() {
+      if (!currentToken) {
+        content.textContent = "Token required.";
+        return;
+      }
+      try {
+        const data = await apiJson("/logs");
+        const lines = Array.isArray(data.logs) ? data.logs : [];
+        content.textContent = lines.join("\n");
+        if (logsAutoscroll && logsAutoscroll.checked) {
+          content.scrollTop = content.scrollHeight;
+        }
+      } catch (error) {
+        content.textContent = "Failed to load logs.";
+      }
+    }
+
+    if (refreshBtn) {
+      refreshBtn.onclick = () => {
+        load();
+      };
+    }
+
+    load();
+    logsRefresh = load;
+  }
+
+  function outputsInit() {
+    const srcSel = document.getElementById("out-source");
+    const listEl = document.getElementById("out-list");
+    const bcEl = document.getElementById("out-breadcrumb");
+    const backBtn = document.getElementById("out-back");
+    const searchEl = document.getElementById("out-search");
+    const logEl = document.getElementById("out-log");
+    const idxAllBtn = document.getElementById("out-index-all");
+    const fullBtn = document.getElementById("out-fullpull");
+    const refreshBtn = document.getElementById("outputs-refresh");
+    const ctxMenu = document.getElementById("ctx-menu");
+    if (!srcSel || !listEl || !bcEl || !backBtn || !searchEl || !logEl || !idxAllBtn || !fullBtn || !refreshBtn || !ctxMenu) {
+      return;
+    }
+
+    const stack = [];
+    let currentItems = [];
+
+    function log(message) {
       if (logEl.textContent === "No entries.") {
         logEl.textContent = "";
       }
-      logEl.textContent += `${text}\n`;
+      logEl.textContent += message + "\n";
       logEl.scrollTop = logEl.scrollHeight;
     }
 
-    // --- Auto-check on load ---
-    (async () => {
-      try {
-        const s = await apiPluginRead("reader", { op: "autocheck", params: {} });
-        const bits = [];
-        if (s.drive) {
-          const ok = s.drive.configured && s.drive.can_exchange_token;
-          bits.push(`Drive: ${ok ? "ready" : s.drive.configured ? "auth error" : "not configured"}`);
-        }
-        if (s.local) {
-          bits.push(`Local: ${s.local.configured ? "configured" : "not configured"}`);
-        }
-        statusEl.textContent = bits.join(" • ");
-      } catch (error) {
-        statusEl.textContent = "Status: unavailable";
+    function setListMessage(message) {
+      listEl.innerHTML = `<div class="muted">${message}</div>`;
+    }
+
+    function updateBreadcrumb() {
+      bcEl.textContent = stack.map((entry) => entry.name).join(" / ");
+      backBtn.disabled = stack.length <= 1;
+    }
+
+    function current() {
+      return stack[stack.length - 1];
+    }
+
+    function rootFor(source) {
+      return source === "drive"
+        ? { parent_id: "drive:root", name: "Drive", source: "drive" }
+        : { parent_id: "local:root", name: "Local", source: "local" };
+    }
+
+    async function loadChildren(source, parentId) {
+      if (!currentToken) {
+        throw new Error("token_required");
       }
-    })();
+      const response = await apiJson("/plugins/reader/read", "POST", {
+        op: "children",
+        params: { source, parent_id: parentId, page_size: 200 },
+      });
+      return Array.isArray(response.children) ? response.children : [];
+    }
 
-    // --- Full pull state ---
-    let pulling = false;
-    let streamId = null;
-    let total = 0;
+    function draw() {
+      ctxMenu.style.display = "none";
+      listEl.innerHTML = "";
+      const query = (searchEl.value || "").toLowerCase();
+      const filtered = currentItems.filter((item) => {
+        const name = String(item.name || "");
+        return !query || name.toLowerCase().includes(query);
+      });
+      if (!filtered.length) {
+        const empty = document.createElement("div");
+        empty.className = "muted";
+        empty.textContent = currentItems.length ? "No matches." : "No items.";
+        listEl.appendChild(empty);
+        return;
+      }
 
-    async function doFullPull() {
-      pulling = true;
-      total = 0;
-      btnFull.disabled = true;
-      btnCancel.disabled = true; // enabled after open succeeds
-      progEl.textContent = "Opening…";
-      logReset();
+      filtered.forEach((item) => {
+        const row = document.createElement("div");
+        row.className = "row";
+        const icon = item.type === "folder" || item.type === "shortcut" ? "📁" : "📄";
+        row.textContent = `${icon} ${item.name}`;
+        row.style.cursor = item.type === "folder" || item.type === "shortcut" ? "pointer" : "default";
 
+        row.onclick = async () => {
+          if (item.type === "folder" || item.type === "shortcut") {
+            const entry = { source: srcSel.value, parent_id: item.id, name: item.name || "" };
+            stack.push(entry);
+            updateBreadcrumb();
+            try {
+              const children = await loadChildren(entry.source, entry.parent_id);
+              currentItems = children;
+              draw();
+            } catch (error) {
+              stack.pop();
+              updateBreadcrumb();
+              setListMessage("Failed to load items.");
+            }
+          }
+        };
+
+        row.oncontextmenu = (event) => {
+          event.preventDefault();
+          ctxMenu.innerHTML = "";
+          const menuItems = [];
+
+          const source = item.source || srcSel.value;
+          if (source === "google_drive" || srcSel.value === "drive") {
+            const isFolder = item.type === "folder" || String(item.mimeType || "").includes("folder");
+            const raw = String(item.id || "").replace(/^drive:/, "");
+            const url = isFolder
+              ? `https://drive.google.com/drive/folders/${raw}`
+              : `https://drive.google.com/file/d/${raw}/view`;
+            menuItems.push({
+              label: "Open in Drive (browser)",
+              action: () => {
+                window.open(url, "_blank");
+              },
+            });
+          }
+
+          if (source === "local_fs" || srcSel.value === "local") {
+            menuItems.push({
+              label: "Open in Explorer",
+              action: async () => {
+                try {
+                  await apiJson("/open/local", "POST", { id: item.id });
+                } catch (error) {
+                  window.alert("Failed to open item.");
+                }
+              },
+            });
+          }
+
+          if (!menuItems.length) {
+            ctxMenu.style.display = "none";
+            return;
+          }
+
+          menuItems.forEach((menuItem) => {
+            const option = document.createElement("div");
+            option.textContent = menuItem.label;
+            option.style.padding = "4px 8px";
+            option.style.cursor = "pointer";
+            option.onclick = () => {
+              ctxMenu.style.display = "none";
+              menuItem.action();
+            };
+            ctxMenu.appendChild(option);
+          });
+
+          ctxMenu.style.left = `${event.pageX}px`;
+          ctxMenu.style.top = `${event.pageY}px`;
+          ctxMenu.style.display = "block";
+        };
+
+        listEl.appendChild(row);
+      });
+    }
+
+    document.body.addEventListener("click", () => {
+      ctxMenu.style.display = "none";
+    });
+
+    searchEl.oninput = () => {
+      draw();
+    };
+
+    async function loadCurrent() {
+      const entry = current();
+      if (!entry) {
+        return;
+      }
+      if (!currentToken) {
+        currentItems = [];
+        setListMessage("Token required.");
+        return;
+      }
       try {
-        const src = sourceSel ? sourceSel.value : "drive";
-        const opened = await apiPluginRead("reader", {
+        const children = await loadChildren(entry.source, entry.parent_id);
+        currentItems = children;
+        draw();
+      } catch (error) {
+        setListMessage("Failed to load items.");
+      }
+    }
+
+    backBtn.onclick = async () => {
+      if (stack.length <= 1) {
+        return;
+      }
+      stack.pop();
+      updateBreadcrumb();
+      await loadCurrent();
+    };
+
+    refreshBtn.onclick = () => {
+      loadCurrent();
+    };
+
+    idxAllBtn.onclick = () => {
+      log("Index All → starting …");
+      fullBtn.click();
+    };
+
+    fullBtn.onclick = async () => {
+      if (!currentToken) {
+        log("Full Pull requires a session token.");
+        return;
+      }
+      const source = srcSel.value;
+      log("Full Pull → opening stream …");
+      try {
+        const opened = await apiJson("/plugins/reader/read", "POST", {
           op: "start_full_pull",
-          params: { source: src, recursive: true, page_size: 500 },
+          params: { source, recursive: true, page_size: 500 },
         });
-        streamId = opened.stream_id;
+        const streamId = opened.stream_id;
         if (!streamId) {
-          throw new Error("no stream");
+          log("Failed to start stream.");
+          return;
         }
-
-        btnCancel.disabled = false;
-
-        while (pulling) {
-          const page = await apiCatalogNext(streamId, 500, 600);
-          const items = Array.isArray(page.items) ? page.items : [];
-          total += items.length;
-
-          const preview = items
-            .slice(0, 5)
-            .map((item) => `• ${item.name} (${item.type})`);
-          if (preview.length) {
-            logAppend(preview);
+        let total = 0;
+        try {
+          for (;;) {
+            const page = await apiJson("/catalog/next", "POST", {
+              stream_id: streamId,
+              max_items: 500,
+              time_budget_ms: 600,
+            });
+            const items = Array.isArray(page.items) ? page.items : [];
+            total += items.length;
+            const preview = items
+              .slice(0, 5)
+              .map((entry) => `• ${entry.name} (${entry.type})`)
+              .join("\n");
+            if (preview) {
+              log(preview);
+            }
+            if (page.done) {
+              log(`Done. Indexed ${total} items.`);
+              break;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 60));
           }
-
-          progEl.textContent = page.done
-            ? `Done. Indexed ${total} items.`
-            : `Fetched ${total} items…`;
-
-          if (page.done) {
-            break;
-          }
-          await new Promise((resolve) => setTimeout(resolve, 50));
+        } finally {
+          await apiJson("/catalog/close", "POST", { stream_id: streamId }).catch(() => {});
         }
       } catch (error) {
-        progEl.textContent = "Full pull failed";
-        logAppend("! error during full pull");
-      } finally {
-        try {
-          if (streamId) {
-            await apiCatalogClose(streamId);
-          }
-        } catch (closeError) {
-          // ignore
-        }
-        btnFull.disabled = false;
-        btnCancel.disabled = true;
-        pulling = false;
-        streamId = null;
+        log("Full Pull failed.");
       }
-    }
+    };
 
-    btnFull.onclick = () => {
-      if (pulling) {
-        return;
-      }
-      if (!hasToken()) {
-        window.alert("Session token required.");
-        return;
-      }
-      doFullPull();
+    srcSel.onchange = async () => {
+      stack.length = 0;
+      stack.push(rootFor(srcSel.value));
+      updateBreadcrumb();
+      await loadCurrent();
     };
-    btnCancel.onclick = () => {
-      if (!pulling) {
-        return;
-      }
-      pulling = false;
-      progEl.textContent = "Cancelling…";
-    };
+
+    stack.push(rootFor(srcSel.value));
+    updateBreadcrumb();
+    loadCurrent();
+
+    outputsRefresh = loadCurrent;
   }
 
-  loadToken();
-  attachEvents();
-  if (currentToken) {
-    refreshAll();
+  function refreshAll() {
+    healthRefresh();
+    capsRefresh();
+    pluginsRefresh();
+    logsRefresh();
+    outputsRefresh();
+    settingsLocalRefresh().catch(() => {});
   }
 
-  window.addEventListener("DOMContentLoaded", () => {
-    if (hasToken()) {
-      initGoogleRow();
-    } else {
-      renderGoogleHealthState("Missing token", false);
-      renderGsStatus("Not configured");
+  document.addEventListener("DOMContentLoaded", () => {
+    loadToken();
+
+    if (saveTokenBtn) {
+      saveTokenBtn.addEventListener("click", saveToken);
     }
-    readerOutputsInit();
-    readerTreeInit();
+
+    if (refreshAllBtn) {
+      refreshAllBtn.addEventListener("click", refreshAll);
+    }
+
+    if (tabDashboardBtn) {
+      tabDashboardBtn.addEventListener("click", () => showTab("dashboard"));
+    }
+    if (tabSettingsBtn) {
+      tabSettingsBtn.addEventListener("click", () => showTab("settings"));
+    }
+
+    healthInit();
+    capsInit();
+    pluginsInit();
+    logsInit();
+    outputsInit();
+    settingsLocalInit().catch(() => {});
+
+    if (currentToken) {
+      refreshAll();
+    }
   });
 })();

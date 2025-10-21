@@ -15,21 +15,27 @@ def _ub64u(s: str) -> str:
 
 
 class LocalFSProvider:
-    """
-    Core-owned local filesystem lister restricted to allow-listed roots.
-    """
+    """Core-owned local filesystem lister restricted to allow-listed roots."""
 
-    def __init__(self, logger, settings_loader):
-        self._log = logger("provider.local_fs")
-        self._settings = settings_loader
+    def __init__(self, logger_factory, settings_loader):
+        self._log = logger_factory("provider.local_fs")
+        self._settings_loader = settings_loader
+
+    def _settings(self) -> Dict[str, Any]:
+        try:
+            raw = self._settings_loader() or {}
+            return raw if isinstance(raw, dict) else {}
+        except Exception:
+            return {}
 
     def _roots(self) -> List[str]:
-        s = self._settings() or {}
-        roots = s.get("local_roots", [])
+        settings = self._settings()
+        roots = settings.get("local_roots", []) if isinstance(settings, dict) else []
         return [os.path.abspath(p) for p in roots if isinstance(p, str)]
 
     def status(self) -> Dict[str, Any]:
-        return {"configured": bool(self._roots())}
+        roots = self._roots()
+        return {"configured": bool(roots), "roots": roots}
 
     def list_children(self, *, parent_id: str) -> Dict[str, Any]:
         def mk_node(path: str) -> Dict[str, Any]:

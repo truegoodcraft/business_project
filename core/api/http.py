@@ -1,17 +1,31 @@
 from __future__ import annotations
 
 import base64
+import ctypes
 import hashlib
 import hmac
 import json
+import os
 import secrets
+import subprocess
+import sys
 import time
 from pathlib import Path
-import sys
+from ctypes import wintypes
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlencode
 
-from fastapi import Body, Depends, FastAPI, Header, HTTPException, Request, Response, APIRouter
+from fastapi import (
+    APIRouter,
+    Body,
+    Depends,
+    FastAPI,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+)
 from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -157,6 +171,97 @@ oauth = APIRouter()
 
 def _broker():
     return get_broker()
+
+
+def _decode_local_id(local_id: str) -> str:
+    """Decode a local:<b64url(path)> identifier into an absolute path."""
+
+    try:
+        b64 = local_id.split(":", 1)[1]
+        pad = "=" * (-len(b64) % 4)
+        return base64.urlsafe_b64decode(b64 + pad).decode()
+    except Exception as exc:  # pragma: no cover - defensive
+        raise HTTPException(status_code=400, detail="bad_local_id") from exc
+
+
+def _allowed_local_path(path: str) -> bool:
+    """Return True if the path is within the configured local roots."""
+
+    broker = get_broker()
+    try:
+        settings = broker._catalog._providers["local_fs"]._settings()  # type: ignore[attr-defined]
+        roots = [os.path.abspath(p) for p in settings.get("local_roots", [])]
+    except Exception:
+        roots = []
+    ap = os.path.abspath(path)
+    return any(os.path.commonpath([ap, root]) == root for root in roots)
+
+
+def _list_windows_drives() -> List[Dict[str, Any]]:
+    drives: List[Dict[str, Any]] = []
+    try:
+        bitmask = ctypes.windll.kernel32.GetLogicalDrives()
+        letters = [chr(ord("A") + i) for i in range(26) if bitmask & (1 << i)]
+        get_drive_type_w = ctypes.windll.kernel32.GetDriveTypeW
+        drive_types = {
+            0: "unknown",
+            1: "invalid",
+            2: "removable",
+            3: "fixed",
+            4: "remote",
+            5: "cdrom",
+            6: "ramdisk",
+        }
+        get_volume_information_w = ctypes.windll.kernel32.GetVolumeInformationW
+        for letter in letters:
+            root = f"{letter}:\\"
+            dtype = drive_types.get(get_drive_type_w(root), "unknown")
+            label_buf = ctypes.create_unicode_buffer(256)
+            fs_buf = ctypes.create_unicode_buffer(256)
+            serial = wintypes.DWORD()
+            max_comp = wintypes.DWORD()
+            flags = wintypes.DWORD()
+            try:
+                ok = get_volume_information_w(
+                    root,
+                    label_buf,
+                    256,
+                    ctypes.byref(serial),
+                    ctypes.byref(max_comp),
+                    ctypes.byref(flags),
+                    fs_buf,
+                    256,
+                )
+                label = label_buf.value if ok else ""
+            except Exception:
+                label = ""
+            drives.append({"path": root, "label": label, "type": dtype})
+    except Exception:
+        pass
+    return drives
+
+
+def _list_posix_mounts() -> List[Dict[str, Any]]:
+    mounts: List[Dict[str, Any]] = []
+    try:
+        with open("/proc/mounts", "r", encoding="utf-8") as handle:
+            seen: set[str] = set()
+            for line in handle:
+                parts = line.split()
+                if len(parts) >= 2:
+                    mount_point = parts[1]
+                    if mount_point not in seen and (
+                        mount_point == "/"
+                        or mount_point.startswith("/mnt")
+                        or mount_point.startswith("/Volumes")
+                    ):
+                        seen.add(mount_point)
+                        mounts.append({"path": mount_point, "label": "", "type": "mount"})
+    except Exception:
+        for fallback in ("/", "/mnt", "/Volumes"):
+            if os.path.exists(fallback):
+                mounts.append({"path": fallback, "label": "", "type": "mount"})
+    return mounts
 
 
 def _with_run_id(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -650,6 +755,62 @@ def logs() -> Dict[str, Any]:
         return _with_run_id({"logs": []})
     lines = path.read_text(encoding="utf-8").splitlines()[-200:]
     return _with_run_id({"logs": lines})
+
+
+@protected.get("/local/available_drives", response_model=None)
+def local_available_drives() -> Dict[str, Any]:
+    if os.name == "nt":
+        return {"drives": _list_windows_drives()}
+    return {"drives": _list_posix_mounts()}
+
+
+@protected.get("/local/validate_path", response_model=None)
+def local_validate_path(path: str = Query(..., min_length=1)) -> Dict[str, Any]:
+    abs_path = os.path.abspath(path)
+    if not os.path.exists(abs_path):
+        return {"ok": False, "reason": "not_found", "path": abs_path}
+    if not os.path.isdir(abs_path):
+        return {"ok": False, "reason": "not_directory", "path": abs_path}
+    return {"ok": True, "path": abs_path}
+
+
+@protected.post("/open/local", response_model=None)
+def open_local(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Open a local file or folder in the system file explorer."""
+
+    item_id = payload.get("id") if isinstance(payload, dict) else None
+    if not item_id or not isinstance(item_id, str) or not item_id.startswith("local:"):
+        raise HTTPException(status_code=400, detail="missing_local_id")
+
+    path = _decode_local_id(item_id)
+    if not _allowed_local_path(path):
+        raise HTTPException(status_code=403, detail="path_not_allowed")
+
+    try:
+        if os.name == "nt":
+            if os.path.isfile(path):
+                subprocess.Popen(["explorer", "/select,", path])
+            else:
+                os.startfile(path)  # type: ignore[attr-defined]
+        else:
+            subprocess.Popen(["xdg-open", path])
+    except Exception as exc:  # pragma: no cover - platform specific
+        raise HTTPException(status_code=500, detail="open_failed") from exc
+
+    return {"ok": True}
+
+
+@protected.post("/server/restart", response_model=None)
+def server_restart() -> Dict[str, Any]:
+    """Exit the running process so it can be restarted manually."""
+
+    try:
+        import threading
+
+        threading.Timer(0.25, lambda: os._exit(0)).start()
+        return {"ok": True, "message": "Exiting process; restart manually."}
+    except Exception as exc:  # pragma: no cover - defensive
+        raise HTTPException(status_code=500, detail="restart_failed") from exc
 
 
 APP.include_router(oauth)
