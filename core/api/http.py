@@ -173,6 +173,45 @@ def _broker():
     return get_broker()
 
 
+INDEX_STATE_PATH = os.path.join("data", "index_state.json")
+
+
+def _load_index_state() -> Dict[str, Any]:
+    try:
+        with open(INDEX_STATE_PATH, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+            if isinstance(data, dict):
+                if not isinstance(data.get("drive"), dict):
+                    data["drive"] = {}
+                if not isinstance(data.get("local"), dict):
+                    data["local"] = {}
+                return data
+    except Exception:
+        pass
+    return {"drive": {}, "local": {}}
+
+
+def _save_index_state(state: Dict[str, Any]) -> None:
+    os.makedirs(os.path.dirname(INDEX_STATE_PATH), exist_ok=True)
+    tmp_path = INDEX_STATE_PATH + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as handle:
+        json.dump(state, handle, ensure_ascii=False, separators=(",", ":"))
+    os.replace(tmp_path, INDEX_STATE_PATH)
+
+
+def compute_local_roots_signature(broker) -> str:
+    try:
+        roots = broker.service_call("local_fs", "status", {}).get("roots", [])
+    except Exception:
+        roots = []
+    normed = []
+    for root in roots:
+        if isinstance(root, str):
+            normed.append(os.path.normcase(os.path.normpath(root)))
+    payload = "|".join(sorted(normed))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def _decode_local_id(local_id: str) -> str:
     """Decode a local:<b64url(path)> identifier into an absolute path."""
 
@@ -187,7 +226,7 @@ def _decode_local_id(local_id: str) -> str:
 def _allowed_local_path(path: str) -> bool:
     """Return True if the path is within the configured local roots."""
 
-    broker = get_broker()
+    broker = _broker()
     try:
         settings = broker._catalog._providers["local_fs"]._settings()  # type: ignore[attr-defined]
         roots = [os.path.abspath(p) for p in settings.get("local_roots", [])]
@@ -463,6 +502,66 @@ def catalog_close(body: Dict[str, Any]):
     if not sid:
         raise HTTPException(status_code=400, detail="missing stream_id")
     return _broker().catalog_close(str(sid))
+
+
+@protected.get("/index/state", response_model=None)
+def index_state_get():
+    return _load_index_state()
+
+
+@protected.post("/index/state", response_model=None)
+def index_state_set(body: Dict[str, Any] = Body(default={})):  # type: ignore[assignment]
+    state = _load_index_state()
+    payload = body if isinstance(body, dict) else {}
+    for key in ("drive", "local"):
+        if key in payload and isinstance(payload[key], dict):
+            state[key] = payload[key]
+    state["updated_at"] = int(time.time())
+    _save_index_state(state)
+    return {"ok": True, "state": state}
+
+
+@protected.get("/index/status", response_model=None)
+def index_status():
+    broker = _broker()
+    state = _load_index_state()
+
+    current_drive_token = None
+    try:
+        token_result = broker.service_call("google_drive", "get_start_page_token", {})
+        if isinstance(token_result, dict) and token_result.get("ok"):
+            current_drive_token = token_result.get("token")
+    except Exception:
+        current_drive_token = None
+
+    last_drive_token = None
+    drive_state = state.get("drive") if isinstance(state, dict) else {}
+    if isinstance(drive_state, dict):
+        last_drive_token = drive_state.get("token")
+    drive_up_to_date = bool(
+        current_drive_token and last_drive_token and current_drive_token == last_drive_token
+    )
+
+    current_sig = compute_local_roots_signature(broker)
+    last_sig = None
+    local_state = state.get("local") if isinstance(state, dict) else {}
+    if isinstance(local_state, dict):
+        last_sig = local_state.get("roots_sig")
+    local_up_to_date = bool(current_sig and last_sig and current_sig == last_sig)
+
+    return {
+        "drive": {
+            "current_token": current_drive_token,
+            "last_token": last_drive_token,
+            "up_to_date": drive_up_to_date,
+        },
+        "local": {
+            "current_sig": current_sig,
+            "last_sig": last_sig,
+            "up_to_date": local_up_to_date,
+        },
+        "overall_up_to_date": bool(drive_up_to_date and local_up_to_date),
+    }
 
 
 @protected.get("/drive/available_drives", response_model=None)
