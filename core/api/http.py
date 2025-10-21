@@ -620,6 +620,14 @@ def plugin_read(service_id: str, body: Dict[str, Any] = Body(default={})):  # ty
     plugin = _get_plugin_by_id(service_id)
     if not plugin or not hasattr(plugin, "read"):
         raise HTTPException(status_code=404, detail="plugin or op not found")
+    try:
+        from core.plugins.loader import plugin_descriptor  # type: ignore
+    except Exception:
+        descriptor = None
+    else:
+        descriptor = plugin_descriptor(service_id)
+    if descriptor and not bool(descriptor.get("enabled", True)):
+        raise HTTPException(status_code=403, detail="plugin_disabled")
     op = body.get("op") if isinstance(body, dict) else None
     params = body.get("params") if isinstance(body, dict) else None
     if not isinstance(params, dict):
@@ -628,6 +636,31 @@ def plugin_read(service_id: str, body: Dict[str, Any] = Body(default={})):  # ty
         return plugin.read(op, params)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"read failed: {type(exc).__name__}") from exc
+
+
+@protected.post("/plugins/{pid}/enable", response_model=None)
+def plugin_enable(pid: str, body: Dict[str, Any] = Body(default={})):  # type: ignore[assignment]
+    try:
+        from core.plugins.loader import (  # type: ignore
+            get_plugin,
+            plugin_descriptor,
+            set_plugin_enabled,
+        )
+    except Exception as exc:  # pragma: no cover - loader import failure
+        raise HTTPException(status_code=500, detail="plugin_toggle_unavailable") from exc
+
+    plugin = get_plugin(pid)
+    descriptor = plugin_descriptor(pid)
+    if not plugin and descriptor is None:
+        raise HTTPException(status_code=404, detail="plugin_not_found")
+
+    enabled_flag = True
+    if isinstance(body, dict) and "enabled" in body:
+        enabled_flag = bool(body.get("enabled"))
+
+    set_plugin_enabled(pid, enabled_flag)
+    descriptor = plugin_descriptor(pid) or {"enabled": enabled_flag}
+    return {"ok": True, "id": pid, "enabled": bool(descriptor.get("enabled", True))}
 
 
 @protected.post("/probe")
