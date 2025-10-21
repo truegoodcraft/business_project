@@ -45,6 +45,8 @@ class Broker(ConnectionBroker):
                 return p.list_children(**params)
             if op == "list_drives" and hasattr(p, "list_drives"):
                 return p.list_drives()
+            if op == "get_start_page_token" and hasattr(p, "get_start_page_token"):
+                return p.get_start_page_token()
             if op == "search" and hasattr(p, "search"):
                 return p.search(**params)
             return {"error": "unknown_op"}

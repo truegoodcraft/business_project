@@ -98,6 +98,21 @@ class GoogleDriveProvider:
             return {"drives": []}
         return {"drives": data.get("drives", [])}
 
+    def get_start_page_token(self) -> Dict[str, Any]:
+        url = "https://www.googleapis.com/drive/v3/changes/startPageToken?supportsAllDrives=true"
+        try:
+            r, code = self._auth_get(url)
+            if code != 200 or r is None:
+                raise ValueError("token request failed")
+            payload = r.json()
+            token = payload.get("startPageToken") if isinstance(payload, dict) else None
+            if not token:
+                raise ValueError("missing token")
+            return {"ok": True, "token": token}
+        except Exception:
+            self._log.exception("drive.get_start_page_token failed")
+            return {"ok": False, "error": "token_failed"}
+
     # ----- basic status/children (for UI tree) -----
     def status(self) -> Dict[str, Any]:
         cid, cs, rt = self._get_client()

@@ -499,6 +499,16 @@
           label.textContent = `${path}${suffix}`;
           row.appendChild(cb);
           row.appendChild(label);
+          const addSub = document.createElement("button");
+          addSub.className = "btn btn-secondary";
+          addSub.textContent = "Add subfolder…";
+          addSub.style.marginLeft = "8px";
+          addSub.onclick = () => {
+            folderIn.value = path;
+            folderIn.focus();
+            note(`Enter a subfolder inside ${path} then Validate → Add`);
+          };
+          row.appendChild(addSub);
           drivesEl.appendChild(row);
         });
         if (!drivesEl.children.length) {
@@ -855,11 +865,10 @@
     const backBtn = document.getElementById("out-back");
     const searchEl = document.getElementById("out-search");
     const logEl = document.getElementById("out-log");
-    const idxAllBtn = document.getElementById("out-index-all");
-    const fullBtn = document.getElementById("out-fullpull");
+    const indexBtn = document.getElementById("out-index");
     const refreshBtn = document.getElementById("outputs-refresh");
     const ctxMenu = document.getElementById("ctx-menu");
-    if (!srcSel || !listEl || !bcEl || !backBtn || !searchEl || !logEl || !idxAllBtn || !fullBtn || !refreshBtn || !ctxMenu) {
+    if (!srcSel || !listEl || !bcEl || !backBtn || !searchEl || !logEl || !indexBtn || !refreshBtn || !ctxMenu) {
       return;
     }
 
@@ -1047,6 +1056,127 @@
       draw();
     };
 
+    async function getIndexStatus() {
+      return apiJson("/index/status", "GET");
+    }
+
+    async function updateIndexState(partial) {
+      return apiJson("/index/state", "POST", partial);
+    }
+
+    async function refreshIndexButton() {
+      if (!indexBtn) {
+        return;
+      }
+      if (!currentToken) {
+        indexBtn.disabled = false;
+        indexBtn.title = "Index";
+        return;
+      }
+      try {
+        const status = await getIndexStatus();
+        const upToDate = Boolean(status && status.overall_up_to_date);
+        indexBtn.disabled = upToDate;
+        indexBtn.title = upToDate ? "Index up-to-date" : "Index";
+      } catch (error) {
+        indexBtn.disabled = false;
+        indexBtn.title = "Index";
+      }
+    }
+
+    async function indexDrive(logFn) {
+      if (!currentToken) {
+        logFn("Drive index skipped (token required).");
+        return null;
+      }
+      let streamId;
+      try {
+        const opened = await apiJson("/catalog/open", "POST", {
+          source: "google_drive",
+          scope: "allDrives",
+          options: { recursive: true, page_size: 500, fingerprint: false },
+        });
+        streamId = opened ? opened.stream_id : null;
+        if (!streamId) {
+          logFn("Drive index failed.");
+          return null;
+        }
+        let total = 0;
+        try {
+          for (;;) {
+            const page = await apiJson("/catalog/next", "POST", {
+              stream_id: streamId,
+              max_items: 500,
+              time_budget_ms: 600,
+            });
+            const items = Array.isArray(page.items) ? page.items : [];
+            total += items.length;
+            if (page.done) {
+              logFn(`Drive indexed ${total} items.`);
+              return total;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 60));
+          }
+        } finally {
+          if (streamId) {
+            await apiJson("/catalog/close", "POST", { stream_id: streamId }).catch(() => {});
+          }
+        }
+      } catch (error) {
+        logFn("Drive index failed.");
+      }
+      return null;
+    }
+
+    async function indexLocal(logFn) {
+      if (!currentToken) {
+        logFn("Local index skipped (token required).");
+        return null;
+      }
+      let streamId;
+      try {
+        const opened = await apiJson("/catalog/open", "POST", {
+          source: "local_fs",
+          scope: "local_roots",
+          options: { recursive: true, page_size: 500, fingerprint: false },
+        });
+        streamId = opened ? opened.stream_id : null;
+        if (!streamId) {
+          logFn("Local index failed.");
+          return null;
+        }
+        let total = 0;
+        try {
+          for (;;) {
+            const page = await apiJson("/catalog/next", "POST", {
+              stream_id: streamId,
+              max_items: 500,
+              time_budget_ms: 600,
+            });
+            const items = Array.isArray(page.items) ? page.items : [];
+            total += items.length;
+            if (page.done) {
+              logFn(`Local indexed ${total} items.`);
+              return total;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 60));
+          }
+        } finally {
+          if (streamId) {
+            await apiJson("/catalog/close", "POST", { stream_id: streamId }).catch(() => {});
+          }
+        }
+      } catch (error) {
+        logFn("Local index failed.");
+      }
+      return null;
+    }
+
+    const reloadOutputs = async () => {
+      await loadCurrent();
+      await refreshIndexButton();
+    };
+
     async function loadCurrent() {
       const entry = current();
       if (!entry) {
@@ -1078,92 +1208,56 @@
       stack.pop();
       updateBreadcrumb();
       await loadCurrent();
+      refreshIndexButton().catch(() => {});
     };
 
     refreshBtn.onclick = () => {
-      loadCurrent();
+      reloadOutputs();
     };
 
-    idxAllBtn.onclick = () => {
-      log("Index All → starting …");
-      fullBtn.click();
-    };
-
-    fullBtn.onclick = async () => {
+    indexBtn.onclick = async () => {
       if (!currentToken) {
-        log("Full Pull requires a session token.");
+        log("Index requires a session token.");
         return;
       }
-      const source = srcSel.value;
-      log("Full Pull → opening stream …");
+      const logFn = (message) => {
+        log(message);
+      };
+      indexBtn.disabled = true;
+      indexBtn.title = "Index";
+      logFn("Index → starting …");
+      await Promise.all([indexDrive(logFn), indexLocal(logFn)]);
+      let status = null;
       try {
-        let opened;
-        if (source === "reader") {
-          opened = await apiJson("/plugins/reader/read", "POST", {
-            op: "start_full_pull",
-            params: { source: "drive", recursive: true, page_size: 500 },
-          });
-        } else if (source === "drive") {
-          opened = await apiJson("/plugins/google_drive/read", "POST", {
-            op: "catalog_open",
-            params: {
-              scope: "allDrives",
-              recursive: true,
-              page_size: 500,
-              fingerprint: false,
-            },
-          });
-        } else if (source === "local") {
-          opened = await apiJson("/plugins/local/read", "POST", {
-            op: "catalog_open",
-            params: {
-              scope: "local_roots",
-              recursive: true,
-              page_size: 500,
-              fingerprint: false,
-            },
-          });
-        } else {
-          log("Unknown source.");
-          return;
-        }
-        const streamId = opened.stream_id;
-        if (!streamId) {
-          log("Failed to start stream.");
-          return;
-        }
-        let total = 0;
-        try {
-          for (;;) {
-            const page = await apiJson("/catalog/next", "POST", {
-              stream_id: streamId,
-              max_items: 500,
-              time_budget_ms: 600,
-            });
-            const items = Array.isArray(page.items) ? page.items : [];
-            total += items.length;
-            const preview = items
-              .slice(0, 5)
-              .map((entry) => `• ${entry.name} (${entry.type})`)
-              .join("\n");
-            if (preview) {
-              log(preview);
-            }
-            if (page.done) {
-              log(`Done. Indexed ${total} items.`);
-              break;
-            }
-            await new Promise((resolve) => setTimeout(resolve, 60));
-          }
-        } finally {
-          await apiJson("/catalog/close", "POST", { stream_id: streamId }).catch(() => {});
-        }
+        status = await getIndexStatus();
       } catch (error) {
-        if (error && (error.status === 403 || error.code === "plugin_disabled")) {
-          log("Plugin disabled.");
-        } else {
-          log("Full Pull failed.");
+        status = null;
+      }
+      if (status) {
+        const payload = {};
+        if (status.drive && status.drive.current_token) {
+          payload.drive = {
+            token: status.drive.current_token,
+            last_indexed_at: Date.now(),
+          };
         }
+        if (status.local && status.local.current_sig) {
+          payload.local = {
+            roots_sig: status.local.current_sig,
+            last_indexed_at: Date.now(),
+          };
+        }
+        if (Object.keys(payload).length) {
+          await updateIndexState(payload).catch(() => {});
+        }
+        const upToDate = Boolean(status.overall_up_to_date);
+        indexBtn.disabled = upToDate;
+        indexBtn.title = upToDate ? "Index up-to-date" : "Index";
+        logFn(`Done. Up-to-date = ${upToDate}.`);
+      } else {
+        indexBtn.disabled = false;
+        indexBtn.title = "Index";
+        logFn("Done.");
       }
     };
 
@@ -1172,13 +1266,14 @@
       stack.push(rootFor(srcSel.value));
       updateBreadcrumb();
       await loadCurrent();
+      refreshIndexButton().catch(() => {});
     };
 
     stack.push(rootFor(srcSel.value));
     updateBreadcrumb();
-    loadCurrent();
+    reloadOutputs();
 
-    outputsRefresh = loadCurrent;
+    outputsRefresh = reloadOutputs;
   }
 
   function refreshAll() {
