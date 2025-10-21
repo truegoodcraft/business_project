@@ -63,3 +63,11 @@ class Broker(ConnectionBroker):
 
     def catalog_close(self, stream_id: str) -> Dict[str, Any]:
         return self._catalog.close(stream_id)
+
+    def clear_provider_cache(self, provider: str) -> None:
+        p = self._providers.get(provider)
+        if p and hasattr(p, "clear_cache"):
+            try:
+                p.clear_cache()
+            except Exception:
+                pass
