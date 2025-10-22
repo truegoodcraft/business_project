@@ -201,9 +201,77 @@
             </div>
           </div>
         </div>
+        <div style="margin-top:16px; padding:12px; border:1px solid #333; border-radius:6px;">
+          <h3 style="margin:0 0 8px 0;">Safety</h3>
+          <div style="display:flex; align-items:center; gap:12px;">
+            <div id="writesStatus">Writes: <strong>Loading…</strong></div>
+            <label>
+              <input id="writesToggle" type="checkbox" />
+              Enable writes (dangerous)
+            </label>
+          </div>
+          <div class="muted" style="margin-top:6px;">Env <code>BUS_ALLOW_LOCAL_WRITES=1</code> always forces ON.</div>
+        </div>
+
+        <div style="margin-top:16px; padding:12px; border:1px solid #333; border-radius:6px;">
+          <h3 style="margin:0 0 8px 0;">Dev Tools</h3>
+          <button id="btnPingPlugin" type="button">Ping Plugin</button>
+          <pre id="pingOut" style="margin-top:8px; white-space:pre-wrap;"></pre>
+        </div>
       </div>
     </section>
 
+    <script>
+      (function () {
+        const token = (
+          window.__SESSION_TOKEN || window.__sessionToken || window.BUS_SESSION_TOKEN || ""
+        )
+          .toString();
+        function headers() {
+          const h = {};
+          if (token) h["X-Session-Token"] = token;
+          return h;
+        }
+
+        async function refreshWrites() {
+          try {
+            const r = await fetch("/dev/writes", { headers: headers() });
+            const j = await r.json();
+            const on = !!j.enabled;
+            document.getElementById("writesToggle").checked = on;
+            document.getElementById("writesStatus").innerHTML =
+              "Writes: <strong>" + (on ? "Enabled" : "Disabled") + "</strong>";
+          } catch (e) {
+            document.getElementById("writesStatus").textContent = "Writes: error";
+          }
+        }
+
+        document.getElementById("writesToggle").addEventListener("change", async (ev) => {
+          const enabled = ev.target.checked;
+          await fetch("/dev/writes", {
+            method: "POST",
+            headers: Object.assign({ "Content-Type": "application/json" }, headers()),
+            body: JSON.stringify({ enabled }),
+          });
+          refreshWrites();
+        });
+
+        const pingBtn = document.getElementById("btnPingPlugin");
+        if (pingBtn) {
+          pingBtn.addEventListener("click", async () => {
+            try {
+              const r = await fetch("/dev/ping_plugin", { headers: headers() });
+              const j = await r.json();
+              document.getElementById("pingOut").textContent = JSON.stringify(j, null, 2);
+            } catch (e) {
+              document.getElementById("pingOut").textContent = String(e);
+            }
+          });
+        }
+
+        refreshWrites();
+      })();
+    </script>
     <script src="/ui/static/app.js" defer></script>
   </body>
 </html>

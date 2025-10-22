@@ -25,3 +25,31 @@ def load_policy() -> Policy:
 
 def save_policy(policy: Policy) -> None:
     CONFIG_FILE.write_text(policy.model_dump_json(indent=2), encoding="utf-8")
+
+
+def get_writes_enabled() -> bool:
+    # ENV override wins
+    import os, json
+
+    if os.environ.get("BUS_ALLOW_LOCAL_WRITES") == "1":
+        return True
+    if CONFIG_FILE.exists():
+        try:
+            data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+            return bool(data.get("writes_enabled", False))
+        except Exception:
+            pass
+    return False
+
+
+def set_writes_enabled(enabled: bool) -> None:
+    import json
+
+    data = {}
+    if CONFIG_FILE.exists():
+        try:
+            data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            data = {}
+    data["writes_enabled"] = bool(enabled)
+    CONFIG_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
