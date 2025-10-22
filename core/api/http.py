@@ -37,7 +37,7 @@ from core.capabilities import registry
 from core.capabilities.registry import MANIFEST_PATH
 from core.policy.guard import require_owner_commit
 from core.policy.model import Policy
-from core.policy.store import load_policy, save_policy
+from core.policy.store import load_policy, save_policy, get_writes_enabled, set_writes_enabled
 from core.plans.commit import commit_local
 from core.plans.model import Plan, PlanStatus
 from core.plans.preview import preview_plan
@@ -223,6 +223,21 @@ oauth = APIRouter()
 
 def _broker():
     return get_broker()
+
+
+class WritesBody(BaseModel):
+    enabled: bool
+
+
+@protected.get("/dev/writes")
+def dev_get_writes():
+    return {"enabled": get_writes_enabled()}
+
+
+@protected.post("/dev/writes")
+def dev_set_writes(body: WritesBody):
+    set_writes_enabled(bool(body.enabled))
+    return {"enabled": get_writes_enabled()}
 
 
 @protected.get("/dev/ping_plugin")
