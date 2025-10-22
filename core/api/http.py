@@ -11,6 +11,7 @@ import secrets
 import subprocess
 import sys
 import time
+import uuid
 from pathlib import Path
 from ctypes import wintypes
 from typing import Any, Dict, List, Optional
@@ -52,6 +53,13 @@ from pydantic import BaseModel
 
 from core.domain.bootstrap import get_broker
 from core.settings.reader import load_reader_settings, save_reader_settings
+
+if os.name == "nt":  # pragma: no cover - windows specific
+    from core.broker.pipes import NamedPipeServer
+    from core.broker.service import PluginBroker, handle_connection
+    from core.win.sandbox import spawn_sandboxed
+else:  # pragma: no cover - non-windows fallback
+    NamedPipeServer = PluginBroker = handle_connection = spawn_sandboxed = None  # type: ignore[assignment]
 
 
 def _load_session_token() -> str:
@@ -215,6 +223,68 @@ oauth = APIRouter()
 
 def _broker():
     return get_broker()
+
+
+@protected.get("/dev/ping_plugin")
+def dev_ping_plugin():
+    """
+    Spawns a sandboxed plugin host that connects over a unique pipe,
+    performs hello+ping, then exits. Returns {"ok": true} if handshake worked.
+    """
+
+    if (
+        os.name != "nt"
+        or NamedPipeServer is None
+        or PluginBroker is None
+        or handle_connection is None
+        or spawn_sandboxed is None
+    ):
+        raise HTTPException(status_code=501, detail="windows_only")
+
+    pipe = r"\\.\pipe\buscore-" + str(uuid.uuid4())
+    broker = PluginBroker()
+    server = NamedPipeServer(pipe)
+    server.start(lambda conn: handle_connection(conn, broker))
+
+    cmd = (
+        f'"{sys.executable}" -m tgc.plugin_host.main '
+        f'--pipe-name "{pipe}" --plugin-id test'
+    )
+
+    ph = th = hjob = None
+    try:
+        ph, th, hjob = spawn_sandboxed(cmd)
+        try:
+            import win32con  # type: ignore
+            import win32event  # type: ignore
+            import win32process  # type: ignore
+        except Exception as exc:  # pragma: no cover - missing pywin32
+            raise HTTPException(status_code=500, detail="win32_runtime_missing") from exc
+
+        wait_rc = win32event.WaitForSingleObject(ph, 5000)
+        # Best-effort: stop server; the job will kill the host on close
+        server.stop()
+        if wait_rc != win32con.WAIT_OBJECT_0:
+            raise HTTPException(status_code=504, detail="plugin_timeout")
+        exit_code = win32process.GetExitCodeProcess(ph)
+        if exit_code != 0:
+            raise HTTPException(status_code=500, detail="plugin_failed")
+    finally:
+        if os.name == "nt":
+            try:
+                import win32file  # type: ignore
+            except Exception:
+                win32file = None  # type: ignore
+            if "win32file" in locals() and win32file is not None:  # pragma: no cover - windows only
+                for handle in (th, ph, hjob):
+                    if handle:
+                        try:
+                            win32file.CloseHandle(handle)
+                        except Exception:
+                            pass
+        server.stop()
+
+    return {"ok": True}
 
 
 INDEX_STATE_PATH = os.path.join("data", "index_state.json")

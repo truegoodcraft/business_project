@@ -1,0 +1,26 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>BUS Core — Plugins</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style> body{font-family:system-ui,sans-serif;margin:16px} button{padding:8px 12px} #out{margin-top:12px} </style>
+</head>
+<body>
+  <h2>Plugin Dev Console</h2>
+  <p>Verifies the out-of-process plugin handshake over a Windows Named Pipe.</p>
+  <button id="ping">Ping Plugin</button>
+  <div id="out"></div>
+<script>
+(function(){
+  const token = (window.__SESSION_TOKEN || window.__sessionToken || window.BUS_SESSION_TOKEN || "").toString();
+  const headers = token ? {"X-Session-Token": token} : {};
+  document.getElementById("ping").onclick = async () => {
+    const r = await fetch("/dev/ping_plugin", {headers});
+    const j = await r.json();
+    document.getElementById("out").innerHTML = `<pre>${JSON.stringify(j, null, 2)}</pre>`;
+  };
+})();
+</script>
+</body>
+</html>
