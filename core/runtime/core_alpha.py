@@ -316,6 +316,7 @@ class CoreAlpha:
                     "version": version,
                     "builtin": builtin,
                     "enabled": enabled,
+                    "ui": descriptor.get("ui") if descriptor and descriptor.get("ui") else {},
                 }
             )
             seen.add(record.id)
