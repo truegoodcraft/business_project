@@ -1,10 +1,13 @@
-import os
-import shutil
-from typing import Any, Dict, List
+import os, shutil
+from typing import Dict, Any, List
 
-from send2trash import send2trash
+try:
+    from send2trash import send2trash
+except Exception as _e:
+    def send2trash(_path: str):
+        raise RuntimeError("Send2Trash is not installed. Install with: python -m pip install Send2Trash==1.8.2") from _e
 
-from .model import ActionKind, Plan
+from .model import Plan, ActionKind
 
 
 def _ensure_parent(path: str):
