@@ -10,6 +10,29 @@ if (-not $Owner  -or $Owner  -eq "") { $Owner  = "truegoodcraft" }
 if (-not $Repo   -or $Repo   -eq "") { $Repo   = "buisness_project" }
 if (-not $Branch -or $Branch -eq "") { $Branch = "main" }
 
+function Resolve-VenvPython([string]$venvRoot) {
+  $exe = Join-Path $venvRoot "Scripts\python.exe"
+  if (Test-Path $exe) { return $exe }
+
+  # Windows Store Python may redirect under Packages\...\LocalCache\Local\BUSCore\env
+  $pkgRoot = Join-Path $env:LOCALAPPDATA "Packages"
+  if (Test-Path $pkgRoot) {
+    $pkgs = Get-ChildItem $pkgRoot -Directory -Filter "PythonSoftwareFoundation.Python.*" -ErrorAction SilentlyContinue
+    foreach ($p in $pkgs) {
+      $alt = Join-Path $p.FullName "LocalCache\Local\BUSCore\env\Scripts\python.exe"
+      if (Test-Path $alt) { return $alt }
+    }
+  }
+
+  # Fallback: search under venvRoot
+  $found = Get-ChildItem -Path $venvRoot -Recurse -Filter "python.exe" -ErrorAction SilentlyContinue `
+           | Where-Object { $_.FullName -match "\\env\\Scripts\\python\.exe$" } `
+           | Select-Object -First 1
+  if ($found) { return $found.FullName }
+
+  throw "Venv python.exe not found under $venvRoot"
+}
+
 function Need-Python {
   try { $null = python -c "import sys; assert sys.version_info[:2] >= (3,11)"; return $true }
   catch { return $false }
@@ -63,20 +86,21 @@ if (-not (Test-Path (Join-Path $venv "Scripts\python.exe"))) {
   Write-Host "Creating venv..."
   python -m venv $venv
 }
-$py = Join-Path $venv "Scripts\python.exe"
+$py = Resolve-VenvPython $venv
+Write-Host "Using venv python: $py"
 
 # Install deps
 Write-Host "Installing dependencies..."
-& $py -m pip install --upgrade pip
+& "$py" -m pip install --upgrade pip
 if (Test-Path (Join-Path $app "requirements.txt")) {
-  & $py -m pip install -r (Join-Path $app "requirements.txt")
+  & "$py" -m pip install -r (Join-Path $app "requirements.txt")
 }
-& $py -m pip install "pywin32>=306" "Send2Trash==1.8.2"
-try { & $py -m pywin32_postinstall -install | Out-Null } catch { }
+& "$py" -m pip install "pywin32>=306" "Send2Trash==1.8.2"
+try { & "$py" -m pywin32_postinstall -install | Out-Null } catch { }
 
 # Run
 Push-Location $app
 Write-Host "Starting BUS Core on http://127.0.0.1:$Port/ui"
 Start-Process "http://127.0.0.1:$Port/ui"
-& $py app.py serve --port $Port
+& "$py" app.py serve --port $Port
 Pop-Location
