@@ -34,6 +34,13 @@ import requests
 
 from core.capabilities import registry
 from core.capabilities.registry import MANIFEST_PATH
+from core.policy.guard import require_owner_commit
+from core.policy.model import Policy
+from core.policy.store import load_policy, save_policy
+from core.plans.commit import commit_local
+from core.plans.model import Plan, PlanStatus
+from core.plans.preview import preview_plan
+from core.plans.store import get_plan, list_plans, save_plan
 from core.runtime.core_alpha import CoreAlpha
 from core.runtime.policy import PolicyDecision
 from core.runtime.probe import PROBE_TIMEOUT_SEC
@@ -875,9 +882,74 @@ def oauth_google_status(_ctx=Depends(require_token_ctx)):
     return response
 
 
+@protected.get("/policy")
+def get_policy() -> Dict[str, Any]:
+    return load_policy().model_dump()
+
+
+@protected.post("/policy")
+def set_policy(policy: Policy = Body(...)) -> Dict[str, Any]:
+    save_policy(policy)
+    return policy.model_dump()
+
+
+@protected.post("/plans")
+def create_plan(plan: Plan = Body(...)) -> Dict[str, Any]:
+    normalized = plan.model_copy(update={"status": PlanStatus.DRAFT, "stats": {}})
+    save_plan(normalized)
+    return normalized.model_dump()
+
+
+@protected.get("/plans")
+def plans_index() -> List[Dict[str, Any]]:
+    return list_plans()
+
+
+@protected.get("/plans/{plan_id}")
+def plans_get(plan_id: str) -> Dict[str, Any]:
+    plan = get_plan(plan_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="plan_not_found")
+    return plan.model_dump()
+
+
+@protected.post("/plans/{plan_id}/preview")
+def plans_preview(plan_id: str) -> Dict[str, Any]:
+    plan = get_plan(plan_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="plan_not_found")
+    stats = preview_plan(plan)
+    updated = plan.model_copy(update={"status": PlanStatus.PREVIEWED, "stats": stats})
+    save_plan(updated)
+    return {"ok": True, "stats": stats}
+
+
+@protected.post("/plans/{plan_id}/commit")
+def plans_commit(plan_id: str) -> Dict[str, Any]:
+    plan = get_plan(plan_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="plan_not_found")
+    require_owner_commit()
+    summary = commit_local(plan)
+    status = PlanStatus.COMMITTED if summary.get("ok") else PlanStatus.FAILED
+    stats = dict(plan.stats or {})
+    stats["last_commit"] = summary
+    updated = plan.model_copy(update={"status": status, "stats": stats})
+    save_plan(updated)
+    return summary
+
+
+@protected.post("/plans/{plan_id}/export")
+def plans_export(plan_id: str) -> Response:
+    plan = get_plan(plan_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="plan_not_found")
+    return JSONResponse(plan.model_dump())
+
+
 @protected.get("/health")
 def health() -> Dict[str, Any]:
-    return _with_run_id({"ok": True, "version": VERSION})
+    return _with_run_id({"ok": True, "version": VERSION, "policy": load_policy().model_dump()})
 
 
 @protected.get("/plugins")
