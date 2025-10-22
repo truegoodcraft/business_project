@@ -1,4 +1,4 @@
-import threading, contextlib
+import threading, contextlib, time, win32con
 import win32file, win32pipe, pywintypes
 
 class PipeConnection:
@@ -17,6 +17,10 @@ class PipeConnection:
 
     def close(self):
         if not self.closed:
+            with contextlib.suppress(Exception):
+                win32file.FlushFileBuffers(self.handle)
+            with contextlib.suppress(Exception):
+                win32pipe.DisconnectNamedPipe(self.handle)
             with contextlib.suppress(Exception):
                 win32file.CloseHandle(self.handle)
             self.closed = True
@@ -39,18 +43,26 @@ class NamedPipeServer:
 
     def _loop(self):
         while not self._stop.is_set():
-            h = win32pipe.CreateNamedPipe(
-                self.name,
-                win32pipe.PIPE_ACCESS_DUPLEX,
-                win32pipe.PIPE_TYPE_BYTE | win32pipe.PIPE_READMODE_BYTE | win32pipe.PIPE_WAIT,
-                1, 1024*1024, 1024*1024, 5000, None
-            )
             try:
-                win32pipe.ConnectNamedPipe(h, None)
+                handle = win32pipe.CreateNamedPipe(
+                    self.name,
+                    win32pipe.PIPE_ACCESS_DUPLEX,
+                    win32pipe.PIPE_TYPE_BYTE | win32pipe.PIPE_READMODE_BYTE | win32pipe.PIPE_WAIT,
+                    win32pipe.PIPE_UNLIMITED_INSTANCES,
+                    1024*1024, 1024*1024, 5000, None
+                )
+            except pywintypes.error as e:
+                if getattr(e, "winerror", e.args[0]) == win32con.ERROR_PIPE_BUSY:
+                    time.sleep(0.05)
+                    continue
+                raise
+
+            try:
+                win32pipe.ConnectNamedPipe(handle, None)
             except pywintypes.error:
-                with contextlib.suppress(Exception): win32file.CloseHandle(h)
+                with contextlib.suppress(Exception): win32file.CloseHandle(handle)
                 continue
-            conn = PipeConnection(h)
+            conn = PipeConnection(handle)
             t = threading.Thread(target=self._serve_one, args=(conn,), daemon=True)
             t.start()
 
