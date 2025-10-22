@@ -8,8 +8,10 @@
   const refreshAllBtn = document.getElementById("refresh-all");
   const tokenBanner = document.getElementById("token-banner");
   const tabDashboardBtn = document.getElementById("tab-btn-dashboard");
+  const tabToolsBtn = document.getElementById("tab-btn-tools");
   const tabSettingsBtn = document.getElementById("tab-btn-settings");
   const tabDashboard = document.getElementById("tab-dashboard");
+  const tabTools = document.getElementById("tab-tools");
   const tabSettings = document.getElementById("tab-settings");
   const logsAutoscroll = document.getElementById("logs-autoscroll");
 
@@ -17,9 +19,40 @@
   let capsRefresh = () => {};
   let pluginsRefresh = () => {};
   let logsRefresh = () => {};
-  let outputsRefresh = () => {};
+  let explorerRefresh = () => {};
+  let toolsRefresh = () => {};
   let settingsLocalRefresh = () => Promise.resolve();
   let settingsLocalInitialized = false;
+
+  function updatePluginTokenBridge() {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.tgcGetSessionToken = () => currentToken;
+    window.tgcSessionHeaders = () => {
+      const headers = {};
+      if (currentToken) {
+        headers["X-Session-Token"] = currentToken;
+      }
+      return headers;
+    };
+    window.tgcAuthenticatedFetch = (input, init = {}) => {
+      const opts = Object.assign({}, init || {});
+      const headers = Object.assign({}, opts.headers || {});
+      if (currentToken) {
+        headers["X-Session-Token"] = currentToken;
+      }
+      opts.headers = headers;
+      return fetch(input, opts);
+    };
+    try {
+      window.dispatchEvent(
+        new CustomEvent("tgc-session-token", { detail: { token: currentToken } })
+      );
+    } catch (error) {
+      // ignore
+    }
+  }
 
   function updateTokenBanner(show) {
     if (!tokenBanner) {
@@ -39,6 +72,7 @@
       tokenInput.value = stored;
     }
     updateTokenBanner(!currentToken);
+    updatePluginTokenBridge();
   }
 
   function saveToken() {
@@ -46,6 +80,7 @@
     window.localStorage.setItem(TOKEN_STORAGE_KEY, next);
     currentToken = next;
     updateTokenBanner(!currentToken);
+    updatePluginTokenBridge();
     refreshAll();
   }
 
@@ -102,17 +137,26 @@
     if (tabDashboardBtn) {
       tabDashboardBtn.classList.toggle("active", name === "dashboard");
     }
+    if (tabToolsBtn) {
+      tabToolsBtn.classList.toggle("active", name === "tools");
+    }
     if (tabSettingsBtn) {
       tabSettingsBtn.classList.toggle("active", name === "settings");
     }
     if (tabDashboard) {
       tabDashboard.style.display = name === "dashboard" ? "block" : "none";
     }
+    if (tabTools) {
+      tabTools.style.display = name === "tools" ? "block" : "none";
+    }
     if (tabSettings) {
       tabSettings.style.display = name === "settings" ? "block" : "none";
     }
     if (name === "settings") {
       initSettingsTab();
+    }
+    if (name === "tools") {
+      toolsInit();
     }
   }
 
@@ -858,28 +902,30 @@
     logsRefresh = load;
   }
 
-  function outputsInit() {
-    const srcSel = document.getElementById("out-source");
-    const listEl = document.getElementById("out-list");
-    const bcEl = document.getElementById("out-breadcrumb");
-    const backBtn = document.getElementById("out-back");
-    const searchEl = document.getElementById("out-search");
-    const logEl = document.getElementById("out-log");
-    const indexBtn = document.getElementById("out-index");
-    const refreshBtn = document.getElementById("outputs-refresh");
-    const ctxMenu = document.getElementById("ctx-menu");
-    if (!srcSel || !listEl || !bcEl || !backBtn || !searchEl || !logEl || !indexBtn || !refreshBtn || !ctxMenu) {
+  function explorerInit() {
+    const listEl = document.getElementById("expl-list");
+    const logEl = document.getElementById("expl-log");
+    const backBtn = document.getElementById("expl-back");
+    const searchEl = document.getElementById("expl-search");
+    const refreshBtn = document.getElementById("expl-refresh");
+    const breadcrumbEl = document.getElementById("expl-breadcrumb");
+    if (!listEl || !logEl || !backBtn || !searchEl || !refreshBtn || !breadcrumbEl) {
       return;
     }
+
+    const ROOT_ENTRY = { name: "Explorer", source: null, parent_id: null };
+    const ROOT_CHILDREN = [
+      { id: "drive:root", name: "Drive", type: "folder", source: "drive" },
+      { id: "local:root", name: "Local", type: "folder", source: "local" },
+    ];
 
     const stack = [];
     let currentItems = [];
 
     function log(message) {
-      if (logEl.textContent === "No entries.") {
-        logEl.textContent = "";
-      }
-      logEl.textContent += message + "\n";
+      const stamp = new Date().toLocaleTimeString();
+      const line = `[${stamp}] ${message}`;
+      logEl.textContent = logEl.textContent ? `${logEl.textContent}\n${line}` : line;
       logEl.scrollTop = logEl.scrollHeight;
     }
 
@@ -887,393 +933,407 @@
       listEl.innerHTML = `<div class="muted">${message}</div>`;
     }
 
+    function currentEntry() {
+      return stack[stack.length - 1] || null;
+    }
+
     function updateBreadcrumb() {
-      bcEl.textContent = stack.map((entry) => entry.name).join(" / ");
+      const labels = stack.map((entry) => entry.name || "Explorer");
+      breadcrumbEl.textContent = labels.join(" / ");
       backBtn.disabled = stack.length <= 1;
     }
 
-    function current() {
-      return stack[stack.length - 1];
+    function isFolder(item) {
+      const kind = String(item.type || "").toLowerCase();
+      return kind === "folder" || kind === "shortcut" || kind === "virtual";
     }
 
-    function rootFor(source) {
-      if (source === "local") {
-        return { parent_id: "local:root", name: "Local", source: "local" };
-      }
-      if (source === "drive") {
-        return { parent_id: "drive:root", name: "Drive", source: "drive" };
-      }
-      return { parent_id: "drive:root", name: "Reader", source: "reader" };
+    function decorateChildren(children, source) {
+      return children.map((child) => ({ ...child, source }));
     }
 
-    async function loadChildrenBySource(source, parentId) {
-      if (source === "reader") {
-        const response = await apiJson("/plugins/reader/read", "POST", {
-          op: "children",
-          params: { source: "drive", parent_id: parentId, page_size: 200 },
-        });
-        return Array.isArray(response.children) ? response.children : [];
+    async function loadChildren(entry) {
+      if (!entry || !entry.source) {
+        return ROOT_CHILDREN.map((child) => ({ ...child }));
       }
-      if (source === "drive") {
+      if (!currentToken) {
+        throw new Error("token_required");
+      }
+      if (entry.source === "drive") {
         const response = await apiJson("/plugins/google_drive/read", "POST", {
           op: "children",
-          params: { parent_id: parentId, page_size: 200 },
+          params: { parent_id: entry.parent_id, page_size: 200 },
         });
-        return Array.isArray(response.children) ? response.children : [];
+        const children = Array.isArray(response.children) ? response.children : [];
+        return decorateChildren(children, "drive");
       }
-      if (source === "local") {
+      if (entry.source === "local") {
         const response = await apiJson("/plugins/local/read", "POST", {
           op: "children",
-          params: { parent_id: parentId },
+          params: { parent_id: entry.parent_id },
         });
-        return Array.isArray(response.children) ? response.children : [];
+        const children = Array.isArray(response.children) ? response.children : [];
+        return decorateChildren(children, "local");
       }
       return [];
     }
 
-    async function loadChildren(source, parentId) {
-      if (!currentToken) {
-        throw new Error("token_required");
-      }
-      try {
-        return await loadChildrenBySource(source, parentId);
-      } catch (error) {
-        if (error && (error.status === 403 || error.detail === "plugin_disabled")) {
-          error.code = "plugin_disabled";
-        }
-        throw error;
-      }
-    }
-
     function draw() {
-      ctxMenu.style.display = "none";
       listEl.innerHTML = "";
       const query = (searchEl.value || "").toLowerCase();
       const filtered = currentItems.filter((item) => {
-        const name = String(item.name || "");
-        return !query || name.toLowerCase().includes(query);
+        const name = String(item.name || "").toLowerCase();
+        return !query || name.includes(query);
       });
       if (!filtered.length) {
-        const empty = document.createElement("div");
-        empty.className = "muted";
-        empty.textContent = currentItems.length ? "No matches." : "No items.";
-        listEl.appendChild(empty);
+        const message = currentItems.length ? "No matches." : "No items.";
+        setListMessage(message);
         return;
       }
 
       filtered.forEach((item) => {
         const row = document.createElement("div");
         row.className = "row";
-        const icon = item.type === "folder" || item.type === "shortcut" ? "📁" : "📄";
-        row.textContent = `${icon} ${item.name}`;
-        row.style.cursor = item.type === "folder" || item.type === "shortcut" ? "pointer" : "default";
+        const icon = isFolder(item) ? "📁" : "📄";
+        const label = item.name || "(untitled)";
+        row.textContent = `${icon} ${label}`;
+        row.title = label;
+        row.style.cursor = isFolder(item) ? "pointer" : "default";
 
         row.onclick = async () => {
-          if (item.type === "folder" || item.type === "shortcut") {
-            const entry = { source: srcSel.value, parent_id: item.id, name: item.name || "" };
-            stack.push(entry);
-            updateBreadcrumb();
-            try {
-              const children = await loadChildren(entry.source, entry.parent_id);
-              currentItems = children;
-              draw();
-            } catch (error) {
-              stack.pop();
-              updateBreadcrumb();
-              if (error && error.code === "plugin_disabled") {
-                setListMessage("Plugin disabled.");
-              } else {
-                setListMessage("Failed to load items.");
-              }
-            }
-          }
-        };
-
-        row.oncontextmenu = (event) => {
-          event.preventDefault();
-          ctxMenu.innerHTML = "";
-          const menuItems = [];
-
-          const source = item.source || (srcSel.value === "reader" ? "drive" : srcSel.value);
-          if (source === "google_drive" || source === "drive") {
-            const isFolder = item.type === "folder" || String(item.mimeType || "").includes("folder");
-            const raw = String(item.id || "").replace(/^drive:/, "");
-            const url = isFolder
-              ? `https://drive.google.com/drive/folders/${raw}`
-              : `https://drive.google.com/file/d/${raw}/view`;
-            menuItems.push({
-              label: "Open in Drive (browser)",
-              action: () => {
-                window.open(url, "_blank");
-              },
-            });
-          }
-
-          if (source === "local_fs" || source === "local") {
-            menuItems.push({
-              label: "Open in Explorer",
-              action: async () => {
-                try {
-                  await apiJson("/open/local", "POST", { id: item.id });
-                } catch (error) {
-                  window.alert("Failed to open item.");
-                }
-              },
-            });
-          }
-
-          if (!menuItems.length) {
-            ctxMenu.style.display = "none";
+          if (!isFolder(item)) {
             return;
           }
-
-          menuItems.forEach((menuItem) => {
-            const option = document.createElement("div");
-            option.textContent = menuItem.label;
-            option.style.padding = "4px 8px";
-            option.style.cursor = "pointer";
-            option.onclick = () => {
-              ctxMenu.style.display = "none";
-              menuItem.action();
-            };
-            ctxMenu.appendChild(option);
-          });
-
-          ctxMenu.style.left = `${event.pageX}px`;
-          ctxMenu.style.top = `${event.pageY}px`;
-          ctxMenu.style.display = "block";
+          const entry = {
+            name: item.name || label,
+            source: item.source || null,
+            parent_id: item.id,
+          };
+          stack.push(entry);
+          updateBreadcrumb();
+          try {
+            currentItems = await loadChildren(entry);
+            draw();
+          } catch (error) {
+            stack.pop();
+            updateBreadcrumb();
+            if (error && error.message === "token_required") {
+              setListMessage("Session token required.");
+            } else {
+              setListMessage("Failed to load items.");
+            }
+          }
         };
 
         listEl.appendChild(row);
       });
     }
 
-    document.body.addEventListener("click", () => {
-      ctxMenu.style.display = "none";
-    });
-
-    searchEl.oninput = () => {
-      draw();
-    };
-
-    async function getIndexStatus() {
-      return apiJson("/index/status", "GET");
-    }
-
-    async function updateIndexState(partial) {
-      return apiJson("/index/state", "POST", partial);
-    }
-
-    async function refreshIndexButton() {
-      if (!indexBtn) {
+    function applyIndexStatus(status) {
+      if (!refreshBtn) {
         return;
       }
-      if (!currentToken) {
-        indexBtn.disabled = false;
-        indexBtn.title = "Index";
+      if (!status) {
+        refreshBtn.disabled = false;
+        refreshBtn.title = "Refresh";
         return;
       }
-      try {
-        const status = await getIndexStatus();
-        const upToDate = Boolean(status && status.overall_up_to_date);
-        indexBtn.disabled = upToDate;
-        indexBtn.title = upToDate ? "Index up-to-date" : "Index";
-      } catch (error) {
-        indexBtn.disabled = false;
-        indexBtn.title = "Index";
-      }
+      const upToDate = Boolean(status.overall_up_to_date);
+      refreshBtn.disabled = upToDate;
+      refreshBtn.title = upToDate ? "Index up-to-date" : "Refresh";
     }
 
-    async function indexDrive(logFn) {
+    async function fetchIndexStatus() {
       if (!currentToken) {
-        logFn("Drive index skipped (token required).");
         return null;
       }
-      let streamId;
       try {
-        const opened = await apiJson("/catalog/open", "POST", {
-          source: "google_drive",
-          scope: "allDrives",
-          options: { recursive: true, page_size: 500, fingerprint: false },
-        });
-        streamId = opened ? opened.stream_id : null;
-        if (!streamId) {
-          logFn("Drive index failed.");
-          return null;
-        }
-        let total = 0;
-        try {
-          for (;;) {
-            const page = await apiJson("/catalog/next", "POST", {
-              stream_id: streamId,
-              max_items: 500,
-              time_budget_ms: 600,
-            });
-            const items = Array.isArray(page.items) ? page.items : [];
-            total += items.length;
-            if (page.done) {
-              logFn(`Drive indexed ${total} items.`);
-              return total;
-            }
-            await new Promise((resolve) => setTimeout(resolve, 60));
-          }
-        } finally {
-          if (streamId) {
-            await apiJson("/catalog/close", "POST", { stream_id: streamId }).catch(() => {});
-          }
-        }
+        return await apiJson("/index/status", "GET");
       } catch (error) {
-        logFn("Drive index failed.");
-      }
-      return null;
-    }
-
-    async function indexLocal(logFn) {
-      if (!currentToken) {
-        logFn("Local index skipped (token required).");
         return null;
       }
-      let streamId;
-      try {
-        const opened = await apiJson("/catalog/open", "POST", {
-          source: "local_fs",
-          scope: "local_roots",
-          options: { recursive: true, page_size: 500, fingerprint: false },
-        });
-        streamId = opened ? opened.stream_id : null;
-        if (!streamId) {
-          logFn("Local index failed.");
-          return null;
-        }
-        let total = 0;
-        try {
-          for (;;) {
-            const page = await apiJson("/catalog/next", "POST", {
-              stream_id: streamId,
-              max_items: 500,
-              time_budget_ms: 600,
-            });
-            const items = Array.isArray(page.items) ? page.items : [];
-            total += items.length;
-            if (page.done) {
-              logFn(`Local indexed ${total} items.`);
-              return total;
-            }
-            await new Promise((resolve) => setTimeout(resolve, 60));
-          }
-        } finally {
-          if (streamId) {
-            await apiJson("/catalog/close", "POST", { stream_id: streamId }).catch(() => {});
-          }
-        }
-      } catch (error) {
-        logFn("Local index failed.");
-      }
-      return null;
     }
 
-    const reloadOutputs = async () => {
-      await loadCurrent();
-      await refreshIndexButton();
-    };
+    async function updateRefreshButton() {
+      const status = await fetchIndexStatus();
+      applyIndexStatus(status);
+    }
 
     async function loadCurrent() {
-      const entry = current();
+      const entry = currentEntry();
       if (!entry) {
         return;
       }
-      if (!currentToken) {
-        currentItems = [];
-        setListMessage("Token required.");
-        return;
-      }
       try {
-        const children = await loadChildren(entry.source, entry.parent_id);
-        currentItems = children;
+        currentItems = await loadChildren(entry);
         draw();
       } catch (error) {
         currentItems = [];
-        if (error && error.code === "plugin_disabled") {
-          setListMessage("Plugin disabled.");
+        if (error && error.message === "token_required") {
+          setListMessage("Session token required.");
         } else {
           setListMessage("Failed to load items.");
         }
       }
     }
 
-    backBtn.onclick = async () => {
+    async function runCatalog(source) {
+      const label = source === "drive" ? "Drive" : "Local";
+      const endpoint = source === "drive" ? "/plugins/google_drive/read" : "/plugins/local/read";
+      const scope = source === "drive" ? "allDrives" : "local_roots";
+      let streamId = null;
+      try {
+        log(`${label}: catalog_open …`);
+        const opened = await apiJson(endpoint, "POST", {
+          op: "catalog_open",
+          params: { scope, recursive: true, page_size: 500, fingerprint: false },
+        });
+        streamId = opened ? opened.stream_id : null;
+        if (!streamId) {
+          log(`${label}: failed to open catalog.`);
+          return false;
+        }
+        let total = 0;
+        for (;;) {
+          const page = await apiJson(endpoint, "POST", {
+            op: "catalog_next",
+            params: { stream_id: streamId, max_items: 500, time_budget_ms: 600 },
+          });
+          const items = Array.isArray(page.items) ? page.items : [];
+          total += items.length;
+          if (page.done) {
+            log(`${label}: indexed ${total} items.`);
+            break;
+          }
+        }
+        return true;
+      } catch (error) {
+        log(`${label}: indexing failed.`);
+        return false;
+      } finally {
+        if (streamId) {
+          await apiJson(endpoint, "POST", {
+            op: "catalog_close",
+            params: { stream_id: streamId },
+          }).catch(() => {});
+        }
+      }
+    }
+
+    async function handleRefresh() {
+      if (!currentToken) {
+        log("Refresh requires a session token.");
+        return;
+      }
+      refreshBtn.disabled = true;
+      refreshBtn.title = "Refresh";
+      log("Refresh → starting …");
+      await Promise.all([runCatalog("drive"), runCatalog("local")]);
+      const status = await fetchIndexStatus();
+      applyIndexStatus(status);
+      if (status && status.overall_up_to_date) {
+        log("Refresh → complete. Index up-to-date.");
+      } else {
+        log("Refresh → complete.");
+      }
+      await loadCurrent().catch(() => {});
+    }
+
+    backBtn.onclick = () => {
       if (stack.length <= 1) {
         return;
       }
       stack.pop();
       updateBreadcrumb();
-      await loadCurrent();
-      refreshIndexButton().catch(() => {});
+      loadCurrent().catch(() => {});
+    };
+
+    searchEl.oninput = () => {
+      draw();
     };
 
     refreshBtn.onclick = () => {
-      reloadOutputs();
+      handleRefresh().catch(() => {});
     };
 
-    indexBtn.onclick = async () => {
-      if (!currentToken) {
-        log("Index requires a session token.");
+    stack.push(ROOT_ENTRY);
+    updateBreadcrumb();
+    logEl.textContent = "";
+
+    const reloadExplorer = async () => {
+      await loadCurrent();
+      await updateRefreshButton();
+    };
+
+    reloadExplorer().catch(() => {});
+    explorerRefresh = () => {
+      reloadExplorer().catch(() => {});
+    };
+  }
+
+  let toolsInitialized = false;
+
+  function toolsInit() {
+    const navEl = document.getElementById("tools-nav");
+    const contentEl = document.getElementById("tools-content");
+    if (!navEl || !contentEl) {
+      return;
+    }
+    if (toolsInitialized) {
+      toolsRefresh();
+      return;
+    }
+    toolsInitialized = true;
+
+    let pages = [];
+    let activePageId = "";
+
+    function setNavMessage(message) {
+      navEl.innerHTML = `<div class="muted">${message}</div>`;
+    }
+
+    function setContentMessage(message) {
+      contentEl.innerHTML = `<div class="muted">${message}</div>`;
+    }
+
+    function hydrateScripts(container) {
+      container.querySelectorAll("script").forEach((script) => {
+        const replacement = document.createElement("script");
+        Array.from(script.attributes || []).forEach((attr) => {
+          replacement.setAttribute(attr.name, attr.value);
+        });
+        replacement.textContent = script.textContent || "";
+        script.parentNode?.replaceChild(replacement, script);
+      });
+    }
+
+    function renderNav() {
+      navEl.innerHTML = "";
+      if (!pages.length) {
+        setNavMessage("No tools available yet.");
         return;
       }
-      const logFn = (message) => {
-        log(message);
-      };
-      indexBtn.disabled = true;
-      indexBtn.title = "Index";
-      logFn("Index → starting …");
-      await Promise.all([indexDrive(logFn), indexLocal(logFn)]);
-      let status = null;
+      const list = document.createElement("div");
+      list.style.display = "flex";
+      list.style.flexDirection = "column";
+      list.style.gap = "8px";
+      pages.forEach((page) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = page.title;
+        button.className = "btn btn-secondary";
+        button.style.justifyContent = "flex-start";
+        button.style.width = "100%";
+        if (page.id === activePageId) {
+          button.classList.add("active");
+        }
+        button.onclick = () => {
+          if (activePageId === page.id) {
+            return;
+          }
+          activePageId = page.id;
+          renderNav();
+          loadPage(page).catch(() => {});
+        };
+        list.appendChild(button);
+      });
+      navEl.appendChild(list);
+    }
+
+    async function loadPage(page) {
+      if (!page) {
+        return;
+      }
+      contentEl.innerHTML = "<div class=\"muted\">Loading…</div>";
       try {
-        status = await getIndexStatus();
+        const response = await fetch(page.path, { cache: "no-store", credentials: "same-origin" });
+        if (!response.ok) {
+          throw new Error("load_failed");
+        }
+        const html = await response.text();
+        contentEl.innerHTML = html;
+        hydrateScripts(contentEl);
+        window.dispatchEvent(
+          new CustomEvent("tgc-session-token", { detail: { token: currentToken } })
+        );
       } catch (error) {
-        status = null;
+        setContentMessage("Failed to load tool page.");
       }
-      if (status) {
-        const payload = {};
-        if (status.drive && status.drive.current_token) {
-          payload.drive = {
-            token: status.drive.current_token,
-            last_indexed_at: Date.now(),
-          };
-        }
-        if (status.local && status.local.current_sig) {
-          payload.local = {
-            roots_sig: status.local.current_sig,
-            last_indexed_at: Date.now(),
-          };
-        }
-        if (Object.keys(payload).length) {
-          await updateIndexState(payload).catch(() => {});
-        }
-        const upToDate = Boolean(status.overall_up_to_date);
-        indexBtn.disabled = upToDate;
-        indexBtn.title = upToDate ? "Index up-to-date" : "Index";
-        logFn(`Done. Up-to-date = ${upToDate}.`);
-      } else {
-        indexBtn.disabled = false;
-        indexBtn.title = "Index";
-        logFn("Done.");
+    }
+
+    async function loadPages() {
+      if (!currentToken) {
+        pages = [];
+        setNavMessage("Session token required.");
+        setContentMessage("");
+        activePageId = "";
+        return;
       }
+      try {
+        const data = await apiJson("/plugins");
+        const pluginList = Array.isArray(data.plugins) ? data.plugins : [];
+        const collected = [];
+        pluginList.forEach((plugin) => {
+          if (!plugin || typeof plugin !== "object") {
+            return;
+          }
+          const pluginId = String(plugin.id || "");
+          if (!pluginId) {
+            return;
+          }
+          const ui = plugin.ui && typeof plugin.ui === "object" ? plugin.ui : null;
+          const toolsPages = ui && Array.isArray(ui.tools_pages) ? ui.tools_pages : [];
+          toolsPages.forEach((page) => {
+            if (!page || typeof page !== "object") {
+              return;
+            }
+            const shortId = String(page.id || "");
+            const title = String(page.title || "");
+            const path = String(page.path || "");
+            if (!shortId || !title || !path) {
+              return;
+            }
+            const order = Number.isFinite(page.order) ? Number(page.order) : 0;
+            collected.push({
+              id: `${pluginId}:${shortId}`,
+              pluginId,
+              title,
+              path,
+              order,
+            });
+          });
+        });
+        collected.sort((a, b) => {
+          if (a.order !== b.order) {
+            return a.order - b.order;
+          }
+          return a.title.localeCompare(b.title);
+        });
+        pages = collected;
+        if (!pages.length) {
+          setNavMessage("No tools available yet.");
+          setContentMessage("Select a tool to view its UI once available.");
+          return;
+        }
+        renderNav();
+        const existing = pages.find((page) => page.id === activePageId);
+        const target = existing || pages[0];
+        activePageId = target.id;
+        renderNav();
+        await loadPage(target);
+      } catch (error) {
+        pages = [];
+        setNavMessage("Failed to load tools.");
+        setContentMessage("Unable to load tools metadata.");
+        activePageId = "";
+      }
+    }
+
+    toolsRefresh = () => {
+      loadPages().catch(() => {});
     };
 
-    srcSel.onchange = async () => {
-      stack.length = 0;
-      stack.push(rootFor(srcSel.value));
-      updateBreadcrumb();
-      await loadCurrent();
-      refreshIndexButton().catch(() => {});
-    };
-
-    stack.push(rootFor(srcSel.value));
-    updateBreadcrumb();
-    reloadOutputs();
-
-    outputsRefresh = reloadOutputs;
+    loadPages().catch(() => {});
   }
 
   function refreshAll() {
@@ -1281,7 +1341,8 @@
     capsRefresh();
     pluginsRefresh();
     logsRefresh();
-    outputsRefresh();
+    explorerRefresh();
+    toolsRefresh();
     settingsLocalRefresh().catch(() => {});
   }
 
@@ -1299,6 +1360,9 @@
     if (tabDashboardBtn) {
       tabDashboardBtn.addEventListener("click", () => showTab("dashboard"));
     }
+    if (tabToolsBtn) {
+      tabToolsBtn.addEventListener("click", () => showTab("tools"));
+    }
     if (tabSettingsBtn) {
       tabSettingsBtn.addEventListener("click", () => showTab("settings"));
     }
@@ -1307,7 +1371,7 @@
     capsInit();
     pluginsInit();
     logsInit();
-    outputsInit();
+    explorerInit();
     settingsLocalInit().catch(() => {});
 
     if (currentToken) {

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import ctypes
 import hashlib
@@ -88,6 +89,7 @@ RUN_ID: str = ""
 SESSION_TOKEN: str = ""
 LOG_FILE: Path | None = None
 _OAUTH_STATES: Dict[str, Dict[str, Any]] = {}
+BACKGROUND_INDEX_TASK: asyncio.Task | None = None
 
 
 def log(msg: str) -> None:
@@ -120,6 +122,41 @@ def _resolve_ui_static_dir() -> Path:
 
 UI_STATIC_DIR = _resolve_ui_static_dir()
 APP.mount("/ui/static", StaticFiles(directory=str(UI_STATIC_DIR)), name="ui-static")
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+PLUGIN_UI_BASES = [
+    REPO_ROOT / "core" / "plugins_builtin",
+    REPO_ROOT / "plugins_alpha",
+    REPO_ROOT / "plugins_user",
+]
+
+
+def _resolve_plugin_ui_path(plugin_id: str, resource: str) -> Path | None:
+    safe_plugin = Path(plugin_id.strip("/"))
+    if safe_plugin.parts != (plugin_id,) and len(safe_plugin.parts) != 1:
+        return None
+    relative = Path(resource or "")
+    if relative.is_absolute():
+        return None
+    safe_resource = Path("index.html") if str(relative) == "" else relative
+    if any(part in ("..", "") for part in safe_resource.parts if part != ""):
+        safe_resource = Path("index.html")
+    for base in PLUGIN_UI_BASES:
+        ui_root = base / plugin_id / "ui"
+        try:
+            ui_root_resolved = ui_root.resolve(strict=False)
+        except FileNotFoundError:
+            continue
+        if not ui_root_resolved.exists() or not ui_root_resolved.is_dir():
+            continue
+        candidate = (ui_root_resolved / safe_resource).resolve(strict=False)
+        try:
+            candidate.relative_to(ui_root_resolved)
+        except ValueError:
+            continue
+        if candidate.exists() and candidate.is_file():
+            return candidate
+    return None
 
 
 @APP.middleware("http")
@@ -210,6 +247,157 @@ def compute_local_roots_signature(broker) -> str:
             normed.append(os.path.normcase(os.path.normpath(root)))
     payload = "|".join(sorted(normed))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _drive_start_page_token(broker) -> Dict[str, Any]:
+    try:
+        result = broker.service_call("google_drive", "get_start_page_token", {})
+    except Exception:
+        return {"ok": False, "token": None}
+    if not isinstance(result, dict):
+        return {"ok": False, "token": None}
+    token = result.get("token")
+    ok = bool(result.get("ok")) and bool(token)
+    return {"ok": ok, "token": token}
+
+
+def _index_status_payload(broker=None) -> Dict[str, Any]:
+    broker = broker or _broker()
+    state = _load_index_state()
+    if not isinstance(state, dict):
+        state = {"drive": {}, "local": {}}
+
+    drive_state = state.get("drive") if isinstance(state.get("drive"), dict) else {}
+    local_state = state.get("local") if isinstance(state.get("local"), dict) else {}
+
+    drive_token_result = _drive_start_page_token(broker)
+    current_drive_token = drive_token_result.get("token")
+    last_drive_token = drive_state.get("token") if isinstance(drive_state, dict) else None
+    drive_up_to_date = bool(
+        drive_token_result.get("ok")
+        and current_drive_token
+        and last_drive_token
+        and current_drive_token == last_drive_token
+    )
+
+    current_sig = compute_local_roots_signature(broker)
+    last_sig = local_state.get("roots_sig") if isinstance(local_state, dict) else None
+    local_up_to_date = bool(current_sig and last_sig and current_sig == last_sig)
+
+    return {
+        "drive": {
+            "current_token": current_drive_token,
+            "last_token": last_drive_token,
+            "up_to_date": drive_up_to_date,
+        },
+        "local": {
+            "current_sig": current_sig,
+            "last_sig": last_sig,
+            "up_to_date": local_up_to_date,
+        },
+        "overall_up_to_date": bool(drive_up_to_date and local_up_to_date),
+    }
+
+
+def _catalog_background_scan(broker, source: str, scope: str, label: str) -> bool:
+    stream_id = None
+    try:
+        opened = broker.catalog_open(
+            source,
+            scope,
+            {"recursive": True, "page_size": 500, "fingerprint": False},
+        )
+        stream_id = opened.get("stream_id") if isinstance(opened, dict) else None
+        if not stream_id:
+            log(f"[index] {label}: catalog_open failed")
+            return False
+        total = 0
+        while True:
+            page = broker.catalog_next(stream_id, 500, 700)
+            if not isinstance(page, dict):
+                break
+            items = page.get("items")
+            if isinstance(items, list):
+                total += len(items)
+            if page.get("done"):
+                break
+        log(f"[index] {label}: indexed {total} items")
+        return True
+    except Exception as exc:
+        log(f"[index] {label}: error={type(exc).__name__}")
+        return False
+    finally:
+        if stream_id:
+            try:
+                broker.catalog_close(stream_id)
+            except Exception:
+                pass
+
+
+def _background_index_worker(initial_status: Optional[Dict[str, Any]] = None) -> None:
+    try:
+        broker = _broker()
+    except Exception as exc:
+        log(f"[index] background: broker_unavailable error={type(exc).__name__}")
+        return
+
+    status = initial_status or _index_status_payload(broker)
+    drive_needed = not bool(status.get("drive", {}).get("up_to_date"))
+    local_needed = not bool(status.get("local", {}).get("up_to_date"))
+    if not drive_needed and not local_needed:
+        log("[index] background: already up-to-date")
+        return
+
+    log(
+        f"[index] background: start drive_needed={drive_needed} local_needed={local_needed}"
+    )
+
+    drive_success = True
+    local_success = True
+
+    if drive_needed:
+        drive_success = _catalog_background_scan(
+            broker, "google_drive", "allDrives", "Drive"
+        )
+    if local_needed:
+        local_success = _catalog_background_scan(
+            broker, "local_fs", "local_roots", "Local"
+        )
+
+    if drive_success and local_success:
+        updated = _index_status_payload(broker)
+        state = _load_index_state()
+        if not isinstance(state, dict):
+            state = {"drive": {}, "local": {}}
+        changed = False
+        drive_token = updated.get("drive", {}).get("current_token")
+        local_sig = updated.get("local", {}).get("current_sig")
+        if drive_token:
+            state.setdefault("drive", {})["token"] = drive_token
+            changed = True
+        if local_sig:
+            state.setdefault("local", {})["roots_sig"] = local_sig
+            changed = True
+        if changed:
+            state["updated_at"] = int(time.time())
+            try:
+                _save_index_state(state)
+                log("[index] background: state persisted")
+            except Exception as exc:
+                log(f"[index] background: persist_failed error={type(exc).__name__}")
+        else:
+            log("[index] background: nothing to persist")
+    else:
+        log(
+            f"[index] background: incomplete drive_ok={drive_success} local_ok={local_success}"
+        )
+
+
+async def _run_background_index(initial_status: Optional[Dict[str, Any]] = None) -> None:
+    try:
+        await asyncio.to_thread(_background_index_worker, initial_status)
+    except Exception as exc:
+        log(f"[index] background: worker_exception error={type(exc).__name__}")
 
 
 def _decode_local_id(local_id: str) -> str:
@@ -321,6 +509,15 @@ def _prune_oauth_states() -> None:
 @APP.get("/ui")
 def ui_index() -> FileResponse:
     return FileResponse(UI_STATIC_DIR / "index.html")
+
+
+@APP.get("/ui/plugins/{plugin_id}")
+@APP.get("/ui/plugins/{plugin_id}/{resource_path:path}")
+def ui_plugin_asset(plugin_id: str, resource_path: str = "index.html") -> FileResponse:
+    path = _resolve_plugin_ui_path(plugin_id, resource_path)
+    if not path:
+        raise HTTPException(status_code=404, detail="ui_asset_not_found")
+    return FileResponse(path)
 
 
 def _load_google_client() -> tuple[str, str]:
@@ -523,39 +720,25 @@ def index_state_set(body: Dict[str, Any] = Body(default={})):  # type: ignore[as
 
 @protected.get("/index/status", response_model=None)
 def index_status():
-    broker = get_broker()
-    state = _load_index_state()
+    broker = _broker()
+    return _index_status_payload(broker)
 
-    token_result: Dict[str, Any] = {}
+
+@APP.on_event("startup")
+async def _auto_index_if_stale() -> None:
+    global BACKGROUND_INDEX_TASK
     try:
-        token_result = broker.service_call("google_drive", "get_start_page_token", {})
-    except Exception:
-        token_result = {"ok": False, "token": None}
-    current_drive_token = token_result.get("token")
-    last_drive_token = (
-        state.get("drive", {}).get("token") if isinstance(state, dict) else None
-    )
-    drive_up_to_date = bool(
-        current_drive_token and last_drive_token and current_drive_token == last_drive_token
-    )
-
-    current_sig = compute_local_roots_signature(broker)
-    last_sig = state.get("local", {}).get("roots_sig") if isinstance(state, dict) else None
-    local_up_to_date = bool(current_sig and last_sig and current_sig == last_sig)
-
-    return {
-        "drive": {
-            "current_token": current_drive_token,
-            "last_token": last_drive_token,
-            "up_to_date": drive_up_to_date,
-        },
-        "local": {
-            "current_sig": current_sig,
-            "last_sig": last_sig,
-            "up_to_date": local_up_to_date,
-        },
-        "overall_up_to_date": bool(drive_up_to_date and local_up_to_date),
-    }
+        status = _index_status_payload(_broker())
+    except Exception as exc:
+        log(f"[index] background: status_check_failed error={type(exc).__name__}")
+        return
+    if status.get("overall_up_to_date"):
+        log("[index] background: startup skip (up-to-date)")
+        return
+    if BACKGROUND_INDEX_TASK and not BACKGROUND_INDEX_TASK.done():
+        return
+    log("[index] background: scheduling startup refresh")
+    BACKGROUND_INDEX_TASK = asyncio.create_task(_run_background_index(status))
 
 
 @protected.get("/drive/available_drives", response_model=None)

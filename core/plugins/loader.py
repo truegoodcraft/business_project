@@ -97,7 +97,28 @@ def _collect_metadata(service_id: str, module: ModuleType) -> Dict[str, object]:
         or ""
     )
 
-    return {
+    ui_block: Dict[str, Any] = {}
+    if isinstance(describe_data.get("ui"), dict):
+        ui_data = describe_data.get("ui") or {}
+        tools_pages_raw = ui_data.get("tools_pages") if isinstance(ui_data, dict) else []
+        tools_pages: List[Dict[str, Any]] = []
+        if isinstance(tools_pages_raw, list):
+            for page in tools_pages_raw:
+                if not isinstance(page, dict):
+                    continue
+                pid = str(page.get("id") or "").strip()
+                title = str(page.get("title") or "").strip()
+                path = str(page.get("path") or "").strip()
+                if not pid or not title or not path:
+                    continue
+                entry: Dict[str, Any] = {"id": pid, "title": title, "path": path}
+                if isinstance(page.get("order"), (int, float)):
+                    entry["order"] = int(page.get("order"))
+                tools_pages.append(entry)
+        if tools_pages:
+            ui_block["tools_pages"] = tools_pages
+
+    record: Dict[str, Any] = {
         "id": service_id,
         "name": name,
         "version": version,
@@ -107,6 +128,9 @@ def _collect_metadata(service_id: str, module: ModuleType) -> Dict[str, object]:
         "builtin": builtin,
         "plugin_dir": plugin_dir_str,
     }
+    if ui_block:
+        record["ui"] = ui_block
+    return record
 
 
 def _load_plugin_settings() -> Dict[str, object]:

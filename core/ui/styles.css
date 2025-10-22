@@ -20,10 +20,28 @@ body {
   line-height: 1.4;
 }
 
+.log {
+  font-family: "Fira Code", "Consolas", "Menlo", monospace;
+  font-size: 12px;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 8px;
+  padding: 0.75rem;
+  min-height: 140px;
+  max-height: 200px;
+  overflow: auto;
+  white-space: pre-wrap;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
 @media (prefers-color-scheme: dark) {
   body {
     background: var(--bg-color-dark);
     color: #f1f1f1;
+  }
+  .log {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.12);
+    color: #e6e6e6;
   }
 }
 
@@ -280,6 +298,11 @@ button:disabled {
 
 .btn {
   font-weight: 600;
+}
+
+.btn.active {
+  background: var(--accent);
+  color: #fff;
 }
 
 .btn-danger {

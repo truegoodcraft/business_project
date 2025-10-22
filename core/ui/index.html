@@ -28,6 +28,7 @@
 
     <nav class="tab-bar">
       <button id="tab-btn-dashboard" class="tab-button active" type="button">Dashboard</button>
+      <button id="tab-btn-tools" class="tab-button" type="button">Tools</button>
       <button id="tab-btn-settings" class="tab-button" type="button">Settings</button>
     </nav>
 
@@ -79,28 +80,22 @@
 
         <div class="panel">
           <div class="panel-header">
-            <span>Outputs</span>
-            <button id="outputs-refresh" class="btn btn-secondary" style="float:right;">Refresh</button>
+            <span>Explorer</span>
           </div>
           <div class="panel-body">
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-              <button id="out-back" class="btn btn-secondary" title="Back">←</button>
-              <span id="out-breadcrumb" class="muted">Reader</span>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">
+              <button id="expl-back" class="btn btn-secondary" title="Back">←</button>
+              <span id="expl-breadcrumb" class="muted">Explorer</span>
               <span style="flex:1;"></span>
-              <select id="out-source">
-                <option value="reader">Reader (Unified)</option>
-                <option value="drive">Drive (Built-in)</option>
-                <option value="local">Local (Built-in)</option>
-              </select>
-              <button id="out-index" class="btn">Index</button>
+              <input
+                id="expl-search"
+                placeholder="Search…"
+                style="flex:1;min-width:160px;max-width:320px;"
+              />
+              <button id="expl-refresh" class="btn">Refresh</button>
             </div>
-            <input id="out-search" placeholder="Search…" style="width:100%;margin-bottom:6px;" />
-            <div id="out-list" class="list" style="min-height:220px;"></div>
-            <pre id="out-log" style="height:140px;overflow:auto;margin-top:8px;">No entries.</pre>
-            <div
-              id="ctx-menu"
-              style="position:absolute;display:none;border:1px solid #333;background:#111;padding:6px;border-radius:6px;z-index:1000;"
-            ></div>
+            <div id="expl-list" class="list" style="min-height:220px;"></div>
+            <div id="expl-log" class="log"></div>
           </div>
         </div>
       </div>
@@ -116,6 +111,19 @@
           </div>
         </div>
         <pre class="panel-content" id="logs-content"></pre>
+      </div>
+    </section>
+
+    <section id="tab-tools" class="tab-section" style="display: none;">
+      <div class="panel" style="display:flex;gap:16px;flex-wrap:wrap;">
+        <div style="min-width:200px;width:220px;">
+          <div class="panel-header"><span>Tools</span></div>
+          <div class="panel-body" id="tools-nav" style="min-height:200px;"></div>
+        </div>
+        <div style="flex:1;min-width:260px;">
+          <div class="panel-header"><span>Tool Detail</span></div>
+          <div class="panel-body" id="tools-content" style="min-height:260px;"></div>
+        </div>
       </div>
     </section>
 
