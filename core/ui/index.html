@@ -222,55 +222,105 @@
     </section>
 
     <script>
-      (function () {
-        const token = (
-          window.__SESSION_TOKEN || window.__sessionToken || window.BUS_SESSION_TOKEN || ""
-        )
-          .toString();
-        function headers() {
-          const h = {};
-          if (token) h["X-Session-Token"] = token;
-          return h;
-        }
+(function(){
+  // --- Session token discovery (robust) ---
+  function discoverToken(){
+    // 1) Known globals set by the app
+    if (window.__SESSION_TOKEN) return String(window.__SESSION_TOKEN);
+    if (window.__sessionToken)  return String(window.__sessionToken);
+    if (window.BUS_SESSION_TOKEN) return String(window.BUS_SESSION_TOKEN);
 
-        async function refreshWrites() {
-          try {
-            const r = await fetch("/dev/writes", { headers: headers() });
-            const j = await r.json();
-            const on = !!j.enabled;
-            document.getElementById("writesToggle").checked = on;
-            document.getElementById("writesStatus").innerHTML =
-              "Writes: <strong>" + (on ? "Enabled" : "Disabled") + "</strong>";
-          } catch (e) {
-            document.getElementById("writesStatus").textContent = "Writes: error";
-          }
-        }
+    // 2) Common localStorage keys used by the app
+    const lsKeys = [
+      "session_token","bus.session_token","BUS_SESSION_TOKEN",
+      "tgc_session_token","tgc.session_token"
+    ];
+    for (const k of lsKeys){
+      try { const v = localStorage.getItem(k); if (v) return String(v); } catch(_) {}
+    }
 
-        document.getElementById("writesToggle").addEventListener("change", async (ev) => {
-          const enabled = ev.target.checked;
-          await fetch("/dev/writes", {
-            method: "POST",
-            headers: Object.assign({ "Content-Type": "application/json" }, headers()),
-            body: JSON.stringify({ enabled }),
-          });
-          refreshWrites();
-        });
+    // 3) UI input field (top-right “Session Token”)
+    const candidates = Array.from(document.querySelectorAll('input[type="password"],input[type="text"]'));
+    for (const el of candidates){
+      const id = (el.id||"").toLowerCase();
+      const name = (el.name||"").toLowerCase();
+      const ph = (el.placeholder||"").toLowerCase();
+      if (id.includes("session") || name.includes("session") || ph.includes("session token")){
+        if (el.value) return String(el.value);
+      }
+    }
+    return "";
+  }
+  function headers(){
+    const t = discoverToken();
+    const h = {"Content-Type":"application/json"};
+    if (t) h["X-Session-Token"] = t;
+    return h;
+  }
 
-        const pingBtn = document.getElementById("btnPingPlugin");
-        if (pingBtn) {
-          pingBtn.addEventListener("click", async () => {
-            try {
-              const r = await fetch("/dev/ping_plugin", { headers: headers() });
-              const j = await r.json();
-              document.getElementById("pingOut").textContent = JSON.stringify(j, null, 2);
-            } catch (e) {
-              document.getElementById("pingOut").textContent = String(e);
-            }
-          });
-        }
+  // --- Writes status/toggle ---
+  async function refreshWrites(){
+    try{
+      const r = await fetch("/dev/writes",{headers: headers()});
+      const j = await r.json();
+      const on = !!j.enabled;
+      document.getElementById("writesToggle").checked = on;
+      document.getElementById("writesStatus").innerHTML =
+        "Writes: <strong>"+(on?"Enabled":"Disabled")+"</strong>";
+    }catch(e){
+      document.getElementById("writesStatus").textContent = "Writes: error";
+    }
+  }
 
-        refreshWrites();
-      })();
+  const toggle = document.getElementById("writesToggle");
+  const statusEl = document.getElementById("writesStatus");
+  let saving = false;
+
+  toggle.addEventListener("change", async (ev)=>{
+    if (saving) return;
+    const prev = !ev.target.checked;   // what it was before
+    saving = true;
+    toggle.disabled = true;
+    try{
+      const r = await fetch("/dev/writes",{
+        method:"POST",
+        headers: headers(),
+        body: JSON.stringify({enabled: ev.target.checked})
+      });
+      if (!r.ok){
+        const j = await r.json().catch(()=>({detail:r.statusText}));
+        throw new Error(j.detail || `HTTP ${r.status}`);
+      }
+      await refreshWrites();
+    }catch(err){
+      // Revert UI and show message
+      ev.target.checked = prev;
+      statusEl.innerHTML = `Writes: <strong>${prev?"Disabled":"Enabled"}</strong> <span class="err" style="color:#c33;margin-left:8px;">(${String(err).replace("Error: ","")})</span>`;
+    }finally{
+      saving = false;
+      toggle.disabled = false;
+    }
+  });
+
+  // --- Dev: Ping Plugin ---
+  const pingBtn = document.getElementById("btnPingPlugin");
+  if (pingBtn){
+    pingBtn.addEventListener("click", async ()=>{
+      const out = document.getElementById("pingOut");
+      out.textContent = "Pinging…";
+      try{
+        const r = await fetch("/dev/ping_plugin",{headers: headers()});
+        const j = await r.json();
+        out.textContent = JSON.stringify(j,null,2);
+      }catch(e){
+        out.textContent = JSON.stringify({error:String(e)},null,2);
+      }
+    });
+  }
+
+  // Initial load
+  refreshWrites();
+})();
     </script>
     <script src="/ui/static/app.js" defer></script>
   </body>
