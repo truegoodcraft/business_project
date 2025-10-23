@@ -9,7 +9,7 @@ except Exception as _e:
 
 from .model import Plan, ActionKind
 from core.reader.ids import rid_to_path
-from core.reader.roots import get_allowed_local_roots
+from core.settings.reader_state import get_allowed_local_roots
 
 
 def _ensure_parent(path: str):

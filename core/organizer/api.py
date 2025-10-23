@@ -14,7 +14,7 @@ from core.organizer.rename import normalize_filename
 from core.plans.model import Action, ActionKind, Plan
 from core.plans.store import save_plan
 from core.reader.ids import to_rid
-from core.reader.roots import get_allowed_local_roots
+from core.settings.reader_state import get_allowed_local_roots
 
 router = APIRouter(prefix="/organizer", tags=["organizer"])
 
