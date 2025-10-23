@@ -168,16 +168,6 @@ HTTP endpoints are stable; do not rely on undocumented fields.
 
 ---
 
-## Licensing
-
-- **Core (BUS)**: Source-available **Polyform Noncommercial 1.0.0**. Commercial/production use requires a separate license. See `/core/LICENSE` and `COMMERCIAL-LICENSE.md`. Contact: **Truegoodcraft@gmail.com**.
-- **Plugins**: **Apache-2.0** unless otherwise noted in their plugin folders.
-
-| Component        | Path               | License                          |
-|------------------|--------------------|----------------------------------|
-| Core (BUS)       | `/core`            | Polyform Noncommercial 1.0.0     |
-| Example plugins  | `/plugins_alpha/*` | Apache-2.0                       |
-
 ### Continuous Integration (CI)
 CI stamps and enforces SPDX headers and runs tests.
 
@@ -189,3 +179,7 @@ python tools/check_licenses.py     # verify plugin LICENSE files
 ```
 
 ---
+
+## Licensing
+- **Core**: PolyForm-Noncommercial-1.0.0 (source-available; commercial use requires permission).
+- **Plugins**: Apache-2.0 by default. Third-party plugins may specify a different license in their own directory.
