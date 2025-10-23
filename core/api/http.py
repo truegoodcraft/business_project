@@ -53,6 +53,7 @@ from pydantic import BaseModel
 
 from core.domain.bootstrap import get_broker
 from core.settings.reader import load_reader_settings, save_reader_settings
+from core.reader.api import router as reader_local_router
 
 if os.name == "nt":  # pragma: no cover - windows specific
     from core.broker.pipes import NamedPipeServer
@@ -218,6 +219,7 @@ def require_token_ctx(
 
 
 protected = APIRouter(dependencies=[Depends(require_token_ctx)])
+protected.include_router(reader_local_router)
 oauth = APIRouter()
 
 

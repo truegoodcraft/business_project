@@ -1,5 +1,5 @@
 import os, shutil
-from typing import Dict, Any, List
+from typing import Any, Dict, List
 
 try:
     from send2trash import send2trash
@@ -8,6 +8,8 @@ except Exception as _e:
         raise RuntimeError("Send2Trash is not installed. Install with: python -m pip install Send2Trash==1.8.2") from _e
 
 from .model import Plan, ActionKind
+from core.reader.ids import rid_to_path
+from core.reader.roots import get_allowed_local_roots
 
 
 def _ensure_parent(path: str):
@@ -47,17 +49,44 @@ def _hardlink(src: str, dst: str):
     os.link(src, dst)
 
 
+def _under_roots(path: str, roots: List[str]) -> bool:
+    import os
+
+    abs_path = os.path.normcase(os.path.abspath(path))
+    for root in roots or []:
+        abs_root = os.path.normcase(os.path.abspath(root))
+        try:
+            if os.path.commonpath([abs_path, abs_root]) == abs_root:
+                return True
+        except Exception:
+            # Different drives on Windows may raise ValueError.
+            pass
+    return False
+
+
 def commit_local(plan: Plan) -> Dict[str, Any]:
     results: List[Dict[str, Any]] = []
+    roots = get_allowed_local_roots()
     for a in plan.actions:
         try:
             src = a.meta.get("src_path")
             dst = a.meta.get("dst_path")
-            if not dst:
-                parent = a.meta.get("dst_parent_path")
+            parent = a.meta.get("dst_parent_path")
+
+            if getattr(a, "src_id", None) and not src:
+                src = rid_to_path(a.src_id, roots)
+            if getattr(a, "dst_parent_id", None) and not parent:
+                parent = rid_to_path(a.dst_parent_id, roots)
+
+            if not dst and parent:
                 name = a.meta.get("dst_name") or a.dst_name
                 if parent and name:
                     dst = os.path.join(parent, name)
+
+            if src and not _under_roots(src, roots):
+                raise ValueError("out_of_scope: src")
+            if dst and not _under_roots(dst, roots):
+                raise ValueError("out_of_scope: dst")
             if a.kind == ActionKind.DELETE:
                 if not src:
                     raise ValueError("DELETE requires meta.src_path")
