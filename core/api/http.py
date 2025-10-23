@@ -42,7 +42,6 @@ from core.plans.commit import commit_local
 from core.plans.model import Plan, PlanStatus
 from core.plans.preview import preview_plan
 from core.plans.store import get_plan, list_plans, save_plan
-from core.pipeline.plan_engine import ENGINE as PLAN_ENGINE
 from core.runtime.core_alpha import CoreAlpha
 from core.runtime.policy import PolicyDecision
 from core.runtime.probe import PROBE_TIMEOUT_SEC
@@ -1031,44 +1030,6 @@ def plans_export(plan_id: str) -> Response:
     if not plan:
         raise HTTPException(status_code=404, detail="plan_not_found")
     return JSONResponse(plan.model_dump())
-
-
-@protected.post("/plan.preview")
-def pipeline_plan_preview(body: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
-    batches = body.get("batches")
-    if not isinstance(batches, list):
-        raise HTTPException(status_code=400, detail="invalid_batches")
-    try:
-        return PLAN_ENGINE.preview(batches)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-
-
-@protected.post("/plan.execute")
-def pipeline_plan_execute(body: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
-    batches = body.get("batches")
-    if not isinstance(batches, list):
-        raise HTTPException(status_code=400, detail="invalid_batches")
-    label = body.get("job_label")
-    try:
-        result = PLAN_ENGINE.execute(batches, label=str(label) if label else None)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    return result
-
-
-@protected.get("/jobs/{job_id}")
-def pipeline_job_status(job_id: str) -> Dict[str, Any]:
-    job = PLAN_ENGINE.get_job(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="job_not_found")
-    return job
-
-
-@protected.get("/audit.log")
-def pipeline_audit_log() -> Response:
-    content = PLAN_ENGINE.audit_log()
-    return Response(content=content, media_type="text/plain")
 
 
 @protected.get("/health")
