@@ -52,7 +52,12 @@ from tgc.bootstrap_fs import DATA, LOGS
 from pydantic import BaseModel
 
 from core.domain.bootstrap import get_broker
-from core.settings.reader import load_reader_settings, save_reader_settings
+from core.settings.reader_state import (
+    get_allowed_local_roots as _reader_roots,
+    load_settings as _reader_load,
+    save_settings as _reader_save,
+    set_allowed_local_roots as _reader_set_roots,
+)
 from core.reader.api import router as reader_local_router
 from core.organizer.api import router as organizer_router
 
@@ -706,64 +711,20 @@ def settings_google_delete(response: Response) -> Dict[str, Any]:
 
 @protected.get("/settings/reader", response_model=None)
 def get_reader_settings() -> Dict[str, Any]:
-    return load_reader_settings()
+    return _reader_load()
 
 
 @protected.post("/settings/reader", response_model=None)
 def post_reader_settings(payload: Dict[str, Any] = Body(default={})) -> Dict[str, Any]:  # type: ignore[assignment]
-    current = load_reader_settings()
     payload = payload if isinstance(payload, dict) else {}
 
-    current_enabled = current.get("enabled", {})
-    enabled_candidate = payload.get("enabled", current_enabled)
-    enabled = {str(k): bool(v) for k, v in current_enabled.items()} if isinstance(current_enabled, dict) else {}
-    if isinstance(enabled_candidate, dict):
-        enabled.update({str(k): bool(v) for k, v in enabled_candidate.items()})
+    if "local_roots" in payload:
+        candidate_roots = payload.get("local_roots")
+        if isinstance(candidate_roots, list):
+            _reader_set_roots(candidate_roots)
 
-    current_local_roots = current.get("local_roots", [])
-    if isinstance(current_local_roots, list):
-        local_roots_default = [str(item) for item in current_local_roots if isinstance(item, str)]
-    else:
-        local_roots_default = []
-    local_roots_candidate = payload.get("local_roots", local_roots_default)
-    if isinstance(local_roots_candidate, list):
-        local_roots = [str(item) for item in local_roots_candidate if isinstance(item, str)]
-    else:
-        local_roots = local_roots_default
-
-    current_drive_includes = current.get("drive_includes", {})
-    current_drive_includes = current_drive_includes if isinstance(current_drive_includes, dict) else {}
-    di_payload = payload.get("drive_includes", current_drive_includes)
-    di_payload = di_payload if isinstance(di_payload, dict) else {}
-    shared_ids_candidate = di_payload.get(
-        "shared_drive_ids", current_drive_includes.get("shared_drive_ids", [])
-    )
-    if isinstance(shared_ids_candidate, list):
-        shared_drive_ids = [str(item) for item in shared_ids_candidate if isinstance(item, str)]
-    else:
-        existing_ids = current_drive_includes.get("shared_drive_ids", [])
-        shared_drive_ids = [str(item) for item in existing_ids if isinstance(item, str)]
-
-    di = {
-        "include_my_drive": bool(
-            di_payload.get("include_my_drive", current_drive_includes.get("include_my_drive", True))
-        ),
-        "my_drive_root_id": di_payload.get("my_drive_root_id")
-        or current_drive_includes.get("my_drive_root_id")
-        or None,
-        "include_shared_drives": bool(
-            di_payload.get("include_shared_drives", current_drive_includes.get("include_shared_drives", True))
-        ),
-        "shared_drive_ids": shared_drive_ids,
-    }
-
-    settings_payload = {
-        "enabled": enabled,
-        "local_roots": local_roots,
-        "drive_includes": di,
-    }
-    save_reader_settings(settings_payload)
-    return {"ok": True, "settings": settings_payload}
+    _reader_save(payload)
+    return {"ok": True, "settings": _reader_load()}
 
 
 @protected.post("/catalog/open", response_model=None)
