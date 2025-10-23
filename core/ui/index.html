@@ -214,6 +214,38 @@
         </div>
 
         <div style="margin-top:16px; padding:12px; border:1px solid #333; border-radius:6px;">
+          <h3 style="margin:0 0 8px 0;">Organizer (beta)</h3>
+          <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+            <input
+              id="orgStart"
+              type="text"
+              placeholder="Start folder (absolute path under allowed roots)"
+              style="min-width:360px;padding:6px;"
+            />
+            <input
+              id="orgQdir"
+              type="text"
+              placeholder="Quarantine dir (optional)"
+              style="min-width:320px;padding:6px;"
+            />
+            <button id="btnDupPlan" type="button">Find Duplicates → Plan</button>
+            <button id="btnRenPlan" type="button">Normalize Names → Plan</button>
+          </div>
+          <div id="orgOut" style="margin-top:8px; white-space:pre-wrap;"></div>
+          <div class="muted" style="margin-top:6px;">After a plan is created, use Preview/Commit below.</div>
+          <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
+            <input
+              id="orgPlanId"
+              type="text"
+              placeholder="Plan ID"
+              style="min-width:300px;padding:6px;"
+            />
+            <button id="btnPrev" type="button">Preview</button>
+            <button id="btnCommit" type="button">Commit</button>
+          </div>
+        </div>
+
+        <div style="margin-top:16px; padding:12px; border:1px solid #333; border-radius:6px;">
           <h3 style="margin:0 0 8px 0;">Dev Tools</h3>
           <button id="btnPingPlugin" type="button">Ping Plugin</button>
           <pre id="pingOut" style="margin-top:8px; white-space:pre-wrap;"></pre>
@@ -301,6 +333,114 @@
       toggle.disabled = false;
     }
   });
+
+  // --- Organizer (beta) ---
+  const orgStart = document.getElementById("orgStart");
+  const orgQdir = document.getElementById("orgQdir");
+  const orgOut = document.getElementById("orgOut");
+  const orgPlan = document.getElementById("orgPlanId");
+  const btnDup = document.getElementById("btnDupPlan");
+  const btnRen = document.getElementById("btnRenPlan");
+  const btnPrev = document.getElementById("btnPrev");
+  const btnCommit = document.getElementById("btnCommit");
+
+  function orgSetOut(value){
+    if (!orgOut) return;
+    if (typeof value === "string"){
+      orgOut.textContent = value;
+    } else {
+      try{
+        orgOut.textContent = JSON.stringify(value,null,2);
+      }catch(err){
+        orgOut.textContent = String(value);
+      }
+    }
+  }
+
+  async function orgPost(url, body){
+    const response = await fetch(url, {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify(body || {}),
+    });
+    const text = await response.text();
+    let parsed;
+    try{
+      parsed = text ? JSON.parse(text) : {};
+    }catch(err){
+      parsed = {error: String(err), raw: text};
+    }
+    if (!response.ok){
+      const detail = parsed && typeof parsed === "object" ? (parsed.detail || parsed.error) : undefined;
+      throw new Error(detail || `HTTP ${response.status}`);
+    }
+    return parsed;
+  }
+
+  if (orgStart && orgOut && btnDup && btnRen && btnPrev && btnCommit){
+    btnDup.addEventListener("click", async ()=>{
+      if (!orgStart.value.trim()){
+        alert("Provide a start folder under allowed roots.");
+        return;
+      }
+      orgSetOut("Scanning for duplicates…");
+      try{
+        const payload = await orgPost("/organizer/duplicates/plan", {
+          start_path: orgStart.value.trim(),
+          quarantine_dir: orgQdir ? (orgQdir.value.trim() || null) : null,
+        });
+        if (orgPlan) orgPlan.value = payload.plan_id || "";
+        orgSetOut(payload);
+      }catch(err){
+        orgSetOut({error: String(err)});
+      }
+    });
+
+    btnRen.addEventListener("click", async ()=>{
+      if (!orgStart.value.trim()){
+        alert("Provide a start folder under allowed roots.");
+        return;
+      }
+      orgSetOut("Scanning filenames…");
+      try{
+        const payload = await orgPost("/organizer/rename/plan", {
+          start_path: orgStart.value.trim(),
+        });
+        if (orgPlan) orgPlan.value = payload.plan_id || "";
+        orgSetOut(payload);
+      }catch(err){
+        orgSetOut({error: String(err)});
+      }
+    });
+
+    btnPrev.addEventListener("click", async ()=>{
+      if (!orgPlan || !orgPlan.value.trim()){
+        alert("No plan id");
+        return;
+      }
+      orgSetOut("Loading preview…");
+      try{
+        const payload = await orgPost(`/plans/${encodeURIComponent(orgPlan.value.trim())}/preview`, {});
+        orgSetOut(payload);
+      }catch(err){
+        orgSetOut({error: String(err)});
+      }
+    });
+
+    btnCommit.addEventListener("click", async ()=>{
+      if (!orgPlan || !orgPlan.value.trim()){
+        alert("No plan id");
+        return;
+      }
+      orgSetOut("Committing plan…");
+      try{
+        const payload = await orgPost(`/plans/${encodeURIComponent(orgPlan.value.trim())}/commit`, {});
+        orgSetOut(payload);
+      }catch(err){
+        orgSetOut({error: String(err)});
+      }
+    });
+  }
 
   // --- Dev: Ping Plugin ---
   const pingBtn = document.getElementById("btnPingPlugin");
