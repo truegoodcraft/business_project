@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Organizer</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        margin: 0;
+        padding: 16px;
+        background: #f7f7f9;
+        color: #1a1a1a;
+      }
+
+      h1 {
+        font-size: 20px;
+        margin-bottom: 12px;
+      }
+
+      section {
+        background: #ffffff;
+        border-radius: 8px;
+        padding: 16px;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+        margin-bottom: 16px;
+      }
+
+      button.primary {
+        background: #0055ff;
+        border: none;
+        color: #ffffff;
+        padding: 8px 16px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: 600;
+      }
+
+      button.primary:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+
+      .controls {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      th,
+      td {
+        text-align: left;
+        padding: 6px 8px;
+        border-bottom: 1px solid #e4e6eb;
+        font-size: 13px;
+      }
+
+      .muted {
+        color: #6b6b6b;
+      }
+
+      .log {
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        font-size: 12px;
+        background: #1b1b1f;
+        color: #e7e7ec;
+        padding: 8px;
+        border-radius: 6px;
+        max-height: 200px;
+        overflow-y: auto;
+      }
+
+      .status-ok {
+        color: #056839;
+        font-weight: 600;
+      }
+
+      .status-deny {
+        color: #b34700;
+        font-weight: 600;
+      }
+
+      .status-error {
+        color: #c71f37;
+        font-weight: 600;
+      }
+
+      .note {
+        background: #f0f6ff;
+        border-left: 3px solid #0055ff;
+        padding: 8px 12px;
+        border-radius: 4px;
+        margin-top: 12px;
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Organizer</h1>
+    <section>
+      <div class="controls">
+        <button id="btn-preview" class="primary">Preview</button>
+        <button id="btn-execute" class="primary" disabled>Execute</button>
+        <button id="btn-download" type="button">Download Plan JSON</button>
+      </div>
+      <label for="plan-json" class="muted" style="display: block; margin-bottom: 4px"
+        >Plan batches (Plan Engine v1 JSON)</label
+      >
+      <textarea
+        id="plan-json"
+        rows="8"
+        style="width: 100%; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace; font-size: 12px; padding: 8px; border-radius: 4px; border: 1px solid #cbd1dc; box-sizing: border-box;"
+        placeholder='[{"op":"rename.batch",...}]'
+      ></textarea>
+      <div id="preview-summary" class="muted">Preview pending…</div>
+      <div id="preview-table"></div>
+      <div id="cross-drive-note" class="note" style="display: none"></div>
+    </section>
+
+    <section>
+      <h2 style="font-size: 16px; margin-top: 0">Execution</h2>
+      <div id="job-status" class="muted">No active job.</div>
+      <button id="btn-rollback" type="button" style="display: none">Rollback (coming soon)</button>
+    </section>
+
+    <section>
+      <h2 style="font-size: 16px; margin-top: 0">Log</h2>
+      <div id="log" class="log"></div>
+    </section>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
