@@ -1,6 +1,6 @@
 export const Token = (()=> {
   function readCookie(name){
-    const m = document.cookie.match(new RegExp('(?:^|; )'+name.replace(/([.$?*|{}()[\\]\\/+^])/g,'\\\\$1')+'=([^;]*)'));
+    const m = document.cookie.match(new RegExp('(?:^|; )'+name.replace(/([.$?*|{}()[\\]\\/+^])/g,'\\$1')+'=([^;]*)'));
     return m ? decodeURIComponent(m[1]) : '';
   }
   async function ensure(){
