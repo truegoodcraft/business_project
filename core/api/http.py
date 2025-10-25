@@ -60,6 +60,7 @@ from core.settings.reader_state import (
 )
 from core.reader.api import router as reader_local_router
 from core.organizer.api import router as organizer_router
+from core.app.api import router as app_router
 
 if os.name == "nt":  # pragma: no cover - windows specific
     from core.broker.pipes import NamedPipeServer
@@ -227,6 +228,7 @@ def require_token_ctx(
 protected = APIRouter(dependencies=[Depends(require_token_ctx)])
 protected.include_router(reader_local_router)
 protected.include_router(organizer_router)
+protected.include_router(app_router)
 oauth = APIRouter()
 
 

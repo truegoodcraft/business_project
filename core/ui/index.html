@@ -28,6 +28,7 @@
     <div class="nav" id="nav">
       <a href="#/writes"    id="nav-writes">Writes</a>
       <a href="#/organizer" id="nav-organizer">Organizer</a>
+      <a href="#/fixkit"    id="nav-fixkit">FixKit</a>
       <a href="#/dev"       id="nav-dev">Dev</a>
     </div>
   </aside>
@@ -39,9 +40,10 @@
 <script type="module">
   import { mountWrites }    from "/ui/js/cards/writes.js";
   import { mountOrganizer } from "/ui/js/cards/organizer.js";
+  import { mountFixKit }    from "/ui/js/cards/fixkit.js";
   import { mountDev }       from "/ui/js/cards/dev.js";
 
-  const routes = { "/writes": mountWrites, "/organizer": mountOrganizer, "/dev": mountDev };
+  const routes = { "/writes": mountWrites, "/organizer": mountOrganizer, "/fixkit": mountFixKit, "/dev": mountDev };
 
   function setActive(hash){
     document.querySelectorAll('.nav a').forEach(a=>a.classList.remove('active'));
