@@ -54,6 +54,7 @@
       const routes = {
         '/writes':    () => window.busCards.mountWrites,
         '/organizer': () => window.busCards.mountOrganizer,
+        '/backup':    () => window.busCards.mountBackup,
         '/dev':       () => window.busCards.mountDev,
       };
 
