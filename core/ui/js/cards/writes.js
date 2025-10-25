@@ -1,4 +1,4 @@
-// Ensure we wait for token
+// Gate card init on token readiness
 (function(){
   function init(){
     const busApi = window.busApi || {};
