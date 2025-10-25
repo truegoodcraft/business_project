@@ -16,11 +16,11 @@
 
 Alpha Core now ships with a pluggable connection broker. The core stays integration-agnostic:
 
-* Plugins live in `plugins_alpha/` and subclass `core.contracts.plugin_v2.PluginV2`.
+* Plugins live in `plugins/` and subclass `core.contracts.plugin_v2.PluginV2`.
 * Each plugin calls `broker.register(...)` to provide services and probes.
 * Core only knows about the services the plugins register and remains silent until they show up.
 
-Google Drive, Sheets, Notion, and any other integrations live entirely in plugins under `plugins_alpha/`. Drop in a plugin package and restart the core to make the service available.
+Google Drive, Sheets, Notion, and any other integrations live entirely in plugins under `plugins/`. Drop in a plugin package and restart the core to make the service available.
 
 ---
 
@@ -65,7 +65,7 @@ pyinstaller launcher.py ^
   --noconsole ^
   --onedir ^
   --add-data "core/ui;core/ui" ^
-  --add-data "LICENSE;." ^
+  --add-data "docs/LICENSE;." ^
   --hidden-import uvicorn ^
   --hidden-import fastapi
 ```
@@ -91,7 +91,7 @@ To stop the app, close the window or press `Ctrl+C` in the console; the embedded
 
 Plugins:
 
-* Put plugins under `plugins_alpha/<your_plugin>/plugin.py`
+* Put plugins under `plugins/<your_plugin>/plugin.py`
 * Implement `Plugin(PluginV2)` with `describe()` and `register_broker()`
 * Core remains silent until a plugin declares services.
 
@@ -136,7 +136,7 @@ class Plugin(PluginV2):
 * `register_broker()` wires providers and probes into the broker.
 * Optional `run()` hooks remain available for long-running work.
 
-Drop your plugin under `plugins_alpha/<name>/` and restart the core. Core discovers packages automatically and keeps Google/Notion details outside of the main runtime.
+Drop your plugin under `plugins/<name>/` and restart the core. Core discovers packages automatically and keeps Google/Notion details outside of the main runtime.
 
 ### Notion (read-only) v0.01.0
 Set env:
@@ -151,7 +151,7 @@ Provides capability: notion.pages.read (read-only).
 
 Plugins may only import:
 - `core.contracts.plugin_v2`          (plugin base class & interface)
-- `core.conn_broker`                  (broker types & client handle)
+- `core.services.conn_broker`         (broker types & client handle; re-exported via `core.conn_broker`)
 - `core.capabilities`                 (facade: publish/resolve/list_caps/emit_manifest/meta)
 
 Plugins that import any other `core.*` modules are rejected at load time by the import guard.
@@ -173,9 +173,9 @@ CI stamps and enforces SPDX headers and runs tests.
 
 Local helpers:
 ```bash
-python tools/add_spdx_headers.py   # stamp headers
-python tools/check_spdx_headers.py # verify headers
-python tools/check_licenses.py     # verify plugin LICENSE files
+python scripts/add_spdx_headers.py   # stamp headers
+python scripts/check_spdx_headers.py # verify headers
+python scripts/check_licenses.py     # verify plugin LICENSE files
 ```
 
 ---

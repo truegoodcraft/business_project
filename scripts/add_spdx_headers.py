@@ -4,7 +4,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CORE = ROOT / "core"
-PLUGS = ROOT / "plugins_alpha"
+PLUGS = ROOT / "plugins"
 
 CORE_ID = "PolyForm-Noncommercial-1.0.0"
 PLUG_ID = "Apache-2.0"

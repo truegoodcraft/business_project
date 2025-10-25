@@ -21,7 +21,7 @@ def main() -> None:
     legacy.rename(destination)
     print(f"Archived legacy plugins to: {destination}")
 
-    echo_source = root / "plugins_alpha" / "echo"
+    echo_source = root / "plugins" / "echo"
     if echo_source.exists():
         echo_dest = destination / "echo"
         echo_dest.parent.mkdir(parents=True, exist_ok=True)

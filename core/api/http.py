@@ -200,7 +200,7 @@ def log(msg: str) -> None:
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_UI_BASES = [
     REPO_ROOT / "core" / "plugins_builtin",
-    REPO_ROOT / "plugins_alpha",
+    REPO_ROOT / "plugins",
     REPO_ROOT / "plugins_user",
 ]
 

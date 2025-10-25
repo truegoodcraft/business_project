@@ -10,7 +10,7 @@ from core.contracts.plugin_v2 import PluginV2
 
 
 def _load_plugin(plugin_id: str) -> PluginV2:
-    module_names = [f"plugins_alpha.{plugin_id}.plugin", f"plugins_alpha.{plugin_id}"]
+    module_names = [f"plugins.{plugin_id}.plugin", f"plugins.{plugin_id}"]
     last_exc: Exception | None = None
     for name in module_names:
         try:

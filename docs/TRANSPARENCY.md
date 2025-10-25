@@ -11,7 +11,7 @@ The BUS Core Alpha runtime is built for transparency and local control. This doc
 ## Runtime Surfaces
 
 * **HTTP API** (localhost only): `/health`, `/plugins`, `/probe`, `/capabilities`, `/execTransform`, `/policy.simulate`, `/nodes.manifest.sync`, `/transparency.report`, `/logs`.
-* **Plugin imports**: Guarded allowlist (`core.contracts.plugin_v2`, `core.conn_broker`, `core.secrets`, `core.capabilities`). Any other `core.*` import fails at load time.
+* **Plugin imports**: Guarded allowlist (`core.contracts.plugin_v2`, `core.services.conn_broker` (via compatibility shim `core.conn_broker`), `core.secrets`, `core.capabilities`). Any other `core.*` import fails at load time.
 * **Sandbox**: Transform executions run in an ephemeral subprocess with a per-run temporary directory and a hard timeout.
 
 ## Journaling & Audit
