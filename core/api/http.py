@@ -51,6 +51,7 @@ from core.runtime.policy import PolicyDecision
 from core.runtime.probe import PROBE_TIMEOUT_SEC
 from core.secrets import SecretError, Secrets
 from core.version import VERSION
+from core.utils.export import export_db, import_preview as _import_preview, import_commit as _import_commit
 from tgc.bootstrap_fs import DATA, LOGS
 
 from pydantic import BaseModel, Field
@@ -314,6 +315,15 @@ class WritesBody(BaseModel):
     enabled: bool
 
 
+class ExportReq(BaseModel):
+    password: str
+
+
+class ImportReq(BaseModel):
+    password: str
+    path: str
+
+
 @protected.get("/dev/writes")
 def dev_get_writes():
     return {"enabled": get_writes_enabled()}
@@ -323,6 +333,53 @@ def dev_get_writes():
 def dev_set_writes(body: WritesBody):
     set_writes_enabled(bool(body.enabled))
     return {"enabled": get_writes_enabled()}
+
+
+@protected.post("/app/export")
+def app_export(req: ExportReq):
+    if not req.password:
+        raise HTTPException(status_code=400, detail={"error": "password_required"})
+    res = export_db(req.password)
+    if not res.get("ok"):
+        raise HTTPException(
+            status_code=400,
+            detail={"error": res.get("error", "export_failed")},
+        )
+    return res
+
+
+@protected.post("/app/import/preview")
+def app_import_preview(req: ImportReq, _w: None = Depends(require_writes)):
+    res = _import_preview(req.path, req.password)
+    if not res.get("ok"):
+        err = res.get("error", "preview_failed")
+        if err in (
+            "path_out_of_roots",
+            "cannot_read_file",
+            "bad_container",
+            "decrypt_failed",
+            "password_required",
+        ):
+            raise HTTPException(status_code=400, detail={"error": err})
+        raise HTTPException(status_code=400, detail={"error": "preview_failed"})
+    return res
+
+
+@protected.post("/app/import/commit")
+def app_import_commit(req: ImportReq, _w: None = Depends(require_writes)):
+    res = _import_commit(req.path, req.password)
+    if not res.get("ok"):
+        err = res.get("error", "commit_failed")
+        if err in (
+            "path_out_of_roots",
+            "cannot_read_file",
+            "bad_container",
+            "decrypt_failed",
+            "password_required",
+        ):
+            raise HTTPException(status_code=400, detail={"error": err})
+        raise HTTPException(status_code=400, detail={"error": "commit_failed"})
+    return res
 
 
 # --- Debug: journal info (auth required; does NOT require writes on) ---
