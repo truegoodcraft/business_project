@@ -1,52 +1,80 @@
-async function getToken(){
-  try{
-    const response=await fetch('/session/token');
-    if(!response.ok) throw new Error(`Token fetch failed: ${response.status}`);
-    const data=await response.json();
-    const token=typeof data?.token==='string'?data.token:null;
-    if(!token) throw new Error('Token payload missing');
-    localStorage.setItem('tgc_token',token);
-    const event=new CustomEvent('bus:token-ready',{detail:{token}});
-    document.dispatchEvent(event);
-    console.log('Token ready:',token.substring(0,8)+'...');
-    return token;
-  }catch(error){
-    console.error('Token error:',error);
-    localStorage.removeItem('tgc_token');
-    if(!document.getElementById('token-banner')){
-      document.body.insertAdjacentHTML('afterbegin','<div id="token-banner" style="position:fixed;top:0;left:0;background:red;color:white;padding:1em;z-index:999;">Session expired—restart launcher</div>');
-    }
-  }
-}
+/* Token bootstrap & fetch patch for FixKit (local-only) */
 
-if(typeof window!=='undefined'){
-  window.getToken=getToken;
-}else if(typeof globalThis!=='undefined'){
-  globalThis.getToken=getToken;
-}
+const STORAGE_KEY = 'BUS_SESSION_TOKEN';
 
-document.addEventListener('DOMContentLoaded',async()=>{
-  const stored=localStorage.getItem('tgc_token');
-  if(stored){
-    let token=stored;
-    try{
-      const parsed=JSON.parse(stored);
-      if(parsed && typeof parsed.token==='string'){
-        token=parsed.token;
+function normalizeToken(v) {
+  // Accept: plain string, {"token": "..."} object, or JSON stringified versions
+  try {
+    if (!v) return '';
+    if (typeof v === 'string') {
+      // if looks like JSON, try parse
+      if (v.trim().startsWith('{')) {
+        const j = JSON.parse(v);
+        return typeof j === 'string' ? j : (j.token || '');
       }
-    }catch{}
-    if(typeof token!=='string' || !token){
-      await getToken();
-      return;
+      return v;
     }
-    const event=new CustomEvent('bus:token-ready',{detail:{token}});
-    document.dispatchEvent(event);
-    console.log('Stored token loaded:',token.substring(0,8)+'...');
-  }else{
-    await getToken();
-  }
-});
+    if (typeof v === 'object' && v !== null) {
+      return v.token || '';
+    }
+  } catch {}
+  return '';
+}
 
-document.addEventListener('bus:token-ready',event=>{
-  console.log('Event fired—cards should load');
-});
+export function getToken() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  return normalizeToken(raw);
+}
+
+async function fetchToken() {
+  const resp = await fetch('/session/token', { cache: 'no-store' });
+  if (!resp.ok) throw new Error('token_fetch_' + resp.status);
+  const j = await resp.json();
+  const tok = normalizeToken(j);
+  if (!tok) throw new Error('invalid_token_payload');
+  // persist only the plain string
+  localStorage.setItem(STORAGE_KEY, tok);
+  // set cookie for debug/compat
+  document.cookie = 'X-Session-Token=' + encodeURIComponent(tok) + '; SameSite=Lax; Path=/';
+  // notify app
+  window.dispatchEvent(new CustomEvent('bus:token-ready', { detail: { token: tok } }));
+  return tok;
+}
+
+function sameOrigin(u) {
+  try { return new URL(u, location.origin).origin === location.origin; }
+  catch { return false; }
+}
+
+// Patch fetch once to inject X-Session-Token on same-origin URLs (relative or absolute)
+if (!window.__BUS_FETCH_PATCHED__) {
+  const _fetch = window.fetch.bind(window);
+  window.fetch = async (input, init) => {
+    let url, headers;
+    if (typeof input === 'string') {
+      url = input;
+      if (sameOrigin(url)) headers = new Headers((init && init.headers) || {});
+    } else if (input instanceof Request) {
+      url = input.url;
+      if (sameOrigin(url)) headers = new Headers(input.headers);
+    }
+    if (headers) {
+      const t = getToken();
+      if (t) headers.set('X-Session-Token', t);
+      if (input instanceof Request) input = new Request(input, { headers });
+      else init = Object.assign({}, init, { headers });
+    }
+    return _fetch(input, init);
+  };
+  window.__BUS_FETCH_PATCHED__ = true;
+}
+
+// Kick off token load ASAP; renderers can listen for 'bus:token-ready'
+(async () => {
+  try {
+    if (!getToken()) await fetchToken();
+    else window.dispatchEvent(new CustomEvent('bus:token-ready', { detail: { token: getToken() } }));
+  } catch (e) {
+    console.error('Token bootstrap failed:', e);
+  }
+})();
