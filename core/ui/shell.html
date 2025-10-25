@@ -41,6 +41,20 @@
 </div>
 
 <script type="module" src="/ui/js/token.js"></script>
+<script type="module" src="/ui/js/api.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    try {
+      const cachedToken = localStorage.getItem('tgc_token');
+      if (cachedToken) {
+        console.log('[shell] Dispatching cached token');
+        document.dispatchEvent(new CustomEvent('bus:token-ready', { detail: cachedToken }));
+      }
+    } catch (err) {
+      console.warn('[shell] Unable to access localStorage', err);
+    }
+  });
+</script>
 <script type="module">
   import { mountWrites }    from "/ui/js/cards/writes.js";
   import { mountOrganizer } from "/ui/js/cards/organizer.js";
