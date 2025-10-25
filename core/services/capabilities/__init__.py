@@ -1,17 +1,14 @@
-"""Compatibility facade for capability services."""
-from __future__ import annotations
-
-from core.services.capabilities import (
+from .api import (
+    registry,
+    publish,
+    unpublish,
+    list_caps,
+    resolve,
     emit_manifest,
     emit_manifest_async,
-    export,
-    list_caps,
-    meta,
-    publish,
-    registry,
-    resolve,
-    unpublish,
     update_from_probe,
+    export,
+    meta,
 )
 
 __all__ = [

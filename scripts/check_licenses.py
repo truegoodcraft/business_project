@@ -2,7 +2,7 @@ from __future__ import annotations
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-PLUGS = ROOT / "plugins_alpha"
+PLUGS = ROOT / "plugins"
 SKIP = {"_"}  # skip folders starting with _
 
 def missing_plugin_licenses()->list[str]:

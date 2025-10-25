@@ -15,12 +15,12 @@ CORE_DIR = MODULE_DIR.parent
 ROOT_DIR = CORE_DIR.parent
 
 BUILTIN_PLUGIN_ROOT = os.path.abspath(CORE_DIR / "plugins_builtin")
-ALPHA_PLUGIN_ROOT = os.path.abspath(ROOT_DIR / "plugins_alpha")
+ALPHA_PLUGIN_ROOT = os.path.abspath(ROOT_DIR / "plugins")
 USER_PLUGIN_ROOT = os.path.abspath(ROOT_DIR / "plugins_user")
 
 _PLUGIN_ROOTS: List[tuple[str, str]] = [
     (BUILTIN_PLUGIN_ROOT, "core.plugins_builtin"),
-    (ALPHA_PLUGIN_ROOT, "plugins_alpha"),
+    (ALPHA_PLUGIN_ROOT, "plugins"),
     (USER_PLUGIN_ROOT, "plugins_user"),
 ]
 

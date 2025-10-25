@@ -49,7 +49,7 @@ def _secrets_files() -> List[Path]:
 
 
 def _plugins_root() -> Path:
-    return _root() / "plugins_alpha"
+    return _root() / "plugins"
 
 
 def discover_plugin_settings() -> List[Tuple[str, Path]]:

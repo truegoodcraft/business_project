@@ -16,7 +16,7 @@ from core.plugins.loader import register as register_plugin_module
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_PLUGIN_DIRS = [
-    ROOT_DIR / "plugins_alpha",
+    ROOT_DIR / "plugins",
     ROOT_DIR / "plugins_user",
 ]
 

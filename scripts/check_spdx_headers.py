@@ -3,7 +3,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CORE = ROOT / "core"
-PLUGS = ROOT / "plugins_alpha"
+PLUGS = ROOT / "plugins"
 
 REQ = {"core": "PolyForm-Noncommercial-1.0.0", "plugins": "Apache-2.0"}
 SKIP_DIRS = {".git", ".github", ".venv", "venv", "__pycache__", "dist", "build"}
@@ -30,7 +30,7 @@ def main()->int:
     if probs:
         print("Missing/incorrect SPDX headers in:")
         for p in probs: print(" -", p)
-        print("\nFix: run `python tools/add_spdx_headers.py` and commit.")
+        print("\nFix: run `python scripts/add_spdx_headers.py` and commit.")
         return 1
     print("All SPDX headers OK.")
     return 0
