@@ -79,7 +79,17 @@ Expand-Archive -Path $zip -DestinationPath $tmp -Force
 $unpacked = Get-ChildItem $tmp | Where-Object { $_.PSIsContainer -and $_.Name -ne "app" } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 if (-not $unpacked) { throw "Unpack failed." }
 Move-Item $unpacked.FullName $app -Force
+$src = $app
 Remove-Item $zip -Force
+
+$srcUi = Join-Path $src 'core\ui'
+$dstUi = Join-Path $app 'core\ui'
+if (Test-Path $srcUi) {
+  New-Item -ItemType Directory -Force -Path $dstUi | Out-Null
+  if ($srcUi -ne $dstUi) {
+    robocopy $srcUi $dstUi /MIR | Out-Null
+  }
+}
 
 # Ensure venv
 if (-not (Test-Path (Join-Path $venv "Scripts\python.exe"))) {
@@ -102,6 +112,6 @@ try { & "$py" -m pywin32_postinstall -install | Out-Null } catch { }
 Push-Location $app
 $u = "http://127.0.0.1:$Port"
 Write-Host "Starting BUS Core on http://127.0.0.1:$Port/ui"
-Start-Process "$u/ui/"
+Start-Process "$u/ui/#/writes"
 & "$py" app.py serve --port $Port
 Pop-Location

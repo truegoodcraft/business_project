@@ -162,7 +162,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     print(f"TGC Controller running at http://127.0.0.1:{port}")
 
     if _wait_for_health(port, session_token):
-        webbrowser.open(f"http://127.0.0.1:{port}/ui")
+        webbrowser.open(f"http://127.0.0.1:{port}/ui/#/writes")
     else:
         print("Warning: core health check failed; UI will not auto-open.")
 
