@@ -15,25 +15,21 @@ export async function mountOrganizer(root){
     </div>
     <pre id="out" style="margin-top:8px" class="muted"></pre>
   `;
-  const $ = sel => root.querySelector(sel);
+  const $ = s=>root.querySelector(s);
   $('#dup').onclick = async ()=>{
     const j = await post('/organizer/duplicates/plan', {start_path: $('#start').value.trim(), quarantine_dir: $('#qdir').value.trim()||null});
-    $('#pid').value = j.plan_id || '';
-    $('#out').textContent = JSON.stringify(j,null,2);
+    $('#pid').value = j.plan_id || ''; $('#out').textContent = JSON.stringify(j,null,2);
   };
   $('#ren').onclick = async ()=>{
     const j = await post('/organizer/rename/plan', {start_path: $('#start').value.trim()});
-    $('#pid').value = j.plan_id || '';
-    $('#out').textContent = JSON.stringify(j,null,2);
+    $('#pid').value = j.plan_id || ''; $('#out').textContent = JSON.stringify(j,null,2);
   };
   $('#prev').onclick = async ()=>{
     const id = $('#pid').value.trim(); if(!id){alert('No plan id'); return;}
-    const j = await post(`/plans/${encodeURIComponent(id)}/preview`, {});
-    $('#out').textContent = JSON.stringify(j,null,2);
+    const j = await post(`/plans/${encodeURIComponent(id)}/preview`, {}); $('#out').textContent = JSON.stringify(j,null,2);
   };
   $('#commit').onclick = async ()=>{
     const id = $('#pid').value.trim(); if(!id){alert('No plan id'); return;}
-    const j = await post(`/plans/${encodeURIComponent(id)}/commit`, {});
-    $('#out').textContent = JSON.stringify(j,null,2);
+    const j = await post(`/plans/${encodeURIComponent(id)}/commit`, {}); $('#out').textContent = JSON.stringify(j,null,2);
   };
 }

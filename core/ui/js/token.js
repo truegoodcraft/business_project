@@ -6,11 +6,7 @@ export const Token = (()=> {
   async function ensure(){
     let t = window.BUS_SESSION_TOKEN || localStorage.getItem('BUS_SESSION_TOKEN') || readCookie('X-Session-Token') || '';
     if (!t) {
-      try {
-        const r = await fetch('/session/token', {cache:'no-store'});
-        const j = await r.json();
-        t = j.token || '';
-      } catch(e) {}
+      try { const r = await fetch('/session/token',{cache:'no-store'}); const j = await r.json(); t = j.token || ''; } catch(e) {}
     }
     if (t){
       window.BUS_SESSION_TOKEN = t;
@@ -20,7 +16,6 @@ export const Token = (()=> {
     }
     return t;
   }
-  // Patch fetch once
   if (!window.__fetchPatched){
     const _f = window.fetch;
     window.fetch = async (input, init)=>{
@@ -33,6 +28,6 @@ export const Token = (()=> {
     };
     window.__fetchPatched = true;
   }
-  ensure(); // kick off
+  ensure();
   return { ensure };
 })();
