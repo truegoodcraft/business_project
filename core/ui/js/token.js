@@ -11,8 +11,9 @@ async function getToken(){
   }catch(error){
     console.error('Token error:',error);
     localStorage.removeItem('tgc_token');
-    document.body.insertAdjacentHTML('afterbegin','<div id="token-banner" style="position:fixed;top:0;left:0;background:red;color:white;padding:1em;z-index:999;">Session expired—restart launcher</div>');
-    return null;
+    if(!document.getElementById('token-banner')){
+      document.body.insertAdjacentHTML('afterbegin','<div id="token-banner" style="position:fixed;top:0;left:0;background:red;color:white;padding:1em;z-index:999;">Session expired—restart launcher</div>');
+    }
   }
 }
 
@@ -21,11 +22,12 @@ document.addEventListener('DOMContentLoaded',async()=>{
   if(stored){
     const event=new CustomEvent('bus:token-ready',{detail:{token:stored}});
     document.dispatchEvent(event);
+    console.log('Stored token loaded');
   }else{
     await getToken();
   }
 });
 
-document.addEventListener('bus:token-ready',()=>{
+document.addEventListener('bus:token-ready',event=>{
   console.log('Event fired—cards should load');
 });

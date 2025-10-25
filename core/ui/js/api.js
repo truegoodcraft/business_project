@@ -2,7 +2,7 @@ async function apiCall(path,options={method:'GET'}){
   const token=localStorage.getItem('tgc_token');
   if(!token) throw new Error('No token—reload page');
   const headers=new Headers({...options.headers,'X-Session-Token':token});
-  if(options.method!=='GET') headers.set('Content-Type','application/json');
+  if(options.method!=='GET') headers.append('Content-Type','application/json');
   let response;
   try{
     response=await fetch(path,{...options,headers});
@@ -12,7 +12,7 @@ async function apiCall(path,options={method:'GET'}){
   if(response.status===401){
     localStorage.removeItem('tgc_token');
     await getToken();
-    throw new Error('Token refreshed—retry');
+    throw new Error('Token refreshed—retry call');
   }
   if(!response.ok){
     const errText=await response.text();
