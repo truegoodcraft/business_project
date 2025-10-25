@@ -32,8 +32,11 @@
     </details>
   </main>
   <script>
-    document.addEventListener('bus:token-ready',async()=>{
-      console.log('Loading cards...');
+    let cardsInitialized=false;
+    document.addEventListener('bus:token-ready',async(event)=>{
+      if(cardsInitialized) return;
+      cardsInitialized=true;
+      console.log('Loading cards with token detail:',event.detail);
       const writesCard=document.getElementById('writes-card');
       writesCard.innerHTML='<label>Writes: <input type="checkbox" id="writes-toggle"></label><pre id="writes-out"></pre>';
       const toggle=document.getElementById('writes-toggle');
@@ -61,7 +64,7 @@
       organizerCard.innerHTML='<input id="start-path" placeholder="Folder path"><button id="scan-dupes">Scan Dupes</button><pre id="org-out"></pre>';
       document.getElementById('scan-dupes').addEventListener('click',async()=>{
         try{
-          const path=document.getElementById('start-path').value;
+          const path=document.getElementById('start-path').value.trim();
           const data=await post('/organizer/duplicates/plan',{start_path:path});
           document.getElementById('org-out').textContent=JSON.stringify(data,null,2);
         }catch(e){
