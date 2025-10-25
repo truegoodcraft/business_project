@@ -71,7 +71,7 @@ else:  # pragma: no cover - non-windows fallback
 
 
 def _load_session_token() -> str:
-    return Path("data/session_token.txt").read_text(encoding="utf-8").strip()
+    return _load_or_create_token()
 
 
 def _b64u_encode(b: bytes) -> str:
@@ -104,6 +104,34 @@ def _check_state(state_b64: str) -> bool:
 
 
 APP = FastAPI(title="BUS Core Alpha", version=VERSION)
+
+TOKEN_FILE = Path("data/session_token.txt")
+
+
+def _load_or_create_token() -> str:
+    try:
+        if TOKEN_FILE.exists():
+            return TOKEN_FILE.read_text(encoding="utf-8").strip()
+        TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tok = secrets.token_urlsafe(32)
+        TOKEN_FILE.write_text(tok, encoding="utf-8")
+        return tok
+    except Exception:
+        return secrets.token_urlsafe(32)
+
+
+@APP.get("/session/token")
+def get_session_token(response: Response):
+    tok = _load_or_create_token()
+    response.set_cookie(
+        key="X-Session-Token",
+        value=tok,
+        path="/",
+        samesite="lax",
+        secure=False,
+        httponly=False,
+    )
+    return {"token": tok}
 LICENSE_NAME = "PolyForm-Noncommercial-1.0.0"
 LICENSE_URL = "https://polyformproject.org/licenses/noncommercial/1.0.0/"
 
