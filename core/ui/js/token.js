@@ -1,91 +1,31 @@
-const TOKEN_KEY = 'tgc_token';
-const EVENT_NAME = 'bus:token-ready';
-let pendingToken = null;
-
-function readStoredToken() {
-  try {
-    return localStorage.getItem(TOKEN_KEY) || '';
-  } catch (err) {
-    console.warn('[token] Unable to access localStorage', err);
-    return '';
+async function getToken(){
+  try{
+    const response=await fetch('/session/token');
+    if(!response.ok) throw new Error(`Token fetch failed: ${response.status}`);
+    const token=await response.text();
+    localStorage.setItem('tgc_token',token);
+    const event=new CustomEvent('bus:token-ready',{detail:{token}});
+    document.dispatchEvent(event);
+    console.log('Token ready:',token.substring(0,8)+'...');
+    return token;
+  }catch(error){
+    console.error('Token error:',error);
+    localStorage.removeItem('tgc_token');
+    document.body.insertAdjacentHTML('afterbegin','<div id="token-banner" style="position:fixed;top:0;left:0;background:red;color:white;padding:1em;z-index:999;">Session expired—restart launcher</div>');
+    return null;
   }
 }
 
-function storeToken(token) {
-  try {
-    if (token) {
-      localStorage.setItem(TOKEN_KEY, token);
-    } else {
-      localStorage.removeItem(TOKEN_KEY);
-    }
-  } catch (err) {
-    console.warn('[token] Failed to store token', err);
+document.addEventListener('DOMContentLoaded',async()=>{
+  const stored=localStorage.getItem('tgc_token');
+  if(stored){
+    const event=new CustomEvent('bus:token-ready',{detail:{token:stored}});
+    document.dispatchEvent(event);
+  }else{
+    await getToken();
   }
-}
+});
 
-function dispatchToken(token) {
-  const payload = token || '';
-  console.log('[token] Token ready event', payload ? payload.slice(0, 8) + '…' : '(empty)');
-  document.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: payload }));
-  return payload;
-}
-
-async function requestToken() {
-  try {
-    console.log('[token] Fetching session token…');
-    const response = await fetch('/session/token', { cache: 'no-store' });
-    if (response.status === 401) {
-      console.warn('[token] Token request returned 401');
-      storeToken('');
-      return '';
-    }
-    if (response.ok) {
-      const token = (await response.text()).trim();
-      if (token) {
-        storeToken(token);
-        return token;
-      }
-    }
-    console.warn('[token] Unexpected response while fetching token', response.status);
-  } catch (error) {
-    console.error('Token fail:', error);
-  }
-  return '';
-}
-
-export async function getToken(forceRefresh = false) {
-  if (forceRefresh) {
-    storeToken('');
-  }
-
-  const cached = forceRefresh ? '' : readStoredToken();
-  if (cached) {
-    return dispatchToken(cached);
-  }
-
-  if (!pendingToken) {
-    pendingToken = (async () => {
-      const token = await requestToken();
-      pendingToken = null;
-      return dispatchToken(token);
-    })();
-  }
-
-  return pendingToken;
-}
-
-export const Token = { get: getToken };
-
-function init() {
-  const cached = readStoredToken();
-  if (cached) {
-    dispatchToken(cached);
-  }
-  if (document.readyState === 'complete') {
-    getToken();
-  } else {
-    window.addEventListener('load', () => getToken());
-  }
-}
-
-init();
+document.addEventListener('bus:token-ready',()=>{
+  console.log('Event fired—cards should load');
+});

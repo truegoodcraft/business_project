@@ -1,96 +1,84 @@
-<!doctype html>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>BUS Core — Local Dashboard</title>
-<style>
-  :root { --bg:#0b0b0c; --fg:#e8e8ea; --muted:#9aa; --card:#141417; --accent:#6ea8fe; }
-  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.4 system-ui,Segoe UI,Roboto,Arial}
-  a{color:var(--accent);text-decoration:none}
-  .wrap{display:grid;grid-template-columns:240px 1fr;min-height:100vh}
-  aside{background:#0f0f12;border-right:1px solid #222;padding:16px;position:sticky;top:0;height:100vh}
-  main{padding:16px}
-  h1{font-size:18px;margin:0 0 12px}
-  h2{margin:0 0 10px}
-  .nav a{display:block;padding:8px 10px;border-radius:8px;margin-bottom:4px;color:var(--fg)}
-  .nav a.active{background:#1b1b20}
-  .card{background:var(--card);border:1px solid #222;border-radius:12px;padding:12px;margin-bottom:12px}
-  .muted{color:var(--muted)}
-  button{background:#1f1f25;border:1px solid #2a2a32;border-radius:8px;color:#fff;padding:8px 12px;cursor:pointer}
-  button[disabled]{opacity:.5;cursor:not-allowed}
-  input{background:#101015;border:1px solid #26262e;border-radius:8px;color:#fff;padding:8px;width:100%}
-  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-  pre{white-space:pre-wrap;word-break:break-word}
-</style>
-<div class="wrap">
-  <aside>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>BUS Core — Local Dashboard</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="js/token.js" defer></script>
+  <script src="js/api.js" defer></script>
+</head>
+<body>
+  <nav class="sidebar">
     <h1>BUS Core</h1>
-    <div class="muted" id="license">Local-only. Token loading…</div>
-    <div class="nav" id="nav">
-      <a href="#/writes"    id="nav-writes">Writes</a>
-      <a href="#/organizer" id="nav-organizer">Organizer</a>
-      <a href="#/dev"       id="nav-dev">Dev</a>
-    </div>
-  </aside>
+    <ul>
+      <li><a href="#writes">Writes</a></li>
+      <li><a href="#organizer">Organizer</a></li>
+      <li><a href="#dev">Dev</a></li>
+    </ul>
+  </nav>
   <main>
-    <div id="view"></div>
-    <details id="domain-card" class="card" style="margin-top:16px">
-      <summary>Domain Data</summary>
-      <div id="domain-forms" style="margin-top:12px"></div>
+    <details id="writes">
+      <summary>Writes</summary>
+      <div id="writes-card">Loading...</div>
+    </details>
+    <details id="organizer">
+      <summary>Organizer</summary>
+      <div id="organizer-card">Loading...</div>
+    </details>
+    <details id="dev">
+      <summary>Dev</summary>
+      <div id="dev-card">Loading...</div>
     </details>
   </main>
-</div>
-
-<script type="module" src="/ui/js/token.js"></script>
-<script type="module" src="/ui/js/api.js"></script>
-<script>
-  document.addEventListener('DOMContentLoaded', () => {
-    try {
-      const cachedToken = localStorage.getItem('tgc_token');
-      if (cachedToken) {
-        console.log('[shell] Dispatching cached token');
-        document.dispatchEvent(new CustomEvent('bus:token-ready', { detail: cachedToken }));
+  <script>
+    document.addEventListener('bus:token-ready',async()=>{
+      console.log('Loading cards...');
+      const writesCard=document.getElementById('writes-card');
+      writesCard.innerHTML='<label>Writes: <input type="checkbox" id="writes-toggle"></label><pre id="writes-out"></pre>';
+      const toggle=document.getElementById('writes-toggle');
+      const out=document.getElementById('writes-out');
+      async function refreshWrites(){
+        try{
+          const data=await apiCall('/dev/writes');
+          toggle.checked=data.enabled;
+          out.textContent=JSON.stringify(data,null,2);
+        }catch(e){
+          out.textContent='Error: '+e.message;
+        }
       }
-    } catch (err) {
-      console.warn('[shell] Unable to access localStorage', err);
-    }
-  });
-</script>
-<script type="module">
-  import { mountWrites }    from "/ui/js/cards/writes.js";
-  import { mountOrganizer } from "/ui/js/cards/organizer.js";
-  import { mountDev }       from "/ui/js/cards/dev.js";
-  import { mountDomainCard } from "/ui/js/cards/domain.js";
-
-  const routes = { "/writes": mountWrites, "/organizer": mountOrganizer, "/dev": mountDev };
-  const domainRoot = document.getElementById('domain-forms');
-
-  function setActive(hash){
-    document.querySelectorAll('.nav a').forEach(a=>a.classList.remove('active'));
-    const el = document.getElementById('nav-' + (hash.replace('#/','')||'writes'));
-    if (el) el.classList.add('active');
-  }
-
-  async function render(){
-    const view = document.getElementById('view');
-    const hash = location.hash || '#/writes';
-    const mount = routes[hash.replace('#','')] || routes['/writes'];
-    view.innerHTML = '';
-    const card = document.createElement('div'); card.className='card';
-    view.appendChild(card);
-    await mount(card);
-    setActive(hash);
-  }
-
-  window.addEventListener('hashchange', render);
-  document.addEventListener('bus:token-ready', async ()=>{
-    await render();
-    if(domainRoot){ await mountDomainCard(domainRoot); }
-  });
-
-  (async ()=>{
-    try{
-      const r = await fetch('/health', {cache:'no-store'}); const j = await r.json();
-      document.getElementById('license').textContent = `Local-only · Core: ${j?.licenses?.core?.name||'—'} · v ${j?.version||'—'}`;
-    }catch(e){}
-  })();
-</script>
+      toggle.addEventListener('change',async()=>{
+        try{
+          const data=await post('/dev/writes',{enabled:toggle.checked});
+          out.textContent=JSON.stringify(data,null,2);
+          await refreshWrites();
+        }catch(e){
+          out.textContent='Error: '+e.message;
+        }
+      });
+      await refreshWrites();
+      const organizerCard=document.getElementById('organizer-card');
+      organizerCard.innerHTML='<input id="start-path" placeholder="Folder path"><button id="scan-dupes">Scan Dupes</button><pre id="org-out"></pre>';
+      document.getElementById('scan-dupes').addEventListener('click',async()=>{
+        try{
+          const path=document.getElementById('start-path').value;
+          const data=await post('/organizer/duplicates/plan',{start_path:path});
+          document.getElementById('org-out').textContent=JSON.stringify(data,null,2);
+        }catch(e){
+          document.getElementById('org-out').textContent='Error: '+e.message;
+        }
+      });
+      const devCard=document.getElementById('dev-card');
+      devCard.innerHTML='<button id="ping-btn">Ping Plugin</button><pre id="dev-out"></pre>';
+      document.getElementById('ping-btn').addEventListener('click',async()=>{
+        try{
+          const data=await apiCall('/dev/ping_plugin');
+          document.getElementById('dev-out').textContent=JSON.stringify(data,null,2);
+        }catch(e){
+          document.getElementById('dev-out').textContent='Error: '+e.message;
+        }
+      });
+    });
+  </script>
+</body>
+</html>
