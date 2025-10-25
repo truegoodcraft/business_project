@@ -30,8 +30,43 @@
       <div id="dev-card">Loading...</div>
     </details>
   </main>
-  <script type="module" src="js/cards/writes.js"></script>
-  <script type="module" src="js/cards/organizer.js"></script>
-  <script type="module" src="js/cards/dev.js"></script>
+  <script type="module">
+    import { mountWrites } from './js/cards/writes.js';
+    import { mountOrganizer } from './js/cards/organizer.js';
+    import { mountDev } from './js/cards/dev.js';
+
+    async function refreshCard(mountFn,id){
+      const root=document.getElementById(id);
+      if(!root) return;
+      try{
+        await mountFn(root);
+      }catch(error){
+        console.error(`${id} failed to load:`,error);
+        root.textContent='Error: '+error.message;
+      }
+    }
+
+    async function refreshAllCards(){
+      await Promise.all([
+        refreshCard(mountWrites,'writes-card'),
+        refreshCard(mountOrganizer,'organizer-card'),
+        refreshCard(mountDev,'dev-card')
+      ]);
+    }
+
+    async function handleTokenReady(){
+      try{
+        await refreshAllCards();
+      }catch(error){
+        console.error('Card refresh failed:',error);
+      }
+    }
+
+    document.addEventListener('bus:token-ready',()=>{ handleTokenReady(); });
+
+    if(localStorage.getItem('tgc_token')){
+      handleTokenReady();
+    }
+  </script>
 </body>
 </html>

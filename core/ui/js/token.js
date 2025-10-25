@@ -2,7 +2,9 @@ async function getToken(){
   try{
     const response=await fetch('/session/token');
     if(!response.ok) throw new Error(`Token fetch failed: ${response.status}`);
-    const token=await response.text();
+    const data=await response.json();
+    const token=typeof data?.token==='string'?data.token:null;
+    if(!token) throw new Error('Token payload missing');
     localStorage.setItem('tgc_token',token);
     const event=new CustomEvent('bus:token-ready',{detail:{token}});
     document.dispatchEvent(event);
