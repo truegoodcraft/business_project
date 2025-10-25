@@ -14,5 +14,6 @@ cryptography>=42.0.0
 fastapi
 uvicorn[standard]
 pydantic
+sqlalchemy
 Send2Trash==1.8.2
 pywin32>=306; platform_system == "Windows"
