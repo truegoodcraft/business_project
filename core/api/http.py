@@ -8,13 +8,15 @@ import hmac
 import json
 import os
 import secrets
+import sqlite3
 import subprocess
 import sys
 import time
 import uuid
-from pathlib import Path
 from ctypes import wintypes
-from typing import Any, Dict, List, Optional
+from io import BytesIO
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Literal
 from urllib.parse import urlencode
 
 from fastapi import (
@@ -28,13 +30,15 @@ from fastapi import (
     Request,
     Response,
 )
-from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
+from fastapi.responses import FileResponse, RedirectResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 import requests
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from core.services.capabilities import registry
 from core.services.capabilities.registry import MANIFEST_PATH
+from core.services.models import DB_PATH as SA_DB_PATH
 from core.policy.guard import require_owner_commit
 from core.policy.model import Policy
 from core.policy.store import load_policy, save_policy, get_writes_enabled, set_writes_enabled
@@ -49,7 +53,7 @@ from core.secrets import SecretError, Secrets
 from core.version import VERSION
 from tgc.bootstrap_fs import DATA, LOGS
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from core.domain.bootstrap import get_broker
 from core.settings.reader_state import (
@@ -284,6 +288,17 @@ def require_token_ctx(
     return {"token": x_session_token}
 
 
+def require_token(request: Request) -> str:
+    token = request.headers.get("X-Session-Token")
+    _require_token(token)
+    return token or ""
+
+
+def require_writes() -> None:
+    if not get_writes_enabled():
+        raise HTTPException(status_code=403, detail={"error": "writes_disabled"})
+
+
 protected = APIRouter(dependencies=[Depends(require_token_ctx)])
 protected.include_router(reader_local_router)
 protected.include_router(organizer_router)
@@ -308,6 +323,248 @@ def dev_get_writes():
 def dev_set_writes(body: WritesBody):
     set_writes_enabled(bool(body.enabled))
     return {"enabled": get_writes_enabled()}
+
+
+class RFQGen(BaseModel):
+    items: List[int]
+    vendors: List[int]
+    fmt: Literal["md", "pdf", "txt"] = "md"
+
+
+class InventoryRun(BaseModel):
+    inputs: Dict[int, float] = Field(default_factory=dict)
+    outputs: Dict[int, float] = Field(default_factory=dict)
+    note: Optional[str] = None
+
+
+_LOCALAPPDATA = os.environ.get("LOCALAPPDATA")
+_DEFAULT_ROOT = Path(_LOCALAPPDATA) / "BUSCore" if _LOCALAPPDATA else SA_DB_PATH.parent
+BUS_ROOT = _DEFAULT_ROOT.resolve()
+DB_PATH = (BUS_ROOT / "app.db").resolve()
+_LEGACY_DB_PATH = SA_DB_PATH.resolve()
+if _LEGACY_DB_PATH.exists() and _LEGACY_DB_PATH != DB_PATH:
+    BUS_ROOT = _LEGACY_DB_PATH.parent
+    DB_PATH = _LEGACY_DB_PATH
+
+EXPORTS_DIR = BUS_ROOT / "exports"
+JOURNAL_DIR = BUS_ROOT / "data" / "journals"
+_TEMPLATE_ROOT = Path(__file__).resolve().parents[2] / "templates"
+
+
+def _db_conn() -> sqlite3.Connection:
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(str(DB_PATH), timeout=30)
+    con.row_factory = sqlite3.Row
+    try:
+        con.execute("PRAGMA journal_mode=WAL")
+    except sqlite3.DatabaseError:
+        pass
+    con.execute("PRAGMA foreign_keys=ON")
+    return con
+
+
+_tmpl_env = Environment(
+    loader=FileSystemLoader(str(_TEMPLATE_ROOT)),
+    autoescape=select_autoescape(["html", "xml"]),
+)
+
+
+@APP.post("/app/rfq/generate")
+def rfq_generate(
+    body: RFQGen,
+    token: str = Depends(require_token),
+    _writes: None = Depends(require_writes),
+):
+    item_ids = list(dict.fromkeys(body.items or []))
+    vendor_ids = list(dict.fromkeys(body.vendors or []))
+
+    with _db_conn() as con:
+        items: Dict[int, sqlite3.Row] = {}
+        vendors: Dict[int, sqlite3.Row] = {}
+        if item_ids:
+            placeholders = ",".join("?" * len(item_ids))
+            query = f"SELECT id, vendor_id, sku, name, qty, unit, price FROM items WHERE id IN ({placeholders})"
+            rows = con.execute(query, item_ids).fetchall()
+            items = {int(row["id"]): row for row in rows}
+        if vendor_ids:
+            placeholders = ",".join("?" * len(vendor_ids))
+            query = f"SELECT id, name, contact FROM vendors WHERE id IN ({placeholders})"
+            rows = con.execute(query, vendor_ids).fetchall()
+            vendors = {int(row["id"]): row for row in rows}
+
+    missing_items = [iid for iid in item_ids if iid not in items]
+    missing_vendors = [vid for vid in vendor_ids if vid not in vendors]
+    if missing_items or missing_vendors:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "Invalid IDs",
+                "missing_items": missing_items,
+                "missing_vendors": missing_vendors,
+            },
+        )
+
+    by_vendor: Dict[int, List[sqlite3.Row]] = {vid: [] for vid in vendor_ids}
+    for record in items.values():
+        vid = record["vendor_id"]
+        if vid in by_vendor:
+            by_vendor[vid].append(record)
+
+    ts = int(time.time())
+    from datetime import datetime
+
+    ts_iso = datetime.utcfromtimestamp(ts).isoformat() + "Z"
+
+    if body.fmt == "pdf":
+        try:
+            from reportlab.lib.pagesizes import LETTER
+            from reportlab.lib.styles import getSampleStyleSheet
+            from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table
+        except Exception:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "PDF generation requires reportlab. Run: pip install reportlab",
+                },
+            )
+
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=LETTER)
+        styles = getSampleStyleSheet()
+        flow = [Paragraph(f"Request for Quotation — {ts_iso}", styles["Title"]), Spacer(1, 12)]
+        for vid in vendor_ids:
+            vendor = vendors.get(vid)
+            if vendor is None:
+                continue
+            flow.append(Paragraph(f"Vendor: {vendor['name']}", styles["Heading2"]))
+            flow.append(Paragraph(f"Contact: {vendor.get('contact') or 'N/A'}", styles["Normal"]))
+            flow.append(Spacer(1, 6))
+            data = [["SKU", "Item", "Qty", "Unit", "Price", "Line Total"]]
+            subtotal = 0.0
+            for item in by_vendor.get(vid, []):
+                qty = float(item["qty"] or 0)
+                price = float(item["price"] or 0)
+                line_total = qty * price
+                subtotal += line_total
+                data.append(
+                    [
+                        item["sku"],
+                        item["name"],
+                        f"{qty:.3f}",
+                        item["unit"] or "",
+                        f"{price:.2f}",
+                        f"{line_total:.2f}",
+                    ]
+                )
+            data.append(["", "", "", "", "Vendor Total", f"{subtotal:.2f}"])
+            table = Table(data, hAlign="LEFT")
+            flow.append(table)
+            flow.append(Spacer(1, 12))
+        doc.build(flow)
+        content = buffer.getvalue()
+        ext = "pdf"
+        media_type = "application/pdf"
+    else:
+        try:
+            template = _tmpl_env.get_template("rfq_template.jinja")
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail="template_not_found") from exc
+
+        payload = {
+            "ts_iso": ts_iso,
+            "vendors": [
+                {
+                    "id": vid,
+                    "name": vendors[vid]["name"],
+                    "contact": vendors[vid]["contact"],
+                    "line_items": [
+                        {
+                            "sku": item["sku"],
+                            "name": item["name"],
+                            "qty": float(item["qty"] or 0),
+                            "unit": item["unit"],
+                            "price": float(item["price"] or 0),
+                        }
+                        for item in by_vendor.get(vid, [])
+                    ],
+                }
+                for vid in vendor_ids
+            ],
+        }
+        text = template.render(**payload)
+        content = text.encode("utf-8")
+        ext = "md" if body.fmt == "md" else "txt"
+        media_type = "text/markdown" if ext == "md" else "text/plain"
+
+    EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    filename = f"rfq-{ts}.{ext}"
+    output_path = EXPORTS_DIR / filename
+    output_path.write_bytes(content)
+
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    return StreamingResponse(BytesIO(content), media_type=media_type, headers=headers)
+
+
+@APP.post("/app/inventory/run")
+def inventory_run(
+    body: InventoryRun,
+    token: str = Depends(require_token),
+    _writes: None = Depends(require_writes),
+):
+    inputs = {int(k): float(v) for k, v in (body.inputs or {}).items()}
+    outputs = {int(k): float(v) for k, v in (body.outputs or {}).items()}
+    ids = set(inputs) | set(outputs)
+
+    deltas: Dict[int, float] = {}
+    for iid in ids:
+        deltas[iid] = outputs.get(iid, 0.0) - inputs.get(iid, 0.0)
+
+    with _db_conn() as con:
+        existing: set[int] = set()
+        if ids:
+            placeholders = ",".join("?" * len(ids))
+            query = f"SELECT id FROM items WHERE id IN ({placeholders})"
+            rows = con.execute(query, list(ids)).fetchall()
+            existing = {int(row["id"]) for row in rows}
+        missing = sorted(iid for iid in ids if iid not in existing)
+        if missing:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "Invalid IDs",
+                    "missing_items": missing,
+                    "missing_vendors": [],
+                },
+            )
+
+        cur = con.cursor()
+        try:
+            cur.execute("BEGIN")
+            for iid, delta in deltas.items():
+                cur.execute(
+                    "UPDATE items SET qty = COALESCE(qty, 0) + ? WHERE id = ?",
+                    (delta, iid),
+                )
+            con.commit()
+        except Exception:
+            con.rollback()
+            raise
+
+    snapshot_version = int(time.time())
+    journal_path = JOURNAL_DIR / "inventory.jsonl"
+    journal_path.parent.mkdir(parents=True, exist_ok=True)
+    record = {
+        "ts": snapshot_version,
+        "inputs": inputs,
+        "outputs": outputs,
+        "deltas": deltas,
+        "note": body.note,
+        "snapshot_version": snapshot_version,
+    }
+    with journal_path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+    return {"ok": True, "deltas": deltas, "snapshot_version": snapshot_version}
 
 
 @protected.get("/dev/ping_plugin")
