@@ -1,10 +1,15 @@
 // Gate card init on token readiness
 (function(){
   function init(){
+    if (!window.apiGet) {
+      console.error('Card missing API helpers');
+      return;
+    }
+
     const busApi = window.busApi || {};
     const apiPost = busApi.apiPost || window.apiPost;
     if (typeof apiPost !== 'function') {
-      console.error('Organizer card missing API helpers');
+      console.error('Card missing API helpers');
       return;
     }
 

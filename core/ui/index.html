@@ -18,93 +18,37 @@
   button{background:#1f1f25;border:1px solid #2a2a32;border-radius:8px;color:#fff;padding:8px 12px;cursor:pointer}
   input{background:#101015;border:1px solid #26262e;border-radius:8px;color:#fff;padding:8px;width:100%}
 </style>
-<!-- BEGIN ui boot -->
+<!-- BEGIN ui boot strict -->
 <script>
-  // Load scripts in order with a runtime cache-bust value
-  (function(){
-    const v = Date.now();
-    function add(src){
-      const s = document.createElement('script');
-      s.defer = true;
-      s.src = src + '?v=' + v;
-      document.head.appendChild(s);
-    }
-    // token first, then api, then cards
-    add('/ui/js/token.js');
-    add('/ui/js/api.js');
-    add('/ui/js/cards/writes.js');
-    add('/ui/js/cards/organizer.js');
-    add('/ui/js/cards/dev.js');
-
-    const TOKEN_KEY = 'BUS_SESSION_TOKEN';
-    window.busCards = window.busCards || {};
-
-    const routes = {
-      '/writes':    () => window.busCards.mountWrites,
-      '/organizer': () => window.busCards.mountOrganizer,
-      '/dev':       () => window.busCards.mountDev,
-    };
-
-    function currentRoute() {
-      const h = location.hash || '#/writes';
-      const key = h.startsWith('#') ? h.slice(1) : h;
-      return routes[key] ? key : '/writes';
-    }
-
-    function setActive(hash) {
-      document.querySelectorAll('.nav a').forEach(a=>a.classList.remove('active'));
-      const id = 'nav-' + (hash.replace('#/','') || 'writes');
-      const el = document.getElementById(id);
-      if (el) el.classList.add('active');
-    }
-
-    async function render() {
-      const view = document.getElementById('view');
-      if (!view) return;
-      const key = currentRoute();
-      const resolver = routes[key] || routes['/writes'];
-      const mount = resolver ? resolver() : null;
-      view.innerHTML = '';
-      const card = document.createElement('div');
-      card.className = 'card';
-      view.appendChild(card);
-      setActive('#' + key);
-      if (typeof mount !== 'function') {
-        card.textContent = 'Loading…';
-        return;
-      }
-      try {
-        await Promise.resolve(mount(card));
-      } catch (error) {
-        card.textContent = 'Error: ' + (error && error.message ? error.message : error);
-      }
-    }
-
-    async function updateLicense(){
-      if (typeof window.apiGet !== 'function') return;
-      try {
-        const info = await window.apiGet('/health');
-        const lic = document.getElementById('license');
-        if (lic) {
-          const tok = localStorage.getItem(TOKEN_KEY) || '';
-          const pfx = tok ? tok.slice(0,6) + '…' : '—';
-          lic.textContent = `Local-only · Core: ${info?.licenses?.core?.name || '—'} · v ${info?.version || '—'} · token ${pfx}`;
-        }
-      } catch (error) {
-        console.warn('health fetch failed', error);
-      }
-    }
-
-    window.addEventListener('hashchange', render);
-    window.addEventListener('bus:token-ready', function(){
-      updateLicense().finally(function(){
+(function(){
+  const v = Date.now();
+  const files = [
+    '/ui/js/token.js',
+    '/ui/js/api.js',
+    '/ui/js/cards/writes.js',
+    '/ui/js/cards/organizer.js',
+    '/ui/js/cards/dev.js'
+  ];
+  function loadSeq(i){
+    if (i >= files.length) {
+      window.addEventListener('bus:token-ready', function(){
         if (!location.hash) location.hash = '#/writes';
         window.dispatchEvent(new HashChangeEvent('hashchange'));
       });
-    });
-  })();
+      return;
+    }
+    const s = document.createElement('script');
+    s.src = files[i] + '?v=' + v;
+    s.async = false;           // preserve order
+    s.defer = false;           // execute immediately when loaded
+    s.onload = function(){ loadSeq(i+1); };
+    s.onerror = function(e){ console.error('Failed to load', files[i], e); };
+    document.head.appendChild(s);
+  }
+  loadSeq(0);
+})();
 </script>
-<!-- END ui boot -->
+<!-- END ui boot strict -->
 <div class="wrap">
   <aside>
     <h1>BUS Core</h1>

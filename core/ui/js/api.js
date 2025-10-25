@@ -4,23 +4,22 @@
   let refreshPromise = null;
 
   async function refreshToken(){
-    if (!refreshPromise){
-      refreshPromise = (async () => {
-        try {
-          const r = await fetch('/session/token', { credentials: 'same-origin' });
-          if (!r.ok) throw new Error('refresh http ' + r.status);
-          const j = await r.json();
-          if (!j || !j.token) throw new Error('refresh missing token');
-          const tok = String(j.token);
-          localStorage.setItem(KEY, tok);
-          document.cookie = 'X-Session-Token=' + encodeURIComponent(tok) + '; SameSite=Lax; Path=/';
-          return tok;
-        } finally {
-          const tmp = refreshPromise; refreshPromise = null; return tmp;
-        }
-      })();
+    if (refreshPromise) return refreshPromise;
+    refreshPromise = (async () => {
+      const r = await fetch('/session/token', { credentials: 'same-origin' });
+      if (!r.ok) throw new Error('refresh http ' + r.status);
+      const j = await r.json();
+      if (!j || !j.token) throw new Error('refresh missing token');
+      const tok = String(j.token);
+      localStorage.setItem(KEY, tok);
+      document.cookie = 'X-Session-Token=' + encodeURIComponent(tok) + '; SameSite=Lax; Path=/';
+      return tok;
+    })();
+    try {
+      return await refreshPromise;
+    } finally {
+      refreshPromise = null; // clear after completion to avoid cycles
     }
-    return refreshPromise;
   }
 
   async function doFetch(method, url, body){
@@ -34,12 +33,11 @@
       resp = await fetch(url, init);
     }
     if (!resp.ok) {
-      let text = await resp.text().catch(()=>String(resp.status));
+      const text = await resp.text().catch(()=>String(resp.status));
       throw new Error('HTTP ' + resp.status + ' ' + text);
     }
     const ct = resp.headers.get('Content-Type') || '';
-    if (ct.includes('application/json')) return resp.json();
-    return resp.text();
+    return ct.includes('application/json') ? resp.json() : resp.text();
   }
 
   function apiGet(u){ return doFetch('GET', u); }
@@ -47,6 +45,7 @@
   function apiPut(u,b){ return doFetch('PUT', u, b); }
   function apiDel(u){ return doFetch('DELETE', u); }
 
+  // global helpers expected by cards
   window.apiGet = apiGet; window.apiPost = apiPost; window.apiPut = apiPut; window.apiDel = apiDel;
   window.busApi = { apiGet, apiPost, apiPut, apiDel };
 })();
