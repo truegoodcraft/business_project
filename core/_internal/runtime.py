@@ -4,7 +4,7 @@ import time
 import uuid
 from typing import Any, Dict, Optional
 
-from core.capabilities import meta, resolve
+from core.services.capabilities import meta, resolve
 from core.config import load_core_config
 from core.permissions import require
 from core.plugin_api import Context

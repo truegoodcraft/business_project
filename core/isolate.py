@@ -16,7 +16,7 @@ def run_isolated(plugin: str, cap: str, payload: dict, env_keys: list[str], time
     # Inline runner code (imports only what we need)
     code = f"""
 import json, sys, time
-from core.capabilities import resolve
+from core.services.capabilities import resolve
 from core.plugin_api import Context
 from core.config import load_core_config
 from core.plugin_manager import load_plugins

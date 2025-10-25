@@ -1,5 +1,5 @@
 from core.contracts.plugin_v2 import PluginV2
-from core.conn_broker import ConnectionBroker, ClientHandle
+from core.services.conn_broker import ConnectionBroker, ClientHandle
 
 
 class Plugin(PluginV2):

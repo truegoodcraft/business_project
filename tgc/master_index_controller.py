@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from core.bus.models import CommandContext
-from core.capabilities import list_caps
+from core.services.capabilities import list_caps
 from core.plugin_api import Result
 from core._internal.runtime import run_capability
 

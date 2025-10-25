@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, Iterable
 
 from core.brand import NAME, VENDOR
-from core.capabilities import list_caps
+from core.services.capabilities import list_caps
 from core.menu_spec import (
     CONTROLLER_CONFIG_MENU,
     MAIN_MENU,

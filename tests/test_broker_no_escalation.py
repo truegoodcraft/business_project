@@ -3,7 +3,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from core.conn_broker import ClientHandle, ConnectionBroker
+from core.services.conn_broker import ClientHandle, ConnectionBroker
 
 
 def test_no_escalation_rule():

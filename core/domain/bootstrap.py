@@ -6,7 +6,7 @@ import os
 from typing import Any, Dict
 
 from core.domain.broker import Broker
-from core.capabilities import registry
+from core.services.capabilities import registry
 from core.secrets import Secrets
 from core.settings.reader import load_reader_settings
 

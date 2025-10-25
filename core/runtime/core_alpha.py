@@ -9,8 +9,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from core.capabilities import registry
-from core.capabilities.registry import MANIFEST_PATH
+from core.services.capabilities import registry
+from core.services.capabilities.registry import MANIFEST_PATH
 from core.domain.bootstrap import set_broker
 from core.domain.broker import Broker
 from core.contracts.plugin_v2 import PluginV2

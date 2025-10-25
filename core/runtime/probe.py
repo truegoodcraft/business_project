@@ -4,7 +4,7 @@ import concurrent.futures
 import time
 from typing import Dict, List
 
-from core.conn_broker import ConnectionBroker
+from core.services.conn_broker import ConnectionBroker
 
 PROBE_TIMEOUT_SEC = 5
 
