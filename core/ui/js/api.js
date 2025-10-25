@@ -1,7 +1,15 @@
-export async function apiCall(path,options={method:'GET'}){
+export async function apiCall(path,options={method:'GET'},retryCount=0){
   const method=(options.method||'GET').toUpperCase();
-  const token=localStorage.getItem('tgc_token');
-  if(!token || typeof token!=='string') throw new Error('No token—reload page');
+  let token=localStorage.getItem('tgc_token');
+  if(token){
+    try{
+      const parsed=JSON.parse(token);
+      if(parsed && typeof parsed.token==='string'){
+        token=parsed.token;
+      }
+    }catch{}
+  }
+  if(!token || typeof token!=='string') throw new Error('Invalid token');
   const headers=new Headers({...(options.headers||{}),'X-Session-Token':token});
   if(method!=='GET') headers.set('Content-Type','application/json');
   let response;
@@ -12,14 +20,17 @@ export async function apiCall(path,options={method:'GET'}){
   }
   if(response.status===401){
     localStorage.removeItem('tgc_token');
-    if(typeof getToken==='function'){
-      await getToken();
-    }else if(typeof window!=='undefined' && typeof window.getToken==='function'){
-      await window.getToken();
-    }else if(typeof globalThis!=='undefined' && typeof globalThis.getToken==='function'){
-      await globalThis.getToken();
+    if(retryCount<1){
+      if(typeof getToken==='function'){
+        await getToken();
+      }else if(typeof window!=='undefined' && typeof window.getToken==='function'){
+        await window.getToken();
+      }else if(typeof globalThis!=='undefined' && typeof globalThis.getToken==='function'){
+        await globalThis.getToken();
+      }
+      return apiCall(path,options,retryCount+1);
     }
-    throw new Error('Token refreshed—retry call');
+    throw new Error('Auth failed');
   }
   if(!response.ok){
     const errText=await response.text();
