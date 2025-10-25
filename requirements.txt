@@ -6,7 +6,7 @@ google-auth-oauthlib>=1.2.0
 requests>=2.32.0
 # Secret storage
 keyring>=24.3.1
-argon2-cffi>=23.1.0
+argon2-cffi>=23.1.0  # required for Argon2-based key derivation
 cryptography>=43.0.0
 # Cryptography utilities for plugin signing.
 # Optional for plugin signature verification
