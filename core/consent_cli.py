@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Dict, Iterable, List
 
-from core.capabilities import list_caps
+from core.services.capabilities import list_caps
 from core.permissions import grant as grant_scopes
 import core.permissions as _permissions
 

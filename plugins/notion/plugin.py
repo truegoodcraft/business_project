@@ -4,7 +4,7 @@ from urllib import request, error
 from typing import Dict, Any, Optional, List
 
 from core.contracts.plugin_v2 import PluginV2
-from core.conn_broker import ConnectionBroker, ClientHandle
+from core.services.conn_broker import ConnectionBroker, ClientHandle
 from core.secrets import Secrets
 
 # ---- minimal config (no secrets logged) ----

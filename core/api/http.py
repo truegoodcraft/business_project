@@ -33,8 +33,8 @@ from fastapi.staticfiles import StaticFiles
 
 import requests
 
-from core.capabilities import registry
-from core.capabilities.registry import MANIFEST_PATH
+from core.services.capabilities import registry
+from core.services.capabilities.registry import MANIFEST_PATH
 from core.policy.guard import require_owner_commit
 from core.policy.model import Policy
 from core.policy.store import load_policy, save_policy, get_writes_enabled, set_writes_enabled

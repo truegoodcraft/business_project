@@ -6,7 +6,7 @@ import types
 import tomllib
 
 from core._internal.capabilities_runtime import declare_capabilities
-from core.capabilities import publish
+from core.services.capabilities import publish
 from core.plugins_state import is_enabled as _plugin_enabled
 from core.signing import PUBLIC_KEY_HEX, SIGNING_AVAILABLE, verify_plugin_signature
 from core.unilog import write as uni_write

@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import Dict, Any, Optional
-from core.conn_broker import ConnectionBroker
+from core.services.conn_broker import ConnectionBroker
 
 
 class PluginV2:

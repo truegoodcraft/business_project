@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from core.capabilities import list_caps
+from core.services.capabilities import list_caps
 from core import retention
 from core.plugin_api import Result
 from core._internal.runtime import run_capability

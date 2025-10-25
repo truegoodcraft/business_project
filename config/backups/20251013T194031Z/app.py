@@ -28,7 +28,7 @@ from tgc.util.serialization import safe_serialize
 
 from core import brand, policy_engine, retention
 from core.audit import write_audit
-from core.capabilities import list_caps, meta, resolve
+from core.services.capabilities import list_caps, meta, resolve
 from core.config import load_core_config, plugin_env_whitelist
 from core.isolate import run_isolated
 from core.permissions import require

@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Any, Dict
 
-from core.conn_broker import ConnectionBroker
+from core.services.conn_broker import ConnectionBroker
 from core.adapters.drive.provider import GoogleDriveProvider
 from core.adapters.fs.provider import LocalFSProvider
 from core.domain.catalog import CatalogManager

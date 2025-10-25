@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from core.conn_broker import ConnectionBroker, ClientHandle
+from core.services.conn_broker import ConnectionBroker, ClientHandle
 from core.contracts.plugin_v2 import PluginV2
 
 
