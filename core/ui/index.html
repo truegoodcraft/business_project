@@ -18,6 +18,19 @@
   button{background:#1f1f25;border:1px solid #2a2a32;border-radius:8px;color:#fff;padding:8px 12px;cursor:pointer}
   input{background:#101015;border:1px solid #26262e;border-radius:8px;color:#fff;padding:8px;width:100%}
 </style>
+<!-- BEGIN ui-scripts -->
+<link rel="preload" href="/ui/js/token.js?v={{version}}" as="script">
+<link rel="preload" href="/ui/js/api.js?v={{version}}" as="script">
+<script src="/ui/js/token.js?v={{version}}" defer></script>
+<script src="/ui/js/api.js?v={{version}}" defer></script>
+<script>
+  // Route bootstrap waits for token
+  window.addEventListener('bus:token-ready', function(){
+    if (!location.hash) location.hash = '#/writes';
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+  });
+</script>
+<!-- END ui-scripts -->
 <div class="wrap">
   <aside>
     <h1>BUS Core</h1>
@@ -30,62 +43,80 @@
   </aside>
   <main><div id="view"></div></main>
 </div>
-<script type="module" src="/ui/js/token.js"></script>
-<script type="module">
-  import '/ui/js/token.js';
-  import { apiGet } from '/ui/js/api.js';
-  import { mountWrites }    from '/ui/js/cards/writes.js';
-  import { mountOrganizer } from '/ui/js/cards/organizer.js';
-  import { mountDev }       from '/ui/js/cards/dev.js';
+<script src="/ui/js/cards/writes.js?v={{version}}" defer></script>
+<script src="/ui/js/cards/organizer.js?v={{version}}" defer></script>
+<script src="/ui/js/cards/dev.js?v={{version}}" defer></script>
+<script>
+  (function(){
+    const TOKEN_KEY = 'BUS_SESSION_TOKEN';
+    window.busCards = window.busCards || {};
 
-  const routes = {
-    '/writes':    mountWrites,
-    '/organizer': mountOrganizer,
-    '/dev':       mountDev,
-  };
+    const routes = {
+      '/writes':    () => window.busCards.mountWrites,
+      '/organizer': () => window.busCards.mountOrganizer,
+      '/dev':       () => window.busCards.mountDev,
+    };
 
-  function currentRoute() {
-    const h = location.hash || '#/writes';
-    const key = h.startsWith('#') ? h.slice(1) : h;
-    return routes[key] ? key : '/writes';
-  }
+    function currentRoute() {
+      const h = location.hash || '#/writes';
+      const key = h.startsWith('#') ? h.slice(1) : h;
+      return routes[key] ? key : '/writes';
+    }
 
-  function setActive(hash) {
-    document.querySelectorAll('.nav a').forEach(a=>a.classList.remove('active'));
-    const id = 'nav-' + (hash.replace('#/','') || 'writes');
-    const el = document.getElementById(id);
-    if (el) el.classList.add('active');
-  }
+    function setActive(hash) {
+      document.querySelectorAll('.nav a').forEach(a=>a.classList.remove('active'));
+      const id = 'nav-' + (hash.replace('#/','') || 'writes');
+      const el = document.getElementById(id);
+      if (el) el.classList.add('active');
+    }
 
-  async function render() {
-    const view = document.getElementById('view');
-    if (!view) return;
-    const key = currentRoute();
-    const mount = routes[key] || routes['/writes'];
-    view.innerHTML = '';
-    const card = document.createElement('div');
-    card.className = 'card';
-    view.appendChild(card);
-    await mount(card);
-    setActive('#' + key);
-  }
-
-  // Re-render on navigation and when token becomes available
-  window.addEventListener('hashchange', render);
-  window.addEventListener('bus:token-ready', async (e) => {
-    // avoid 401: call /health only after token ready
-    try {
-      const j = await apiGet('/health');
-      const tok = e?.detail?.token || '';
-      const lic = document.getElementById('license');
-      if (lic) {
-        const pfx = tok ? tok.slice(0,6) + '…' : '—';
-        lic.textContent = `Local-only · Core: ${j?.licenses?.core?.name || '—'} · v ${j?.version || '—'} · token ${pfx}`;
+    async function render() {
+      const view = document.getElementById('view');
+      if (!view) return;
+      const key = currentRoute();
+      const resolver = routes[key] || routes['/writes'];
+      const mount = resolver ? resolver() : null;
+      view.innerHTML = '';
+      const card = document.createElement('div');
+      card.className = 'card';
+      view.appendChild(card);
+      setActive('#' + key);
+      if (typeof mount !== 'function') {
+        card.textContent = 'Loading…';
+        return;
       }
-    } catch {}
-    render();
-  });
+      try {
+        await Promise.resolve(mount(card));
+      } catch (error) {
+        card.textContent = 'Error: ' + (error && error.message ? error.message : error);
+      }
+    }
 
-  // Initial paint (if token already cached)
-  document.addEventListener('DOMContentLoaded', render);
+    async function updateLicense(){
+      if (typeof window.apiGet !== 'function') return;
+      try {
+        const info = await window.apiGet('/health');
+        const lic = document.getElementById('license');
+        if (lic) {
+          const tok = localStorage.getItem(TOKEN_KEY) || '';
+          const pfx = tok ? tok.slice(0,6) + '…' : '—';
+          lic.textContent = `Local-only · Core: ${info?.licenses?.core?.name || '—'} · v ${info?.version || '—'} · token ${pfx}`;
+        }
+      } catch (error) {
+        console.warn('health fetch failed', error);
+      }
+    }
+
+    window.addEventListener('hashchange', render);
+    window.addEventListener('bus:token-ready', () => {
+      updateLicense().finally(() => {
+        render();
+        setTimeout(render, 0);
+      });
+    });
+
+    document.addEventListener('DOMContentLoaded', () => {
+      updateLicense().finally(render);
+    });
+  })();
 </script>

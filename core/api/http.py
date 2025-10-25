@@ -147,6 +147,14 @@ except Exception as e:  # pragma: no cover - best effort logging
     print(f"[ui] mount failed: {e}")
 
 
+@APP.middleware("http")
+async def ui_nocache_headers(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/ui/"):
+        response.headers.setdefault("Cache-Control", "no-cache")
+    return response
+
+
 @APP.get("/")
 def _root():
     return RedirectResponse(url="/ui/")
