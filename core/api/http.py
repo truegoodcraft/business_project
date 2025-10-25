@@ -105,6 +105,53 @@ def _check_state(state_b64: str) -> bool:
 
 APP = FastAPI(title="BUS Core Alpha", version=VERSION)
 
+
+# --- UI directory resolver ---
+def _find_ui_dir() -> Path:
+    # 1) explicit override
+    env = os.environ.get("BUS_UI_DIR")
+    if env:
+        p = Path(env)
+        if (p / "index.html").exists():
+            return p.resolve()
+
+    here = Path(__file__).resolve()
+    # 2) launcher app folder
+    cand_app = Path(os.environ.get("LOCALAPPDATA", ".")) / "BUSCore" / "app" / "core" / "ui"
+    # 3) repo (run-from-source)
+    cand_repo = here.parents[2] / "core" / "ui"  # project_root/core/ui
+    # 4) cwd fallback
+    cand_cwd = Path.cwd() / "core" / "ui"
+
+    for c in (cand_app, cand_repo, cand_cwd):
+        if (c / "index.html").exists():
+            return c.resolve()
+    # last resort: create an empty temp dir so StaticFiles doesn't crash
+    tmp = here.parents[2] / "_missing_ui"
+    tmp.mkdir(parents=True, exist_ok=True)
+    (tmp / "index.html").write_text(
+        "<!doctype html><title>UI Missing</title>UI not found",
+        encoding="utf-8",
+    )
+    return tmp.resolve()
+
+
+UI_DIR = _find_ui_dir()
+UI_STATIC_DIR = UI_DIR
+print(f"[ui] Serving /ui/ from: {UI_DIR}")
+
+# (Re)mount static UI
+try:
+    APP.mount("/ui", StaticFiles(directory=str(UI_DIR), html=True), name="ui")
+except Exception as e:  # pragma: no cover - best effort logging
+    print(f"[ui] mount failed: {e}")
+
+
+@APP.get("/")
+def _root():
+    return RedirectResponse(url="/ui/")
+
+
 TOKEN_FILE = Path("data/session_token.txt")
 
 
@@ -149,30 +196,6 @@ def log(msg: str) -> None:
     with path.open("a", encoding="utf-8") as handle:
         handle.write(msg.rstrip() + "\n")
 
-
-def _resolve_ui_static_dir() -> Path:
-    exe_dir = Path(sys.executable).resolve().parent
-    repo_dir = Path(__file__).resolve().parents[2]
-    meipass_root = getattr(sys, "_MEIPASS", "")
-    candidates = [
-        exe_dir / "core" / "ui",
-        repo_dir / "core" / "ui",
-    ]
-    if meipass_root:
-        candidates.append(Path(meipass_root) / "core" / "ui")
-
-    for candidate in candidates:
-        if candidate.exists():
-            log(f"[ui] static_dir={candidate} exists=True")
-            return candidate
-
-    fallback = candidates[0]
-    log(f"[ui] static_dir={fallback} exists=False")
-    return fallback
-
-
-UI_STATIC_DIR = _resolve_ui_static_dir()
-APP.mount("/ui/static", StaticFiles(directory=str(UI_STATIC_DIR)), name="ui-static")
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_UI_BASES = [
@@ -635,11 +658,6 @@ def _prune_oauth_states() -> None:
     expired = [key for key, meta in _OAUTH_STATES.items() if meta.get("expires_at", 0) <= now]
     for key in expired:
         _OAUTH_STATES.pop(key, None)
-
-
-@APP.get("/ui")
-def ui_index() -> FileResponse:
-    return FileResponse(UI_STATIC_DIR / "index.html")
 
 
 @APP.get("/ui/plugins/{plugin_id}")
@@ -1316,4 +1334,4 @@ def build_app():
     return APP, SESSION_TOKEN
 
 
-__all__ = ["APP", "UI_STATIC_DIR", "build_app", "SESSION_TOKEN"]
+__all__ = ["APP", "UI_DIR", "UI_STATIC_DIR", "build_app", "SESSION_TOKEN"]
