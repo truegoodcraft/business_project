@@ -6,18 +6,18 @@ export async function mountWrites(root){
       <div id="status" class="muted">Loading…</div>
       <button id="toggle" disabled>Toggle</button>
     </div>
-    <pre id="out" class="muted"></pre>
+    <pre id="out" class="muted" style="margin-top:8px"></pre>
   `;
-  const $ = sel => root.querySelector(sel);
+  const $ = s=>root.querySelector(s);
   async function refresh(){
     const j = await get('/dev/writes');
     $('#status').textContent = 'Writes: ' + (j.enabled ? 'Enabled' : 'Disabled');
-    $('#toggle').disabled = false;
-    $('#toggle').textContent = j.enabled ? 'Disable' : 'Enable';
+    $('#toggle').disabled = false; $('#toggle').textContent = j.enabled ? 'Disable' : 'Enable';
   }
   $('#toggle').onclick = async ()=>{
     $('#toggle').disabled = true;
-    const j = await post('/dev/writes', {enabled: $('#toggle').textContent==='Enable'});
+    const wantEnable = $('#toggle').textContent==='Enable';
+    const j = await post('/dev/writes', {enabled: wantEnable});
     $('#out').textContent = JSON.stringify(j,null,2);
     await refresh();
   };

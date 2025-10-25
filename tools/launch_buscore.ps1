@@ -100,7 +100,8 @@ try { & "$py" -m pywin32_postinstall -install | Out-Null } catch { }
 
 # Run
 Push-Location $app
+$u = "http://127.0.0.1:$Port"
 Write-Host "Starting BUS Core on http://127.0.0.1:$Port/ui"
-Start-Process "http://127.0.0.1:$Port/ui"
+Start-Process "$u/ui/shell.html"
 & "$py" app.py serve --port $Port
 Pop-Location
