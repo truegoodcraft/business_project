@@ -1,0 +1,11 @@
+# .github/workflows/build-test.yml
+name: build-test
+on:
+  workflow_dispatch: {}   # manual only
+permissions: {}
+jobs:
+  build-test:
+    if: ${{ false }}      # never runs
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Workflow disabled"
