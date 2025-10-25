@@ -19,12 +19,29 @@ async function getToken(){
   }
 }
 
+if(typeof window!=='undefined'){
+  window.getToken=getToken;
+}else if(typeof globalThis!=='undefined'){
+  globalThis.getToken=getToken;
+}
+
 document.addEventListener('DOMContentLoaded',async()=>{
   const stored=localStorage.getItem('tgc_token');
   if(stored){
-    const event=new CustomEvent('bus:token-ready',{detail:{token:stored}});
+    let token=stored;
+    try{
+      const parsed=JSON.parse(stored);
+      if(parsed && typeof parsed.token==='string'){
+        token=parsed.token;
+      }
+    }catch{}
+    if(typeof token!=='string'){
+      await getToken();
+      return;
+    }
+    const event=new CustomEvent('bus:token-ready',{detail:{token}});
     document.dispatchEvent(event);
-    console.log('Stored token loaded');
+    console.log('Stored token loaded:',token.substring(0,8)+'...');
   }else{
     await getToken();
   }
