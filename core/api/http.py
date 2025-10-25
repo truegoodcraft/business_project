@@ -418,8 +418,8 @@ def rfq_generate(
     if body.fmt == "pdf":
         try:
             from reportlab.lib.pagesizes import LETTER
+            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table
             from reportlab.lib.styles import getSampleStyleSheet
-            from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table
         except Exception:
             raise HTTPException(
                 status_code=400,
@@ -427,18 +427,15 @@ def rfq_generate(
                     "error": "PDF generation requires reportlab. Run: pip install reportlab",
                 },
             )
-
         buffer = BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=LETTER)
         styles = getSampleStyleSheet()
         flow = [Paragraph(f"Request for Quotation — {ts_iso}", styles["Title"]), Spacer(1, 12)]
         for vid in vendor_ids:
-            vendor = vendors.get(vid)
-            if vendor is None:
-                continue
+            vendor = vendors[vid]
             flow.append(Paragraph(f"Vendor: {vendor['name']}", styles["Heading2"]))
-            flow.append(Paragraph(f"Contact: {vendor.get('contact') or 'N/A'}", styles["Normal"]))
-            flow.append(Spacer(1, 6))
+            contact = vendor["contact"] if ("contact" in vendor.keys() and vendor["contact"]) else "N/A"
+            flow.append(Paragraph(f"Contact: {contact}", styles["Normal"]))
             data = [["SKU", "Item", "Qty", "Unit", "Price", "Line Total"]]
             subtotal = 0.0
             for item in by_vendor.get(vid, []):
@@ -446,20 +443,16 @@ def rfq_generate(
                 price = float(item["price"] or 0)
                 line_total = qty * price
                 subtotal += line_total
-                data.append(
-                    [
-                        item["sku"],
-                        item["name"],
-                        f"{qty:.3f}",
-                        item["unit"] or "",
-                        f"{price:.2f}",
-                        f"{line_total:.2f}",
-                    ]
-                )
+                data.append([
+                    item["sku"],
+                    item["name"],
+                    f"{qty:.3f}",
+                    item["unit"] or "",
+                    f"{price:.2f}",
+                    f"{line_total:.2f}",
+                ])
             data.append(["", "", "", "", "Vendor Total", f"{subtotal:.2f}"])
-            table = Table(data, hAlign="LEFT")
-            flow.append(table)
-            flow.append(Spacer(1, 12))
+            flow.extend([Table(data), Spacer(1, 12)])
         doc.build(flow)
         content = buffer.getvalue()
         ext = "pdf"
