@@ -83,20 +83,29 @@ def _sha256_hex(data: bytes) -> str:
     return sha256(data).hexdigest()
 
 
+def _connect_readonly(db_path: Path):
+    # Prefer immutable read-only; fallback to plain ro
+    uri1 = f"file:{db_path.as_posix()}?mode=ro&immutable=1"
+    try:
+        return sqlite3.connect(uri1, uri=True)
+    except sqlite3.Error:
+        uri2 = f"file:{db_path.as_posix()}?mode=ro"
+        return sqlite3.connect(uri2, uri=True)
+
+
 def _count_rows(db_path: Path) -> Dict[str, int]:
     counts: Dict[str, int] = {"vendors": 0, "items": 0, "tasks": 0, "attachments": 0}
     if not db_path.exists():
         return counts
-    with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
-        cursor = conn.cursor()
-        for table in counts.keys():
+    with _connect_readonly(db_path) as con:
+        cur = con.cursor()
+        for t in counts.keys():
             try:
-                cursor.execute(f"SELECT COUNT(*) FROM {table}")
-                row = cursor.fetchone()
-                counts[table] = int(row[0]) if row else 0
+                cur.execute(f"SELECT COUNT(1) FROM {t}")
+                row = cur.fetchone()
+                counts[t] = int(row[0]) if row else 0
             except sqlite3.Error:
-                counts[table] = 0
-        cursor.close()
+                counts[t] = 0
     return counts
 
 
@@ -244,8 +253,13 @@ def import_preview(path: str, password: str) -> Dict[str, object]:
         tmp_path.write_bytes(plaintext)
         preview_counts = _count_rows(tmp_path)
     finally:
-        if tmp_path.exists():
-            tmp_path.unlink()
+        # Retry unlink a few times for Windows AV/indexer locks
+        for _ in range(5):
+            try:
+                tmp_path.unlink(missing_ok=True)
+                break
+            except PermissionError:
+                time.sleep(0.1)
     incompatible = container.get("manifest", {}).get("version") != "v0.5"
     response: Dict[str, object] = {
         "ok": True,
