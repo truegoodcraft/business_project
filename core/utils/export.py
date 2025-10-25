@@ -7,16 +7,9 @@ import os
 import sqlite3
 import tempfile
 import time
-from hashlib import pbkdf2_hmac, sha256
+from hashlib import sha256
 from pathlib import Path
 from typing import Dict, Tuple
-
-try:
-    from argon2 import low_level as argon2_low_level
-    from argon2.exceptions import Argon2Error
-except Exception:  # pragma: no cover - argon2 optional
-    argon2_low_level = None  # type: ignore[assignment]
-    Argon2Error = Exception  # type: ignore[assignment]
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
@@ -29,70 +22,49 @@ EXPORTS_DIR = BUS_ROOT / "exports"
 for _p in (JOURNAL_DIR, EXPORTS_DIR):
     _p.mkdir(parents=True, exist_ok=True)
 
-_DEFAULT_KDF = {
-    "type": "argon2id",
-    "time_cost": 3,
-    "memory_kib": 65536,
-    "parallelism": 1,
-    "dklen": 32,
-}
-
-_PBKDF2_FALLBACK = {
-    "type": "pbkdf2",
-    "iterations": 600_000,
-    "dklen": 32,
-}
-
 _AAD = b"TGCv05"
 
 
-def _derive_key(password: str, salt: bytes, kdf_cfg: Dict[str, int | str] | None) -> bytes:
-    if not password:
-        raise ValueError("password_required")
-    cfg_base: Dict[str, int | str] = dict(_DEFAULT_KDF)
-    if kdf_cfg:
-        cfg_base.update(kdf_cfg)
-    kdf_type = str(cfg_base.get("type", "argon2id")).lower()
-    if kdf_type == "argon2":
-        kdf_type = "argon2id"
-    cfg_base["type"] = "argon2id" if kdf_type.startswith("argon2") else kdf_type
-    dklen = int(cfg_base.get("dklen", 32))
-    password_bytes = password.encode("utf-8")
-
-    if kdf_type == "argon2id" and argon2_low_level is not None:
-        time_cost = int(cfg_base.get("time_cost", 3))
-        memory_kib = int(cfg_base.get("memory_kib", 65536))
-        parallelism = int(cfg_base.get("parallelism", 1))
+def _derive_key(password: str, salt: bytes, kdf_cfg: dict) -> bytes:
+    pw = password.encode("utf-8")
+    t = (kdf_cfg or {}).get("type", "auto").lower()
+    if t == "argon2id":
         try:
-            key = argon2_low_level.hash_secret_raw(
-                password_bytes,
-                salt,
-                time_cost=time_cost,
-                memory_cost=memory_kib,
-                parallelism=parallelism,
-                hash_len=dklen,
-                type=argon2_low_level.Type.ID,
+            from argon2.low_level import hash_secret_raw, Type
+        except Exception as e:
+            # explicit type requested but unavailable -> fail
+            raise e
+        return hash_secret_raw(
+            pw,
+            salt,
+            time_cost=int(kdf_cfg.get("time_cost", 3)),
+            memory_cost=int(kdf_cfg.get("memory_kib", 65536)),
+            parallelism=int(kdf_cfg.get("parallelism", 1)),
+            hash_len=int(kdf_cfg.get("dklen", 32)),
+            type=Type.ID,
+        )
+    elif t == "pbkdf2":
+        from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+        from cryptography.hazmat.primitives import hashes
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=int(kdf_cfg.get("dklen", 32)),
+            salt=salt,
+            iterations=int(kdf_cfg.get("iterations", 600000)),
+        )
+        return kdf.derive(pw)
+    else:  # auto
+        try:
+            from argon2.low_level import hash_secret_raw, Type
+            return hash_secret_raw(
+                pw, salt, time_cost=3, memory_cost=65536,
+                parallelism=1, hash_len=32, type=Type.ID,
             )
-            if kdf_cfg is not None:
-                kdf_cfg.clear()
-                kdf_cfg.update(cfg_base)
-                kdf_cfg["type"] = "argon2id"
-            return key
-        except Argon2Error:
-            pass
-
-    if kdf_type == "pbkdf2":
-        cfg_base.setdefault("iterations", _PBKDF2_FALLBACK["iterations"])
-        cfg_base.setdefault("dklen", _PBKDF2_FALLBACK["dklen"])
-    else:
-        cfg_base = dict(_PBKDF2_FALLBACK)
-
-    iterations = int(cfg_base.get("iterations", _PBKDF2_FALLBACK["iterations"]))
-    dklen = int(cfg_base.get("dklen", 32))
-    if kdf_cfg is not None:
-        kdf_cfg.clear()
-        kdf_cfg.update(cfg_base)
-    return pbkdf2_hmac("sha256", password_bytes, salt, iterations, dklen=dklen)
+        except Exception:
+            from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+            from cryptography.hazmat.primitives import hashes
+            kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=600000)
+            return kdf.derive(pw)
 
 
 def _aesgcm_encrypt(key: bytes, plaintext: bytes, nonce: bytes) -> Tuple[bytes, bytes]:
@@ -160,7 +132,13 @@ def export_db(password: str) -> Dict[str, object]:
 
         salt = os.urandom(16)
         nonce = os.urandom(12)
-        kdf_cfg = dict(_DEFAULT_KDF)
+        # Decide KDF by availability
+        try:
+            import importlib
+            importlib.import_module("argon2.low_level")
+            kdf_cfg = {"type": "argon2id", "time_cost": 3, "memory_kib": 65536, "parallelism": 1, "dklen": 32}
+        except Exception:
+            kdf_cfg = {"type": "pbkdf2", "iterations": 600000, "dklen": 32}
         key = _derive_key(password, salt, kdf_cfg)
         ciphertext, tag = _aesgcm_encrypt(key, plaintext, nonce)
 
@@ -238,12 +216,8 @@ def _load_and_decrypt(path: Path, password: str) -> Tuple[Dict[str, object], byt
     try:
         key = _derive_key(password, salt, kdf_cfg)
         plaintext = _aesgcm_decrypt(key, nonce, ciphertext, tag)
-    except ValueError as exc:
-        if str(exc) == "password_required":
-            raise
-        raise ValueError("decrypt_failed") from exc
-    except Exception as exc:  # pragma: no cover - cryptography errors
-        raise ValueError("decrypt_failed") from exc
+    except Exception:
+        raise ValueError("decrypt_failed")
 
     return container, plaintext
 
