@@ -1,15 +1,26 @@
-export async function apiCall(path,options={method:'GET'},retryCount=0){
+let tokenRetryCount=0;
+
+export async function apiCall(path,options={method:'GET'}){
   const method=(options.method||'GET').toUpperCase();
-  let token=localStorage.getItem('tgc_token');
-  if(token){
+  const stored=localStorage.getItem('tgc_token');
+  if(!stored) throw new Error('No token—reload page');
+  let token=stored;
+  if(typeof token==='string'){
     try{
-      const parsed=JSON.parse(token);
+      const parsed=JSON.parse(stored);
+      if(parsed && typeof parsed.token==='string'){
+        token=parsed.token;
+      }
+    }catch{}
+  }else{
+    try{
+      const parsed=JSON.parse(String(stored));
       if(parsed && typeof parsed.token==='string'){
         token=parsed.token;
       }
     }catch{}
   }
-  if(!token || typeof token!=='string') throw new Error('Invalid token');
+  if(typeof token!=='string' || !token) throw new Error('Invalid token');
   const headers=new Headers({...(options.headers||{}),'X-Session-Token':token});
   if(method!=='GET') headers.set('Content-Type','application/json');
   let response;
@@ -19,8 +30,9 @@ export async function apiCall(path,options={method:'GET'},retryCount=0){
     throw new Error(`Fetch error: ${error.message}`);
   }
   if(response.status===401){
-    localStorage.removeItem('tgc_token');
-    if(retryCount<1){
+    if(tokenRetryCount<1){
+      tokenRetryCount+=1;
+      localStorage.removeItem('tgc_token');
       if(typeof getToken==='function'){
         await getToken();
       }else if(typeof window!=='undefined' && typeof window.getToken==='function'){
@@ -28,10 +40,12 @@ export async function apiCall(path,options={method:'GET'},retryCount=0){
       }else if(typeof globalThis!=='undefined' && typeof globalThis.getToken==='function'){
         await globalThis.getToken();
       }
-      return apiCall(path,options,retryCount+1);
+      throw new Error('Token refreshed—retry call');
     }
+    tokenRetryCount=0;
     throw new Error('Auth failed');
   }
+  tokenRetryCount=0;
   if(!response.ok){
     const errText=await response.text();
     throw new Error(`API ${response.status}: ${errText}`);

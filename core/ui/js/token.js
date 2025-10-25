@@ -35,7 +35,7 @@ document.addEventListener('DOMContentLoaded',async()=>{
         token=parsed.token;
       }
     }catch{}
-    if(typeof token!=='string'){
+    if(typeof token!=='string' || !token){
       await getToken();
       return;
     }
