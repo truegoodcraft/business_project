@@ -325,6 +325,30 @@ def dev_set_writes(body: WritesBody):
     return {"enabled": get_writes_enabled()}
 
 
+# --- Debug: journal info (auth required; does NOT require writes on) ---
+@protected.get("/dev/journal/info")
+def journal_info(n: int = 5):
+    journal_path = JOURNAL_DIR / "inventory.jsonl"
+    exists = journal_path.exists()
+    lines: List[str] = []
+    if exists:
+        try:
+            with journal_path.open("r", encoding="utf-8") as handle:
+                from collections import deque
+
+                lines = list(deque(handle, maxlen=max(1, min(n, 200))))
+        except Exception as exc:
+            lines = [f"__read_error__: {exc}"]
+    return {
+        "BUS_ROOT": str(BUS_ROOT),
+        "DATA_DIR": str(DATA_DIR),
+        "JOURNAL_DIR": str(JOURNAL_DIR),
+        "inventory_path": str(journal_path),
+        "exists": exists,
+        "tail": lines,
+    }
+
+
 class RFQGen(BaseModel):
     items: List[int]
     vendors: List[int]
@@ -347,10 +371,8 @@ if _LEGACY_DB_PATH.exists() and _LEGACY_DB_PATH != DB_PATH:
     DB_PATH = _LEGACY_DB_PATH
 
 EXPORTS_DIR = BUS_ROOT / "exports"
-# Prefer app\data (matches runtime banner "[trust] ... data=...\\app\\data"); fallback to plain data
-_APP_DATA = BUS_ROOT / "app" / "data"
-_PLAIN_DATA = BUS_ROOT / "data"
-DATA_DIR = _APP_DATA if _APP_DATA.exists() else _PLAIN_DATA
+# Always use app\data for journals to match runtime banner:
+DATA_DIR = BUS_ROOT / "app" / "data"
 JOURNAL_DIR = DATA_DIR / "journals"
 EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
 JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
@@ -551,7 +573,6 @@ def inventory_run(
 
     snapshot_version = int(time.time())
     journal_path = JOURNAL_DIR / "inventory.jsonl"
-    journal_path.parent.mkdir(parents=True, exist_ok=True)
     record = {
         "ts": snapshot_version,
         "inputs": inputs,
@@ -560,8 +581,19 @@ def inventory_run(
         "note": body.note,
         "snapshot_version": snapshot_version,
     }
-    with journal_path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+    try:
+        journal_path.parent.mkdir(parents=True, exist_ok=True)
+        with journal_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "journal_write_failed",
+                "path": str(journal_path),
+                "message": str(e),
+            },
+        )
 
     return {"ok": True, "deltas": deltas, "snapshot_version": snapshot_version}
 
