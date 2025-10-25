@@ -148,13 +148,12 @@ def export_db(password: str) -> Dict[str, object]:
     if not APP_DB.exists():
         return {"ok": False, "error": "missing_db"}
 
-    fd, tmp_path_str = tempfile.mkstemp(suffix=".db")
+    fd, tmp_name = tempfile.mkstemp(suffix=".db")
     os.close(fd)
-    tmp_path = Path(tmp_path_str)
+    tmp_path = Path(tmp_name)
     try:
-        with sqlite3.connect(f"file:{APP_DB}?mode=ro", uri=True) as source:
-            with sqlite3.connect(tmp_path) as dest:
-                source.backup(dest)
+        with sqlite3.connect(str(APP_DB)) as source, sqlite3.connect(tmp_name) as dest:
+            source.backup(dest)
         plaintext = tmp_path.read_bytes()
         row_counts = _count_rows(tmp_path)
         db_hash = _sha256_hex(plaintext)
@@ -199,7 +198,14 @@ def export_db(password: str) -> Dict[str, object]:
         return {"ok": True, "path": str(export_path), "manifest": container_manifest}
     finally:
         if tmp_path.exists():
-            tmp_path.unlink()
+            for _ in range(5):
+                try:
+                    tmp_path.unlink()
+                    break
+                except PermissionError:
+                    time.sleep(0.1)
+                except Exception:
+                    break
 
 
 def _load_and_decrypt(path: Path, password: str) -> Tuple[Dict[str, object], bytes]:
