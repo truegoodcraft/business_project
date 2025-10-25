@@ -1,117 +1,120 @@
-Param(
-  [string]$Owner  = $env:BUS_GH_OWNER,
-  [string]$Repo   = $env:BUS_GH_REPO,
-  [string]$Branch = $env:BUS_GH_BRANCH,
-  [int]$Port      = $(if ($env:BUS_PORT) { [int]$env:BUS_PORT } else { 8765 })
+# Your ops vault—safe boot every time.
+param(
+    [switch]$Crawl
 )
-$ErrorActionPreference = "Stop"
 
-if (-not $Owner  -or $Owner  -eq "") { $Owner  = "truegoodcraft" }
-if (-not $Repo   -or $Repo   -eq "") { $Repo   = "buisness_project" }
-if (-not $Branch -or $Branch -eq "") { $Branch = "main" }
+$ErrorActionPreference = 'Stop'
 
-function Resolve-VenvPython([string]$venvRoot) {
-  $exe = Join-Path $venvRoot "Scripts\python.exe"
-  if (Test-Path $exe) { return $exe }
-
-  # Windows Store Python may redirect under Packages\...\LocalCache\Local\BUSCore\env
-  $pkgRoot = Join-Path $env:LOCALAPPDATA "Packages"
-  if (Test-Path $pkgRoot) {
-    $pkgs = Get-ChildItem $pkgRoot -Directory -Filter "PythonSoftwareFoundation.Python.*" -ErrorAction SilentlyContinue
-    foreach ($p in $pkgs) {
-      $alt = Join-Path $p.FullName "LocalCache\Local\BUSCore\env\Scripts\python.exe"
-      if (Test-Path $alt) { return $alt }
+function Test-Python311 {
+    try {
+        $versionText = (& python --version 2>&1).Trim()
+        if (-not $versionText) { return $false }
+        $parts = $versionText.Split()[1]
+        $ver = [version]$parts
+        return ($ver.Major -eq 3 -and $ver.Minor -ge 11)
+    } catch {
+        return $false
     }
-  }
-
-  # Fallback: search under venvRoot
-  $found = Get-ChildItem -Path $venvRoot -Recurse -Filter "python.exe" -ErrorAction SilentlyContinue `
-           | Where-Object { $_.FullName -match "\\env\\Scripts\\python\.exe$" } `
-           | Select-Object -First 1
-  if ($found) { return $found.FullName }
-
-  throw "Venv python.exe not found under $venvRoot"
 }
 
-function Need-Python {
-  try { $null = python -c "import sys; assert sys.version_info[:2] >= (3,11)"; return $true }
-  catch { return $false }
-}
-
-function Get-Token {
-  if ($env:GITHUB_TOKEN) { return $env:GITHUB_TOKEN }
-  Write-Host "If the repo is PRIVATE, paste a GitHub token (read access). Press Enter to skip for public repos:"
-  $tok = Read-Host
-  return $tok
-}
-
-if (-not (Need-Python)) { throw "Python 3.11+ not found on PATH. Install it, reopen PowerShell, then re-run." }
-
-$root = Join-Path $env:LOCALAPPDATA "BUSCore"
-$app  = Join-Path $root "app"
-$tmp  = Join-Path $root "tmp"
-$zip  = Join-Path $tmp  "repo.zip"
-$venv = Join-Path $root "env"
-
-New-Item -ItemType Directory -Force -Path $root,$tmp | Out-Null
-
-# Build URLs
-$apiZip = "https://api.github.com/repos/$Owner/$Repo/zipball/$Branch"
-$pubZip = "https://github.com/$Owner/$Repo/archive/refs/heads/$Branch.zip"
-$tok = Get-Token
-$hdr = @{ "User-Agent"="BUSCore-Launcher" }
-if ($tok) { $hdr["Authorization"] = "Bearer $tok" }
-
-# Download ZIP
-Write-Host "Downloading $Owner/$Repo ($Branch)..."
-$downloadUrl = $pubZip
-if ($tok) { $downloadUrl = $apiZip }
 try {
-  Invoke-WebRequest -Uri $downloadUrl -Headers $hdr -OutFile $zip
+    $deployRoot = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'BUSCore\app'
+    New-Item -ItemType Directory -Force -Path $deployRoot | Out-Null
+
+    $zipPath = Join-Path $env:TEMP 'tgc.zip'
+    if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
+
+    $owner = 'truegoodcraft'
+    $repo = 'business_project'
+    $zipUrl = "https://github.com/$owner/$repo/archive/refs/heads/main.zip"
+    Write-Host "Downloading $zipUrl..."
+    Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath -UseBasicParsing | Out-Null
+
+    Write-Host "Unpacking payload..."
+    Get-ChildItem -Path $deployRoot -Directory | Where-Object { $_.Name -like "$repo-*" } | ForEach-Object { Remove-Item $_.FullName -Recurse -Force }
+    Expand-Archive -Path $zipPath -DestinationPath $deployRoot -Force
+    Remove-Item $zipPath -Force
+
+    $appRoot = Get-ChildItem -Path $deployRoot -Directory | Where-Object { $_.Name -like "$repo-*" } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if (-not $appRoot) { throw "Could not locate unpacked repository under $deployRoot" }
+    $appRoot = $appRoot.FullName
+    Write-Host "Repository ready at $appRoot"
+
+    if (-not (Test-Python311)) {
+        $response = Read-Host 'Python 3.11+ not detected. Install Python 3.11 now? (Y/N)'
+        if ($response -match '^[Yy]') {
+            winget install --id Python.Python.3.11 --silent --accept-package-agreements --accept-source-agreements
+            if (-not (Test-Python311)) { throw 'Python installation did not complete. Reopen PowerShell after install.' }
+        } else {
+            throw 'Python 3.11+ is required.'
+        }
+    }
+
+    $venvPath = Join-Path $deployRoot 'venv'
+    if (!(Test-Path $venvPath)) {
+        Write-Host 'Creating virtual environment...'
+        python -m venv $venvPath
+    }
+
+    $venvPython = Join-Path $venvPath 'Scripts\python.exe'
+    if (!(Test-Path $venvPython)) { throw "Virtual environment python not found at $venvPython" }
+
+    Write-Host 'Installing dependencies...'
+    & $venvPython -m pip install --upgrade pip | Out-Null
+    $requirements = Join-Path $appRoot 'requirements.txt'
+    if (Test-Path $requirements) {
+        & $venvPython -m pip install -q -r $requirements
+    }
+
+    $uiSource = Join-Path $appRoot 'core\ui'
+    $uiTarget = Join-Path $deployRoot 'app\ui'
+    if (Test-Path $uiSource) {
+        New-Item -ItemType Directory -Force -Path $uiTarget | Out-Null
+        robocopy $uiSource $uiTarget /MIR /XO /R:3 /W:5 | Out-Null
+        if ($LASTEXITCODE -gt 7) {
+            Write-Warning 'UI mirror partial—check paths.'
+        }
+    }
+
+    Set-Item -Path Env:BUS_UI_DIR -Value $uiTarget
+
+    $uvicornCmd = "& `"$venvPython`" -m uvicorn app:app --host 127.0.0.1 --port 8765 --reload --log-level info"
+    Write-Host 'Launching BUS Core service...'
+    Start-Process powershell -ArgumentList '-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-Command',$uvicornCmd -WorkingDirectory $appRoot -WindowStyle Hidden | Out-Null
+
+    $baseUrl = 'http://127.0.0.1:8765'
+    $token = $null
+    for ($i = 0; $i -lt 20 -and -not $token; $i++) {
+        try {
+            $token = (Invoke-RestMethod "$baseUrl/session/token").token
+        } catch {
+            Start-Sleep -Seconds 1
+        }
+    }
+    if (-not $token) { throw "Unable to acquire session token from $baseUrl" }
+
+    $headers = @{ 'X-Session-Token' = $token; 'Content-Type' = 'application/json' }
+    $disableBody = @{ enabled = $false } | ConvertTo-Json -Compress
+    Invoke-RestMethod "$baseUrl/dev/writes" -Method POST -Headers $headers -Body $disableBody | Out-Null
+    Write-Host 'Writes disabled for this session.'
+
+    Start-Sleep -Seconds 5
+    Start-Process "$baseUrl/ui/#/writes" | Out-Null
+
+    if ($Crawl) {
+        Write-Host 'Crawl probe starting...'
+        $reader = Invoke-RestMethod "$baseUrl/settings/reader" -Headers @{ 'X-Session-Token' = $token }
+        $roots = $reader.local_roots
+        foreach ($root in $roots) {
+            $renamePlan = Invoke-RestMethod "$baseUrl/organizer/rename/plan" -Method POST -Headers $headers -Body (@{ start_path = $root } | ConvertTo-Json -Compress)
+            $dupePlan = Invoke-RestMethod "$baseUrl/organizer/duplicates/plan" -Method POST -Headers $headers -Body (@{ start_path = $root } | ConvertTo-Json -Compress)
+            Write-Host "Probed $root: $($renamePlan.plan_id) renames, $($dupePlan.plan_id) dupes."
+        }
+        Write-Host 'Crawl probe complete.'
+    }
+
+    Write-Host 'BUS Core v0.2 bootstrap ready.'
 } catch {
-  throw "Download failed. If the repo is private, set GITHUB_TOKEN or paste a token when prompted. $_"
+    Write-Error $_
+    exit 1
 }
-
-# Unpack to app/
-if (Test-Path $app) { Remove-Item $app -Recurse -Force }
-Expand-Archive -Path $zip -DestinationPath $tmp -Force
-# Find unpacked dir
-$unpacked = Get-ChildItem $tmp | Where-Object { $_.PSIsContainer -and $_.Name -ne "app" } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-if (-not $unpacked) { throw "Unpack failed." }
-Move-Item $unpacked.FullName $app -Force
-$src = $app
-Remove-Item $zip -Force
-
-$srcUi = Join-Path $src 'core\ui'
-$dstUi = Join-Path $app 'core\ui'
-if (Test-Path $srcUi) {
-  New-Item -ItemType Directory -Force -Path $dstUi | Out-Null
-  if ($srcUi -ne $dstUi) {
-    robocopy $srcUi $dstUi /MIR | Out-Null
-  }
-}
-
-# Ensure venv
-if (-not (Test-Path (Join-Path $venv "Scripts\python.exe"))) {
-  Write-Host "Creating venv..."
-  python -m venv $venv
-}
-$py = Resolve-VenvPython $venv
-Write-Host "Using venv python: $py"
-
-# Install deps
-Write-Host "Installing dependencies..."
-& "$py" -m pip install --upgrade pip
-if (Test-Path (Join-Path $app "requirements.txt")) {
-  & "$py" -m pip install -r (Join-Path $app "requirements.txt")
-}
-& "$py" -m pip install "pywin32>=306" "Send2Trash==1.8.2"
-try { & "$py" -m pywin32_postinstall -install | Out-Null } catch { }
-
-# Run
-Push-Location $app
-$u = "http://127.0.0.1:$Port"
-Write-Host "Starting BUS Core on http://127.0.0.1:$Port/ui"
-Start-Process "$u/ui/#/writes"
-& "$py" app.py serve --port $Port
-Pop-Location
