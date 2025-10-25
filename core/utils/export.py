@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import shutil
 import sqlite3
 import tempfile
 import time
@@ -107,6 +108,25 @@ def _count_rows(db_path: Path) -> Dict[str, int]:
             except sqlite3.Error:
                 counts[t] = 0
     return counts
+
+
+def _retry_unlink(p: Path, attempts: int = 10, delay: float = 0.1):
+    for _ in range(attempts):
+        try:
+            p.unlink(missing_ok=True)
+            return
+        except PermissionError:
+            time.sleep(delay)
+
+
+def _replace_with_retry(src: Path, dst: Path, attempts: int = 10, delay: float = 0.1):
+    for _ in range(attempts):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            time.sleep(delay)
+    os.replace(src, dst)
 
 
 def _safe_under(root: Path, target: Path) -> bool:
@@ -287,24 +307,23 @@ def import_commit(path: str, password: str) -> Dict[str, object]:
             msg = "bad_container"
         return {"ok": False, "error": msg}
 
-    fd, tmp_db_path_str = tempfile.mkstemp(suffix=".db")
-    os.close(fd)
-    tmp_db_path = Path(tmp_db_path_str)
-    try:
-        tmp_db_path.write_bytes(plaintext)
-        preview_counts = _count_rows(tmp_db_path)
+    with tempfile.NamedTemporaryFile(delete=False) as tf:
+        tf.write(plaintext)
+        tf.flush()
+        os.fsync(tf.fileno())
+        tmp_db_path = Path(tf.name)
 
-        timestamp = time.strftime("%Y%m%d-%H%M%S")
-        backup_path = APP_DB.with_name(f"app.db.{timestamp}.bak")
-        if APP_DB.exists():
-            backup_path.parent.mkdir(parents=True, exist_ok=True)
-            with sqlite3.connect(APP_DB) as src, sqlite3.connect(backup_path) as dst:
-                src.backup(dst)
-        else:
-            backup_path = None
+    backup_path: Path | None = None
+    try:
+        ts = time.strftime("%Y%m%d-%H%M%S", time.localtime())
+        candidate_backup = APP_DB.with_suffix(f".db.{ts}.bak")
 
         APP_DB.parent.mkdir(parents=True, exist_ok=True)
-        os.replace(tmp_db_path, APP_DB)
+        if APP_DB.exists():
+            shutil.copy2(APP_DB, candidate_backup)
+            backup_path = candidate_backup
+
+        _replace_with_retry(tmp_db_path, APP_DB)
 
         audit_path = JOURNAL_DIR / "plugin_audit.jsonl"
         audit_entry = {
@@ -312,13 +331,18 @@ def import_commit(path: str, password: str) -> Dict[str, object]:
             "action": "import",
             "src": str(Path(path).resolve()),
             "manifest": container.get("manifest"),
-            "preview_counts": preview_counts,
         }
+        try:
+            con = _connect_readonly(APP_DB)
+        except NameError:
+            con = sqlite3.connect(str(APP_DB))
+        with con:
+            audit_entry["preview_counts"] = {**_count_rows(APP_DB)}
         with audit_path.open("a", encoding="utf-8") as audit_file:
             audit_file.write(json.dumps(audit_entry, separators=(",", ":")) + "\n")
     finally:
-        if tmp_db_path.exists():
-            tmp_db_path.unlink()
+        # Best-effort cleanup in case replace failed to remove the temp
+        _retry_unlink(tmp_db_path)
 
     result: Dict[str, object] = {"ok": True, "replaced": True}
     if backup_path is not None:
