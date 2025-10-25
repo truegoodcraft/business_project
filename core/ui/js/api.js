@@ -1,7 +1,7 @@
 export async function apiCall(path,options={method:'GET'}){
   const method=(options.method||'GET').toUpperCase();
   const token=localStorage.getItem('tgc_token');
-  if(!token) throw new Error('No token—reload page');
+  if(!token || typeof token!=='string') throw new Error('No token—reload page');
   const headers=new Headers({...(options.headers||{}),'X-Session-Token':token});
   if(method!=='GET') headers.set('Content-Type','application/json');
   let response;
