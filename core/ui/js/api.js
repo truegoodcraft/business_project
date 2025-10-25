@@ -1,37 +1,52 @@
-/* Minimal API helpers; fetch is already patched by token.js */
+// core/ui/js/api.js
+(function(){
+  const KEY = 'BUS_SESSION_TOKEN';
+  let refreshPromise = null;
 
-async function apiGet(url) {
-  const r = await fetch(url, { cache: 'no-store' });
-  if (!r.ok) throw new Error(`${url} ${r.status}`);
-  return r.json();
-}
+  async function refreshToken(){
+    if (!refreshPromise){
+      refreshPromise = (async () => {
+        try {
+          const r = await fetch('/session/token', { credentials: 'same-origin' });
+          if (!r.ok) throw new Error('refresh http ' + r.status);
+          const j = await r.json();
+          if (!j || !j.token) throw new Error('refresh missing token');
+          const tok = String(j.token);
+          localStorage.setItem(KEY, tok);
+          document.cookie = 'X-Session-Token=' + encodeURIComponent(tok) + '; SameSite=Lax; Path=/';
+          return tok;
+        } finally {
+          const tmp = refreshPromise; refreshPromise = null; return tmp;
+        }
+      })();
+    }
+    return refreshPromise;
+  }
 
-async function apiPost(url, body) {
-  const r = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body || {})
-  });
-  if (!r.ok) throw new Error(`${url} ${r.status}`);
-  return r.json();
-}
+  async function doFetch(method, url, body){
+    const init = { method, headers: { 'Accept': 'application/json' } };
+    if (body !== undefined){ init.body = JSON.stringify(body); init.headers['Content-Type'] = 'application/json'; }
 
-async function apiPut(url, body) {
-  const r = await fetch(url, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body || {})
-  });
-  if (!r.ok) throw new Error(`${url} ${r.status}`);
-  return r.json();
-}
+    let resp = await fetch(url, init);
+    if (resp.status === 401){
+      try { await refreshToken(); }
+      catch(e){ window.dispatchEvent(new CustomEvent('bus:auth-failed', { detail: { stage: 'refresh', error: String(e) } })); throw e; }
+      resp = await fetch(url, init);
+    }
+    if (!resp.ok) {
+      let text = await resp.text().catch(()=>String(resp.status));
+      throw new Error('HTTP ' + resp.status + ' ' + text);
+    }
+    const ct = resp.headers.get('Content-Type') || '';
+    if (ct.includes('application/json')) return resp.json();
+    return resp.text();
+  }
 
-async function apiDel(url) {
-  const r = await fetch(url, { method: 'DELETE' });
-  if (!r.ok) throw new Error(`${url} ${r.status}`);
-  return r.json();
-}
+  function apiGet(u){ return doFetch('GET', u); }
+  function apiPost(u,b){ return doFetch('POST', u, b); }
+  function apiPut(u,b){ return doFetch('PUT', u, b); }
+  function apiDel(u){ return doFetch('DELETE', u); }
 
-// Named + default (for backwards compatibility)
-export { apiGet, apiPost, apiPut, apiDel };
-export default { apiGet, apiPost, apiPut, apiDel };
+  window.apiGet = apiGet; window.apiPost = apiPost; window.apiPut = apiPut; window.apiDel = apiDel;
+  window.busApi = { apiGet, apiPost, apiPut, apiDel };
+})();
