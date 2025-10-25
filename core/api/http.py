@@ -333,14 +333,15 @@ def journal_info(n: int = 5):
     lines: List[str] = []
     if exists:
         try:
-            with journal_path.open("r", encoding="utf-8") as handle:
-                from collections import deque
+            from collections import deque
 
-                lines = list(deque(handle, maxlen=max(1, min(n, 200))))
+            with journal_path.open("r", encoding="utf-8") as handle:
+                lines = list(deque(handle, maxlen=max(1, min(int(n), 200))))
         except Exception as exc:
             lines = [f"__read_error__: {exc}"]
     return {
         "BUS_ROOT": str(BUS_ROOT),
+        "APP_DIR": str(APP_DIR),
         "DATA_DIR": str(DATA_DIR),
         "JOURNAL_DIR": str(JOURNAL_DIR),
         "inventory_path": str(journal_path),
@@ -361,19 +362,16 @@ class InventoryRun(BaseModel):
     note: Optional[str] = None
 
 
-_LOCALAPPDATA = os.environ.get("LOCALAPPDATA")
-_DEFAULT_ROOT = Path(_LOCALAPPDATA) / "BUSCore" if _LOCALAPPDATA else SA_DB_PATH.parent
-BUS_ROOT = _DEFAULT_ROOT.resolve()
+_LOCALAPPDATA = os.environ.get("LOCALAPPDATA", ".")
+BUS_ROOT = (Path(_LOCALAPPDATA) / "BUSCore").resolve()
+APP_DIR = BUS_ROOT / "app"
+DATA_DIR = APP_DIR / "data"
+EXPORTS_DIR = BUS_ROOT / "exports"
+JOURNAL_DIR = DATA_DIR / "journals"
 DB_PATH = (BUS_ROOT / "app.db").resolve()
 _LEGACY_DB_PATH = SA_DB_PATH.resolve()
 if _LEGACY_DB_PATH.exists() and _LEGACY_DB_PATH != DB_PATH:
-    BUS_ROOT = _LEGACY_DB_PATH.parent
     DB_PATH = _LEGACY_DB_PATH
-
-EXPORTS_DIR = BUS_ROOT / "exports"
-# Always use app\data for journals to match runtime banner:
-DATA_DIR = BUS_ROOT / "app" / "data"
-JOURNAL_DIR = DATA_DIR / "journals"
 EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
 JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
 _TEMPLATE_ROOT = Path(__file__).resolve().parents[2] / "templates"
