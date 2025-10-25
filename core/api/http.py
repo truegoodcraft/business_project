@@ -347,7 +347,13 @@ if _LEGACY_DB_PATH.exists() and _LEGACY_DB_PATH != DB_PATH:
     DB_PATH = _LEGACY_DB_PATH
 
 EXPORTS_DIR = BUS_ROOT / "exports"
-JOURNAL_DIR = BUS_ROOT / "data" / "journals"
+# Prefer app\data (matches runtime banner "[trust] ... data=...\\app\\data"); fallback to plain data
+_APP_DATA = BUS_ROOT / "app" / "data"
+_PLAIN_DATA = BUS_ROOT / "data"
+DATA_DIR = _APP_DATA if _APP_DATA.exists() else _PLAIN_DATA
+JOURNAL_DIR = DATA_DIR / "journals"
+EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
+JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
 _TEMPLATE_ROOT = Path(__file__).resolve().parents[2] / "templates"
 
 
