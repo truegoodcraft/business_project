@@ -61,7 +61,15 @@
   }
 
   window.addEventListener('hashchange', render);
+  document.addEventListener('DOMContentLoaded', render);
   document.addEventListener('bus:token-ready', render);
+
+  document.addEventListener('bus:token-ready', (e)=>{
+    const tok = (e?.detail?.token||'');
+    const pfx = tok ? tok.slice(0,6)+'…' : '—';
+    const lic = document.getElementById('license');
+    if (lic) lic.textContent = (lic.textContent||'Local-only') + ` · token ${pfx}`;
+  });
 
   (async ()=>{
     try{
