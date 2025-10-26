@@ -1,7 +1,7 @@
-jsimport { getToken, apiGet, getLicense } from "/ui/js/token.js";
-import { mountWrites } from "/ui/js/cards/writes.js";
+import { getToken, apiGet, getLicense } from "/ui/js/token.js";
+import { mountWrites }    from "/ui/js/cards/writes.js";
 import { mountOrganizer } from "/ui/js/cards/organizer.js";
-import { mountDev } from "/ui/js/cards/dev.js";
+import { mountDev }       from "/ui/js/cards/dev.js";
 
 document.addEventListener("DOMContentLoaded", async () => {
   try {
