@@ -52,6 +52,7 @@ from core.runtime.probe import PROBE_TIMEOUT_SEC
 from core.secrets import SecretError, Secrets
 from core.version import VERSION
 from core.utils.export import export_db, import_preview as _import_preview, import_commit as _import_commit
+from core.utils.license_loader import feature_enabled, get_license
 from tgc.bootstrap_fs import DATA, LOGS
 
 from pydantic import BaseModel, Field
@@ -344,6 +345,11 @@ def dev_set_writes(body: WritesBody):
     return {"enabled": get_writes_enabled()}
 
 
+@protected.get("/dev/license")
+def dev_get_license_info():
+    return get_license()
+
+
 @protected.post("/app/export")
 def app_export(req: ExportReq):
     if not req.password:
@@ -370,6 +376,9 @@ def app_import_preview(req: ImportReq, _w: None = Depends(require_writes)):
 
 @protected.post("/app/import/commit")
 def app_import_commit(req: ImportReq, _w: None = Depends(require_writes)):
+    if not feature_enabled("import_commit"):
+        raise HTTPException(status_code=403, detail={"error": "feature_locked"})
+
     res = _import_commit(req.path, req.password)
     if not res.get("ok"):
         err = res.get("error", "commit_failed")
@@ -455,6 +464,9 @@ def rfq_generate(
     token: str = Depends(require_token),
     _writes: None = Depends(require_writes),
 ):
+    if not feature_enabled("rfq"):
+        raise HTTPException(status_code=403, detail={"error": "feature_locked"})
+
     item_ids = list(dict.fromkeys(body.items or []))
     vendor_ids = list(dict.fromkeys(body.vendors or []))
 
@@ -584,6 +596,9 @@ def inventory_run(
     token: str = Depends(require_token),
     _writes: None = Depends(require_writes),
 ):
+    if not feature_enabled("batch_run"):
+        raise HTTPException(status_code=403, detail={"error": "feature_locked"})
+
     inputs = {int(k): float(v) for k, v in (body.inputs or {}).items()}
     outputs = {int(k): float(v) for k, v in (body.outputs or {}).items()}
     ids = set(inputs) | set(outputs)
