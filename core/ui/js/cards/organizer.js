@@ -1,91 +1,141 @@
-// Gate card init on token readiness
 (function(){
-  function init(){
-    if (!window.apiGet) {
-      console.error('Card missing API helpers');
+  function register(){
+    if (!window.API || !window.Dom || !window.Modals) {
+      console.error('Card missing API helpers: organizer');
       return;
     }
 
-    const busApi = window.busApi || {};
-    const apiPost = busApi.apiPost || window.apiPost;
-    if (typeof apiPost !== 'function') {
-      console.error('Card missing API helpers');
-      return;
+    const { el } = window.Dom;
+    const API = window.API;
+    const Modals = window.Modals;
+
+    function showError(output, error){
+      output.textContent = 'Error: ' + (error && error.message ? error.message : String(error));
     }
 
-    async function mountOrganizer(root){
-      if(!root) return;
-      root.innerHTML=`<h2>Organizer</h2>
-  <div class="row"><input id="start" placeholder="Start folder" style="min-width:360px">
-  <input id="qdir" placeholder="Quarantine (optional)" style="min-width:320px">
-  <button id="dup">Duplicates → Plan</button><button id="ren">Normalize → Plan</button></div>
-  <div class="row" style="margin-top:8px"><input id="pid" placeholder="Plan ID" style="min-width:320px">
-  <button id="prev">Preview</button><button id="commit">Commit</button></div>
-  <pre id="out" class="muted" style="margin-top:8px"></pre>`;
+    function init() {}
 
-      const $=selector=>root.querySelector(selector);
-      const out=$('#out');
+    async function render(container){
+      if (!container) return;
 
-      const renderResult=data=>{ out.textContent=JSON.stringify(data,null,2); };
-      const renderError=error=>{ out.textContent='Error: '+error.message; };
+      const startInput = el('input', { type: 'text', placeholder: 'Start folder', style: { minWidth: '320px' } });
+      const quarantineInput = el('input', { type: 'text', placeholder: 'Quarantine folder (optional)', style: { minWidth: '320px' } });
+      const duplicatesButton = el('button', { type: 'button' }, 'Duplicates -> Plan');
+      const renameButton = el('button', { type: 'button' }, 'Normalize -> Plan');
+      const planInput = el('input', { type: 'text', placeholder: 'Plan ID', style: { minWidth: '320px' } });
+      const previewButton = el('button', { type: 'button', class: 'secondary' }, 'Preview Plan');
+      const commitButton = el('button', { type: 'button' }, 'Commit Plan');
+      const status = el('pre', { class: 'status-box', style: { minHeight: '180px' } }, 'Awaiting action.');
 
-      $('#dup').addEventListener('click',async()=>{
-        try{
-          const data=await apiPost('/organizer/duplicates/plan',{
-            start_path:$('#start').value.trim(),
-            quarantine_dir:$('#qdir').value.trim()||null
-          });
-          $('#pid').value=data?.plan_id||'';
-          renderResult(data);
-        }catch(error){
-          renderError(error);
+      async function withStatus(task){
+        status.textContent = 'Working…';
+        try {
+          const result = await task();
+          status.textContent = JSON.stringify(result || {}, null, 2);
+          return result;
+        } catch (error) {
+          showError(status, error);
+          throw error;
         }
-      });
+      }
 
-      $('#ren').addEventListener('click',async()=>{
-        try{
-          const data=await apiPost('/organizer/rename/plan',{
-            start_path:$('#start').value.trim()
-          });
-          $('#pid').value=data?.plan_id||'';
-          renderResult(data);
-        }catch(error){
-          renderError(error);
-        }
-      });
-
-      $('#prev').addEventListener('click',async()=>{
-        const id=$('#pid').value.trim();
-        if(!id){
-          alert('No plan id');
+      duplicatesButton.addEventListener('click', async () => {
+        const startPath = startInput.value.trim();
+        if (!startPath) {
+          Modals.alert('Organizer', 'Provide a start folder.');
           return;
         }
-        try{
-          const data=await apiPost(`/plans/${encodeURIComponent(id)}/preview`,{});
-          renderResult(data);
-        }catch(error){
-          renderError(error);
+        try {
+          const result = await withStatus(() => API.post('/organizer/duplicates/plan', {
+            start_path: startPath,
+            quarantine_dir: quarantineInput.value.trim() || null,
+          }));
+          if (result && result.plan_id) {
+            planInput.value = result.plan_id;
+          }
+        } catch (error) {
+          // handled by withStatus
         }
       });
 
-      $('#commit').addEventListener('click',async()=>{
-        const id=$('#pid').value.trim();
-        if(!id){
-          alert('No plan id');
+      renameButton.addEventListener('click', async () => {
+        const startPath = startInput.value.trim();
+        if (!startPath) {
+          Modals.alert('Organizer', 'Provide a start folder.');
           return;
         }
-        try{
-          const data=await apiPost(`/plans/${encodeURIComponent(id)}/commit`,{});
-          renderResult(data);
-        }catch(error){
-          renderError(error);
+        try {
+          const result = await withStatus(() => API.post('/organizer/rename/plan', {
+            start_path: startPath,
+          }));
+          if (result && result.plan_id) {
+            planInput.value = result.plan_id;
+          }
+        } catch (error) {
+          // handled by withStatus
         }
       });
+
+      function ensurePlanId(){
+        const value = planInput.value.trim();
+        if (!value) {
+          Modals.alert('Organizer', 'Set a plan ID before continuing.');
+          return null;
+        }
+        return value;
+      }
+
+      previewButton.addEventListener('click', async () => {
+        const planId = ensurePlanId();
+        if (!planId) return;
+        try {
+          await withStatus(() => API.post(`/plans/${encodeURIComponent(planId)}/preview`, {}));
+        } catch (error) {
+          // handled by withStatus
+        }
+      });
+
+      commitButton.addEventListener('click', async () => {
+        const planId = ensurePlanId();
+        if (!planId) return;
+        try {
+          await withStatus(() => API.post(`/plans/${encodeURIComponent(planId)}/commit`, {}));
+        } catch (error) {
+          // handled by withStatus
+        }
+      });
+
+      container.replaceChildren(
+        el('h2', {}, 'Organizer'),
+        el('div', { class: 'badge-note' }, 'Create, preview, and commit organizer plans.'),
+        el('section', {}, [
+          el('div', { class: 'section-title' }, 'Create plan'),
+          el('div', { class: 'form-grid' }, [
+            el('label', {}, ['Start folder', startInput]),
+            el('label', {}, ['Quarantine folder', quarantineInput]),
+          ]),
+          el('div', { class: 'actions' }, [duplicatesButton, renameButton]),
+        ]),
+        el('section', {}, [
+          el('div', { class: 'section-title' }, 'Manage plan'),
+          el('div', { class: 'form-grid' }, [
+            el('label', {}, ['Plan ID', planInput]),
+          ]),
+          el('div', { class: 'actions' }, [previewButton, commitButton]),
+        ]),
+        status,
+      );
     }
 
-    window.busCards = window.busCards || {};
-    window.busCards.mountOrganizer = mountOrganizer;
+    const module = { init, render };
+    if (window.Cards && typeof window.Cards.register === 'function') {
+      window.Cards.register('organizer', module);
+    }
   }
-  if (localStorage.getItem('BUS_SESSION_TOKEN')) init();
-  else window.addEventListener('bus:token-ready', init, { once: true });
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', register);
+  } else {
+    register();
+  }
 })();

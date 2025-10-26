@@ -1,5 +1,10 @@
 (function(){
-  const { el } = window.DOM || {};
+  if (!window.API || !window.Dom || !window.Modals) {
+    console.error('Card missing API helpers: vendors');
+    return;
+  }
+
+  const { el } = window.Dom;
   const API = window.API;
 
   function asArray(value){
@@ -152,7 +157,9 @@
     await refresh();
   }
 
+  function init() {}
+
   if (window.Cards && typeof window.Cards.register === 'function') {
-    window.Cards.register('vendors', { render });
+    window.Cards.register('vendors', { init, render });
   }
 })();

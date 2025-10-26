@@ -1,18 +1,24 @@
 (function(){
-  const Cards = {
-    registry: {},
-    active: null,
-    inventory: null,
-    vendors: null,
-    manufacturing: null,
-    tasks: null,
-    backup: null,
-    settings: null,
-    rfq: null,
+  const existing = (window.Cards && typeof window.Cards === 'object') ? window.Cards : {};
+  const registry = existing.registry && typeof existing.registry === 'object' ? existing.registry : {};
+
+  const Cards = Object.assign(existing, {
+    registry,
+    active: existing.active || null,
     register(name, module){
-      if (!name || !module) return;
+      if (!name || typeof module !== 'object' || typeof module.render !== 'function') {
+        console.warn('Card registration skipped for', name);
+        return;
+      }
       this.registry[name] = module;
       this[name] = module;
+      if (typeof module.init === 'function') {
+        try {
+          module.init();
+        } catch (error) {
+          console.error('Card init failed:', name, error);
+        }
+      }
     },
     async render(name){
       const main = document.getElementById('main');
@@ -31,11 +37,29 @@
         await Promise.resolve(card.render(cardContainer));
       } catch (error) {
         cardContainer.textContent = 'Error: ' + (error && error.message ? error.message : String(error));
+        console.error('Card render failed:', name, error);
       }
     },
-  };
+  });
 
   window.Cards = Cards;
+
+  function helpersReady(){
+    let ok = true;
+    if (!window.API) {
+      console.error('Missing helper: API');
+      ok = false;
+    }
+    if (!window.Dom) {
+      console.error('Missing helper: Dom');
+      ok = false;
+    }
+    if (!window.Modals) {
+      console.error('Missing helper: Modals');
+      ok = false;
+    }
+    return ok;
+  }
 
   function updateLicenseBadge(license){
     const badge = document.getElementById('license-badge');
@@ -92,13 +116,23 @@
     }
   }
 
-  function init(){
-    document.body.dataset.writesEnabled = 'true';
+  document.addEventListener('DOMContentLoaded', () => {
+    if (!helpersReady()) {
+      console.error('UI initialization halted due to missing helpers.');
+      return;
+    }
+
+    if (!document.body.dataset.writesEnabled) {
+      document.body.dataset.writesEnabled = 'true';
+    }
+
     initVersion();
 
     const toggle = document.getElementById('writes-toggle');
     if (toggle) {
-      toggle.checked = true;
+      if (toggle.checked === undefined) {
+        toggle.checked = true;
+      }
       syncWritesToggle(toggle);
       toggle.addEventListener('change', () => syncWritesToggle(toggle));
     }
@@ -110,8 +144,11 @@
     bootstrapLicense();
 
     const tabs = initTabs();
-    tabs.activate('inventory');
-  }
-
-  document.addEventListener('DOMContentLoaded', init);
+    const defaultTab = Cards.inventory ? 'inventory' : Object.keys(Cards.registry)[0];
+    if (defaultTab) {
+      tabs.activate(defaultTab);
+    } else {
+      console.warn('No cards registered.');
+    }
+  });
 })();

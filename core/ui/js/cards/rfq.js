@@ -1,5 +1,10 @@
 (function(){
-  const { el, bindDisabledWithProGate } = window.DOM || {};
+  if (!window.API || !window.Dom || !window.Modals) {
+    console.error('Card missing API helpers: rfq');
+    return;
+  }
+
+  const { el, bindDisabledWithProGate } = window.Dom;
   const API = window.API;
 
   function asArray(value){
@@ -108,7 +113,9 @@
     });
   }
 
+  function init() {}
+
   if (window.Cards && typeof window.Cards.register === 'function') {
-    window.Cards.register('rfq', { render });
+    window.Cards.register('rfq', { init, render });
   }
 })();

@@ -1,5 +1,10 @@
 (function(){
-  const { el } = window.DOM || {};
+  if (!window.API || !window.Dom || !window.Modals) {
+    console.error('Card missing API helpers: settings');
+    return;
+  }
+
+  const { el } = window.Dom;
   const API = window.API;
 
   async function render(container){
@@ -83,7 +88,9 @@
     });
   }
 
+  function init() {}
+
   if (window.Cards && typeof window.Cards.register === 'function') {
-    window.Cards.register('settings', { render });
+    window.Cards.register('settings', { init, render });
   }
 })();
