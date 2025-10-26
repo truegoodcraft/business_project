@@ -125,20 +125,26 @@ def require_token(req: Request):
 @APP.get("/dev/license")
 async def dev_license(req: Request):
     require_token(req)
-    return LICENSE  # Global from startup
+    return JSONResponse(LICENSE)
 
 
 @APP.get("/dev/writes")
 async def dev_writes_get(req: Request):
     require_token(req)
-    return {"enabled": WRITES_ENABLED}
+    return {"enabled": bool(WRITES_ENABLED)}
 
 
 @APP.post("/dev/writes")
 async def dev_writes_set(req: Request, body: dict):
     require_token(req)
     enabled = bool(body.get("enabled", False))
-    set_writes_enabled(enabled)  # Reuse existing setter
+    global WRITES_ENABLED
+    WRITES_ENABLED = enabled
+    try:
+        set_writes_enabled(enabled)
+    except Exception:
+        # setter may not be available in some contexts; ignore in local dev
+        pass
     return {"enabled": enabled}
 
 

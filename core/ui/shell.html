@@ -1,12 +1,29 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>BUS Core</title>
-  <link rel="stylesheet" href="/ui/css/app.css">
-</head>
-<body>
-  <div id="app"></div>
-  <script type="module" src="/ui/app.js"></script>
-</body>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>BUS Core</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="/ui/favicon.ico" />
+    <link rel="stylesheet" href="/ui/css/app.css" />
+    <style>
+      body { margin:0; font:14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Arial; }
+      header { padding:10px 14px; border-bottom:1px solid #ddd; display:flex; align-items:center; gap:12px; }
+      #app { padding:16px; }
+      .badge { padding:2px 6px; border:1px solid #ccc; border-radius:4px; }
+      button { padding:6px 10px; border:1px solid #bbb; border-radius:6px; background:#f6f6f6; cursor:pointer; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <strong>BUS Core</strong>
+      <span id="license-badge" class="badge">License: …</span>
+      <span id="writes-badge" class="badge">Writes: …</span>
+      <button id="writes-toggle" aria-label="Toggle writes">Toggle</button>
+    </header>
+    <main id="app" aria-live="polite"></main>
+
+    <!-- ESM entry (single) -->
+    <script type="module" src="/ui/app.js"></script>
+  </body>
 </html>
