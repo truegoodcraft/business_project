@@ -1,48 +1,62 @@
-(function (w, name, factory) {
-  if (w.registerCard) { w.registerCard(name, factory); }
-  else if (w.enqueueCard) { w.enqueueCard(name, factory); }
-  else { (w.__cardQueue = w.__cardQueue || []).push([name, factory]); }
-})(window, 'dev', function ({ API, Dom, Modals }) {
-  const el = Dom && typeof Dom.el === 'function' ? Dom.el : null;
+import { apiGet } from "/ui/js/token.js";
 
-  function init() {}
-
-  async function render(container){
-    if (!container) return;
-    if (!el) {
-      container.textContent = 'UI helpers unavailable.';
+function el(tag, attributes = {}, children = []){
+  const node = document.createElement(tag);
+  Object.entries(attributes).forEach(([key, value]) => {
+    if (value === null || value === undefined) {
       return;
     }
+    if (key === "class") {
+      node.className = value;
+      return;
+    }
+    if (key === "for") {
+      node.htmlFor = value;
+      return;
+    }
+    if (key === "style" && typeof value === "object") {
+      Object.assign(node.style, value);
+      return;
+    }
+    node.setAttribute(key, value);
+  });
+  const content = Array.isArray(children) ? children : [children];
+  content.forEach(child => {
+    if (child === null || child === undefined) {
+      return;
+    }
+    if (typeof child === "string") {
+      node.appendChild(document.createTextNode(child));
+    } else {
+      node.appendChild(child);
+    }
+  });
+  return node;
+}
 
-    const title = el('h2', {}, 'Developer Tools');
-    const description = el('div', { class: 'badge-note' }, 'Ping local plugin endpoints for debugging.');
-    const pingButton = el('button', { type: 'button' }, 'Ping Plugin');
-    const output = el('pre', { class: 'status-box', style: { minHeight: '140px' } }, 'Awaiting action.');
+export function mountDev(container){
+  const title = el("h2", {}, "Developer Tools");
+  const description = el("div", { class: "badge-note" }, "Ping local plugin endpoints for debugging.");
+  const pingButton = el("button", { type: "button" }, "Ping Plugin");
+  const output = el("pre", { class: "status-box", style: { minHeight: "140px" } }, "Awaiting action.");
 
-    pingButton.addEventListener('click', async () => {
-      output.textContent = 'Pinging…';
-      if (!API) {
-        output.textContent = 'API unavailable.';
-        return;
-      }
-      try {
-        const data = await API.get('/dev/ping_plugin');
-        output.textContent = JSON.stringify(data || {}, null, 2);
-      } catch (error) {
-        output.textContent = 'Error: ' + (error && error.message ? error.message : String(error));
-      }
-    });
+  pingButton.addEventListener("click", async () => {
+    output.textContent = "Pinging…";
+    try {
+      const data = await apiGet("/dev/ping_plugin");
+      output.textContent = JSON.stringify(data || {}, null, 2);
+    } catch (error) {
+      output.textContent = `Error: ${error.message}`;
+    }
+  });
 
-    container.replaceChildren(
-      title,
-      description,
-      el('section', {}, [
-        el('div', { class: 'section-title' }, 'Diagnostics'),
-        el('div', { class: 'actions' }, [pingButton]),
-        output,
-      ]),
-    );
-  }
-
-  return { init, render };
-});
+  container.replaceChildren(
+    title,
+    description,
+    el("section", {}, [
+      el("div", { class: "section-title" }, "Diagnostics"),
+      el("div", { class: "actions" }, [pingButton]),
+      output,
+    ]),
+  );
+}

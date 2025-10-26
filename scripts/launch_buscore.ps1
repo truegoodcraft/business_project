@@ -99,7 +99,7 @@ try {
     Write-Host 'Writes disabled for this session.'
 
     Start-Sleep -Seconds 5
-    Start-Process "$baseUrl/ui/#/writes" | Out-Null
+    Start-Process "$baseUrl/ui/shell.html" | Out-Null
 
     if ($Crawl) {
         Write-Host 'Crawl probe starting...'

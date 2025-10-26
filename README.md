@@ -80,7 +80,7 @@ On startup it will:
 
 * create (or reuse) `data\\` and `logs\\` beside the executable and save the current session token to `data\\session_token.txt`.
 * print the token path and the resolved UI directory (`core\\ui`) so you can see where files are being served from.
-* wait for the core to report healthy and open `http://127.0.0.1:8765/ui` (or the fallback port if 8765 is busy).
+* wait for the core to report healthy and open `http://127.0.0.1:8765/ui/shell.html` (or the fallback port if 8765 is busy).
 
 Live UI editing while the app runs:
 
