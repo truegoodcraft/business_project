@@ -99,8 +99,9 @@
   }
 
   document.addEventListener('DOMContentLoaded', async () => {
+    __diag && __diag.log('app DOMContentLoaded');
     if (!window.API || !window.Dom || !window.Modals || !window.CardBus) {
-      console.error('Bootstrap deps missing');
+      console.error('deps missing');
       return;
     }
 
@@ -126,8 +127,9 @@
     let licenseData = null;
     try {
       licenseData = await window.API.loadLicense();
+      __diag && __diag.log('license loaded');
     } catch (error) {
-      console.error('License load failed', error);
+      console.error(error);
     }
 
     CardBus.provideDeps({ API: window.API, Dom: window.Dom, Modals: window.Modals });
