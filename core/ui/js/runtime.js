@@ -1,30 +1,24 @@
 (function () {
-  const state = {
-    deps: null,
-    queue: [],
-    cards: {}
-  };
-  function ready() { return !!state.deps; }
+  var state = { deps: null, cards: {} };
   function provideDeps(deps) {
     if (state.deps) return;
     state.deps = deps;
-    // Drain queue
-    for (const [name, factory] of state.queue) {
-      state.cards[name] = factory(state.deps);
-    }
-    state.queue.length = 0;
-    window.Cards = state.cards;
-  }
-  function registerCard(name, factory) {
-    if (!name || typeof factory !== 'function') return;
-    if (ready()) {
+    // Replace shim with real registerCard
+    window.registerCard = function (name, factory) {
+      if (!name || typeof factory !== 'function') return;
       state.cards[name] = factory(state.deps);
       window.Cards = state.cards;
-    } else {
-      state.queue.push([name, factory]);
+    };
+    // Drain any queued cards from shim
+    var q = window.__cardQueue || [];
+    for (var i = 0; i < q.length; i++) {
+      var pair = q[i];
+      try { window.registerCard(pair[0], pair[1]); } catch (e) { console.error('Card init failed:', pair[0], e); }
     }
+    // Clear queue reference
+    window.__cardQueue = [];
+    window.Cards = state.cards;
   }
   function getCard(name) { return state.cards[name]; }
-  window.CardBus = { provideDeps, registerCard, getCard };
-  window.registerCard = registerCard; // convenience for cards
+  window.CardBus = { provideDeps: provideDeps, getCard: getCard };
 })();
