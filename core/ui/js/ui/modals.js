@@ -1,5 +1,5 @@
 (function(){
-  const { el } = window.DOM || {};
+  const { el } = window.Dom || {};
 
   function factory(){
     return typeof el === 'function' ? el : function(tag, attrs, children){

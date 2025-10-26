@@ -1,134 +1,116 @@
-// Gate card init on token readiness
 (function(){
-  function init(){
-    if (!window.apiGet) {
-      console.error('Card missing API helpers');
+  function register(){
+    if (!window.API || !window.Dom || !window.Modals) {
+      console.error('Card missing API helpers: writes');
       return;
     }
 
-    const busApi = window.busApi || {};
-    const apiGet = busApi.apiGet || window.apiGet;
-    const apiPost = busApi.apiPost || window.apiPost;
-    if (typeof apiGet !== 'function' || typeof apiPost !== 'function') {
-      console.error('Card missing API helpers');
-      return;
+    const { el } = window.Dom;
+    const API = window.API;
+
+    async function fetchState(statusNode, toggle){
+      if (!statusNode) return;
+      statusNode.textContent = 'Loading…';
+      try {
+        const data = await API.get('/dev/writes');
+        if (toggle) {
+          toggle.checked = Boolean(data && data.enabled);
+        }
+        statusNode.textContent = JSON.stringify(data || {}, null, 2);
+      } catch (error) {
+        statusNode.textContent = 'Error: ' + (error && error.message ? error.message : String(error));
+      }
     }
 
-    async function mountWrites(root){
-      if(!root) return;
-      root.innerHTML='<label>Writes: <input type="checkbox" id="writes-toggle"></label><pre id="writes-out" class="muted" style="margin-top:8px"></pre>';
-      const toggle=root.querySelector('#writes-toggle');
-      const out=root.querySelector('#writes-out');
-
-      async function refreshWrites(){
-        try{
-          const data=await apiGet('/dev/writes');
-          toggle.checked=!!data?.enabled;
-          out.textContent=JSON.stringify(data,null,2);
-        }catch(error){
-          out.textContent='Error: '+error.message;
-        }
+    async function updateState(enabled, statusNode, toggle){
+      if (!statusNode) {
+        return;
       }
-
-      toggle.addEventListener('change',async()=>{
-        try{
-          const payload={enabled:toggle.checked};
-          const data=await apiPost('/dev/writes',payload);
-          out.textContent=JSON.stringify(data,null,2);
-          await refreshWrites();
-        }catch(error){
-          out.textContent='Error: '+error.message;
+      statusNode.textContent = 'Updating…';
+      try {
+        const data = await API.post('/dev/writes', { enabled });
+        statusNode.textContent = JSON.stringify(data || {}, null, 2);
+        const headerToggle = document.getElementById('writes-toggle');
+        if (headerToggle) {
+          headerToggle.checked = enabled;
+          headerToggle.dispatchEvent(new Event('change'));
+        } else {
+          document.dispatchEvent(new CustomEvent('writes:changed', { detail: { enabled } }));
         }
-      });
-
-      await refreshWrites();
+      } catch (error) {
+        statusNode.textContent = 'Error: ' + (error && error.message ? error.message : String(error));
+        if (toggle) {
+          toggle.checked = !enabled;
+        }
+      } finally {
+        await fetchState(statusNode, toggle);
+      }
     }
 
-    window.busCards = window.busCards || {};
-    window.busCards.mountWrites = mountWrites;
+    function init() {}
 
-    if (!window.busUIRouterInitialized) {
-      window.busUIRouterInitialized = true;
-      const TOKEN_KEY = 'BUS_SESSION_TOKEN';
+    async function render(container){
+      if (!container) return;
 
-      const routes = {
-        '/writes':    () => window.busCards.mountWrites,
-        '/organizer': () => window.busCards.mountOrganizer,
-        '/backup':    () => window.busCards.mountBackup,
-        '/dev':       () => window.busCards.mountDev,
-      };
+      const title = el('h2', {}, 'Writes Control');
+      const description = el('div', { class: 'badge-note' }, 'Toggle local API writes for diagnostics and development.');
+      const toggle = el('input', { type: 'checkbox', id: 'writes-card-toggle' });
+      const toggleLabel = el('label', { class: 'writes-card-toggle', for: 'writes-card-toggle' }, [
+        toggle,
+        el('span', { class: 'toggle-label' }, 'Enable writes via API'),
+      ]);
+      const refreshButton = el('button', { type: 'button', class: 'secondary' }, 'Refresh State');
+      const status = el('pre', { class: 'status-box', style: { minHeight: '160px' } }, 'Loading…');
 
-      function currentRoute() {
-        const h = location.hash || '#/writes';
-        const key = h.startsWith('#') ? h.slice(1) : h;
-        return routes[key] ? key : '/writes';
-      }
-
-      function setActive(hash) {
-        document.querySelectorAll('.nav a').forEach(a=>a.classList.remove('active'));
-        const id = 'nav-' + (hash.replace('#/','') || 'writes');
-        const el = document.getElementById(id);
-        if (el) el.classList.add('active');
-      }
-
-      async function render() {
-        const view = document.getElementById('view');
-        if (!view) return;
-        const key = currentRoute();
-        const resolver = routes[key] || routes['/writes'];
-        const mount = resolver ? resolver() : null;
-        view.innerHTML = '';
-        const card = document.createElement('div');
-        card.className = 'card';
-        view.appendChild(card);
-        setActive('#' + key);
-        if (typeof mount !== 'function') {
-          card.textContent = 'Loading…';
+      const headerSync = event => {
+        if (!event || !event.detail || toggle.dataset.pending === 'true') {
           return;
         }
-        try {
-          await Promise.resolve(mount(card));
-        } catch (error) {
-          card.textContent = 'Error: ' + (error && error.message ? error.message : error);
-        }
-      }
+        toggle.checked = Boolean(event.detail.enabled);
+      };
 
-      async function updateLicense(){
-        if (typeof window.apiGet !== 'function') return;
-        try {
-          const info = await window.apiGet('/health');
-          const lic = document.getElementById('license');
-          if (lic) {
-            const tok = localStorage.getItem(TOKEN_KEY) || '';
-            const pfx = tok ? tok.slice(0,6) + '…' : '—';
-            lic.textContent = `Local-only · Core: ${info?.licenses?.core?.name || '—'} · v ${info?.version || '—'} · token ${pfx}`;
-          }
-        } catch (error) {
-          console.warn('health fetch failed', error);
-        }
-      }
-
-      window.busRender = render;
-      window.busUpdateLicense = updateLicense;
-
-      function ensureInitialRoute(){
-        if (!window.busInitialRouteDispatched) {
-          window.busInitialRouteDispatched = true;
-          if (!location.hash) location.hash = '#/writes';
-          window.dispatchEvent(new HashChangeEvent('hashchange'));
-        }
-      }
-
-      window.addEventListener('hashchange', render);
-      window.addEventListener('bus:token-ready', function(){
-        Promise.resolve(updateLicense()).finally(ensureInitialRoute);
+      refreshButton.addEventListener('click', () => fetchState(status, toggle));
+      toggle.addEventListener('change', () => {
+        toggle.dataset.pending = 'true';
+        updateState(toggle.checked, status, toggle).finally(() => {
+          toggle.dataset.pending = 'false';
+        });
       });
 
-      if (localStorage.getItem(TOKEN_KEY)) {
-        Promise.resolve(updateLicense()).finally(ensureInitialRoute);
-      }
+      document.addEventListener('writes:changed', headerSync);
+
+      container.replaceChildren(
+        title,
+        description,
+        el('section', {}, [
+          el('div', { class: 'section-title' }, 'Control'),
+          toggleLabel,
+          el('div', { class: 'actions' }, [refreshButton]),
+        ]),
+        el('section', {}, [
+          el('div', { class: 'section-title' }, 'State'),
+          status,
+        ]),
+      );
+
+      await fetchState(status, toggle);
+
+      container.addEventListener('DOMNodeRemoved', event => {
+        if (event.target === container) {
+          document.removeEventListener('writes:changed', headerSync);
+        }
+      });
+    }
+
+    const module = { init, render };
+    if (window.Cards && typeof window.Cards.register === 'function') {
+      window.Cards.register('writes', module);
     }
   }
-  if (localStorage.getItem('BUS_SESSION_TOKEN')) init();
-  else window.addEventListener('bus:token-ready', init, { once: true });
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', register);
+  } else {
+    register();
+  }
 })();

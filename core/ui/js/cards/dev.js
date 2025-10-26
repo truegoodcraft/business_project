@@ -1,37 +1,53 @@
-// Gate card init on token readiness
 (function(){
-  function init(){
-    if (!window.apiGet) {
-      console.error('Card missing API helpers');
+  function register(){
+    if (!window.API || !window.Dom || !window.Modals) {
+      console.error('Card missing API helpers: dev');
       return;
     }
 
-    const busApi = window.busApi || {};
-    const apiGet = busApi.apiGet || window.apiGet;
-    if (typeof apiGet !== 'function') {
-      console.error('Card missing API helpers');
-      return;
-    }
+    const { el } = window.Dom;
+    const API = window.API;
 
-    async function mountDev(root){
-      if(!root) return;
-      root.innerHTML='<h2>Dev Tools</h2><button id="ping">Ping Plugin</button><pre id="o" class="muted" style="margin-top:8px"></pre>';
-      const button=root.querySelector('#ping');
-      const out=root.querySelector('#o');
+    function init() {}
 
-      button.addEventListener('click',async()=>{
-        try{
-          const data=await apiGet('/dev/ping_plugin');
-          out.textContent=JSON.stringify(data,null,2);
-        }catch(error){
-          out.textContent='Error: '+error.message;
+    async function render(container){
+      if (!container) return;
+
+      const title = el('h2', {}, 'Developer Tools');
+      const description = el('div', { class: 'badge-note' }, 'Ping local plugin endpoints for debugging.');
+      const pingButton = el('button', { type: 'button' }, 'Ping Plugin');
+      const output = el('pre', { class: 'status-box', style: { minHeight: '140px' } }, 'Awaiting action.');
+
+      pingButton.addEventListener('click', async () => {
+        output.textContent = 'Pinging…';
+        try {
+          const data = await API.get('/dev/ping_plugin');
+          output.textContent = JSON.stringify(data || {}, null, 2);
+        } catch (error) {
+          output.textContent = 'Error: ' + (error && error.message ? error.message : String(error));
         }
       });
+
+      container.replaceChildren(
+        title,
+        description,
+        el('section', {}, [
+          el('div', { class: 'section-title' }, 'Diagnostics'),
+          el('div', { class: 'actions' }, [pingButton]),
+          output,
+        ]),
+      );
     }
 
-    window.busCards = window.busCards || {};
-    window.busCards.mountDev = mountDev;
+    const module = { init, render };
+    if (window.Cards && typeof window.Cards.register === 'function') {
+      window.Cards.register('dev', module);
+    }
   }
-  if (localStorage.getItem('BUS_SESSION_TOKEN')) init();
-  else window.addEventListener('bus:token-ready', init, { once: true });
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', register);
+  } else {
+    register();
+  }
 })();

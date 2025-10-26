@@ -1,5 +1,10 @@
 (function(){
-  const { el, bindDisabledWithProGate } = window.DOM || {};
+  if (!window.API || !window.Dom || !window.Modals) {
+    console.error('Card missing API helpers: backup');
+    return;
+  }
+
+  const { el, bindDisabledWithProGate } = window.Dom;
   const API = window.API;
 
   async function render(container){
@@ -127,7 +132,9 @@
     });
   }
 
+  function init() {}
+
   if (window.Cards && typeof window.Cards.register === 'function') {
-    window.Cards.register('backup', { render });
+    window.Cards.register('backup', { init, render });
   }
 })();

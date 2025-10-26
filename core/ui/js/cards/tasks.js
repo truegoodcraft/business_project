@@ -1,5 +1,10 @@
 (function(){
-  const { el } = window.DOM || {};
+  if (!window.API || !window.Dom || !window.Modals) {
+    console.error('Card missing API helpers: tasks');
+    return;
+  }
+
+  const { el } = window.Dom;
   const API = window.API;
 
   function asArray(value){
@@ -182,7 +187,9 @@
     await refresh();
   }
 
+  function init() {}
+
   if (window.Cards && typeof window.Cards.register === 'function') {
-    window.Cards.register('tasks', { render });
+    window.Cards.register('tasks', { init, render });
   }
 })();

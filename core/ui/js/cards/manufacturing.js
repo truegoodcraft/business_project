@@ -1,5 +1,10 @@
 (function(){
-  const { el, bindDisabledWithProGate } = window.DOM || {};
+  if (!window.API || !window.Dom || !window.Modals) {
+    console.error('Card missing API helpers: manufacturing');
+    return;
+  }
+
+  const { el, bindDisabledWithProGate } = window.Dom;
   const API = window.API;
 
   function asArray(value){
@@ -221,7 +226,9 @@
     await loadItems();
   }
 
+  function init() {}
+
   if (window.Cards && typeof window.Cards.register === 'function') {
-    window.Cards.register('manufacturing', { render });
+    window.Cards.register('manufacturing', { init, render });
   }
 })();

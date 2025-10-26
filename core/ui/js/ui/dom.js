@@ -92,5 +92,8 @@
     return { refresh };
   }
 
-  window.DOM = { $, el, bindDisabledWithProGate };
+  window.Dom = { $, el, bindDisabledWithProGate };
+  // Maintain backwards compatibility with any legacy code paths that still
+  // reference the old uppercase namespace.
+  window.DOM = window.Dom;
 })();

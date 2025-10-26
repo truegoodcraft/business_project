@@ -124,6 +124,19 @@ body.modal-open {
   display: none;
 }
 
+.writes-card-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.writes-card-toggle input {
+  width: 18px;
+  height: 18px;
+}
+
 .toggle-indicator {
   width: 38px;
   height: 20px;
