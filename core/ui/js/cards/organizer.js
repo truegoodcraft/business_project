@@ -1,5 +1,4 @@
-(window.registerCard || function(){ console.error('registerCard shim missing at load'); })
-('organizer', function ({ API, Dom, Modals }) {
+registerCard('organizer', function ({ API, Dom, Modals }) {
   const el = Dom && typeof Dom.el === 'function' ? Dom.el : null;
 
   function showError(output, error){
