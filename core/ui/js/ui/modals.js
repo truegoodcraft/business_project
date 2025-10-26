@@ -102,5 +102,6 @@
     close,
   };
 
-  window.Modals = Modals;
+  window.Modals = window.Modals || {};
+  Object.assign(window.Modals, Modals);
 })();

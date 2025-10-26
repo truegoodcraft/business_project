@@ -175,5 +175,5 @@
     },
   };
 
-  window.API = API;
+  window.API = window.API || API;
 })();
