@@ -8,10 +8,12 @@
   <link rel="alternate icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='6' y='6' width='52' height='52' rx='10' ry='10' fill='%23111'/%3E%3Cpath d='M18 40h12V24H18v16zm16 0h12V18H34v22z' fill='%23fff'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="css/app.css">
   <script>
-    // Card queue shim so registerCard always exists
-    (function () {
+    (function(){
+      window.__diag = { log:(m)=>console.log('[DIAG]', m) };
+      __diag.log('HEAD: start');
       var q = (window.__cardQueue = window.__cardQueue || []);
-      window.registerCard = function (name, factory) { q.push([name, factory]); };
+      window.registerCard = function(name,factory){ q.push([name,factory]); __diag.log('shim queued: '+name); };
+      __diag.log('HEAD: shim installed');
     })();
   </script>
   <script src="js/token.js" defer></script>
@@ -50,13 +52,23 @@
     </div>
   </div>
   <div id="modal-root"></div>
+  <script>__diag.log('BODY: before runtime');</script>
   <script src="ui/js/runtime.js"></script>
-  <script src="ui/js/api.js"></script>
-  <script src="ui/js/ui/dom.js"></script>
-  <script src="ui/js/ui/modals.js"></script>
-  <script src="ui/js/app.js"></script>
+  <script>__diag.log('BODY: after runtime');</script>
 
-  <!-- cards -->
+  <script src="ui/js/api.js"></script>
+  <script>__diag.log('BODY: after api');</script>
+
+  <script src="ui/js/ui/dom.js"></script>
+  <script>__diag.log('BODY: after dom');</script>
+
+  <script src="ui/js/ui/modals.js"></script>
+  <script>__diag.log('BODY: after modals');</script>
+
+  <script src="ui/js/app.js"></script>
+  <script>__diag.log('BODY: after app');</script>
+
+  <!-- cards: no defer/async -->
   <script src="ui/js/cards/inventory.js"></script>
   <script src="ui/js/cards/vendors.js"></script>
   <script src="ui/js/cards/manufacturing.js"></script>
@@ -67,5 +79,6 @@
   <script src="ui/js/cards/writes.js"></script>
   <script src="ui/js/cards/organizer.js"></script>
   <script src="ui/js/cards/dev.js"></script>
+  <script>__diag.log('BODY: after cards');</script>
 </body>
 </html>
