@@ -1,5 +1,4 @@
-(window.registerCard || function(){ console.error('registerCard shim missing at load'); })
-('writes', function ({ API, Dom, Modals }) {
+registerCard('writes', function ({ API, Dom, Modals }) {
   const el = Dom && typeof Dom.el === 'function' ? Dom.el : null;
 
   async function fetchState(statusNode, toggle){
