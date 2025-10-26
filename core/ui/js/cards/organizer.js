@@ -1,3 +1,3 @@
-export function mountOrganizer(container){
-  container.innerHTML = `<h2>Organizer</h2>`;
+jsexport function mountOrganizer(container) {
+  container.innerHTML = `<p>Organizer: Ready</p>`;
 }
