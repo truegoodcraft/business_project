@@ -190,6 +190,13 @@ except Exception as e:  # pragma: no cover - best effort logging
     print(f"[ui] mount failed: {e}")
 
 
+@APP.get("/ui", include_in_schema=False)
+@APP.get("/ui/", include_in_schema=False)
+@APP.get("/ui/index.html", include_in_schema=False)
+def ui_redirect():
+    return RedirectResponse(url="/ui/shell.html", status_code=307)
+
+
 @APP.middleware("http")
 async def ui_nocache_headers(request: Request, call_next):
     response = await call_next(request)

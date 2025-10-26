@@ -76,7 +76,33 @@ try {
         }
     }
 
-    Set-Item -Path Env:BUS_UI_DIR -Value $uiTarget
+    # --- enforce ESM entry and logging ---
+    $AppRoot    = Join-Path $env:LOCALAPPDATA "BUSCore\app\business_project-main"
+    $UiDir      = if ($env:BUS_UI_DIR) { $env:BUS_UI_DIR } else { $uiTarget }
+    $IndexHtml  = Join-Path $UiDir "index.html"
+    $LegacyHtml = Join-Path $UiDir "index_legacy.html"
+    $ShellHtml  = Join-Path $UiDir "shell.html"
+
+    Write-Host "Serving UI from: $UiDir"
+    if (Test-Path $IndexHtml) {
+      try {
+        Rename-Item -Path $IndexHtml -NewName "index_legacy.html" -Force
+        Write-Host "Renamed legacy index.html → index_legacy.html"
+      } catch {
+        Write-Host "Rename failed or already renamed: $($_.Exception.Message)"
+      }
+    }
+
+    if (-not (Test-Path $ShellHtml)) {
+      Write-Error "Missing shell.html in $UiDir. Aborting to avoid serving legacy UI."
+      exit 1
+    }
+
+    $env:BUS_UI_DIR = $UiDir
+    $EntryUrl = "http://127.0.0.1:8765/ui/shell.html"
+    Write-Host "Entry: shell.html → $EntryUrl"
+    # Start uvicorn if not running (preserve your existing start logic)
+    # --- end enforce ---
 
     $uvicornCmd = "& `"$venvPython`" -m uvicorn app:app --host 127.0.0.1 --port 8765 --reload --log-level info"
     Write-Host 'Launching BUS Core service...'
@@ -99,7 +125,7 @@ try {
     Write-Host 'Writes disabled for this session.'
 
     Start-Sleep -Seconds 5
-    Start-Process "$baseUrl/ui/shell.html" | Out-Null
+    Start-Process $EntryUrl | Out-Null
 
     if ($Crawl) {
         Write-Host 'Crawl probe starting...'
