@@ -128,9 +128,9 @@
       licenseData = await window.API.loadLicense();
     } catch (error) {
       console.error('License load failed', error);
-    } finally {
-      window.CardBus.provideDeps({ API: window.API, Dom: window.Dom, Modals: window.Modals });
     }
+
+    CardBus.provideDeps({ API: window.API, Dom: window.Dom, Modals: window.Modals });
 
     if (licenseData) {
       updateLicenseBadge(licenseData);

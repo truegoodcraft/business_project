@@ -7,6 +7,13 @@
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="alternate icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='6' y='6' width='52' height='52' rx='10' ry='10' fill='%23111'/%3E%3Cpath d='M18 40h12V24H18v16zm16 0h12V18H34v22z' fill='%23fff'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="css/app.css">
+  <script>
+    // Card queue shim so registerCard always exists
+    (function () {
+      var q = (window.__cardQueue = window.__cardQueue || []);
+      window.registerCard = function (name, factory) { q.push([name, factory]); };
+    })();
+  </script>
   <script src="js/token.js" defer></script>
 </head>
 <body>
