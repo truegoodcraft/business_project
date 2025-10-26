@@ -1,6 +1,6 @@
 # 🤖 TGC Alpha Core
 
-**Version: v.a0.01.3**
+**Version: v0.5.0**
 
 > A small, opinionated controller that boots, checks connections, shows status — and only digs deeper when you ask.
 
@@ -24,7 +24,7 @@ Google Drive, Sheets, Notion, and any other integrations live entirely in plugin
 
 ---
 
-## Alpha Core (HTTP) — v.a0.01.3
+## Alpha Core (HTTP) — v0.5.0
 
 Install deps:
 

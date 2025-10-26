@@ -110,6 +110,20 @@ def _count_rows(db_path: Path) -> Dict[str, int]:
     return counts
 
 
+def _safe_under(root: Path, target: Path) -> bool:
+    try:
+        root_resolved = root.resolve()
+        target_resolved = target.resolve()
+    except FileNotFoundError:
+        target_resolved = target.parent.resolve() / target.name
+        root_resolved = root.resolve()
+    try:
+        common = os.path.commonpath([root_resolved, target_resolved])
+    except ValueError:
+        return False
+    return Path(common) == root_resolved
+
+
 def _retry_unlink(p: Path, attempts: int = 10, delay: float = 0.1):
     for _ in range(attempts):
         try:
@@ -127,20 +141,6 @@ def _replace_with_retry(src: Path, dst: Path, attempts: int = 10, delay: float =
         except PermissionError:
             time.sleep(delay)
     os.replace(src, dst)
-
-
-def _safe_under(root: Path, target: Path) -> bool:
-    try:
-        root_resolved = root.resolve()
-        target_resolved = target.resolve()
-    except FileNotFoundError:
-        target_resolved = target.parent.resolve() / target.name
-        root_resolved = root.resolve()
-    try:
-        common = os.path.commonpath([root_resolved, target_resolved])
-    except ValueError:
-        return False
-    return Path(common) == root_resolved
 
 
 def export_db(password: str) -> Dict[str, object]:
@@ -164,10 +164,21 @@ def export_db(password: str) -> Dict[str, object]:
         # Decide KDF by availability
         try:
             import importlib
+
             importlib.import_module("argon2.low_level")
-            kdf_cfg = {"type": "argon2id", "time_cost": 3, "memory_kib": 65536, "parallelism": 1, "dklen": 32}
+            kdf_cfg = {
+                "type": "argon2id",
+                "time_cost": 3,
+                "memory_kib": 65536,
+                "parallelism": 1,
+                "dklen": 32,
+            }
         except Exception:
-            kdf_cfg = {"type": "pbkdf2", "iterations": 600000, "dklen": 32}
+            kdf_cfg = {
+                "type": "pbkdf2",
+                "iterations": 600000,
+                "dklen": 32,
+            }
         key = _derive_key(password, salt, kdf_cfg)
         ciphertext, tag = _aesgcm_encrypt(key, plaintext, nonce)
 
@@ -180,7 +191,7 @@ def export_db(password: str) -> Dict[str, object]:
         container = {
             "magic": "TGCv05",
             "version": "v0.5",
-            "kdf": kdf_cfg,
+            "kdf": {**kdf_cfg},
             "salt": base64.b64encode(salt).decode("ascii"),
             "nonce": base64.b64encode(nonce).decode("ascii"),
             "tag": base64.b64encode(tag).decode("ascii"),
@@ -204,15 +215,7 @@ def export_db(password: str) -> Dict[str, object]:
 
         return {"ok": True, "path": str(export_path), "manifest": container_manifest}
     finally:
-        if tmp_path.exists():
-            for _ in range(5):
-                try:
-                    tmp_path.unlink()
-                    break
-                except PermissionError:
-                    time.sleep(0.1)
-                except Exception:
-                    break
+        _retry_unlink(tmp_path)
 
 
 def _load_and_decrypt(path: Path, password: str) -> Tuple[Dict[str, object], bytes]:
@@ -273,13 +276,7 @@ def import_preview(path: str, password: str) -> Dict[str, object]:
         tmp_path.write_bytes(plaintext)
         preview_counts = _count_rows(tmp_path)
     finally:
-        # Retry unlink a few times for Windows AV/indexer locks
-        for _ in range(5):
-            try:
-                tmp_path.unlink(missing_ok=True)
-                break
-            except PermissionError:
-                time.sleep(0.1)
+        _retry_unlink(tmp_path)
     incompatible = container.get("manifest", {}).get("version") != "v0.5"
     response: Dict[str, object] = {
         "ok": True,
