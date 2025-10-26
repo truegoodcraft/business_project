@@ -204,6 +204,13 @@ def session_token(response: Response):
 LICENSE_NAME = "PolyForm-Noncommercial-1.0.0"
 LICENSE_URL = "https://polyformproject.org/licenses/noncommercial/1.0.0/"
 LICENSE = get_license()
+if not isinstance(LICENSE, dict):
+    LICENSE = {}
+LICENSE["tier"] = LICENSE.get("tier") or "unknown"
+if not isinstance(LICENSE.get("features"), dict):
+    LICENSE["features"] = {}
+if not isinstance(LICENSE.get("plugins"), dict):
+    LICENSE["plugins"] = {}
 WRITES_ENABLED = get_writes_enabled()
 
 CORE: CoreAlpha | None = None
@@ -289,12 +296,10 @@ def _require_core() -> CoreAlpha:
 
 
 def _extract_token(req: Request) -> str | None:
-    header = req.headers.get("X-Session-Token") or req.headers.get("Authorization")
-    if header and header.lower().startswith("bearer "):
-        header = header.split(" ", 1)[1].strip()
-    if header:
-        return header
-    return req.cookies.get("session_token")
+    h = req.headers.get("X-Session-Token") or req.headers.get("Authorization")
+    if h and h.lower().startswith("bearer "):
+        h = h.split(" ", 1)[1].strip()
+    return h or req.cookies.get("session_token")
 
 
 def get_session_token(request: Request) -> str | None:
