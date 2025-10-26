@@ -1,87 +1,85 @@
+/* ESM dispatcher: tabs → card mounts, no router */
 import { ensureToken, apiGet, apiPost } from "/ui/js/token.js";
-import { mountWrites } from "/ui/js/cards/writes.js";
+import { mountWrites }    from "/ui/js/cards/writes.js";
 import { mountOrganizer } from "/ui/js/cards/organizer.js";
-import { mountBackup } from "/ui/js/cards/backup.js";
+import { mountBackup }    from "/ui/js/cards/backup.js";
 import { mountInventory } from "/ui/js/cards/inventory.js";
-import { mountRfq } from "/ui/js/cards/rfq.js";
-import { mountDev } from "/ui/js/cards/dev.js";
+import { mountRfq }       from "/ui/js/cards/rfq.js";
+import { mountDev }       from "/ui/js/cards/dev.js";
 
-const tabs = {
-  writes: () => mountWrites(app),
-  tools: () => {
-    app.innerHTML = `
-      <div class="card"><h2>Tools</h2><p>Select a tool:</p></div>
-      <div class="card" onclick="window.bus.mountOrganizer()">Organizer</div>
-      <div class="card" onclick="window.bus.mountBackup()">Backup</div>
-      <div class="card" onclick="window.bus.mountInventory()">Inventory</div>
-      <div class="card" onclick="window.bus.mountRfq()">RFQ</div>
-    `;
-  },
-  dev: () => mountDev(app)
-};
-
-let currentTab = "writes";
 const app = document.getElementById("app");
 
-async function boot() {
-  try {
-    await ensureToken();
-    const license = await apiGet("/dev/license");
-    const writes = await apiGet("/dev/writes");
-
-    const header = document.createElement("div");
-    header.innerHTML = `
-      <div style="margin-bottom:16px; padding-bottom:8px; border-bottom:1px solid #333; font-size:13px; color:#aaa;">
-        License: <strong>${license.tier}</strong> | 
-        Writes: <strong id="writes-status">${writes.enabled ? "ON" : "OFF"}</strong>
-        <button id="toggle-writes" style="margin-left:8px; font-size:12px;">Toggle</button>
-      </div>
-    `;
-    app.prepend(header);
-
-    document.title = `BUS Core — ${license.tier}`;
-
-    document.getElementById("toggle-writes").onclick = async () => {
-      const next = await apiPost("/dev/writes", { enabled: !writes.enabled });
-      writes.enabled = next.enabled;
-      document.getElementById("writes-status").textContent = next.enabled ? "ON" : "OFF";
-      if (currentTab === "writes") mountWrites(app);
-    };
-
-    document.querySelectorAll(".tab").forEach(tab => {
-      tab.onclick = () => {
-        document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
-        tab.classList.add("active");
-        currentTab = tab.dataset.tab;
-        app.innerHTML = "";
-        app.appendChild(header.cloneNode(true));
-        tabs[currentTab]();
-        const btn = app.querySelector("#toggle-writes");
-        if (btn) btn.onclick = document.getElementById("toggle-writes").onclick;
-      };
-    });
-
-    tabs[currentTab]();
-
-    window.bus = Object.freeze({
-      mountWrites: () => { switchTab("writes"); },
-      mountOrganizer: () => { switchTab("tools"); mountOrganizer(app); },
-      mountBackup: () => { switchTab("tools"); mountBackup(app); },
-      mountInventory: () => { switchTab("tools"); mountInventory(app); },
-      mountRfq: () => { switchTab("tools"); mountRfq(app); },
-      mountDev: () => { switchTab("dev"); }
-    });
-
-    function switchTab(id) {
-      currentTab = id;
-      document.querySelector(`[data-tab="${id}"]`).click();
-    }
-
-    console.log("BOOT OK");
-  } catch (err) {
-    console.error("BOOT FAILED", err);
-    app.innerHTML = `<pre style="color:red;">${err}</pre>`;
-  }
+function renderShell(licenseTier, writesEnabled) {
+  app.innerHTML = `
+    <div class="layout">
+      <nav id="sidebar" class="sidebar">
+        <div class="brand">BUS Core</div>
+        <button class="tab active" data-target="mountWrites">Writes</button>
+        <button class="tab" data-target="mountOrganizer">Organizer</button>
+        <button class="tab" data-target="mountInventory">Inventory</button>
+        <button class="tab" data-target="mountRfq">RFQ</button>
+        <button class="tab" data-target="mountBackup">Backup</button>
+        <button class="tab" data-target="mountDev">Dev</button>
+      </nav>
+      <main class="main">
+        <div class="header">
+          <span>License: <b>${licenseTier}</b></span>
+          <span style="margin-left:12px">Writes: <b id="writes-status">${writesEnabled ? "ON" : "OFF"}</b></span>
+          <button id="toggle-writes" class="btn" style="margin-left:8px">Toggle</button>
+        </div>
+        <div id="main"></div>
+      </main>
+    </div>
+  `;
 }
 
-boot();
+function bindTabs() {
+  document.querySelectorAll(".tab").forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll(".tab").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      const target = btn.dataset.target;
+      const container = document.getElementById("main");
+      container.innerHTML = "";
+      window.bus[target](container);
+    };
+  });
+}
+
+async function boot() {
+  await ensureToken();
+  const [license, writes] = await Promise.all([
+    apiGet("/dev/license"),
+    apiGet("/dev/writes")
+  ]);
+
+  renderShell(license.tier, writes.enabled);
+  bindTabs();
+
+  document.getElementById("toggle-writes").onclick = async () => {
+    const next = await apiPost("/dev/writes", { enabled: !(document.getElementById("writes-status").textContent === "ON") });
+    document.getElementById("writes-status").textContent = next.enabled ? "ON" : "OFF";
+    if (document.querySelector('.tab.active')?.dataset.target === "mountWrites") {
+      window.bus.mountWrites(document.getElementById("main"));
+    }
+  };
+
+  // default mount
+  window.bus.mountWrites(document.getElementById("main"));
+  console.log("BOOT OK");
+}
+
+// expose mounts
+window.bus = Object.freeze({
+  mountWrites:    (el) => mountWrites(el),
+  mountOrganizer: (el) => mountOrganizer(el),
+  mountBackup:    (el) => mountBackup(el),
+  mountInventory: (el) => mountInventory(el),
+  mountRfq:       (el) => mountRfq(el),
+  mountDev:       (el) => mountDev(el),
+});
+
+boot().catch(e => {
+  console.error("BOOT FAILED", e);
+  app.innerHTML = `<pre style="color:red">${String(e)}</pre>`;
+});
