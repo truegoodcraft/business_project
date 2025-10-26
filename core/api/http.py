@@ -204,6 +204,7 @@ def session_token(response: Response):
 LICENSE_NAME = "PolyForm-Noncommercial-1.0.0"
 LICENSE_URL = "https://polyformproject.org/licenses/noncommercial/1.0.0/"
 LICENSE = get_license()
+WRITES_ENABLED = get_writes_enabled()
 
 CORE: CoreAlpha | None = None
 RUN_ID: str = ""
@@ -291,14 +292,9 @@ def _extract_token(req: Request) -> str | None:
     header = req.headers.get("X-Session-Token") or req.headers.get("Authorization")
     if header and header.lower().startswith("bearer "):
         header = header.split(" ", 1)[1].strip()
-    token = header.strip() if header else None
-    if token:
-        return token
-    return (
-        req.cookies.get("session_token")
-        or req.cookies.get("X-Session-Token")
-        or None
-    )
+    if header:
+        return header
+    return req.cookies.get("session_token")
 
 
 def get_session_token(request: Request) -> str | None:
@@ -334,7 +330,7 @@ def require_token(request: Request) -> str:
     return token
 
 
-def _require_session(req: Request):
+def _require_session(req: Request) -> str:
     tok = _extract_token(req)
     if not tok or not validate_session_token(tok):
         raise HTTPException(status_code=401, detail="Invalid session token")
@@ -384,14 +380,18 @@ def dev_license(req: Request):
 @APP.get("/dev/writes")
 def dev_writes_get(req: Request):
     _require_session(req)
-    return {"enabled": get_writes_enabled()}
+    global WRITES_ENABLED
+    WRITES_ENABLED = get_writes_enabled()
+    return {"enabled": WRITES_ENABLED}
 
 
 @APP.post("/dev/writes")
-def dev_writes_set(req: Request, body: Dict[str, Any] = Body(...)):
+def dev_writes_set(req: Request, body: dict):
     _require_session(req)
     enabled = bool(body.get("enabled", False))
     set_writes_enabled(enabled)
+    global WRITES_ENABLED
+    WRITES_ENABLED = enabled
     return {"enabled": enabled}
 
 
