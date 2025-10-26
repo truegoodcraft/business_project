@@ -67,6 +67,8 @@ from core.reader.api import router as reader_local_router
 from core.organizer.api import router as organizer_router
 from core.api.app_router import router as app_router
 
+from fastapi import Request, HTTPException
+
 if os.name == "nt":  # pragma: no cover - windows specific
     from core.broker.pipes import NamedPipeServer
     from core.broker.service import PluginBroker, handle_connection
@@ -109,6 +111,35 @@ def _check_state(state_b64: str) -> bool:
 
 
 APP = FastAPI(title="BUS Core Alpha", version=VERSION)
+
+
+# Add this function
+def require_token(req: Request):
+    token = req.headers.get("X-Session-Token")
+    if not token or not validate_session_token(token):  # Reuse existing validator
+        raise HTTPException(401, {"detail": "Invalid session token"})
+    return token
+
+
+# Add these routes to APP
+@APP.get("/dev/license")
+async def dev_license(req: Request):
+    require_token(req)
+    return LICENSE  # Global from startup
+
+
+@APP.get("/dev/writes")
+async def dev_writes_get(req: Request):
+    require_token(req)
+    return {"enabled": WRITES_ENABLED}
+
+
+@APP.post("/dev/writes")
+async def dev_writes_set(req: Request, body: dict):
+    require_token(req)
+    enabled = bool(body.get("enabled", False))
+    set_writes_enabled(enabled)  # Reuse existing setter
+    return {"enabled": enabled}
 
 
 # --- UI directory resolver ---
