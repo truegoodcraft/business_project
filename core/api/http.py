@@ -345,8 +345,9 @@ def dev_set_writes(body: WritesBody):
     return {"enabled": get_writes_enabled()}
 
 
-@protected.get("/dev/license")
-def dev_get_license_info():
+@APP.get("/dev/license")
+def dev_get_license_info(request: Request):
+    require_token(request)
     return get_license()
 
 
