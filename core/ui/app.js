@@ -9,30 +9,29 @@ const mounts = {
   dev: mountDev,
 };
 
-function setActiveTab(name, buttons) {
+function setActiveTab(active, buttons) {
   buttons.forEach((button) => {
-    button.classList.toggle("active", button.dataset.tab === name);
+    button.classList.toggle("active", button.dataset.tab === active);
   });
 }
 
-async function initializeLicense() {
+async function loadLicenseBadge() {
   try {
-    const lic = await getLicense();
+    const license = await getLicense();
     const badge = document.getElementById("license");
-    if (badge) {
-      const tier = lic && typeof lic.tier === "string" ? lic.tier : "Unknown";
-      badge.textContent = `License: ${tier}`;
+    if (badge && license && typeof license.tier === "string") {
+      badge.textContent = `License: ${license.tier}`;
     }
   } catch (error) {
     console.error("Failed to load license", error);
   }
 }
 
-async function loadWritesState(toggle) {
+async function refreshWritesToggle(toggle) {
   if (!toggle) return;
   try {
-    const state = await apiGet("/dev/writes");
-    const enabled = state && typeof state.enabled === "boolean" ? state.enabled : false;
+    const data = await apiGet("/dev/writes");
+    const enabled = data && typeof data.enabled === "boolean" ? data.enabled : false;
     toggle.checked = enabled;
     document.body.dataset.writesEnabled = enabled ? "true" : "false";
     const label = document.getElementById("writes-toggle-status");
@@ -44,13 +43,13 @@ async function loadWritesState(toggle) {
   }
 }
 
-function attachWritesToggle(toggle) {
+function wireWritesToggle(toggle) {
   if (!toggle) return;
   toggle.addEventListener("change", async (event) => {
     if (!event.isTrusted) {
       return;
     }
-    const enabled = toggle.checked;
+    const enabled = Boolean(toggle.checked);
     toggle.disabled = true;
     try {
       await apiPost("/dev/writes", { enabled });
@@ -72,40 +71,30 @@ function attachWritesToggle(toggle) {
     if (!event || !event.detail || typeof event.detail.enabled !== "boolean") {
       return;
     }
-    if (!document.contains(toggle)) {
-      return;
-    }
-    if (toggle.checked !== event.detail.enabled) {
-      toggle.checked = event.detail.enabled;
+    const { enabled } = event.detail;
+    if (toggle.checked !== enabled) {
+      toggle.checked = enabled;
       const label = document.getElementById("writes-toggle-status");
       if (label) {
-        label.textContent = event.detail.enabled ? "Writes Enabled" : "Writes Disabled";
+        label.textContent = enabled ? "Writes Enabled" : "Writes Disabled";
       }
-      document.body.dataset.writesEnabled = event.detail.enabled ? "true" : "false";
+      document.body.dataset.writesEnabled = enabled ? "true" : "false";
     }
   });
 }
 
-function mountCard(name, view) {
-  const mount = mounts[name];
+function mountView(tab, view) {
+  const mount = mounts[tab];
   if (!mount) {
     view.textContent = "Module unavailable.";
     return;
   }
-  const card = document.createElement("div");
-  card.className = "card";
-  view.replaceChildren(card);
-  try {
-    const result = mount(card);
-    if (result && typeof result.then === "function") {
-      result.catch((error) => {
-        console.error("Card mount failed", error);
-        card.textContent = `Error: ${error.message}`;
-      });
-    }
-  } catch (error) {
-    console.error("Card mount failed", error);
-    card.textContent = `Error: ${error.message}`;
+  const result = mount(view);
+  if (result && typeof result.then === "function") {
+    result.catch((error) => {
+      console.error("Card mount failed", error);
+      view.textContent = `Error: ${error.message}`;
+    });
   }
 }
 
@@ -115,22 +104,25 @@ document.addEventListener("DOMContentLoaded", async () => {
     return;
   }
 
-  await initializeLicense();
+  await loadLicenseBadge();
 
   const toggle = document.getElementById("writes-toggle");
-  attachWritesToggle(toggle);
-  await loadWritesState(toggle);
+  wireWritesToggle(toggle);
+  await refreshWritesToggle(toggle);
 
   const buttons = Array.from(document.querySelectorAll(".sidebar-tab"));
+  const showTab = (name) => {
+    setActiveTab(name, buttons);
+    mountView(name, view);
+  };
+
   buttons.forEach((button) => {
     button.addEventListener("click", () => {
       const tab = button.dataset.tab;
       if (!tab) return;
-      setActiveTab(tab, buttons);
-      mountCard(tab, view);
+      showTab(tab);
     });
   });
 
-  setActiveTab("writes", buttons);
-  mountCard("writes", view);
+  showTab("writes");
 });

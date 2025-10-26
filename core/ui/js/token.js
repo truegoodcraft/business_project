@@ -1,105 +1,57 @@
-const TOKEN_KEY = "BUS_SESSION_TOKEN";
-let tokenPromise = null;
-let licensePromise = null;
-let cachedLicense = null;
+let TOKEN = null;
 
-function normalizePath(path){
-  if (!path) return "/";
-  return path.startsWith("/") ? path : `/${path}`;
-}
-
-async function ensureToken(){
-  if (cachedToken()) {
-    return cachedToken();
+async function ensureToken() {
+  if (TOKEN) {
+    return TOKEN;
   }
-  if (!tokenPromise) {
-    tokenPromise = fetch("/session/token", { credentials: "include" })
-      .then(async response => {
-        if (!response.ok) {
-          throw new Error(`Token fetch failed: ${response.status}`);
-        }
-        const payload = await response.json();
-        const token = payload && typeof payload.token === "string" ? payload.token : "";
-        if (!token) {
-          throw new Error("Token missing from response");
-        }
-        localStorage.setItem(TOKEN_KEY, token);
-        return token;
-      })
-      .catch(error => {
-        tokenPromise = null;
-        throw error;
-      });
+  const response = await fetch("/session/token", { credentials: "include" });
+  if (!response.ok) {
+    throw new Error("token fetch failed");
   }
-  return tokenPromise;
+  const payload = await response.json();
+  const token = payload && payload.token;
+  if (!token) {
+    throw new Error("token fetch failed");
+  }
+  TOKEN = token;
+  return TOKEN;
 }
 
-function cachedToken(){
-  const token = localStorage.getItem(TOKEN_KEY);
-  return token && token.trim() ? token : null;
-}
-
-async function request(method, path, body){
-  const token = cachedToken() || await ensureToken();
+async function request(method, path, body) {
+  const token = await ensureToken();
   const headers = new Headers({
+    "X-Session-Token": token,
     "X-Plugin-Name": "ui",
     "Accept": "application/json",
   });
-  if (token) {
-    headers.set("X-Session-Token", token);
-  }
-  let payload = undefined;
-  if (body !== undefined && body !== null) {
+  if (body !== undefined) {
     headers.set("Content-Type", "application/json");
-    payload = JSON.stringify(body);
   }
-
-  const response = await fetch(normalizePath(path), {
+  const url = path.startsWith("/") ? path : `/${path}`;
+  const response = await fetch(url, {
     method,
     headers,
-    body: payload,
+    body: body === undefined ? undefined : JSON.stringify(body),
     credentials: "include",
   });
-
   if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    const message = text ? `${response.status}: ${text}` : `HTTP ${response.status}`;
-    throw new Error(message);
+    throw new Error(`HTTP ${response.status}`);
   }
-
   if (response.status === 204) {
     return {};
   }
-
   const contentType = response.headers.get("content-type") || "";
-  if (contentType.includes("application/json")) {
-    return response.json();
-  }
-  return response.text();
+  return contentType.includes("application/json") ? response.json() : response.text();
 }
 
-export async function apiGet(path){
+export async function apiGet(path) {
   return request("GET", path);
 }
 
-export async function apiPost(path, body){
+export async function apiPost(path, body) {
   return request("POST", path, body);
 }
 
-export async function getLicense(){
-  if (cachedLicense) {
-    return cachedLicense;
-  }
-  if (!licensePromise) {
-    licensePromise = apiGet("/dev/license")
-      .then(data => {
-        cachedLicense = data;
-        return data;
-      })
-      .catch(error => {
-        licensePromise = null;
-        throw error;
-      });
-  }
-  return licensePromise;
+export async function getLicense() {
+  return apiGet("/dev/license");
 }
