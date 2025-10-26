@@ -24,7 +24,6 @@ from fastapi import (
     Body,
     Depends,
     FastAPI,
-    Header,
     HTTPException,
     Query,
     Request,
@@ -145,6 +144,9 @@ def _find_ui_dir() -> Path:
 UI_DIR = _find_ui_dir()
 UI_STATIC_DIR = UI_DIR
 print(f"[ui] Serving /ui/ from: {UI_DIR}")
+print(
+    "[auth] expecting token via header/cookie (X-Session-Token header, Authorization Bearer, session_token cookie)"
+)
 
 # (Re)mount static UI
 try:
@@ -182,7 +184,7 @@ def _load_or_create_token() -> str:
 
 
 @APP.get("/session/token")
-def get_session_token(response: Response):
+def session_token(response: Response):
     tok = _load_or_create_token()
     response.set_cookie(
         key="X-Session-Token",
@@ -278,22 +280,47 @@ def _require_core() -> CoreAlpha:
     return CORE
 
 
+def get_session_token(request: Request) -> str | None:
+    header_token = request.headers.get("X-Session-Token")
+    if header_token:
+        return header_token
+
+    auth_header = request.headers.get("Authorization")
+    if auth_header:
+        parts = auth_header.split(" ", 1)
+        if len(parts) == 2 and parts[0].lower() == "bearer":
+            bearer_token = parts[1].strip()
+            if bearer_token:
+                return bearer_token
+
+    cookie_token = request.cookies.get("session_token")
+    if cookie_token:
+        return cookie_token
+
+    legacy_cookie_token = request.cookies.get("X-Session-Token")
+    if legacy_cookie_token:
+        return legacy_cookie_token
+
+    return None
+
+
 def _require_token(token: Optional[str]) -> None:
     if token != SESSION_TOKEN:
         raise HTTPException(status_code=401, detail="Invalid session token")
 
 
-def require_token_ctx(
-    x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token"),
-) -> Dict[str, Optional[str]]:
-    _require_token(x_session_token)
-    return {"token": x_session_token}
+def require_token_ctx(request: Request) -> Dict[str, str]:
+    token = get_session_token(request)
+    _require_token(token)
+    assert token is not None
+    return {"token": token}
 
 
 def require_token(request: Request) -> str:
-    token = request.headers.get("X-Session-Token")
+    token = get_session_token(request)
     _require_token(token)
-    return token or ""
+    assert token is not None
+    return token
 
 
 def require_writes() -> None:
