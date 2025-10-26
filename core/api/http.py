@@ -288,18 +288,17 @@ def _require_core() -> CoreAlpha:
 
 
 def _extract_token(req: Request) -> str | None:
-    h = req.headers.get("X-Session-Token") or req.headers.get("Authorization")
-    if h and h.lower().startswith("bearer "):
-        h = h.split(" ", 1)[1].strip()
-    if h:
-        return h
-    cookie = req.cookies.get("session_token")
-    if cookie:
-        return cookie
-    legacy = req.cookies.get("X-Session-Token")
-    if legacy:
-        return legacy
-    return None
+    header = req.headers.get("X-Session-Token") or req.headers.get("Authorization")
+    if header and header.lower().startswith("bearer "):
+        header = header.split(" ", 1)[1].strip()
+    token = header.strip() if header else None
+    if token:
+        return token
+    return (
+        req.cookies.get("session_token")
+        or req.cookies.get("X-Session-Token")
+        or None
+    )
 
 
 def get_session_token(request: Request) -> str | None:
@@ -393,7 +392,7 @@ def dev_writes_set(req: Request, body: Dict[str, Any] = Body(...)):
     _require_session(req)
     enabled = bool(body.get("enabled", False))
     set_writes_enabled(enabled)
-    return {"ok": True, "enabled": enabled}
+    return {"enabled": enabled}
 
 
 @protected.post("/app/export")
