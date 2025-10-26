@@ -18,26 +18,65 @@ function Test-Python311 {
 }
 
 try {
-    $deployRoot = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'BUSCore\app'
+    $localRoot = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'BUSCore'
+    $deployRoot = Join-Path $localRoot 'app'
+    $AppRoot = Join-Path $deployRoot 'business_project-main'
+    New-Item -ItemType Directory -Force -Path $localRoot | Out-Null
     New-Item -ItemType Directory -Force -Path $deployRoot | Out-Null
 
-    $zipPath = Join-Path $env:TEMP 'tgc.zip'
-    if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
+    $ZipPath = Join-Path $env:TEMP 'tgc.zip'
+    if (Test-Path $ZipPath) { Remove-Item $ZipPath -Force }
+
+    $ZipExtractRoot = Join-Path $env:TEMP 'tgc_extract'
+    if (Test-Path $ZipExtractRoot) { Remove-Item $ZipExtractRoot -Recurse -Force }
 
     $owner = 'truegoodcraft'
     $repo = 'business_project'
     $zipUrl = "https://github.com/$owner/$repo/archive/refs/heads/main.zip"
     Write-Host "Downloading $zipUrl..."
-    Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath -UseBasicParsing | Out-Null
+    Invoke-WebRequest -Uri $zipUrl -OutFile $ZipPath -UseBasicParsing | Out-Null
 
     Write-Host "Unpacking payload..."
-    Get-ChildItem -Path $deployRoot -Directory | Where-Object { $_.Name -like "$repo-*" } | ForEach-Object { Remove-Item $_.FullName -Recurse -Force }
-    Expand-Archive -Path $zipPath -DestinationPath $deployRoot -Force
-    Remove-Item $zipPath -Force
+    Expand-Archive -Path $ZipPath -DestinationPath $ZipExtractRoot -Force
+    $ZipDir = Join-Path $ZipExtractRoot "$repo-main"
+    if (-not (Test-Path $ZipDir)) { throw "Could not locate unpacked repository under $ZipExtractRoot" }
 
-    $appRoot = Get-ChildItem -Path $deployRoot -Directory | Where-Object { $_.Name -like "$repo-*" } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    if (-not $appRoot) { throw "Could not locate unpacked repository under $deployRoot" }
-    $appRoot = $appRoot.FullName
+    # Ensure target root exists
+    New-Item -ItemType Directory -Path $AppRoot -Force | Out-Null
+
+    # Create data dir if missing, but DO NOT modify its contents
+    New-Item -ItemType Directory -Path (Join-Path $AppRoot "data") -Force | Out-Null
+
+    # Mirror payload to app root EXCLUDING data folder and app.db
+    # Also exclude VCS and dev-only dirs if present
+    $src = $ZipDir
+    $dst = $AppRoot
+    Write-Host "[sync] Mirroring payload → $dst (preserving \data and app.db)"
+    $rc = robocopy $src $dst /MIR /XF app.db /XD data .git .github tests node_modules 2>$null
+    if ($LASTEXITCODE -ge 8) {
+      throw "robocopy failed with code $LASTEXITCODE"
+    }
+
+    # ESM entry enforcement (keep from earlier steps)
+    $UiDir     = if ($env:BUS_UI_DIR) { $env:BUS_UI_DIR } else { Join-Path $AppRoot "core\ui" }
+    $IndexHtml = Join-Path $UiDir "index.html"
+    $ShellHtml = Join-Path $UiDir "shell.html"
+    Write-Host "[ui] Serving UI from: $UiDir"
+    if (Test-Path $IndexHtml) {
+      try { Rename-Item -Path $IndexHtml -NewName "index_legacy.html" -Force; Write-Host "[ui] Archived legacy entry: index.html → index_legacy.html" }
+      catch { Write-Host "[ui] Archive skipped: $($_.Exception.Message)" }
+    }
+    if (-not (Test-Path $ShellHtml)) { throw "[ui] Missing shell.html in $UiDir" }
+    $env:BUS_UI_DIR = $UiDir
+    $EntryUrl = "http://127.0.0.1:8765/ui/shell.html"
+    Write-Host "[ui] Entry enforced: /ui/shell.html"
+    Write-Host "[ui] Opening: $EntryUrl"
+    Start-Process $EntryUrl
+
+    Remove-Item $ZipPath -Force
+    Remove-Item $ZipExtractRoot -Recurse -Force
+
+    $appRoot = $AppRoot
     Write-Host "Repository ready at $appRoot"
 
     if (-not (Test-Python311)) {
@@ -75,34 +114,6 @@ try {
             Write-Warning 'UI mirror partial—check paths.'
         }
     }
-
-    # --- enforce ESM entry and logging ---
-    $AppRoot = $appRoot
-    $UiDir   = if ($env:BUS_UI_DIR) { $env:BUS_UI_DIR } else { (Join-Path $AppRoot "core\ui") }
-    $Index   = Join-Path $UiDir "index.html"
-    $Shell   = Join-Path $UiDir "shell.html"
-
-    Write-Host "[ui] Serving UI from: $UiDir"
-
-    if (Test-Path $Index) {
-      try {
-        Rename-Item -Path $Index -NewName "index_legacy.html" -Force
-        Write-Host "[ui] Archived legacy entry: index.html → index_legacy.html"
-      } catch {
-        Write-Host "[ui] Archive skipped: $($_.Exception.Message)"
-      }
-    }
-
-    if (-not (Test-Path $Shell)) {
-      Write-Error "[ui] Missing shell.html in $UiDir. Aborting to avoid serving legacy UI."
-      exit 1
-    }
-
-    $env:BUS_UI_DIR = $UiDir
-    $EntryUrl = "http://127.0.0.1:8765/ui/shell.html"
-    Write-Host "[ui] Entry enforced: /ui/shell.html"
-    Write-Host "[ui] Opening: $EntryUrl"
-    # --- end enforce ---
 
     $uvicornCmd = "& `"$venvPython`" -m uvicorn app:app --host 127.0.0.1 --port 8765 --reload --log-level info"
     Write-Host 'Launching BUS Core service...'
