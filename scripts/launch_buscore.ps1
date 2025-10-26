@@ -77,31 +77,31 @@ try {
     }
 
     # --- enforce ESM entry and logging ---
-    $AppRoot    = Join-Path $env:LOCALAPPDATA "BUSCore\app\business_project-main"
-    $UiDir      = if ($env:BUS_UI_DIR) { $env:BUS_UI_DIR } else { $uiTarget }
-    $IndexHtml  = Join-Path $UiDir "index.html"
-    $LegacyHtml = Join-Path $UiDir "index_legacy.html"
-    $ShellHtml  = Join-Path $UiDir "shell.html"
+    $AppRoot = $appRoot
+    $UiDir   = if ($env:BUS_UI_DIR) { $env:BUS_UI_DIR } else { (Join-Path $AppRoot "core\ui") }
+    $Index   = Join-Path $UiDir "index.html"
+    $Shell   = Join-Path $UiDir "shell.html"
 
-    Write-Host "Serving UI from: $UiDir"
-    if (Test-Path $IndexHtml) {
+    Write-Host "[ui] Serving UI from: $UiDir"
+
+    if (Test-Path $Index) {
       try {
-        Rename-Item -Path $IndexHtml -NewName "index_legacy.html" -Force
-        Write-Host "Renamed legacy index.html → index_legacy.html"
+        Rename-Item -Path $Index -NewName "index_legacy.html" -Force
+        Write-Host "[ui] Archived legacy entry: index.html → index_legacy.html"
       } catch {
-        Write-Host "Rename failed or already renamed: $($_.Exception.Message)"
+        Write-Host "[ui] Archive skipped: $($_.Exception.Message)"
       }
     }
 
-    if (-not (Test-Path $ShellHtml)) {
-      Write-Error "Missing shell.html in $UiDir. Aborting to avoid serving legacy UI."
+    if (-not (Test-Path $Shell)) {
+      Write-Error "[ui] Missing shell.html in $UiDir. Aborting to avoid serving legacy UI."
       exit 1
     }
 
     $env:BUS_UI_DIR = $UiDir
     $EntryUrl = "http://127.0.0.1:8765/ui/shell.html"
-    Write-Host "Entry: shell.html → $EntryUrl"
-    # Start uvicorn if not running (preserve your existing start logic)
+    Write-Host "[ui] Entry enforced: /ui/shell.html"
+    Write-Host "[ui] Opening: $EntryUrl"
     # --- end enforce ---
 
     $uvicornCmd = "& `"$venvPython`" -m uvicorn app:app --host 127.0.0.1 --port 8765 --reload --log-level info"
