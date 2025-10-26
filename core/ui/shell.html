@@ -3,70 +3,51 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
-  <title>BUS Core — Local Dashboard</title>
-  <link rel="stylesheet" href="styles.css">
+  <title>BUS Core — Dashboard</title>
+  <link rel="stylesheet" href="css/app.css">
   <script src="js/token.js" defer></script>
 </head>
 <body>
-  <nav class="sidebar">
-    <h1>BUS Core</h1>
-    <ul>
-      <li><a href="#writes">Writes</a></li>
-      <li><a href="#organizer">Organizer</a></li>
-      <li><a href="#dev">Dev</a></li>
-    </ul>
-  </nav>
-  <main>
-    <details id="writes">
-      <summary>Writes</summary>
-      <div id="writes-card">Loading...</div>
-    </details>
-    <details id="organizer">
-      <summary>Organizer</summary>
-      <div id="organizer-card">Loading...</div>
-    </details>
-    <details id="dev">
-      <summary>Dev</summary>
-      <div id="dev-card">Loading...</div>
-    </details>
-  </main>
-  <script type="module">
-    import { mountWrites } from './js/cards/writes.js';
-    import { mountOrganizer } from './js/cards/organizer.js';
-    import { mountDev } from './js/cards/dev.js';
-
-    async function refreshCard(mountFn,id){
-      const root=document.getElementById(id);
-      if(!root) return;
-      try{
-        await mountFn(root);
-      }catch(error){
-        console.error(`${id} failed to load:`,error);
-        root.textContent='Error: '+error.message;
-      }
-    }
-
-    async function refreshAllCards(){
-      await Promise.all([
-        refreshCard(mountWrites,'writes-card'),
-        refreshCard(mountOrganizer,'organizer-card'),
-        refreshCard(mountDev,'dev-card')
-      ]);
-    }
-
-    async function handleTokenReady(){
-      try{
-        await refreshAllCards();
-      }catch(error){
-        console.error('Card refresh failed:',error);
-      }
-    }
-
-    document.addEventListener('bus:token-ready',()=>{ handleTokenReady(); });
-
-    if(localStorage.getItem('tgc_token')){
-      handleTokenReady();
-    }
-  </script>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Primary">
+      <div class="sidebar-brand">BUS Core</div>
+      <nav class="sidebar-nav">
+        <button class="sidebar-tab" data-tab="inventory" type="button">Inventory</button>
+        <button class="sidebar-tab" data-tab="vendors" type="button">Vendors</button>
+        <button class="sidebar-tab" data-tab="manufacturing" type="button">Manufacturing</button>
+        <button class="sidebar-tab" data-tab="tasks" type="button">Tasks</button>
+        <button class="sidebar-tab" data-tab="backup" type="button">Backup</button>
+        <button class="sidebar-tab" data-tab="settings" type="button">Settings</button>
+      </nav>
+    </aside>
+    <div class="workspace">
+      <header class="app-header">
+        <div class="header-left">
+          <label class="writes-toggle">
+            <input type="checkbox" id="writes-toggle" checked>
+            <span class="toggle-indicator"></span>
+            <span class="toggle-label" id="writes-toggle-status">Writes Enabled</span>
+          </label>
+          <span class="license-badge" id="license-badge">License</span>
+        </div>
+        <div class="header-right">
+          <span class="app-version" id="app-version">v0.6</span>
+        </div>
+      </header>
+      <main id="main" class="main"></main>
+    </div>
+  </div>
+  <div id="modal-root"></div>
+  <script src="js/api.js"></script>
+  <script src="js/ui/dom.js"></script>
+  <script src="js/ui/modals.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/cards/inventory.js"></script>
+  <script src="js/cards/vendors.js"></script>
+  <script src="js/cards/manufacturing.js"></script>
+  <script src="js/cards/tasks.js"></script>
+  <script src="js/cards/backup.js"></script>
+  <script src="js/cards/settings.js"></script>
+  <script src="js/cards/rfq.js"></script>
 </body>
 </html>
