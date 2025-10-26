@@ -92,7 +92,9 @@
     return { refresh };
   }
 
-  window.Dom = { $, el, bindDisabledWithProGate };
+  const helpers = { $, el, bindDisabledWithProGate };
+  window.Dom = window.Dom || helpers;
+  Object.assign(window.Dom, helpers);
   // Maintain backwards compatibility with any legacy code paths that still
   // reference the old uppercase namespace.
   window.DOM = window.Dom;
