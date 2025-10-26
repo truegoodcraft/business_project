@@ -163,7 +163,7 @@ async def ui_nocache_headers(request: Request, call_next):
 
 @APP.get("/")
 def _root():
-    return RedirectResponse(url="/ui/")
+    return RedirectResponse(url="/ui/shell.html")
 
 
 TOKEN_FILE = Path("data/session_token.txt")

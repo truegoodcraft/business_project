@@ -1,167 +1,136 @@
-(function(){
-  const initializedCards = new WeakSet();
+import { getLicense, apiGet, apiPost } from "/ui/js/token.js";
+import { mountWrites } from "/ui/js/cards/writes.js";
+import { mountOrganizer } from "/ui/js/cards/organizer.js";
+import { mountDev } from "/ui/js/cards/dev.js";
 
-  if (!window.Cards || typeof window.Cards.register !== 'function') {
-    window.Cards = {
-      register(name, module){
-        if (!name || !module || typeof module.render !== 'function') {
-          console.warn('Card registration skipped for', name);
-          return;
-        }
-        if (typeof window.registerCard === 'function') {
-          window.registerCard(name, () => module);
-        }
-      }
-    };
+const mounts = {
+  writes: mountWrites,
+  organizer: mountOrganizer,
+  dev: mountDev,
+};
+
+function setActiveTab(name, buttons){
+  buttons.forEach(button => {
+    button.classList.toggle("active", button.dataset.tab === name);
+  });
+}
+
+async function initializeLicense(){
+  try {
+    const lic = await getLicense();
+    const badge = document.getElementById("license");
+    if (badge) {
+      const tier = lic && typeof lic.tier === "string" ? lic.tier : "Unknown";
+      badge.textContent = `License: ${tier}`;
+    }
+  } catch (error) {
+    console.error("Failed to load license", error);
   }
+}
 
-  function updateLicenseBadge(license){
-    const badge = document.getElementById('license-badge');
-    if (!badge) return;
-    const tier = license && typeof license.tier === 'string' ? license.tier.trim() : '';
-    badge.textContent = tier ? tier : 'Unknown';
-  }
-
-  function syncWritesToggle(toggle){
-    const enabled = toggle.checked;
-    document.body.dataset.writesEnabled = enabled ? 'true' : 'false';
-    toggle.setAttribute('aria-checked', String(enabled));
-    const label = document.getElementById('writes-toggle-status');
+async function loadWritesState(toggle){
+  if (!toggle) return;
+  try {
+    const state = await apiGet("/dev/writes");
+    const enabled = state && typeof state.enabled === "boolean" ? state.enabled : false;
+    toggle.checked = enabled;
+    document.body.dataset.writesEnabled = enabled ? "true" : "false";
+    const label = document.getElementById("writes-toggle-status");
     if (label) {
-      label.textContent = enabled ? 'Writes Enabled' : 'Writes Disabled';
+      label.textContent = enabled ? "Writes Enabled" : "Writes Disabled";
     }
-    document.dispatchEvent(new CustomEvent('writes:changed', { detail: { enabled } }));
+  } catch (error) {
+    console.error("Failed to load writes state", error);
   }
+}
 
-  function initVersion(){
-    const node = document.getElementById('app-version');
-    if (!node) return;
-    const value = (typeof window.APP_VERSION === 'string' && window.APP_VERSION.trim()) ? window.APP_VERSION.trim() : 'v0.6';
-    node.textContent = value;
-  }
-
-  function ensureCardInit(name, card){
-    if (!card || typeof card.init !== 'function' || initializedCards.has(card)) {
+function attachWritesToggle(toggle){
+  if (!toggle) return;
+  toggle.addEventListener("change", async event => {
+    if (!event.isTrusted) {
       return;
     }
+    const enabled = toggle.checked;
+    toggle.disabled = true;
     try {
-      card.init();
+      await apiPost("/dev/writes", { enabled });
+      document.body.dataset.writesEnabled = enabled ? "true" : "false";
+      const label = document.getElementById("writes-toggle-status");
+      if (label) {
+        label.textContent = enabled ? "Writes Enabled" : "Writes Disabled";
+      }
+      document.dispatchEvent(new CustomEvent("writes:changed", { detail: { enabled } }));
     } catch (error) {
-      console.error('Card init failed:', name, error);
+      console.error("Failed to update writes", error);
+      toggle.checked = !enabled;
     } finally {
-      initializedCards.add(card);
-    }
-  }
-
-  async function renderCard(name, main){
-    if (!main || !window.CardBus) {
-      return;
-    }
-    main.innerHTML = '';
-    const container = document.createElement('div');
-    container.className = 'card';
-    main.appendChild(container);
-    const card = window.CardBus.getCard(name);
-    if (!card || typeof card.render !== 'function') {
-      container.textContent = 'Module unavailable.';
-      return;
-    }
-    ensureCardInit(name, card);
-    try {
-      await Promise.resolve(card.render(container));
-    } catch (error) {
-      container.textContent = 'Error: ' + (error && error.message ? error.message : String(error));
-      console.error('Card render failed:', name, error);
-    }
-  }
-
-  function initTabs(main){
-    const buttons = Array.from(document.querySelectorAll('.sidebar-tab'));
-    async function activate(name){
-      buttons.forEach(button => {
-        const isActive = button.dataset.tab === name;
-        button.classList.toggle('active', isActive);
-      });
-      if (name) {
-        await renderCard(name, main);
-      }
-    }
-    buttons.forEach(button => {
-      button.addEventListener('click', event => {
-        event.preventDefault();
-        const { tab } = button.dataset || {};
-        if (tab) {
-          activate(tab);
-        }
-      });
-    });
-    return { buttons, activate };
-  }
-
-  document.addEventListener('DOMContentLoaded', async () => {
-    __diag && __diag.log('app DOMContentLoaded');
-    if (!window.API || !window.Dom || !window.Modals || !window.CardBus) {
-      console.error('deps missing');
-      return;
-    }
-
-    if (!document.body.dataset.writesEnabled) {
-      document.body.dataset.writesEnabled = 'true';
-    }
-
-    initVersion();
-
-    const toggle = document.getElementById('writes-toggle');
-    if (toggle) {
-      if (toggle.checked === undefined) {
-        toggle.checked = true;
-      }
-      syncWritesToggle(toggle);
-      toggle.addEventListener('change', () => syncWritesToggle(toggle));
-    }
-
-    document.addEventListener('license:updated', event => {
-      updateLicenseBadge(event.detail);
-    });
-
-    let licenseData = null;
-    try {
-      licenseData = await window.API.loadLicense();
-      __diag && __diag.log('license loaded');
-    } catch (error) {
-      console.error(error);
-    }
-
-    CardBus.provideDeps({ API: window.API, Dom: window.Dom, Modals: window.Modals });
-
-    if (licenseData) {
-      updateLicenseBadge(licenseData);
-    } else {
-      updateLicenseBadge(null);
-    }
-
-    const main = document.getElementById('main');
-    if (!main) {
-      return;
-    }
-
-    const tabs = initTabs(main);
-
-    const defaultCard = window.CardBus.getCard('inventory');
-    if (defaultCard && typeof defaultCard.render === 'function') {
-      tabs.activate('inventory');
-      return;
-    }
-
-    const available = Object.keys(window.Cards || {}).filter(name => {
-      const card = window.CardBus.getCard(name);
-      return card && typeof card.render === 'function';
-    });
-
-    if (available.length > 0) {
-      tabs.activate(available[0]);
-    } else {
-      console.warn('No cards registered.');
+      toggle.disabled = false;
     }
   });
-})();
+
+  document.addEventListener("writes:changed", event => {
+    if (!event || !event.detail || typeof event.detail.enabled !== "boolean") {
+      return;
+    }
+    if (!document.contains(toggle)) {
+      return;
+    }
+    if (toggle.checked !== event.detail.enabled) {
+      toggle.checked = event.detail.enabled;
+      const label = document.getElementById("writes-toggle-status");
+      if (label) {
+        label.textContent = event.detail.enabled ? "Writes Enabled" : "Writes Disabled";
+      }
+      document.body.dataset.writesEnabled = event.detail.enabled ? "true" : "false";
+    }
+  });
+}
+
+function mountCard(name, view){
+  const mount = mounts[name];
+  if (!mount) {
+    view.textContent = "Module unavailable.";
+    return;
+  }
+  const card = document.createElement("div");
+  card.className = "card";
+  view.replaceChildren(card);
+  try {
+    const result = mount(card);
+    if (result && typeof result.then === "function") {
+      result.catch(error => {
+        console.error("Card mount failed", error);
+        card.textContent = `Error: ${error.message}`;
+      });
+    }
+  } catch (error) {
+    console.error("Card mount failed", error);
+    card.textContent = `Error: ${error.message}`;
+  }
+}
+
+document.addEventListener("DOMContentLoaded", async () => {
+  const view = document.getElementById("view");
+  if (!view) {
+    return;
+  }
+
+  await initializeLicense();
+
+  const toggle = document.getElementById("writes-toggle");
+  attachWritesToggle(toggle);
+  await loadWritesState(toggle);
+
+  const buttons = Array.from(document.querySelectorAll(".sidebar-tab"));
+  buttons.forEach(button => {
+    button.addEventListener("click", () => {
+      const tab = button.dataset.tab;
+      if (!tab) return;
+      setActiveTab(tab, buttons);
+      mountCard(tab, view);
+    });
+  });
+
+  setActiveTab("writes", buttons);
+  mountCard("writes", view);
+});
