@@ -144,9 +144,7 @@ def _find_ui_dir() -> Path:
 UI_DIR = _find_ui_dir()
 UI_STATIC_DIR = UI_DIR
 print(f"[ui] Serving /ui/ from: {UI_DIR}")
-print(
-    "[auth] expecting token via header/cookie (X-Session-Token header, Authorization Bearer, session_token cookie)"
-)
+print("[auth] X-Session-Token and Authorization: Bearer supported")
 
 # (Re)mount static UI
 try:
@@ -194,9 +192,18 @@ def session_token(response: Response):
         secure=False,
         httponly=False,
     )
+    response.set_cookie(
+        key="session_token",
+        value=tok,
+        path="/",
+        samesite="lax",
+        secure=False,
+        httponly=False,
+    )
     return {"token": tok}
 LICENSE_NAME = "PolyForm-Noncommercial-1.0.0"
 LICENSE_URL = "https://polyformproject.org/licenses/noncommercial/1.0.0/"
+LICENSE = get_license()
 
 CORE: CoreAlpha | None = None
 RUN_ID: str = ""
@@ -280,32 +287,37 @@ def _require_core() -> CoreAlpha:
     return CORE
 
 
-def get_session_token(request: Request) -> str | None:
-    header_token = request.headers.get("X-Session-Token")
-    if header_token:
-        return header_token
-
-    auth_header = request.headers.get("Authorization")
-    if auth_header:
-        parts = auth_header.split(" ", 1)
-        if len(parts) == 2 and parts[0].lower() == "bearer":
-            bearer_token = parts[1].strip()
-            if bearer_token:
-                return bearer_token
-
-    cookie_token = request.cookies.get("session_token")
-    if cookie_token:
-        return cookie_token
-
-    legacy_cookie_token = request.cookies.get("X-Session-Token")
-    if legacy_cookie_token:
-        return legacy_cookie_token
-
+def _extract_token(req: Request) -> str | None:
+    h = req.headers.get("X-Session-Token") or req.headers.get("Authorization")
+    if h and h.lower().startswith("bearer "):
+        h = h.split(" ", 1)[1].strip()
+    if h:
+        return h
+    cookie = req.cookies.get("session_token")
+    if cookie:
+        return cookie
+    legacy = req.cookies.get("X-Session-Token")
+    if legacy:
+        return legacy
     return None
 
 
+def get_session_token(request: Request) -> str | None:
+    return _extract_token(request)
+
+
+def validate_session_token(token: Optional[str]) -> bool:
+    if not token:
+        return False
+    expected = SESSION_TOKEN or _load_or_create_token()
+    try:
+        return hmac.compare_digest(token, expected)
+    except Exception:
+        return token == expected
+
+
 def _require_token(token: Optional[str]) -> None:
-    if token != SESSION_TOKEN:
+    if not validate_session_token(token):
         raise HTTPException(status_code=401, detail="Invalid session token")
 
 
@@ -323,6 +335,13 @@ def require_token(request: Request) -> str:
     return token
 
 
+def _require_session(req: Request):
+    tok = _extract_token(req)
+    if not tok or not validate_session_token(tok):
+        raise HTTPException(status_code=401, detail="Invalid session token")
+    return tok
+
+
 def require_writes() -> None:
     if not get_writes_enabled():
         raise HTTPException(status_code=403, detail={"error": "writes_disabled"})
@@ -337,10 +356,6 @@ oauth = APIRouter()
 
 def _broker():
     return get_broker()
-
-
-class WritesBody(BaseModel):
-    enabled: bool
 
 
 class ExportReq(BaseModel):
@@ -361,21 +376,24 @@ IMPORT_ERROR_CODES = {
 }
 
 
-@protected.get("/dev/writes")
-def dev_get_writes():
-    return {"enabled": get_writes_enabled()}
-
-
-@protected.post("/dev/writes")
-def dev_set_writes(body: WritesBody):
-    set_writes_enabled(bool(body.enabled))
-    return {"enabled": get_writes_enabled()}
-
-
 @APP.get("/dev/license")
-def dev_get_license_info(request: Request):
-    require_token(request)
-    return get_license()
+def dev_license(req: Request):
+    _require_session(req)
+    return LICENSE
+
+
+@APP.get("/dev/writes")
+def dev_writes_get(req: Request):
+    _require_session(req)
+    return {"enabled": get_writes_enabled()}
+
+
+@APP.post("/dev/writes")
+def dev_writes_set(req: Request, body: Dict[str, Any] = Body(...)):
+    _require_session(req)
+    enabled = bool(body.get("enabled", False))
+    set_writes_enabled(enabled)
+    return {"ok": True, "enabled": enabled}
 
 
 @protected.post("/app/export")
@@ -1708,7 +1726,7 @@ APP.include_router(protected)
 
 
 def build_app():
-    global CORE, RUN_ID, SESSION_TOKEN, LOG_FILE
+    global CORE, RUN_ID, SESSION_TOKEN, LOG_FILE, LICENSE
     policy_path = Path("config/policy.json")
     CORE = CoreAlpha(policy_path=policy_path)
     RUN_ID = CORE.run_id
@@ -1716,6 +1734,7 @@ def build_app():
     DATA.mkdir(parents=True, exist_ok=True)
     (DATA / "session_token.txt").write_text(SESSION_TOKEN, encoding="utf-8")
     CORE.configure_session_token(SESSION_TOKEN)
+    LICENSE = get_license()
     APP.state.broker = get_broker()
     LOG_FILE = LOGS / f"core_{RUN_ID}.log"
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
