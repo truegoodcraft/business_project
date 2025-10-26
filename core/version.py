@@ -1,5 +1,5 @@
 """Version information for TGC Alpha Core."""
 
-VERSION = "v.a0.01.3"
+VERSION = "v0.5.0"
 
 __all__ = ["VERSION"]
