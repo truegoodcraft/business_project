@@ -1,4 +1,8 @@
-registerCard('organizer', function ({ API, Dom, Modals }) {
+(function (w, name, factory) {
+  if (w.registerCard) { w.registerCard(name, factory); }
+  else if (w.enqueueCard) { w.enqueueCard(name, factory); }
+  else { (w.__cardQueue = w.__cardQueue || []).push([name, factory]); }
+})(window, 'organizer', function ({ API, Dom, Modals }) {
   const el = Dom && typeof Dom.el === 'function' ? Dom.el : null;
 
   function showError(output, error){
