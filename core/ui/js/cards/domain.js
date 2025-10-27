@@ -1,3 +1,5 @@
+import { authHeaders, ensureToken } from '../token.js';
+
 let initialized = false;
 let vendorEditId = null;
 let itemEditId = null;
@@ -23,15 +25,25 @@ let itemTableEl;
 let itemFilterSelect;
 
 async function jsonRequest(url, options){
-  const opts = options||{};
-  opts.headers = opts.headers || {};
-  if(opts.body && !opts.headers['Content-Type']){
-    opts.headers['Content-Type']='application/json';
+  const opts = { ...(options || {}) };
+  const headers = { ...(opts.headers || {}) };
+  if(opts.body && !headers['Content-Type']){
+    headers['Content-Type']='application/json';
   }
+  Object.assign(headers, authHeaders());
+  opts.headers = headers;
   const resp = await fetch(url, opts);
+  if(resp.status === 401){
+    localStorage.removeItem('bus.token');
+    await ensureToken();
+    return jsonRequest(url, options);
+  }
   if(!resp.ok){
     const text = await resp.text();
     throw new Error(text || resp.statusText);
+  }
+  if(resp.status === 204){
+    return {};
   }
   return resp.json();
 }

@@ -1,44 +1,33 @@
-import { apiGet, apiPost } from '../token.js';
+import { apiGet, apiPost, apiJson } from '../token.js';
 
-export async function mountDev(el) {
-  el.innerHTML = `
-    <h2>Dev</h2>
-    <div style="margin:8px 0;">
-      <button class="btn" id="ping">Ping /health</button>
-      <span id="pingResult"></span>
-    </div>
-    <div style="margin:8px 0;">
-      <button class="btn" id="toggleWrites">Toggle Writes</button>
-      <span id="writesState"></span>
-    </div>
-  `;
+export function mountDev(container) {
+  container.innerHTML = `
+    <div class="card">
+      <button id="btn-ping" class="btn">Ping Plugin</button>
+      <pre id="ping-res" class="log"></pre>
+      <div style="margin-top:12px">
+        <button id="btn-writes" class="btn">Toggle Writes</button>
+        <span id="writes-state" class="badge"></span>
+      </div>
+    </div>`;
+  wire();
+}
 
-  const pingBtn = el.querySelector('#ping');
-  const pingRes = el.querySelector('#pingResult');
-  pingBtn.onclick = async () => {
-    try { await apiGet('/health'); pingRes.textContent = 'OK'; }
-    catch (e) { pingRes.textContent = 'FAIL'; console.error(e); }
+async function wire() {
+  document.getElementById('btn-ping').onclick = async () => {
+    const r = await apiGet('/health');
+    document.getElementById('ping-res').textContent = JSON.stringify({ status: r.status }, null, 2);
   };
-
-  const wBtn = el.querySelector('#toggleWrites');
-  const wState = el.querySelector('#writesState');
-
-  async function refreshWrites() {
-    try {
-      const s = await apiGet('/dev/writes');
-      wState.textContent = s.enabled ? 'enabled' : 'disabled';
-    } catch (e) {
-      wState.textContent = 'unknown';
-      console.error(e);
-    }
-  }
-  wBtn.onclick = async () => {
-    try {
-      const s = await apiGet('/dev/writes');
-      await apiPost('/dev/writes', { enabled: !s.enabled });
-      await refreshWrites();
-    } catch (e) { console.error(e); }
+  document.getElementById('btn-writes').onclick = async () => {
+    const s = await apiJson('/dev/writes');
+    const next = !s.enabled;
+    await apiPost('/dev/writes', { enabled: next });
+    await updateWrites();
   };
+  await updateWrites();
+}
 
-  refreshWrites();
+async function updateWrites() {
+  const s = await apiJson('/dev/writes');
+  document.getElementById('writes-state').textContent = s.enabled ? 'writes: ON' : 'writes: OFF';
 }
