@@ -19,5 +19,5 @@ sqlalchemy
 Send2Trash==1.8.2
 pywin32>=306; platform_system == "Windows"
 
-Jinja2>=3.1.4
+Jinja2>=3.1
 reportlab>=4.2.0  # optional; only needed for fmt="pdf"
