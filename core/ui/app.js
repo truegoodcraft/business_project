@@ -1,4 +1,4 @@
-import { ensureToken, apiGet, apiPost } from "/ui/js/token.js";
+import { ensureToken, apiGet, apiPost } from "./js/token.js";
 import { mountWrites }    from "/ui/js/cards/writes.js";
 import { mountOrganizer } from "/ui/js/cards/organizer.js";
 import { mountBackup }    from "/ui/js/cards/backup.js";
@@ -72,14 +72,20 @@ function switchTab(id){
   if (el) el.click();
 }
 
-(async function boot(){
-  try{
+document.addEventListener("DOMContentLoaded", async () => {
+  try {
+    await ensureToken();
+    try {
+      await apiGet("/health");
+      console.log("BOOT OK");
+    } catch (e) {
+      console.error(e);
+    }
     await mountHeader();
     bindTabs();
     tabs[currentTab]();
-    console.log("BOOT OK");
-  }catch(e){
+  } catch (e) {
     console.error("BOOT FAILED", e);
     app.innerHTML = `<pre style="color:red;">${e}</pre>`;
   }
-})();
+});

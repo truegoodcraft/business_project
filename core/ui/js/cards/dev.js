@@ -1,31 +1,15 @@
-import { ensureToken, apiGet } from "/ui/js/token.js";
+import { apiGet } from "../token.js";
 
-export function mountDev(container){
+export function mountDev(container) {
   container.innerHTML = `
-    <div class="card">
-      <h2>Dev Tools</h2>
-      <button id="ping">Ping Plugin</button>
-      <pre id="out"></pre>
-    </div>`;
-  document.getElementById("ping").onclick = ping;
-}
-
-async function ping(){
-  const out = document.getElementById("out");
-  try{
-    await ensureToken();
-    const res = await apiGet("/health");
-    out.textContent = JSON.stringify(res, null, 2);
-  }catch(e){
-    out.textContent = JSON.stringify(e, null, 2);
-  }
-  document.getElementById("ping").onclick = async () => {
+    <div class="card"><button id="btnPing">Ping Plugin</button>
+    <pre id="ping-res"></pre></div>`;
+  document.getElementById("btnPing").onclick = async () => {
     try {
-      const { ensureToken } = await import("/ui/js/token.js");
-      const res = await fetch("/health", { headers: { "X-Session-Token": await ensureToken() }});
-      document.getElementById("out").textContent = JSON.stringify(await res.json(), null, 2);
+      const j = await apiGet("/health");
+      document.getElementById("ping-res").textContent = JSON.stringify(j, null, 2);
     } catch (e) {
-      document.getElementById("out").textContent = "Error: " + e;
+      document.getElementById("ping-res").textContent = String(e);
     }
   };
 }
