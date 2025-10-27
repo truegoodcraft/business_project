@@ -1,4 +1,4 @@
-import { ensureToken, apiGet, apiPost } from "./js/token.js";
+import { ensureToken, apiGet, apiPost, currentToken } from "./js/token.js";
 import { mountWrites }    from "/ui/js/cards/writes.js";
 import { mountOrganizer } from "/ui/js/cards/organizer.js";
 import { mountBackup }    from "/ui/js/cards/backup.js";
@@ -23,6 +23,77 @@ const tabs = {
   dev: () => mountDev(app),
 };
 
+document.addEventListener('DOMContentLoaded', init);
+
+async function init() {
+  try {
+    console.log('BOOT OK');
+    await ensureToken();
+
+    // header writes toggle
+    const hdr = document.getElementById('sidebar') || document.body;
+    let bar = document.getElementById('bus-header');
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'bus-header';
+      bar.style.padding = '6px 10px';
+      bar.style.display = 'flex';
+      bar.style.gap = '8px';
+      bar.style.alignItems = 'center';
+      bar.style.fontSize = '12px';
+      hdr.prepend(bar);
+    }
+    const wBadge = document.createElement('span');
+    const wBtn   = document.createElement('button');
+    wBtn.className = 'btn';
+    wBtn.textContent = 'Toggle Writes';
+    bar.replaceChildren(
+      tokenSpan(), wBtn, wBadge
+    );
+
+    async function refreshWrites() {
+      try {
+        const s = await apiGet('/dev/writes');
+        wBadge.textContent = s?.enabled ? 'WRITES: ON' : 'WRITES: OFF';
+      } catch { wBadge.textContent = 'WRITES: ?'; }
+    }
+    wBtn.onclick = async () => {
+      try {
+        const s = await apiPost('/dev/writes', { enabled: undefined }); // backend flips or honors provided
+        wBadge.textContent = s?.enabled ? 'WRITES: ON' : 'WRITES: OFF';
+        if (currentTab === 'writes') mountWrites(app);
+      } catch (e) { console.error(e); }
+    };
+
+    function tokenSpan() {
+      const s = document.createElement('span');
+      s.title = 'session token used for requests';
+      s.textContent = 'token… ' + (currentToken().slice(0,8) || 'none');
+      return s;
+    }
+
+    // sanity check: /health with token
+    try {
+      const r = await fetch('/health', {
+        headers: {
+          'X-Session-Token': currentToken(),
+          'Authorization': 'Bearer ' + currentToken()
+        }
+      });
+      console.log('health', r.status);
+    } catch (e) { console.error('health error', e); }
+
+    await refreshWrites();
+
+    await mountHeader();
+    bindTabs();
+    tabs[currentTab]();
+  } catch (e) {
+    console.error('BOOT FAILED', e);
+    app.innerHTML = `<pre style="color:red;">${e}</pre>`;
+  }
+}
+
 function bindTabs() {
   document.querySelectorAll(".tab").forEach(tab => {
     tab.onclick = () => {
@@ -36,26 +107,14 @@ function bindTabs() {
 }
 
 async function mountHeader() {
-  await ensureToken();
-  const [license, writes] = await Promise.all([
-    apiGet("/dev/license"),
-    apiGet("/dev/writes")
-  ]);
+  const license = await apiGet("/dev/license");
   const header = document.createElement("div");
   header.innerHTML = `
     <div style="margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #333;font-size:13px;color:#aaa;">
-      License: <strong>${license.tier}</strong> |
-      Writes: <strong id="writes-status">${writes.enabled ? "ON" : "OFF"}</strong>
-      <button id="toggle-writes" style="margin-left:8px;font-size:12px;">Toggle</button>
+      License: <strong>${license.tier}</strong>
     </div>
   `;
   app.prepend(header);
-  header.querySelector("#toggle-writes").onclick = async () => {
-    const next = await apiPost("/dev/writes",{enabled: !(writes.enabled)});
-    writes.enabled = next.enabled;
-    header.querySelector("#writes-status").textContent = next.enabled ? "ON" : "OFF";
-    if (currentTab === "writes") mountWrites(app);
-  };
 }
 
 window.bus = Object.freeze({
@@ -71,21 +130,3 @@ function switchTab(id){
   const el = document.querySelector(`[data-tab="${id}"]`);
   if (el) el.click();
 }
-
-document.addEventListener("DOMContentLoaded", async () => {
-  try {
-    await ensureToken();
-    try {
-      await apiGet("/health");
-      console.log("BOOT OK");
-    } catch (e) {
-      console.error(e);
-    }
-    await mountHeader();
-    bindTabs();
-    tabs[currentTab]();
-  } catch (e) {
-    console.error("BOOT FAILED", e);
-    app.innerHTML = `<pre style="color:red;">${e}</pre>`;
-  }
-});
