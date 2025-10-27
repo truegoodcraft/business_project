@@ -1,1 +1,3 @@
-export function mountRfq(c){ c.innerHTML=`<div class="card"><h2>RFQ</h2><p>Stub.</p></div>`; }
+export function mountRfq(container){
+  container.innerHTML = `<div class="card"><h2>RFQ</h2><p>Stub: Request for Quote.</p></div>`;
+}

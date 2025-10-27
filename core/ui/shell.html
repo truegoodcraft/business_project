@@ -1,14 +1,37 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
+  <meta charset="utf-8">
   <title>BUS Core</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="stylesheet" href="/ui/css/app.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/ui/css/app.css">
+  <style>
+    :root { --bg:#1a1a1a; --fg:#eee; --accent:#0a84ff; --sidebar:#222; }
+    *{box-sizing:border-box}
+    body{margin:0;font:14px/1.5 system-ui,Segoe UI,Arial;background:var(--bg);color:var(--fg);display:flex;height:100vh}
+    #sidebar{width:200px;background:var(--sidebar);padding:16px 0;border-right:1px solid #333}
+    #sidebar h1{margin:0 0 16px 16px;font-size:14px;color:#aaa}
+    .tab{padding:10px 16px;cursor:pointer;border-left:4px solid transparent}
+    .tab.active{background:#333;border-left-color:var(--accent);font-weight:600}
+    .tab:hover:not(.active){background:#2a2a2a}
+    #main{flex:1;padding:20px;overflow:auto}
+    .card{background:#242424;padding:16px;border-radius:8px;margin-bottom:16px}
+    .card h2{margin:0 0 8px;color:var(--accent)}
+    button{background:var(--accent);color:#fff;border:none;padding:8px 12px;border-radius:6px;cursor:pointer}
+    button:hover{opacity:.9}
+    pre{background:#111;padding:12px;border-radius:6px;overflow:auto;font-size:12px}
+  </style>
 </head>
 <body>
-  <nav id="sidebar"></nav>
-  <main id="main"><div id="app"></div></main>
+  <nav id="sidebar">
+    <h1>BUS Core</h1>
+    <div class="tab active" data-tab="writes">Writes</div>
+    <div class="tab" data-tab="tools">Tools</div>
+    <div class="tab" data-tab="dev">Dev</div>
+  </nav>
+  <main id="main">
+    <div id="app"></div>
+  </main>
   <script type="module" src="/ui/app.js"></script>
 </body>
 </html>
