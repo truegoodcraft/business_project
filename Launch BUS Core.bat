@@ -1,4 +1,11 @@
 @echo off
 setlocal
-powershell -ExecutionPolicy Bypass -File "%~dp0tools\launch_buscore.ps1"
+set "APPDIR=%LOCALAPPDATA%\BUSCore\app\business_project-main"
+set "LAUNCH=%APPDIR%\scripts\launch_buscore.ps1"
+if not exist "%LAUNCH%" (
+  echo Launcher missing: %LAUNCH%
+  exit /b 1
+)
+echo Using launcher: %LAUNCH%
+powershell -NoProfile -ExecutionPolicy Bypass -File "%LAUNCH%"
 endlocal

@@ -110,7 +110,7 @@ def _check_state(state_b64: str) -> bool:
         return False
 
 
-APP = FastAPI(title="BUS Core Alpha", version=VERSION)
+app = FastAPI(title="BUS Core Alpha", version=VERSION)
 
 
 # Add this function
@@ -121,20 +121,20 @@ def require_token(req: Request):
     return token
 
 
-# Add these routes to APP
-@APP.get("/dev/license")
+# Add these routes to app
+@app.get("/dev/license")
 async def dev_license(req: Request):
     require_token(req)
     return JSONResponse(LICENSE)
 
 
-@APP.get("/dev/writes")
+@app.get("/dev/writes")
 async def dev_writes_get(req: Request):
     require_token(req)
     return {"enabled": bool(WRITES_ENABLED)}
 
 
-@APP.post("/dev/writes")
+@app.post("/dev/writes")
 async def dev_writes_set(req: Request, body: dict):
     require_token(req)
     enabled = bool(body.get("enabled", False))
@@ -148,56 +148,32 @@ async def dev_writes_set(req: Request, body: dict):
     return {"enabled": enabled}
 
 
-# --- UI directory resolver ---
-def _find_ui_dir() -> Path:
-    # 1) explicit override
-    env = os.environ.get("BUS_UI_DIR")
-    if env:
-        p = Path(env)
-        if (p / "index.html").exists():
-            return p.resolve()
-
-    here = Path(__file__).resolve()
-    # 2) launcher app folder
-    cand_app = Path(os.environ.get("LOCALAPPDATA", ".")) / "BUSCore" / "app" / "core" / "ui"
-    # 3) repo (run-from-source)
-    cand_repo = here.parents[2] / "core" / "ui"  # project_root/core/ui
-    # 4) cwd fallback
-    cand_cwd = Path.cwd() / "core" / "ui"
-
-    for c in (cand_app, cand_repo, cand_cwd):
-        if (c / "index.html").exists():
-            return c.resolve()
-    # last resort: create an empty temp dir so StaticFiles doesn't crash
-    tmp = here.parents[2] / "_missing_ui"
-    tmp.mkdir(parents=True, exist_ok=True)
-    (tmp / "index.html").write_text(
-        "<!doctype html><title>UI Missing</title>UI not found",
-        encoding="utf-8",
-    )
-    return tmp.resolve()
-
-
-UI_DIR = _find_ui_dir()
+# Static UI mount
+ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_UI_DIR = ROOT / "core" / "ui"
+UI_DIR = Path(os.environ.get("BUS_UI_DIR", DEFAULT_UI_DIR))
+UI_DIR.mkdir(parents=True, exist_ok=True)
 UI_STATIC_DIR = UI_DIR
-print(f"[ui] Serving /ui/ from: {UI_DIR}")
-print("[auth] X-Session-Token and Authorization: Bearer supported")
-
-# (Re)mount static UI
-try:
-    APP.mount("/ui", StaticFiles(directory=str(UI_DIR), html=True), name="ui")
-except Exception as e:  # pragma: no cover - best effort logging
-    print(f"[ui] mount failed: {e}")
+app.mount("/ui", StaticFiles(directory=str(UI_DIR), html=True), name="ui")
 
 
-@APP.get("/ui", include_in_schema=False)
-@APP.get("/ui/", include_in_schema=False)
-@APP.get("/ui/index.html", include_in_schema=False)
-def ui_redirect():
+@app.get("/ui", include_in_schema=False)
+@app.get("/ui/", include_in_schema=False)
+async def _ui_root():
     return RedirectResponse(url="/ui/shell.html", status_code=307)
 
 
-@APP.middleware("http")
+@app.get("/ui/index.html", include_in_schema=False)
+async def _ui_index_legacy():
+    return RedirectResponse(url="/ui/shell.html", status_code=307)
+
+
+@app.get("/health")
+async def health():
+    return {"ok": True}
+
+
+@app.middleware("http")
 async def ui_nocache_headers(request: Request, call_next):
     response = await call_next(request)
     if request.url.path.startswith("/ui/"):
@@ -205,7 +181,7 @@ async def ui_nocache_headers(request: Request, call_next):
     return response
 
 
-@APP.get("/")
+@app.get("/")
 def _root():
     return RedirectResponse(url="/ui/shell.html")
 
@@ -225,7 +201,7 @@ def _load_or_create_token() -> str:
         return secrets.token_urlsafe(32)
 
 
-@APP.get("/session/token")
+@app.get("/session/token")
 def session_token(response: Response):
     tok = _load_or_create_token()
     response.set_cookie(
@@ -308,7 +284,7 @@ def _resolve_plugin_ui_path(plugin_id: str, resource: str) -> Path | None:
     return None
 
 
-@APP.middleware("http")
+@app.middleware("http")
 async def _license_header_mw(request: Request, call_next):
     start = time.time()
     response = None
@@ -420,13 +396,13 @@ IMPORT_ERROR_CODES = {
 }
 
 
-@APP.get("/dev/license")
+@app.get("/dev/license")
 def dev_license(req: Request):
     _require_session(req)
     return LICENSE
 
 
-@APP.get("/dev/writes")
+@app.get("/dev/writes")
 def dev_writes_get(req: Request):
     _require_session(req)
     global WRITES_ENABLED
@@ -434,7 +410,7 @@ def dev_writes_get(req: Request):
     return {"enabled": WRITES_ENABLED}
 
 
-@APP.post("/dev/writes")
+@app.post("/dev/writes")
 def dev_writes_set(req: Request, body: dict):
     _require_session(req)
     enabled = bool(body.get("enabled", False))
@@ -552,7 +528,7 @@ _tmpl_env = Environment(
 )
 
 
-@APP.post("/app/rfq/generate")
+@app.post("/app/rfq/generate")
 def rfq_generate(
     body: RFQGen,
     token: str = Depends(require_token),
@@ -684,7 +660,7 @@ def rfq_generate(
     return StreamingResponse(BytesIO(content), media_type=media_type, headers=headers)
 
 
-@APP.post("/app/inventory/run")
+@app.post("/app/inventory/run")
 def inventory_run(
     body: InventoryRun,
     token: str = Depends(require_token),
@@ -1117,8 +1093,8 @@ def _prune_oauth_states() -> None:
         _OAUTH_STATES.pop(key, None)
 
 
-@APP.get("/ui/plugins/{plugin_id}")
-@APP.get("/ui/plugins/{plugin_id}/{resource_path:path}")
+@app.get("/ui/plugins/{plugin_id}")
+@app.get("/ui/plugins/{plugin_id}/{resource_path:path}")
 def ui_plugin_asset(plugin_id: str, resource_path: str = "index.html") -> FileResponse:
     path = _resolve_plugin_ui_path(plugin_id, resource_path)
     if not path:
@@ -1286,7 +1262,7 @@ def index_status():
     return _index_status_payload(broker)
 
 
-@APP.on_event("startup")
+@app.on_event("startup")
 async def _auto_index_if_stale() -> None:
     global BACKGROUND_INDEX_TASK
     try:
@@ -1503,7 +1479,7 @@ def plans_export(plan_id: str) -> Response:
 
 
 @protected.get("/health")
-def health() -> Dict[str, Any]:
+def protected_health() -> Dict[str, Any]:
     return _with_run_id(
         {
             "ok": True,
@@ -1769,8 +1745,8 @@ def server_restart() -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail="restart_failed") from exc
 
 
-APP.include_router(oauth)
-APP.include_router(protected)
+app.include_router(oauth)
+app.include_router(protected)
 
 
 def build_app():
@@ -1783,13 +1759,17 @@ def build_app():
     (DATA / "session_token.txt").write_text(SESSION_TOKEN, encoding="utf-8")
     CORE.configure_session_token(SESSION_TOKEN)
     LICENSE = get_license()
-    APP.state.broker = get_broker()
+    app.state.broker = get_broker()
     LOG_FILE = LOGS / f"core_{RUN_ID}.log"
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
     banner = f"[trust] mode={CORE.policy.mode} telemetry=off data={DATA} logs={LOGS}"
     print(banner)
     log(banner)
-    return APP, SESSION_TOKEN
+    return app, SESSION_TOKEN
 
 
-__all__ = ["APP", "UI_DIR", "UI_STATIC_DIR", "build_app", "SESSION_TOKEN"]
+def create_app():
+    return app
+
+
+__all__ = ["app", "UI_DIR", "UI_STATIC_DIR", "build_app", "create_app", "SESSION_TOKEN"]
