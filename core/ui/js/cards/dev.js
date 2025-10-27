@@ -19,4 +19,13 @@ async function ping(){
   }catch(e){
     out.textContent = JSON.stringify(e, null, 2);
   }
+  document.getElementById("ping").onclick = async () => {
+    try {
+      const { ensureToken } = await import("/ui/js/token.js");
+      const res = await fetch("/health", { headers: { "X-Session-Token": await ensureToken() }});
+      document.getElementById("out").textContent = JSON.stringify(await res.json(), null, 2);
+    } catch (e) {
+      document.getElementById("out").textContent = "Error: " + e;
+    }
+  };
 }
