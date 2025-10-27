@@ -152,9 +152,7 @@ async def dev_writes_set(req: Request, body: dict):
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_UI_DIR = ROOT / "core" / "ui"
 UI_DIR = Path(os.environ.get("BUS_UI_DIR", DEFAULT_UI_DIR))
-UI_DIR.mkdir(parents=True, exist_ok=True)
 UI_STATIC_DIR = UI_DIR
-app.mount("/ui", StaticFiles(directory=str(UI_DIR), html=True), name="ui")
 
 
 @app.get("/ui", include_in_schema=False)
@@ -1771,5 +1769,120 @@ def build_app():
 def create_app():
     return app
 
+
+# ===== UI + APP BOOTSTRAP (non-invasive) =====
+import os
+from pathlib import Path
+
+try:
+    _FASTAPI_AVAILABLE = True
+    from fastapi import FastAPI
+    from fastapi.responses import RedirectResponse
+    from fastapi.staticfiles import StaticFiles
+except Exception:  # pragma: no cover
+    _FASTAPI_AVAILABLE = False
+
+
+def _resolve_ui_dir() -> Path:
+    """Prefer BUS_UI_DIR then fallback to repo-relative core/ui. Never create '_missing_ui'."""
+    env = os.environ.get("BUS_UI_DIR")
+    if env:
+        p = Path(env)
+    else:
+        p = Path(__file__).resolve().parents[2] / "core" / "ui"
+    if not p.exists():
+        raise RuntimeError(f"[ui] BUS_UI_DIR missing or invalid: {p}")
+    return p
+
+
+def _ensure_app() -> "FastAPI":
+    """
+    Return a FastAPI app from any of:
+      - existing global `app`
+      - any global FastAPI instance
+      - any zero-arg callable returning FastAPI
+      - else a minimal FastAPI()
+    """
+
+    if not _FASTAPI_AVAILABLE:
+        raise RuntimeError("fastapi not installed")
+
+    g = globals()
+    # 1) existing global `app`
+    if "app" in g and isinstance(g["app"], FastAPI):  # type: ignore
+        return g["app"]  # type: ignore
+
+    # 2) any global FastAPI instance
+    for v in g.values():
+        if isinstance(v, FastAPI):
+            return v
+
+    # 3) any zero-arg callable returning FastAPI
+    for v in g.values():
+        if callable(v):
+            try:
+                obj = v()  # type: ignore
+                if isinstance(obj, FastAPI):
+                    return obj
+            except Exception:
+                pass
+
+    # 4) minimal app
+    return FastAPI()
+
+
+def _mount_ui(_app: "FastAPI") -> None:
+    ui_dir = _resolve_ui_dir()
+    globals()["UI_DIR"] = ui_dir
+    globals()["UI_STATIC_DIR"] = ui_dir
+    print(f"[ui] Serving /ui/ from: {ui_dir}")
+
+    def _has_get_route(path: str) -> bool:
+        for route in getattr(_app, "routes", []):
+            methods = getattr(route, "methods", None)
+            if getattr(route, "path", None) == path and methods and "GET" in methods:
+                return True
+        return False
+
+    # redirect /ui and /ui/index.html → /ui/shell.html
+    def _redirect() -> RedirectResponse:
+        return RedirectResponse(url="/ui/shell.html", status_code=307)
+
+    if not _has_get_route("/ui"):
+        _app.add_api_route(
+            "/ui",
+            _redirect,
+            methods=["GET"],
+            include_in_schema=False,
+        )
+    if not _has_get_route("/ui/index.html"):
+        _app.add_api_route(
+            "/ui/index.html",
+            _redirect,
+            methods=["GET"],
+            include_in_schema=False,
+        )
+
+    mounted = False
+    for route in getattr(_app, "routes", []):
+        if getattr(route, "path", None) == "/ui" and getattr(route, "app", None) is not None:
+            mounted = True
+            break
+
+    if not mounted:
+        _app.mount("/ui", StaticFiles(directory=str(ui_dir), html=True), name="ui")
+
+
+# materialize global `app` if missing, then ensure /ui mount
+try:
+    app  # type: ignore  # noqa: F821
+except NameError:
+    app = _ensure_app()
+try:
+    _mount_ui(app)
+except Exception as _e:  # last resort: fail loud
+    raise
+
+# ===== END UI + APP BOOTSTRAP =====
 
 __all__ = ["app", "UI_DIR", "UI_STATIC_DIR", "build_app", "create_app", "SESSION_TOKEN"]
