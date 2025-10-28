@@ -1922,14 +1922,16 @@ def _mount_ui(_app: "FastAPI") -> None:
 
 # materialize global `app` if missing, then ensure /ui mount
 try:
-    app  # type: ignore  # noqa: F821
+    _app  # type: ignore  # noqa: F821
 except NameError:
-    app = _ensure_app()
+    _app = _ensure_app()
 try:
-    _mount_ui(app)
+    _mount_ui(_app)
 except Exception as _e:  # last resort: fail loud
     raise
 
 # ===== END UI + APP BOOTSTRAP =====
 
 __all__ = ["app", "UI_DIR", "UI_STATIC_DIR", "build_app", "create_app", "SESSION_TOKEN"]
+
+app = _app  # ensure uvicorn core.api.http:app serves the configured instance
