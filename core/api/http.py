@@ -1933,5 +1933,4 @@ except Exception as _e:  # last resort: fail loud
 # ===== END UI + APP BOOTSTRAP =====
 
 __all__ = ["app", "UI_DIR", "UI_STATIC_DIR", "build_app", "create_app", "SESSION_TOKEN"]
-
-app = _app  # make uvicorn core.api.http:app serve the real instance
+app = _app  # export the real configured app (with /ui mount) to uvicorn
