@@ -34,14 +34,18 @@ async function updateWrites() {
 
 // keep inline onclick support but ensure headers are set
 window.pingPlugin = async () => {
-  const out = document.getElementById('ping-res');
   try {
-    await ensureToken();                  // guarantee token
-    const res = await apiGet('/health');  // sends both headers
-    out.textContent = `status ${res.status}`;
-    return res.status;
+    const { ensureToken, request } = await import('/ui/js/token.js');
+    await ensureToken();                           // guarantee token in storage
+    const r = await request('/health', { method: 'GET' }); // injects both headers
+    console.log('ping status', r.status);
+    const out = document.getElementById('ping-res');
+    if (out) out.textContent = `status ${r.status}`;
+    return r.status;
   } catch (e) {
-    out.textContent = 'error: ' + e;
+    console.error('ping failed', e);
+    const out = document.getElementById('ping-res');
+    if (out) out.textContent = 'error: ' + e;
     return 0;
   }
 };

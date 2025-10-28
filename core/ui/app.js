@@ -1,4 +1,5 @@
-import { ensureToken, apiGet, apiPost, apiJson } from "./js/token.js";
+import { ensureToken } from "./js/token.js";
+import { apiGet, apiPost, apiJson } from "./js/token.js";
 import { mountWrites }    from "/ui/js/cards/writes.js";
 import { mountOrganizer } from "/ui/js/cards/organizer.js";
 import { mountBackup }    from "/ui/js/cards/backup.js";
