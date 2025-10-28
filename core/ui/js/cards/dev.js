@@ -35,17 +35,16 @@ async function updateWrites() {
 // AUTHED Ping for inline onclick from shell.html
 window.pingPlugin = async () => {
   try {
-    const { ensureToken, apiGet } = await import('/ui/js/token.js'); // absolute path, no bundle confusion
-    await ensureToken();                               // guarantees token in localStorage
-    const r = await apiGet('/health');                 // injects X-Session-Token + Authorization
-    console.log('ping status', r.status);
+    await ensureToken();
+    const r = await apiGet('/health');
     const out = document.getElementById('ping-res');
     if (out) out.textContent = `status ${r.status}`;
+    console.log('ping status', r.status);
     return r.status;
   } catch (e) {
-    console.error('ping failed', e);
     const out = document.getElementById('ping-res');
     if (out) out.textContent = 'error: ' + e;
+    console.error('ping failed', e);
     return 0;
   }
 };

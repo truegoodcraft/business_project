@@ -1,5 +1,10 @@
 const KEY = 'bus.token';
 
+export function authHeaders() {
+  const t = localStorage.getItem(KEY);
+  return t ? { 'X-Session-Token': t, 'Authorization': `Bearer ${t}` } : {};
+}
+
 export async function ensureToken() {
   let t = localStorage.getItem(KEY);
   if (!t) {
