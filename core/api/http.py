@@ -1831,6 +1831,14 @@ def _ensure_app() -> "FastAPI":
     return FastAPI()
 
 
+FAVICON_ICO_B64 = (
+    "AAABAAEAEBAAAAAAIACUAAAAFgAAAIlQTkcNChoKAAAADUlIRFIAAAAQAAAAEAgGAAAAH/P/YQAA"
+    "AFtJREFUeJyl0dEOgCAIheHTbb52PfffXbNChZMbm8L2MUT7AYDcEKA/yH1xkcfDQT6JKhImK8iw"
+    "kEWmxQyy7LBCUnPOkPRvj5DSziOkBERIGXgjFtAjGyD3tFNc0v3LPSUE0s8AAAAASUVORK5CYII="
+)
+FAVICON_ICO_BYTES = base64.b64decode(FAVICON_ICO_B64)
+
+
 def _mount_ui(_app: "FastAPI") -> None:
     ui_dir = _resolve_ui_dir()
     globals()["UI_DIR"] = ui_dir
@@ -1859,6 +1867,16 @@ def _mount_ui(_app: "FastAPI") -> None:
         _app.add_api_route(
             "/ui/index.html",
             _redirect,
+            methods=["GET"],
+            include_in_schema=False,
+        )
+    if not _has_get_route("/ui/favicon.ico"):
+        async def _favicon() -> Response:
+            return Response(content=FAVICON_ICO_BYTES, media_type="image/x-icon")
+
+        _app.add_api_route(
+            "/ui/favicon.ico",
+            _favicon,
             methods=["GET"],
             include_in_schema=False,
         )
