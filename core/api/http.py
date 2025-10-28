@@ -1934,4 +1934,4 @@ except Exception as _e:  # last resort: fail loud
 
 __all__ = ["app", "UI_DIR", "UI_STATIC_DIR", "build_app", "create_app", "SESSION_TOKEN"]
 
-app = _app  # ensure uvicorn core.api.http:app serves the configured instance
+app = _app  # make uvicorn core.api.http:app serve the real instance
