@@ -34,12 +34,12 @@ const tabs = {
 
 document.addEventListener('DOMContentLoaded', async () => {
   try {
-    await ensureToken();
-    console.log('TOKEN OK');
+    await ensureToken();              // wait for token first
+    console.log('BOOT OK');
+    await init();                     // init may call checkHealth()
   } catch (e) {
-    console.error('TOKEN FAIL', e);
+    console.error('BOOT FAIL', e);
   }
-  await init(); // init calls checkHealth(), etc., after token present
 });
 
 window.addEventListener('bus:token-ready', (event) => {

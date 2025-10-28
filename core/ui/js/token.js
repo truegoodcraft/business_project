@@ -1,10 +1,4 @@
-// core/ui/js/token.js
 const KEY = 'bus.token';
-
-export function authHeaders() {
-  const t = localStorage.getItem(KEY);
-  return t ? { 'X-Session-Token': t, 'Authorization': `Bearer ${t}` } : {};
-}
 
 export async function ensureToken() {
   let t = localStorage.getItem(KEY);
@@ -20,19 +14,15 @@ export async function ensureToken() {
   return t;
 }
 
-// Centralized request that always injects headers
 export async function request(input, init = {}) {
   const t = localStorage.getItem(KEY) || await ensureToken();
   const headers = new Headers(init.headers || {});
   if (!headers.get('X-Session-Token')) headers.set('X-Session-Token', t);
-  if (!headers.get('Authorization')) headers.set('Authorization', `Bearer ${t}`);
+  if (!headers.get('Authorization'))   headers.set('Authorization', `Bearer ${t}`);
   return fetch(input, { ...init, headers });
 }
 
-// Convenience helpers (use request())
-export async function apiGet(path) {
-  return request(path, { method: 'GET' });
-}
+export async function apiGet(path)  { return request(path, { method: 'GET' }); }
 export async function apiPost(path, body) {
   const r = await request(path, {
     method: 'POST',
@@ -41,7 +31,4 @@ export async function apiPost(path, body) {
   });
   return r.json();
 }
-export async function apiJson(path) {
-  const r = await request(path, { method: 'GET' });
-  return r.json();
-}
+export async function apiJson(path) { const r = await request(path); return r.json(); }
