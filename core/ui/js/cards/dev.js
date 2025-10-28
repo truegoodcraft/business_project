@@ -32,12 +32,12 @@ async function updateWrites() {
     s.enabled ? 'writes: ON' : 'writes: OFF';
 }
 
-// keep inline onclick support but ensure headers are set
+// AUTHED Ping for inline onclick from shell.html
 window.pingPlugin = async () => {
   try {
-    const { ensureToken, request } = await import('/ui/js/token.js');
-    await ensureToken();                           // guarantee token in storage
-    const r = await request('/health', { method: 'GET' }); // injects both headers
+    const { ensureToken, apiGet } = await import('/ui/js/token.js'); // absolute path, no bundle confusion
+    await ensureToken();                               // guarantees token in localStorage
+    const r = await apiGet('/health');                 // injects X-Session-Token + Authorization
     console.log('ping status', r.status);
     const out = document.getElementById('ping-res');
     if (out) out.textContent = `status ${r.status}`;
