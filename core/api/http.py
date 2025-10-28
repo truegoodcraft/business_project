@@ -1881,6 +1881,29 @@ def _mount_ui(_app: "FastAPI") -> None:
             include_in_schema=False,
         )
 
+    def _serve_file(path: Path):
+        if not path.exists():
+            raise HTTPException(status_code=404)
+        return FileResponse(str(path))
+
+    shell_path = ui_dir / "shell.html"
+    if not _has_get_route("/ui/shell.html"):
+        _app.add_api_route(
+            "/ui/shell.html",
+            lambda: _serve_file(shell_path),
+            methods=["GET"],
+            include_in_schema=False,
+        )
+
+    app_js_path = ui_dir / "app.js"
+    if not _has_get_route("/ui/app.js"):
+        _app.add_api_route(
+            "/ui/app.js",
+            lambda: _serve_file(app_js_path),
+            methods=["GET"],
+            include_in_schema=False,
+        )
+
     mounted = False
     for route in getattr(_app, "routes", []):
         if getattr(route, "path", None) == "/ui" and getattr(route, "app", None) is not None:
