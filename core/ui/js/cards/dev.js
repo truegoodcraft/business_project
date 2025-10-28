@@ -1,4 +1,5 @@
-import { apiGet, apiPost, apiJson } from '../token.js';
+// core/ui/js/cards/dev.js
+import { ensureToken, apiGet, apiPost, apiJson } from '../token.js';
 
 export function mountDev(container) {
   container.innerHTML = `
@@ -14,17 +15,10 @@ export function mountDev(container) {
 }
 
 async function wire() {
-  document.getElementById('btn-ping').onclick = async () => {
-    try {
-      const r = await apiGet('/health');
-      document.getElementById('ping-res').textContent = `status ${r.status}`;
-    } catch (e) {
-      document.getElementById('ping-res').textContent = 'error: ' + e;
-    }
-  };
+  document.getElementById('btn-ping').onclick = window.pingPlugin;
 
   document.getElementById('btn-writes').onclick = async () => {
-    const s = await apiJson('/dev/writes');
+    const s = await apiJson('/dev/writes');    // {enabled:boolean}
     await apiPost('/dev/writes', { enabled: !s.enabled });
     updateWrites();
   };
@@ -37,3 +31,17 @@ async function updateWrites() {
   document.getElementById('writes-state').textContent =
     s.enabled ? 'writes: ON' : 'writes: OFF';
 }
+
+// keep inline onclick support but ensure headers are set
+window.pingPlugin = async () => {
+  const out = document.getElementById('ping-res');
+  try {
+    await ensureToken();                  // guarantee token
+    const res = await apiGet('/health');  // sends both headers
+    out.textContent = `status ${res.status}`;
+    return res.status;
+  } catch (e) {
+    out.textContent = 'error: ' + e;
+    return 0;
+  }
+};
