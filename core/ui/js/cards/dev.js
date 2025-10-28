@@ -1,3 +1,4 @@
+// core/ui/js/cards/dev.js
 import { apiGet, apiPost, apiJson } from '../token.js';
 
 export function mountDev(container) {
@@ -15,9 +16,12 @@ export function mountDev(container) {
 
 async function wire() {
   document.getElementById('btn-ping').onclick = async () => {
-    const r = await apiGet('/health');         // sends token headers
-    document.getElementById('ping-res').textContent =
-      JSON.stringify({ status: r.status }, null, 2);
+    try {
+      const r = await apiGet('/health'); // headers injected
+      document.getElementById('ping-res').textContent = `status ${r.status}`;
+    } catch (e) {
+      document.getElementById('ping-res').textContent = 'error: ' + e;
+    }
   };
 
   document.getElementById('btn-writes').onclick = async () => {
