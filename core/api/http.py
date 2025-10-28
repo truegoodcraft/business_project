@@ -1917,7 +1917,7 @@ def _mount_ui(_app: "FastAPI") -> None:
             break
 
     if not mounted:
-        _app.mount("/ui", StaticFiles(directory=str(ui_dir), html=True), name="ui")
+        app.mount("/ui", StaticFiles(directory=str(ui_dir), html=True), name="ui")
 
 
 # materialize global `app` if missing, then ensure /ui mount
