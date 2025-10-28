@@ -1,4 +1,4 @@
-import { ensureToken, apiGet, apiPost, withAuth } from "./js/token.js";
+import { ensureToken, apiGet, apiPost, apiJson } from "./js/token.js";
 import { mountWrites }    from "/ui/js/cards/writes.js";
 import { mountOrganizer } from "/ui/js/cards/organizer.js";
 import { mountBackup }    from "/ui/js/cards/backup.js";
@@ -15,6 +15,7 @@ let sessionToken = "";
 let licenseInfo = null;
 let writesState = null;
 let wBadge = null;
+let tokenDisplay = null;
 
 const tabs = {
   writes: async (ctx) => mountWrites(cardHost, ctx),
@@ -34,11 +35,17 @@ const tabs = {
 document.addEventListener('DOMContentLoaded', async () => {
   try {
     sessionToken = await ensureToken();
+    updateTokenDisplay();
     console.log('TOKEN OK');
   } catch (e) {
     console.error('TOKEN FAIL', e);
   }
   await init();
+});
+
+window.addEventListener('bus:token-ready', (event) => {
+  sessionToken = event?.detail?.token || localStorage.getItem('bus.token') || '';
+  updateTokenDisplay();
 });
 
 async function init() {
@@ -77,11 +84,14 @@ function setupSessionBar() {
   wBtn.className = 'btn';
   wBtn.textContent = 'Toggle Writes';
   wBadge = document.createElement('span');
-  bar.replaceChildren(tokenSpan(), wBtn, wBadge);
+  tokenDisplay = document.createElement('span');
+  tokenDisplay.title = 'session token used for requests';
+  updateTokenDisplay();
+  bar.replaceChildren(tokenDisplay, wBtn, wBadge);
 
   wBtn.onclick = async () => {
     try {
-      const s = await apiGet('/dev/writes');
+      const s = await apiJson('/dev/writes');
       await apiPost('/dev/writes', { enabled: !s.enabled });
       await refreshWrites();
       await renderView();
@@ -91,17 +101,15 @@ function setupSessionBar() {
   };
 }
 
-function tokenSpan() {
-  const span = document.createElement('span');
-  span.title = 'session token used for requests';
+function updateTokenDisplay() {
+  if (!tokenDisplay) return;
   const token = sessionToken || localStorage.getItem('bus.token') || '';
-  span.textContent = token ? `token… ${token.slice(0, 8)}` : 'token… none';
-  return span;
+  tokenDisplay.textContent = token ? `token… ${token.slice(0, 8)}` : 'token… none';
 }
 
 async function refreshWrites() {
   try {
-    const s = await apiGet('/dev/writes');
+    const s = await apiJson('/dev/writes');
     const enabled = Boolean(s?.enabled);
     writesState = { enabled };
     if (wBadge) wBadge.textContent = enabled ? 'WRITES: ON' : 'WRITES: OFF';
@@ -116,7 +124,7 @@ async function refreshWrites() {
 
 async function refreshLicense() {
   try {
-    licenseInfo = await apiGet('/dev/license');
+    licenseInfo = await apiJson('/dev/license');
   } catch (err) {
     licenseInfo = null;
     console.error('license fetch failed', err);
@@ -164,7 +172,7 @@ async function renderView() {
 
 async function checkHealth() {
   try {
-    const res = await fetch('/health', await withAuth());
+    const res = await apiGet('/health');
     console.log('health', res.status);
   } catch (err) {
     console.error('health error', err);
