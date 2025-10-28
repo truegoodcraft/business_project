@@ -18,22 +18,17 @@ export async function ensureToken() {
 }
 
 export async function apiGet(path) {
-  const r = await fetch(path, { headers: authHeaders() });
-  if (r.status === 401) { localStorage.removeItem('bus.token'); await ensureToken(); return apiGet(path); }
-  return r;
-}
-
-export async function apiJson(path) {
-  const r = await apiGet(path);
-  return r.json();
+  return fetch(path, { method: 'GET', headers: authHeaders() });
 }
 
 export async function apiPost(path, body) {
-  const r = await fetch(path, {
+  return fetch(path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
     body: JSON.stringify(body ?? {})
-  });
-  if (r.status === 401) { localStorage.removeItem('bus.token'); await ensureToken(); return apiPost(path, body); }
-  return r;
+  }).then(r => r.json());
+}
+
+export async function apiJson(path) {
+  return fetch(path, { headers: authHeaders() }).then(r => r.json());
 }
