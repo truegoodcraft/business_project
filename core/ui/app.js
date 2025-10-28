@@ -33,13 +33,8 @@ const tabs = {
 };
 
 document.addEventListener('DOMContentLoaded', async () => {
-  try {
-    await ensureToken();              // wait for token first
-    console.log('BOOT OK');
-    await init();                     // init may call checkHealth()
-  } catch (e) {
-    console.error('BOOT FAIL', e);
-  }
+  try { await ensureToken(); } catch {}
+  await init();
 });
 
 window.addEventListener('bus:token-ready', (event) => {
