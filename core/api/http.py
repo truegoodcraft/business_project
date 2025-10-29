@@ -156,11 +156,6 @@ UI_DIR = os.path.abspath(os.environ.get("BUS_UI_DIR", str(DEFAULT_UI_DIR)))
 UI_STATIC_DIR = UI_DIR
 
 
-_app.mount("/ui", StaticFiles(directory=UI_DIR, html=True), name="ui")
-_app.mount("/ui/js", StaticFiles(directory=os.path.join(UI_DIR, "js")), name="ui-js")
-_app.mount("/ui/css", StaticFiles(directory=os.path.join(UI_DIR, "css")), name="ui-css")
-
-
 @app.get("/ui", include_in_schema=False)
 def ui_root():
     return RedirectResponse(url="/ui/shell.html", status_code=307)
@@ -1938,4 +1933,14 @@ except Exception as _e:  # last resort: fail loud
 # ===== END UI + APP BOOTSTRAP =====
 
 __all__ = ["app", "UI_DIR", "UI_STATIC_DIR", "build_app", "create_app", "SESSION_TOKEN"]
-app = _app  # uvicorn core.api.http:app serves the fully configured app
+
+# expose the fully configured app
+app = _app
+
+# ensure /ui static is mounted on the exported app (covers /ui/js and /ui/css)
+import os
+from fastapi.staticfiles import StaticFiles
+
+_UI_DIR = os.path.abspath(os.environ.get("BUS_UI_DIR", os.path.join(os.path.dirname(__file__), "..", "ui")))
+if not any(getattr(r, "path", None) == "/ui" for r in app.routes):
+    app.mount("/ui", StaticFiles(directory=_UI_DIR, html=True), name="ui")
