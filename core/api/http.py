@@ -155,14 +155,16 @@ UI_DIR = Path(os.environ.get("BUS_UI_DIR", DEFAULT_UI_DIR))
 UI_STATIC_DIR = UI_DIR
 
 
+app.mount("/ui", StaticFiles(directory=str(UI_STATIC_DIR), html=True), name="ui")
+
+
 @app.get("/ui", include_in_schema=False)
-@app.get("/ui/", include_in_schema=False)
-async def _ui_root():
+def ui_root():
     return RedirectResponse(url="/ui/shell.html", status_code=307)
 
 
 @app.get("/ui/index.html", include_in_schema=False)
-async def _ui_index_legacy():
+def ui_index():
     return RedirectResponse(url="/ui/shell.html", status_code=307)
 
 
