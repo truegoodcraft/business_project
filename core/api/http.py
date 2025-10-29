@@ -108,7 +108,7 @@ def _check_state(state_b64: str) -> bool:
         return False
 
 
-_app = FastAPI(title="BUS Core Alpha", version=VERSION)
+app = FastAPI(title="BUS Core Alpha", version=VERSION)
 
 
 # Add this function
@@ -120,19 +120,19 @@ def require_token(req: Request):
 
 
 # Add these routes to app
-@_app.get("/dev/license")
+@app.get("/dev/license")
 async def dev_license(req: Request):
     require_token(req)
     return JSONResponse(LICENSE)
 
 
-@_app.get("/dev/writes")
+@app.get("/dev/writes")
 async def dev_writes_get(req: Request):
     require_token(req)
     return {"enabled": bool(WRITES_ENABLED)}
 
 
-@_app.post("/dev/writes")
+@app.post("/dev/writes")
 async def dev_writes_set(req: Request, body: dict):
     require_token(req)
     enabled = bool(body.get("enabled", False))
@@ -149,25 +149,25 @@ async def dev_writes_set(req: Request, body: dict):
 # Static UI mount
 UI_DIR = Path(os.environ.get("BUS_UI_DIR", Path(__file__).parent.parent / "ui")).resolve()
 UI_STATIC_DIR = UI_DIR
-_app.mount("/ui", StaticFiles(directory=str(UI_DIR), html=True), name="ui")
+app.mount("/ui", StaticFiles(directory=str(UI_DIR), html=True), name="ui")
 
 
-@_app.get("/ui", include_in_schema=False)
+@app.get("/ui", include_in_schema=False)
 def ui_root():
     return RedirectResponse(url="/ui/shell.html", status_code=307)
 
 
-@_app.get("/ui/index.html", include_in_schema=False)
+@app.get("/ui/index.html", include_in_schema=False)
 def ui_index():
     return RedirectResponse(url="/ui/shell.html", status_code=307)
 
 
-@_app.get("/health")
+@app.get("/health")
 async def health():
     return {"ok": True}
 
 
-@_app.middleware("http")
+@app.middleware("http")
 async def ui_nocache_headers(request: Request, call_next):
     response = await call_next(request)
     if request.url.path.startswith("/ui/"):
@@ -175,7 +175,7 @@ async def ui_nocache_headers(request: Request, call_next):
     return response
 
 
-@_app.get("/")
+@app.get("/")
 def _root():
     return RedirectResponse(url="/ui/shell.html")
 
@@ -195,7 +195,7 @@ def _load_or_create_token() -> str:
         return secrets.token_urlsafe(32)
 
 
-@_app.get("/session/token")
+@app.get("/session/token")
 def session_token(response: Response):
     tok = _load_or_create_token()
     response.set_cookie(
@@ -278,7 +278,7 @@ def _resolve_plugin_ui_path(plugin_id: str, resource: str) -> Path | None:
     return None
 
 
-@_app.middleware("http")
+@app.middleware("http")
 async def _license_header_mw(request: Request, call_next):
     start = time.time()
     response = None
@@ -390,13 +390,13 @@ IMPORT_ERROR_CODES = {
 }
 
 
-@_app.get("/dev/license")
+@app.get("/dev/license")
 def dev_license(req: Request):
     _require_session(req)
     return LICENSE
 
 
-@_app.get("/dev/writes")
+@app.get("/dev/writes")
 def dev_writes_get(req: Request):
     _require_session(req)
     global WRITES_ENABLED
@@ -404,7 +404,7 @@ def dev_writes_get(req: Request):
     return {"enabled": WRITES_ENABLED}
 
 
-@_app.post("/dev/writes")
+@app.post("/dev/writes")
 def dev_writes_set(req: Request, body: dict):
     _require_session(req)
     enabled = bool(body.get("enabled", False))
@@ -522,7 +522,7 @@ _tmpl_env = Environment(
 )
 
 
-@_app.post("/app/rfq/generate")
+@app.post("/app/rfq/generate")
 def rfq_generate(
     body: RFQGen,
     token: str = Depends(require_token),
@@ -654,7 +654,7 @@ def rfq_generate(
     return StreamingResponse(BytesIO(content), media_type=media_type, headers=headers)
 
 
-@_app.post("/app/inventory/run")
+@app.post("/app/inventory/run")
 def inventory_run(
     body: InventoryRun,
     token: str = Depends(require_token),
@@ -1087,8 +1087,8 @@ def _prune_oauth_states() -> None:
         _OAUTH_STATES.pop(key, None)
 
 
-@_app.get("/ui/plugins/{plugin_id}")
-@_app.get("/ui/plugins/{plugin_id}/{resource_path:path}")
+@app.get("/ui/plugins/{plugin_id}")
+@app.get("/ui/plugins/{plugin_id}/{resource_path:path}")
 def ui_plugin_asset(plugin_id: str, resource_path: str = "index.html") -> FileResponse:
     path = _resolve_plugin_ui_path(plugin_id, resource_path)
     if not path:
@@ -1256,7 +1256,7 @@ def index_status():
     return _index_status_payload(broker)
 
 
-@_app.on_event("startup")
+@app.on_event("startup")
 async def _auto_index_if_stale() -> None:
     global BACKGROUND_INDEX_TASK
     try:
@@ -1739,8 +1739,8 @@ def server_restart() -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail="restart_failed") from exc
 
 
-_app.include_router(oauth)
-_app.include_router(protected)
+app.include_router(oauth)
+app.include_router(protected)
 
 
 def build_app():
@@ -1753,22 +1753,19 @@ def build_app():
     (DATA / "session_token.txt").write_text(SESSION_TOKEN, encoding="utf-8")
     CORE.configure_session_token(SESSION_TOKEN)
     LICENSE = get_license()
-    _app.state.broker = get_broker()
+    app.state.broker = get_broker()
     LOG_FILE = LOGS / f"core_{RUN_ID}.log"
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
     banner = f"[trust] mode={CORE.policy.mode} telemetry=off data={DATA} logs={LOGS}"
     print(banner)
     log(banner)
-    return _app, SESSION_TOKEN
+    return app, SESSION_TOKEN
 
 
 def create_app():
-    return _app
+    return app
 
 
 
 
 __all__ = ["app", "UI_DIR", "UI_STATIC_DIR", "build_app", "create_app", "SESSION_TOKEN"]
-
-# expose the fully configured app
-app = _app
