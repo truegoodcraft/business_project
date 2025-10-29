@@ -150,10 +150,11 @@ async def dev_writes_set(req: Request, body: dict):
 
 
 # Static UI mount
-ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_UI_DIR = ROOT / "core" / "ui"
-UI_DIR = os.path.abspath(os.environ.get("BUS_UI_DIR", str(DEFAULT_UI_DIR)))
+UI_DIR = Path(
+    os.environ.get("BUS_UI_DIR", Path(__file__).parent.parent / "ui")
+).resolve()
 UI_STATIC_DIR = UI_DIR
+_app.mount("/ui", StaticFiles(directory=str(UI_DIR), html=True), name="ui")
 
 
 @app.get("/ui", include_in_schema=False)
@@ -1936,11 +1937,3 @@ __all__ = ["app", "UI_DIR", "UI_STATIC_DIR", "build_app", "create_app", "SESSION
 
 # expose the fully configured app
 app = _app
-
-# ensure /ui static is mounted on the exported app (covers /ui/js and /ui/css)
-import os
-from fastapi.staticfiles import StaticFiles
-
-_UI_DIR = os.path.abspath(os.environ.get("BUS_UI_DIR", os.path.join(os.path.dirname(__file__), "..", "ui")))
-if not any(getattr(r, "path", None) == "/ui" for r in app.routes):
-    app.mount("/ui", StaticFiles(directory=_UI_DIR, html=True), name="ui")
