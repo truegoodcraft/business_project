@@ -34,8 +34,13 @@ const tabs = {
 };
 
 document.addEventListener('DOMContentLoaded', async () => {
-  try { await ensureToken(); } catch {}
-  await init();
+  try {
+    await ensureToken();        // wait for session token first
+    await init();               // existing init logic unchanged
+    console.log('BOOT OK');
+  } catch (e) {
+    console.error('BOOT FAIL', e);
+  }
 });
 
 window.addEventListener('bus:token-ready', (event) => {

@@ -1,46 +1,46 @@
-const KEY = 'bus.token';
-
-export function authHeaders() {
-  const t = localStorage.getItem(KEY);
-  return t ? { 'X-Session-Token': t, 'Authorization': `Bearer ${t}` } : {};
-}
+// core/ui/js/token.js
+let inflight = null;
 
 export async function ensureToken() {
-  let t = localStorage.getItem(KEY);
-  if (!t) {
-    const r = await fetch('/session/token');
-    if (!r.ok) throw new Error('token fetch failed: ' + r.status);
-    const j = await r.json();
-    t = j.token || j.value || j.session;
-    if (!t) throw new Error('no token in response');
-    localStorage.setItem(KEY, String(t));
+  const cached = localStorage.getItem('bus.token');
+  if (cached) return cached;
+  if (!inflight) {
+    inflight = fetch('/session/token')
+      .then(r => {
+        if (!r.ok) throw new Error('token fetch failed: ' + r.status);
+        return r.json();
+      })
+      .then(j => {
+        if (!j?.token) throw new Error('token missing');
+        localStorage.setItem('bus.token', j.token);
+        window.dispatchEvent(new CustomEvent('bus:token-ready', { detail: { token: j.token } }));
+        return j.token;
+      })
+      .finally(() => { inflight = null; });
   }
-  window.dispatchEvent(new CustomEvent('bus:token-ready', { detail: { token: t } }));
-  return t;
+  return inflight;
 }
 
 export async function request(input, init = {}) {
-  const t = localStorage.getItem(KEY) || await ensureToken();
+  const token = await ensureToken();
   const headers = new Headers(init.headers || {});
-  if (!headers.get('X-Session-Token')) headers.set('X-Session-Token', t);
-  if (!headers.get('Authorization')) headers.set('Authorization', `Bearer ${t}`);
-  return fetch(input, { ...init, headers });
+  headers.set('X-Session-Token', token);
+  headers.set('Authorization', `Bearer ${token}`);
+  const res = await fetch(input, { ...init, headers });
+  if (res.status === 401) {
+    localStorage.removeItem('bus.token');
+    const t2 = await ensureToken();
+    headers.set('X-Session-Token', t2);
+    headers.set('Authorization', `Bearer ${t2}`);
+    return fetch(input, { ...init, headers });
+  }
+  return res;
 }
 
-export async function apiGet(path) {
-  return request(path, { method: 'GET' });
-}
-
-export async function apiPost(path, body) {
-  const r = await request(path, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body ?? {}),
-  });
-  return r.json();
-}
-
-export async function apiJson(path) {
-  const r = await request(path, { method: 'GET' });
-  return r.json();
-}
+export const apiGet  = (url) => request(url);
+export const apiJson = (url) => request(url).then(r => r.json());
+export const apiPost = (url, body) => request(url, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(body || {})
+});
