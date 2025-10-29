@@ -111,6 +111,7 @@ def _check_state(state_b64: str) -> bool:
 
 
 app = FastAPI(title="BUS Core Alpha", version=VERSION)
+_app = app
 
 
 # Add this function
@@ -155,9 +156,9 @@ UI_DIR = os.path.abspath(os.environ.get("BUS_UI_DIR", str(DEFAULT_UI_DIR)))
 UI_STATIC_DIR = UI_DIR
 
 
-app.mount("/ui", StaticFiles(directory=UI_DIR, html=True), name="ui")
-app.mount("/ui/js", StaticFiles(directory=os.path.join(UI_DIR, "js")), name="ui-js")
-app.mount("/ui/css", StaticFiles(directory=os.path.join(UI_DIR, "css")), name="ui-css")
+_app.mount("/ui", StaticFiles(directory=UI_DIR, html=True), name="ui")
+_app.mount("/ui/js", StaticFiles(directory=os.path.join(UI_DIR, "js")), name="ui-js")
+_app.mount("/ui/css", StaticFiles(directory=os.path.join(UI_DIR, "css")), name="ui-css")
 
 
 @app.get("/ui", include_in_schema=False)
@@ -1921,7 +1922,7 @@ def _mount_ui(_app: "FastAPI") -> None:
             break
 
     if not mounted:
-        app.mount("/ui", StaticFiles(directory=str(ui_dir), html=True), name="ui")
+        _app.mount("/ui", StaticFiles(directory=str(ui_dir), html=True), name="ui")
 
 
 # materialize global `app` if missing, then ensure /ui mount
@@ -1937,4 +1938,4 @@ except Exception as _e:  # last resort: fail loud
 # ===== END UI + APP BOOTSTRAP =====
 
 __all__ = ["app", "UI_DIR", "UI_STATIC_DIR", "build_app", "create_app", "SESSION_TOKEN"]
-app = _app  # export the real configured app (with /ui mount) to uvicorn
+app = _app  # uvicorn core.api.http:app serves the fully configured app
