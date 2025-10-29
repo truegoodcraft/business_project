@@ -110,6 +110,12 @@ def _check_state(state_b64: str) -> bool:
 
 app = FastAPI(title="BUS Core Alpha", version=VERSION)
 
+UI_DIR = Path(
+    os.environ.get("BUS_UI_DIR", Path(__file__).parent.parent / "ui")
+).resolve()
+app.mount("/ui", StaticFiles(directory=str(UI_DIR), html=True), name="ui")
+UI_STATIC_DIR = UI_DIR
+
 
 # Add this function
 def require_token(req: Request):
@@ -144,14 +150,6 @@ async def dev_writes_set(req: Request, body: dict):
         # setter may not be available in some contexts; ignore in local dev
         pass
     return {"enabled": enabled}
-
-
-# Static UI mount
-UI_DIR: Path = Path(
-    os.environ.get("BUS_UI_DIR", Path(__file__).parent.parent / "ui")
-).resolve()
-UI_STATIC_DIR: Path = UI_DIR
-app.mount("/ui", StaticFiles(directory=str(UI_STATIC_DIR), html=True), name="ui")
 
 
 @app.get("/ui", include_in_schema=False)
@@ -1771,5 +1769,3 @@ def create_app():
 
 
 __all__ = ["app", "UI_DIR", "UI_STATIC_DIR", "build_app", "create_app", "SESSION_TOKEN"]
-
-app
