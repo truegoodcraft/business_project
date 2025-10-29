@@ -147,9 +147,11 @@ async def dev_writes_set(req: Request, body: dict):
 
 
 # Static UI mount
-UI_DIR = Path(os.environ.get("BUS_UI_DIR", Path(__file__).parent.parent / "ui")).resolve()
-UI_STATIC_DIR = UI_DIR
-app.mount("/ui", StaticFiles(directory=str(UI_DIR), html=True), name="ui")
+UI_DIR: Path = Path(
+    os.environ.get("BUS_UI_DIR", Path(__file__).parent.parent / "ui")
+).resolve()
+UI_STATIC_DIR: Path = UI_DIR
+app.mount("/ui", StaticFiles(directory=str(UI_STATIC_DIR), html=True), name="ui")
 
 
 @app.get("/ui", include_in_schema=False)
