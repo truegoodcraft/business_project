@@ -1769,3 +1769,5 @@ def create_app():
 
 
 __all__ = ["app", "UI_DIR", "UI_STATIC_DIR", "build_app", "create_app", "SESSION_TOKEN"]
+
+app
