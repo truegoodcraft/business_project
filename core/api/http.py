@@ -67,8 +67,6 @@ from core.reader.api import router as reader_local_router
 from core.organizer.api import router as organizer_router
 from core.api.app_router import router as app_router
 
-from fastapi import Request, HTTPException
-
 if os.name == "nt":  # pragma: no cover - windows specific
     from core.broker.pipes import NamedPipeServer
     from core.broker.service import PluginBroker, handle_connection
@@ -149,9 +147,7 @@ async def dev_writes_set(req: Request, body: dict):
 
 
 # Static UI mount
-UI_DIR = Path(
-    os.environ.get("BUS_UI_DIR", Path(__file__).parent.parent / "ui")
-).resolve()
+UI_DIR = Path(os.environ.get("BUS_UI_DIR", Path(__file__).parent.parent / "ui")).resolve()
 UI_STATIC_DIR = UI_DIR
 _app.mount("/ui", StaticFiles(directory=str(UI_DIR), html=True), name="ui")
 
