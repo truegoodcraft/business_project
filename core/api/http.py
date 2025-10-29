@@ -110,8 +110,7 @@ def _check_state(state_b64: str) -> bool:
         return False
 
 
-app = FastAPI(title="BUS Core Alpha", version=VERSION)
-_app = app
+_app = FastAPI(title="BUS Core Alpha", version=VERSION)
 
 
 # Add this function
@@ -123,19 +122,19 @@ def require_token(req: Request):
 
 
 # Add these routes to app
-@app.get("/dev/license")
+@_app.get("/dev/license")
 async def dev_license(req: Request):
     require_token(req)
     return JSONResponse(LICENSE)
 
 
-@app.get("/dev/writes")
+@_app.get("/dev/writes")
 async def dev_writes_get(req: Request):
     require_token(req)
     return {"enabled": bool(WRITES_ENABLED)}
 
 
-@app.post("/dev/writes")
+@_app.post("/dev/writes")
 async def dev_writes_set(req: Request, body: dict):
     require_token(req)
     enabled = bool(body.get("enabled", False))
@@ -157,22 +156,22 @@ UI_STATIC_DIR = UI_DIR
 _app.mount("/ui", StaticFiles(directory=str(UI_DIR), html=True), name="ui")
 
 
-@app.get("/ui", include_in_schema=False)
+@_app.get("/ui", include_in_schema=False)
 def ui_root():
     return RedirectResponse(url="/ui/shell.html", status_code=307)
 
 
-@app.get("/ui/index.html", include_in_schema=False)
+@_app.get("/ui/index.html", include_in_schema=False)
 def ui_index():
     return RedirectResponse(url="/ui/shell.html", status_code=307)
 
 
-@app.get("/health")
+@_app.get("/health")
 async def health():
     return {"ok": True}
 
 
-@app.middleware("http")
+@_app.middleware("http")
 async def ui_nocache_headers(request: Request, call_next):
     response = await call_next(request)
     if request.url.path.startswith("/ui/"):
@@ -180,7 +179,7 @@ async def ui_nocache_headers(request: Request, call_next):
     return response
 
 
-@app.get("/")
+@_app.get("/")
 def _root():
     return RedirectResponse(url="/ui/shell.html")
 
@@ -200,7 +199,7 @@ def _load_or_create_token() -> str:
         return secrets.token_urlsafe(32)
 
 
-@app.get("/session/token")
+@_app.get("/session/token")
 def session_token(response: Response):
     tok = _load_or_create_token()
     response.set_cookie(
@@ -283,7 +282,7 @@ def _resolve_plugin_ui_path(plugin_id: str, resource: str) -> Path | None:
     return None
 
 
-@app.middleware("http")
+@_app.middleware("http")
 async def _license_header_mw(request: Request, call_next):
     start = time.time()
     response = None
@@ -395,13 +394,13 @@ IMPORT_ERROR_CODES = {
 }
 
 
-@app.get("/dev/license")
+@_app.get("/dev/license")
 def dev_license(req: Request):
     _require_session(req)
     return LICENSE
 
 
-@app.get("/dev/writes")
+@_app.get("/dev/writes")
 def dev_writes_get(req: Request):
     _require_session(req)
     global WRITES_ENABLED
@@ -409,7 +408,7 @@ def dev_writes_get(req: Request):
     return {"enabled": WRITES_ENABLED}
 
 
-@app.post("/dev/writes")
+@_app.post("/dev/writes")
 def dev_writes_set(req: Request, body: dict):
     _require_session(req)
     enabled = bool(body.get("enabled", False))
@@ -500,7 +499,7 @@ APP_DIR = BUS_ROOT / "app"
 DATA_DIR = APP_DIR / "data"
 EXPORTS_DIR = BUS_ROOT / "exports"
 JOURNAL_DIR = DATA_DIR / "journals"
-DB_PATH = (BUS_ROOT / "app.db").resolve()
+DB_PATH = (BUS_ROOT / "_app.db").resolve()
 _LEGACY_DB_PATH = SA_DB_PATH.resolve()
 if _LEGACY_DB_PATH.exists() and _LEGACY_DB_PATH != DB_PATH:
     DB_PATH = _LEGACY_DB_PATH
@@ -527,7 +526,7 @@ _tmpl_env = Environment(
 )
 
 
-@app.post("/app/rfq/generate")
+@_app.post("/app/rfq/generate")
 def rfq_generate(
     body: RFQGen,
     token: str = Depends(require_token),
@@ -659,7 +658,7 @@ def rfq_generate(
     return StreamingResponse(BytesIO(content), media_type=media_type, headers=headers)
 
 
-@app.post("/app/inventory/run")
+@_app.post("/app/inventory/run")
 def inventory_run(
     body: InventoryRun,
     token: str = Depends(require_token),
@@ -1092,8 +1091,8 @@ def _prune_oauth_states() -> None:
         _OAUTH_STATES.pop(key, None)
 
 
-@app.get("/ui/plugins/{plugin_id}")
-@app.get("/ui/plugins/{plugin_id}/{resource_path:path}")
+@_app.get("/ui/plugins/{plugin_id}")
+@_app.get("/ui/plugins/{plugin_id}/{resource_path:path}")
 def ui_plugin_asset(plugin_id: str, resource_path: str = "index.html") -> FileResponse:
     path = _resolve_plugin_ui_path(plugin_id, resource_path)
     if not path:
@@ -1261,7 +1260,7 @@ def index_status():
     return _index_status_payload(broker)
 
 
-@app.on_event("startup")
+@_app.on_event("startup")
 async def _auto_index_if_stale() -> None:
     global BACKGROUND_INDEX_TASK
     try:
@@ -1744,8 +1743,8 @@ def server_restart() -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail="restart_failed") from exc
 
 
-app.include_router(oauth)
-app.include_router(protected)
+_app.include_router(oauth)
+_app.include_router(protected)
 
 
 def build_app():
@@ -1758,180 +1757,20 @@ def build_app():
     (DATA / "session_token.txt").write_text(SESSION_TOKEN, encoding="utf-8")
     CORE.configure_session_token(SESSION_TOKEN)
     LICENSE = get_license()
-    app.state.broker = get_broker()
+    _app.state.broker = get_broker()
     LOG_FILE = LOGS / f"core_{RUN_ID}.log"
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
     banner = f"[trust] mode={CORE.policy.mode} telemetry=off data={DATA} logs={LOGS}"
     print(banner)
     log(banner)
-    return app, SESSION_TOKEN
+    return _app, SESSION_TOKEN
 
 
 def create_app():
-    return app
+    return _app
 
 
-# ===== UI + APP BOOTSTRAP (non-invasive) =====
-import os
-from pathlib import Path
 
-try:
-    _FASTAPI_AVAILABLE = True
-    from fastapi import FastAPI
-    from fastapi.responses import RedirectResponse
-    from fastapi.staticfiles import StaticFiles
-except Exception:  # pragma: no cover
-    _FASTAPI_AVAILABLE = False
-
-
-def _resolve_ui_dir() -> Path:
-    """Prefer BUS_UI_DIR then fallback to repo-relative core/ui. Never create '_missing_ui'."""
-    env = os.environ.get("BUS_UI_DIR")
-    if env:
-        p = Path(env)
-    else:
-        p = Path(__file__).resolve().parents[2] / "core" / "ui"
-    if not p.exists():
-        raise RuntimeError(f"[ui] BUS_UI_DIR missing or invalid: {p}")
-    return p
-
-
-def _ensure_app() -> "FastAPI":
-    """
-    Return a FastAPI app from any of:
-      - existing global `app`
-      - any global FastAPI instance
-      - any zero-arg callable returning FastAPI
-      - else a minimal FastAPI()
-    """
-
-    if not _FASTAPI_AVAILABLE:
-        raise RuntimeError("fastapi not installed")
-
-    g = globals()
-    # 1) existing global `app`
-    if "app" in g and isinstance(g["app"], FastAPI):  # type: ignore
-        return g["app"]  # type: ignore
-
-    # 2) any global FastAPI instance
-    for v in g.values():
-        if isinstance(v, FastAPI):
-            return v
-
-    # 3) any zero-arg callable returning FastAPI
-    for v in g.values():
-        if callable(v):
-            try:
-                obj = v()  # type: ignore
-                if isinstance(obj, FastAPI):
-                    return obj
-            except Exception:
-                pass
-
-    # 4) minimal app
-    return FastAPI()
-
-
-FAVICON_ICO_B64 = (
-    "AAABAAEAEBAAAAAAIACUAAAAFgAAAIlQTkcNChoKAAAADUlIRFIAAAAQAAAAEAgGAAAAH/P/YQAA"
-    "AFtJREFUeJyl0dEOgCAIheHTbb52PfffXbNChZMbm8L2MUT7AYDcEKA/yH1xkcfDQT6JKhImK8iw"
-    "kEWmxQyy7LBCUnPOkPRvj5DSziOkBERIGXgjFtAjGyD3tFNc0v3LPSUE0s8AAAAASUVORK5CYII="
-)
-FAVICON_ICO_BYTES = base64.b64decode(FAVICON_ICO_B64)
-
-
-def _mount_ui(_app: "FastAPI") -> None:
-    ui_dir = _resolve_ui_dir()
-    globals()["UI_DIR"] = ui_dir
-    globals()["UI_STATIC_DIR"] = ui_dir
-    print(f"[ui] Serving /ui/ from: {ui_dir}")
-
-    def _has_get_route(path: str) -> bool:
-        for route in getattr(_app, "routes", []):
-            methods = getattr(route, "methods", None)
-            if getattr(route, "path", None) == path and methods and "GET" in methods:
-                return True
-        return False
-
-    # redirect /ui and /ui/index.html → /ui/shell.html
-    def _redirect() -> RedirectResponse:
-        return RedirectResponse(url="/ui/shell.html", status_code=307)
-
-    if not _has_get_route("/ui"):
-        _app.add_api_route(
-            "/ui",
-            _redirect,
-            methods=["GET"],
-            include_in_schema=False,
-        )
-    if not _has_get_route("/ui/index.html"):
-        _app.add_api_route(
-            "/ui/index.html",
-            _redirect,
-            methods=["GET"],
-            include_in_schema=False,
-        )
-    if not _has_get_route("/ui/favicon.ico"):
-        async def _favicon() -> Response:
-            return Response(content=FAVICON_ICO_BYTES, media_type="image/x-icon")
-
-        _app.add_api_route(
-            "/ui/favicon.ico",
-            _favicon,
-            methods=["GET"],
-            include_in_schema=False,
-        )
-
-    def _serve_file(path: Path):
-        if not path.exists():
-            raise HTTPException(status_code=404)
-        return FileResponse(str(path))
-
-    shell_path = ui_dir / "shell.html"
-    if not _has_get_route("/ui/shell.html"):
-        def _shell_html() -> Response:
-            return _serve_file(shell_path)
-
-        _app.add_api_route(
-            "/ui/shell.html",
-            _shell_html,
-            methods=["GET"],
-            include_in_schema=False,
-        )
-
-    app_js_path = ui_dir / "app.js"
-    if not _has_get_route("/ui/app.js"):
-        def _app_js() -> Response:
-            return _serve_file(app_js_path)
-
-        _app.add_api_route(
-            "/ui/app.js",
-            _app_js,
-            methods=["GET"],
-            include_in_schema=False,
-        )
-
-    mounted = False
-    for route in getattr(_app, "routes", []):
-        if getattr(route, "path", None) == "/ui" and getattr(route, "app", None) is not None:
-            mounted = True
-            break
-
-    if not mounted:
-        _app.mount("/ui", StaticFiles(directory=str(ui_dir), html=True), name="ui")
-
-
-# materialize global `app` if missing, then ensure /ui mount
-try:
-    _app  # type: ignore  # noqa: F821
-except NameError:
-    _app = _ensure_app()
-try:
-    _mount_ui(_app)
-except Exception as _e:  # last resort: fail loud
-    raise
-
-# ===== END UI + APP BOOTSTRAP =====
 
 __all__ = ["app", "UI_DIR", "UI_STATIC_DIR", "build_app", "create_app", "SESSION_TOKEN"]
 
