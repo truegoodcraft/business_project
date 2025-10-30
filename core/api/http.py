@@ -35,6 +35,10 @@ from fastapi.staticfiles import StaticFiles
 import requests
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.cors import CORSMiddleware
+from starlette.status import HTTP_401_UNAUTHORIZED
+
 from core.services.capabilities import registry
 from core.services.capabilities.registry import MANIFEST_PATH
 from core.services.models import DB_PATH as SA_DB_PATH
@@ -116,12 +120,16 @@ UI_DIR = Path(
 app.mount("/ui", StaticFiles(directory=str(UI_DIR), html=True), name="ui")
 UI_STATIC_DIR = UI_DIR
 
+TOKEN_HEADER = "X-Session-Token"
+PUBLIC_PATHS = {"/", "/session/token"}
+PUBLIC_PREFIX = "/ui/"
+
 
 # Add this function
 def require_token(req: Request):
-    token = req.headers.get("X-Session-Token")
-    if not token or not validate_session_token(token):  # Reuse existing validator
-        raise HTTPException(401, {"detail": "Invalid session token"})
+    token = get_session_token(req)
+    _require_token(token)
+    assert token is not None
     return token
 
 
@@ -196,24 +204,8 @@ def _load_or_create_token() -> str:
 
 
 @app.get("/session/token")
-def session_token(response: Response):
+def session_token():
     tok = _load_or_create_token()
-    response.set_cookie(
-        key="X-Session-Token",
-        value=tok,
-        path="/",
-        samesite="lax",
-        secure=False,
-        httponly=False,
-    )
-    response.set_cookie(
-        key="session_token",
-        value=tok,
-        path="/",
-        samesite="lax",
-        secure=False,
-        httponly=False,
-    )
     return {"token": tok}
 LICENSE_NAME = "PolyForm-Noncommercial-1.0.0"
 LICENSE_URL = "https://polyformproject.org/licenses/noncommercial/1.0.0/"
@@ -310,13 +302,13 @@ def _require_core() -> CoreAlpha:
 
 
 def _extract_token(req: Request) -> str | None:
-    h = req.headers.get("X-Session-Token") or req.headers.get("Authorization")
-    if h and h.lower().startswith("bearer "):
-        h = h.split(" ", 1)[1].strip()
-    return h or req.cookies.get("session_token")
+    return req.headers.get(TOKEN_HEADER)
 
 
 def get_session_token(request: Request) -> str | None:
+    session = getattr(request.state, "session", None)
+    if session:
+        return session if isinstance(session, str) else getattr(session, "token", None)
     return _extract_token(request)
 
 
@@ -331,8 +323,8 @@ def validate_session_token(token: Optional[str]) -> bool:
 
 
 def _require_token(token: Optional[str]) -> None:
-    if not validate_session_token(token):
-        raise HTTPException(status_code=401, detail="Invalid session token")
+    if not token or not validate_session_token(token):
+        raise HTTPException(status_code=HTTP_401_UNAUTHORIZED, detail={"error": "unauthorized"})
 
 
 def require_token_ctx(request: Request) -> Dict[str, str]:
@@ -349,11 +341,37 @@ def require_token(request: Request) -> str:
     return token
 
 
-def _require_session(req: Request) -> str:
-    tok = _extract_token(req)
-    if not tok or not validate_session_token(tok):
-        raise HTTPException(status_code=401, detail="Invalid session token")
-    return tok
+async def _require_session(req: Request):
+    token = _extract_token(req)
+    if not token:
+        return JSONResponse({"error": "unauthorized"}, status_code=HTTP_401_UNAUTHORIZED)
+    session = token if validate_session_token(token) else None
+    if not session:
+        return JSONResponse({"error": "unauthorized"}, status_code=HTTP_401_UNAUTHORIZED)
+    req.state.session = session
+    return None
+
+
+class SessionGuard(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        path = request.url.path
+        if request.method == "OPTIONS":
+            return await call_next(request)
+        if path in PUBLIC_PATHS or path.startswith(PUBLIC_PREFIX):
+            return await call_next(request)
+        failure = await _require_session(request)
+        if failure:
+            return failure
+        return await call_next(request)
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["Accept", "Content-Type", TOKEN_HEADER],
+)
+app.add_middleware(SessionGuard)
 
 
 def require_writes() -> None:
@@ -392,13 +410,11 @@ IMPORT_ERROR_CODES = {
 
 @app.get("/dev/license")
 def dev_license(req: Request):
-    _require_session(req)
     return LICENSE
 
 
 @app.get("/dev/writes")
 def dev_writes_get(req: Request):
-    _require_session(req)
     global WRITES_ENABLED
     WRITES_ENABLED = get_writes_enabled()
     return {"enabled": WRITES_ENABLED}
@@ -406,7 +422,6 @@ def dev_writes_get(req: Request):
 
 @app.post("/dev/writes")
 def dev_writes_set(req: Request, body: dict):
-    _require_session(req)
     enabled = bool(body.get("enabled", False))
     set_writes_enabled(enabled)
     global WRITES_ENABLED
@@ -1325,7 +1340,7 @@ def oauth_google_callback(request: Request):
     code = request.query_params.get("code")
     state = request.query_params.get("state")
     if not state or not _check_state(state):
-        raise HTTPException(status_code=401, detail="Invalid session token")
+        raise HTTPException(status_code=HTTP_401_UNAUTHORIZED, detail={"error": "unauthorized"})
 
     if not code:
         raise HTTPException(status_code=400, detail="Missing code")
@@ -1333,7 +1348,7 @@ def oauth_google_callback(request: Request):
     _prune_oauth_states()
     meta = _OAUTH_STATES.pop(state, None)
     if not meta:
-        raise HTTPException(status_code=401, detail="Invalid session token")
+        raise HTTPException(status_code=HTTP_401_UNAUTHORIZED, detail={"error": "unauthorized"})
 
     try:
         client_id, client_secret = _load_google_client()
@@ -1742,6 +1757,8 @@ def server_restart() -> Dict[str, Any]:
 app.include_router(oauth)
 app.include_router(protected)
 
+APP = app
+
 
 def build_app():
     global CORE, RUN_ID, SESSION_TOKEN, LOG_FILE, LICENSE
@@ -1768,4 +1785,4 @@ def create_app():
 
 
 
-__all__ = ["app", "UI_DIR", "UI_STATIC_DIR", "build_app", "create_app", "SESSION_TOKEN"]
+__all__ = ["app", "APP", "UI_DIR", "UI_STATIC_DIR", "build_app", "create_app", "SESSION_TOKEN"]

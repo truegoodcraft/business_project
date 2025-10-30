@@ -1,5 +1,4 @@
-import { ensureToken } from "./js/token.js";
-import { apiGet, apiPost, apiJson } from "./js/token.js";
+import { ensureToken, apiGet, apiJson, apiGetJson } from "./js/token.js";
 import { mountWrites }    from "/ui/js/cards/writes.js";
 import { mountOrganizer } from "/ui/js/cards/organizer.js";
 import { mountBackup }    from "/ui/js/cards/backup.js";
@@ -91,8 +90,8 @@ function setupSessionBar() {
 
   wBtn.onclick = async () => {
     try {
-      const s = await apiJson('/dev/writes');
-      await apiPost('/dev/writes', { enabled: !s.enabled });
+      const s = await apiGetJson('/dev/writes');
+      await apiJson('/dev/writes', { enabled: !s.enabled });
       await refreshWrites();
       await renderView();
     } catch (err) {
@@ -109,7 +108,7 @@ function updateTokenDisplay() {
 
 async function refreshWrites() {
   try {
-    const s = await apiJson('/dev/writes');
+    const s = await apiGetJson('/dev/writes');
     const enabled = Boolean(s?.enabled);
     writesState = { enabled };
     if (wBadge) wBadge.textContent = enabled ? 'WRITES: ON' : 'WRITES: OFF';
@@ -124,7 +123,7 @@ async function refreshWrites() {
 
 async function refreshLicense() {
   try {
-    licenseInfo = await apiJson('/dev/license');
+    licenseInfo = await apiGetJson('/dev/license');
   } catch (err) {
     licenseInfo = null;
     console.error('license fetch failed', err);

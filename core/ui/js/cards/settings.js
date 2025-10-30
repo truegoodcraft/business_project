@@ -1,4 +1,4 @@
-import { apiJson, apiPost } from '../token.js';
+import { apiJson, apiGetJson } from '../token.js';
 export async function mountSettings(el){
   el.innerHTML = `
     <h2>Settings</h2>
@@ -11,12 +11,12 @@ export async function mountSettings(el){
   const btn = el.querySelector('#writesBtn');
   const lab = el.querySelector('#writesLabel');
   async function sync(){
-    const s = await apiJson('/dev/writes');
+    const s = await apiGetJson('/dev/writes');
     lab.textContent = s.enabled ? 'enabled' : 'disabled';
   }
   btn.onclick = async ()=>{
-    const s = await apiJson('/dev/writes');
-    await apiPost('/dev/writes', { enabled: !s.enabled });
+    const s = await apiGetJson('/dev/writes');
+    await apiJson('/dev/writes', { enabled: !s.enabled });
     await sync();
   };
   await sync();

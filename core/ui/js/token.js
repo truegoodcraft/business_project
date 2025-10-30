@@ -25,22 +25,23 @@ export async function request(input, init = {}) {
   const token = await ensureToken();
   const headers = new Headers(init.headers || {});
   headers.set('X-Session-Token', token);
-  headers.set('Authorization', `Bearer ${token}`);
   const res = await fetch(input, { ...init, headers });
   if (res.status === 401) {
     localStorage.removeItem('bus.token');
     const t2 = await ensureToken();
     headers.set('X-Session-Token', t2);
-    headers.set('Authorization', `Bearer ${t2}`);
     return fetch(input, { ...init, headers });
   }
   return res;
 }
 
-export const apiGet  = (url) => request(url);
-export const apiJson = (url) => request(url).then(r => r.json());
-export const apiPost = (url, body) => request(url, {
+export const apiGet  = (url, init) => request(url, { method: 'GET', ...(init || {}) });
+export const apiPost = (url, body, init) => request(url, { method: 'POST', body, ...(init || {}) });
+export const apiJson = (url, obj, init) => request(url, {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify(body || {})
+  body: JSON.stringify(obj || {}),
+  ...(init || {})
 });
+export const apiGetJson = (url, init) => apiGet(url, init).then(res => res.json());
+export const apiJsonJson = (url, obj, init) => apiJson(url, obj, init).then(res => res.json());

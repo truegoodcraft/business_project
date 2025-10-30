@@ -1,5 +1,5 @@
 // core/ui/js/cards/dev.js
-import { ensureToken, apiGet, apiPost, apiJson } from '../token.js';
+import { ensureToken, apiGet, apiJson, apiGetJson } from '../token.js';
 
 export function mountDev(container) {
   container.innerHTML = `
@@ -19,8 +19,8 @@ async function wire() {
   document.getElementById('btn-ping').onclick = window.pingPlugin;
 
   document.getElementById('btn-writes').onclick = async () => {
-    const s = await apiJson('/dev/writes');           // { enabled: boolean }
-    await apiPost('/dev/writes', { enabled: !s.enabled });
+    const s = await apiGetJson('/dev/writes');           // { enabled: boolean }
+    await apiJson('/dev/writes', { enabled: !s.enabled });
     updateWrites();
   };
 
@@ -28,7 +28,7 @@ async function wire() {
 }
 
 async function updateWrites() {
-  const s = await apiJson('/dev/writes');
+  const s = await apiGetJson('/dev/writes');
   document.getElementById('writes-state').textContent = s.enabled ? 'writes: ON' : 'writes: OFF';
 }
 
