@@ -7,6 +7,87 @@ import { apiGet, apiPost, apiPut, apiDelete, ensureToken } from '../api.js';
 export async function mountInventory(container) {
     await ensureToken();
 
+    const UNIT_SETS = {
+        ea: ['ea'],
+        metric: ['mm', 'cm', 'm', 'km', 'g', 'kg', 'ml', 'l', 'm2', 'm3'],
+        imperial: ['inch', 'ft', 'yd', 'mile', 'oz', 'lb', 'qt', 'gal', 'ft2', 'ft3']
+    };
+
+    const currencySelect = () => document.getElementById('price-currency');
+    const unitSystemEl = () => document.getElementById('unit-system');
+    const unitSelectEl = () => document.getElementById('unit-select');
+
+    function fillUnitOptions(system, current) {
+        const sel = unitSelectEl();
+        sel.innerHTML = '';
+        (UNIT_SETS[system] || []).forEach(u => {
+            const opt = document.createElement('option');
+            opt.value = u;
+            opt.textContent = u.toUpperCase();
+            if (current && current === u) opt.selected = true;
+            sel.appendChild(opt);
+        });
+        sel.disabled = system === '' || system === 'ea';
+        const hf = document.querySelector('input[name="unit"]');
+        hf.value = system === 'ea' ? 'ea' : sel.value || '';
+    }
+
+    function initUnitSelectors(existingUnit) {
+        const sysEl = unitSystemEl();
+        const unitEl = unitSelectEl();
+        const hiddenField = document.querySelector('input[name="unit"]');
+        const normalizedUnit = existingUnit ? existingUnit.toLowerCase() : '';
+
+        sysEl.value = '';
+        unitEl.innerHTML = '';
+        unitEl.disabled = true;
+        hiddenField.value = '';
+
+        if (normalizedUnit) {
+            if (normalizedUnit === 'ea') {
+                sysEl.value = 'ea';
+                fillUnitOptions('ea', 'ea');
+            } else if (UNIT_SETS.metric.includes(normalizedUnit)) {
+                sysEl.value = 'metric';
+                fillUnitOptions('metric', normalizedUnit);
+            } else if (UNIT_SETS.imperial.includes(normalizedUnit)) {
+                sysEl.value = 'imperial';
+                fillUnitOptions('imperial', normalizedUnit);
+            }
+        }
+
+        sysEl.onchange = () => fillUnitOptions(sysEl.value);
+        unitEl.onchange = () => {
+            hiddenField.value = sysEl.value === 'ea' ? 'ea' : unitEl.value;
+        };
+
+        fillUnitOptions(sysEl.value || '', normalizedUnit || undefined);
+    }
+
+    async function loadVendors() {
+        const candidates = ['/app/vendors', '/app/vendors/list', '/app/partners'];
+        let list = [];
+        for (const url of candidates) {
+            try {
+                list = await apiGet(url);
+                if (Array.isArray(list) && list.length) break;
+            } catch {}
+        }
+        const field = document.getElementById('vendor-field');
+        const sel = document.getElementById('vendor-select');
+        if (!Array.isArray(list) || list.length === 0) {
+            field.style.display = 'none';
+            sel.innerHTML = '';
+            return;
+        }
+        field.style.display = '';
+        sel.innerHTML = `<option value="">— none —</option>` + list.map(v => {
+            const id = v.id ?? v.vendor_id ?? v.code;
+            const name = v.name ?? v.title ?? `Vendor ${id}`;
+            return `<option value="${id}">${name}</option>`;
+        }).join('');
+    }
+
     container.innerHTML = `
         <div class="inventory-controls">
             <button id="add-item-btn">+ Add Item</button>
@@ -35,11 +116,41 @@ export async function mountInventory(container) {
                 <form id="item-form">
                     <label>Name: <input name="name" required></label><br>
                     <label>SKU: <input name="sku"></label><br>
-                    <label>Qty: <input name="qty" type="number" step="0.01" required></label><br>
-                    <label>Unit: <input name="unit" required></label><br>
-                    <label>Vendor ID: <input name="vendor_id" type="number"></label><br>
-                    <label>Price: <input name="price" type="number" step="0.01"></label><br>
+
+                    <label>Qty:
+                        <input name="qty" type="number" step="0.01" required>
+                    </label><br>
+
+                    <label>Unit:
+                        <div class="row-compact">
+                            <select id="unit-system" required>
+                                <option value="" disabled selected>Select</option>
+                                <option value="ea">Each</option>
+                                <option value="metric">Metric</option>
+                                <option value="imperial">Imperial</option>
+                            </select>
+                            <select id="unit-select" required disabled></select>
+                        </div>
+                        <input type="hidden" name="unit">
+                    </label><br>
+
+                    <label id="vendor-field" style="display:none">Vendor:
+                        <select name="vendor_id" id="vendor-select"></select>
+                    </label><br>
+
+                    <label>Price:
+                        <div class="row-compact">
+                            <select id="price-currency">
+                                <option>USD</option><option>EUR</option><option>GBP</option>
+                                <option>CAD</option><option>AUD</option><option>JPY</option>
+                                <option>CNY</option>
+                            </select>
+                            <input name="price" type="number" step="0.01">
+                        </div>
+                    </label><br>
+
                     <label>Location: <input name="location"></label><br>
+
                     <input type="hidden" name="id">
                     <button type="submit" id="save-btn">Save</button>
                     <button type="button" id="cancel-btn">Cancel</button>
@@ -131,11 +242,29 @@ export async function mountInventory(container) {
         form.name.value = item.name || '';
         form.sku.value = item.sku || '';
         form.qty.value = item.qty ?? 0;
-        form.unit.value = item.unit || '';
-        form.vendor_id.value = item.vendor_id ?? '';
-        form.price.value = item.price ?? '';
         form.location.value = item.location || '';
         form.id.value = item.id ?? '';
+
+        document.querySelector('input[name="unit"]').value = item.unit || '';
+        initUnitSelectors(item.unit || '');
+
+        const vendorField = document.getElementById('vendor-field');
+        const vendorSelect = document.getElementById('vendor-select');
+        if (vendorField && vendorSelect) {
+            vendorField.style.display = 'none';
+            vendorSelect.innerHTML = '';
+        }
+
+        loadVendors().then(() => {
+            const sel = document.getElementById('vendor-select');
+            if (sel) sel.value = item.vendor_id ? String(item.vendor_id) : '';
+        });
+
+        const savedCurrency = localStorage.getItem('priceCurrency') || 'USD';
+        currencySelect().value = savedCurrency;
+
+        form.price.value = item.price ?? '';
+
         document.getElementById('item-modal').style.display = 'block';
         document.body.classList.add('modal-open');
     }
@@ -169,18 +298,30 @@ export async function mountInventory(container) {
     document.getElementById('add-item-btn').onclick = () => openEditModal({});
     document.getElementById('refresh-btn').onclick = loadItems;
 
+    function compactPayload(o) {
+        const out = {};
+        for (const [k, v] of Object.entries(o)) {
+            if (v === '' || v === null || Number.isNaN(v)) continue;
+            out[k] = v;
+        }
+        return out;
+    }
+
     document.getElementById('item-form').onsubmit = async (e) => {
         e.preventDefault();
-        const form = e.target;
-        const data = {
-            name: form.name.value.trim(),
-            sku: form.sku.value.trim() || null,
-            qty: parseFloat(form.qty.value),
-            unit: form.unit.value.trim(),
-            vendor_id: form.vendor_id.value ? parseInt(form.vendor_id.value) : null,
-            price: form.price.value ? parseFloat(form.price.value) : null,
-            location: form.location.value.trim() || null
-        };
+        const f = e.target;
+        localStorage.setItem('priceCurrency', currencySelect().value);
+
+        const vendorVal = document.getElementById('vendor-select')?.value || '';
+        const data = compactPayload({
+            name: f.name.value.trim(),
+            sku: f.sku.value.trim() || null,
+            qty: parseFloat(f.qty.value),
+            unit: f.querySelector('input[name="unit"]').value || null,
+            vendor_id: vendorVal ? parseInt(vendorVal) : undefined,
+            price: f.price.value ? parseFloat(f.price.value) : undefined,
+            location: f.location.value.trim() || null
+        });
 
         try {
             if (currentEditId) {
@@ -191,7 +332,8 @@ export async function mountInventory(container) {
             closeModals();
             loadItems();
         } catch (err) {
-            alert('Save failed: ' + (err.error || err.message));
+            console.error('Save failed:', err);
+            alert('Save failed: ' + (err?.error || err?.message || 'unknown'));
         }
     };
 
