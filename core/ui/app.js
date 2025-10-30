@@ -30,7 +30,12 @@ const tabs = {
     `;
   },
   dev: async () => mountDev(cardHost),
+  inventory: async () => mountInventory(cardHost),
 };
+
+const routeTable = new Map([
+  ["#/inventory", () => switchTab("inventory")],
+]);
 
 document.addEventListener('DOMContentLoaded', async () => {
   try {
@@ -40,6 +45,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   } catch (e) {
     console.error('BOOT FAIL', e);
   }
+});
+
+window.addEventListener('hashchange', () => {
+  handleRoute(window.location.hash);
 });
 
 window.addEventListener('bus:token-ready', (event) => {
@@ -59,7 +68,9 @@ async function init() {
     await refreshWrites();
     await checkHealth();
     bindTabs();
-    await switchTab(currentTab);
+    if (!(await handleRoute(window.location.hash))) {
+      await switchTab(currentTab);
+    }
   } catch (e) {
     console.error('BOOT FAILED', e);
     app.innerHTML = `<pre style="color:red;">${e}</pre>`;
@@ -144,9 +155,23 @@ async function renderHeader() {
 
 function bindTabs() {
   document.querySelectorAll('.tab').forEach(tab => {
-    tab.onclick = () => {
-      switchTab(tab.dataset.tab);
-    };
+    tab.addEventListener('click', (event) => {
+      event.preventDefault();
+      const tabId = tab.dataset.tab;
+      if (!tabId) return;
+      if (tabId === 'inventory') {
+        if (window.location.hash !== '#/inventory') {
+          window.location.hash = '#/inventory';
+        } else {
+          switchTab('inventory');
+        }
+      } else {
+        if (window.location.hash === '#/inventory') {
+          history.replaceState(null, '', window.location.pathname + window.location.search);
+        }
+        switchTab(tabId);
+      }
+    });
   });
 }
 
@@ -156,6 +181,9 @@ async function switchTab(id) {
   document.querySelectorAll('.tab').forEach(tab => {
     tab.classList.toggle('active', tab.dataset.tab === id);
   });
+  if (id !== 'inventory' && window.location.hash === '#/inventory') {
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+  }
   await renderView();
 }
 
@@ -178,11 +206,26 @@ async function checkHealth() {
   }
 }
 
+async function handleRoute(hash) {
+  const handler = routeTable.get(hash);
+  if (handler) {
+    await handler();
+    return true;
+  }
+  return false;
+}
+
 window.bus = Object.freeze({
   mountWrites:    () => switchTab('writes'),
   mountOrganizer: () => switchTab('tools').then(() => mountOrganizer(cardHost)),
   mountBackup:    () => switchTab('tools').then(() => mountBackup(cardHost)),
-  mountInventory: () => switchTab('tools').then(() => mountInventory(cardHost)),
+  mountInventory: () => {
+    if (window.location.hash !== '#/inventory') {
+      window.location.hash = '#/inventory';
+    } else {
+      switchTab('inventory');
+    }
+  },
   mountRfq:       () => switchTab('tools').then(() => mountRfq(cardHost)),
   mountSettings:  () => switchTab('tools').then(() => mountSettings(cardHost)),
   mountDev:       () => switchTab('dev'),
