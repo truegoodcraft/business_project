@@ -17,6 +17,9 @@ export async function mountInventory(container) {
     const unitSystemEl = () => document.getElementById('unit-system');
     const unitSelectEl = () => document.getElementById('unit-select');
 
+    let itemsCache = [];
+    let adjustCtx = null; // { id, qty } remembered when opening Adjust
+
     function fillUnitOptions(system, current) {
         const sel = unitSelectEl();
         sel.innerHTML = '';
@@ -65,27 +68,25 @@ export async function mountInventory(container) {
     }
 
     async function loadVendors() {
-        const candidates = ['/app/vendors', '/app/vendors/list', '/app/partners'];
-        let list = [];
-        for (const url of candidates) {
-            try {
-                list = await apiGet(url);
-                if (Array.isArray(list) && list.length) break;
-            } catch {}
-        }
         const field = document.getElementById('vendor-field');
         const sel = document.getElementById('vendor-select');
-        if (!Array.isArray(list) || list.length === 0) {
-            field.style.display = 'none';
-            sel.innerHTML = '';
-            return;
+        field.style.display = 'none';
+        sel.innerHTML = '';
+
+        try {
+            const resp = await apiGet('/app/vendors');
+            const list = Array.isArray(resp) ? resp : (resp?.items ?? []);
+            if (!Array.isArray(list) || list.length === 0) return;
+
+            field.style.display = '';
+            sel.innerHTML = `<option value="">— none —</option>` + list.map(v => {
+                const id = v.id ?? v.vendor_id ?? v.code;
+                const name = v.name ?? v.title ?? String(id);
+                return `<option value="${id}">${name}</option>`;
+            }).join('');
+        } catch {
+            // hide if endpoint not available
         }
-        field.style.display = '';
-        sel.innerHTML = `<option value="">— none —</option>` + list.map(v => {
-            const id = v.id ?? v.vendor_id ?? v.code;
-            const name = v.name ?? v.title ?? `Vendor ${id}`;
-            return `<option value="${id}">${name}</option>`;
-        }).join('');
     }
 
     container.innerHTML = `
@@ -184,9 +185,10 @@ export async function mountInventory(container) {
     async function loadItems() {
         try {
             const items = await apiGet('/app/items');
-            renderTable(items);
+            itemsCache = Array.isArray(items) ? items : [];
+            renderTable(itemsCache);
         } catch (err) {
-            alert('Failed to load items: ' + (err.error || err.message));
+            alert('Failed to load items: ' + (err?.error || err?.message || 'unknown'));
         }
     }
 
@@ -270,6 +272,7 @@ export async function mountInventory(container) {
     }
 
     function openAdjustModal(item) {
+        adjustCtx = { id: item.id, qty: Number(item.qty) };
         document.getElementById('current-qty').textContent = item.qty;
         const form = document.getElementById('adjust-form');
         form.item_id.value = item.id;
@@ -283,6 +286,7 @@ export async function mountInventory(container) {
         document.getElementById('item-modal').style.display = 'none';
         document.getElementById('adjust-modal').style.display = 'none';
         document.body.classList.remove('modal-open');
+        adjustCtx = null;
     }
 
     async function deleteItem(id) {
@@ -344,17 +348,58 @@ export async function mountInventory(container) {
     document.getElementById('adjust-form').onsubmit = async (e) => {
         e.preventDefault();
         const form = e.target;
-        const payload = {
-            item_id: parseInt(form.item_id.value),
-            delta: parseFloat(form.delta.value),
-            reason: form.reason.value.trim()
-        };
+        const item_id = parseInt(form.item_id.value);
+        const delta = parseFloat(form.delta.value);
+        const reason = form.reason.value.trim();
+
+        const payload = { item_id, delta, reason };
+
         try {
             await apiPost('/app/inventory/adjust', payload);
-            closeModals();
+            document.getElementById('adjust-modal').style.display = 'none';
+            document.body.classList.remove('modal-open');
+            adjustCtx = null;
             loadItems();
+            return;
         } catch (err) {
-            alert('Adjust failed: ' + (err.error || err.message));
+            const status = err?.status || err?.code;
+            const msg = (err?.error || err?.message || '').toLowerCase();
+
+            const missing = status === 404 || status === 405 || msg.includes('not found') || msg.includes('method not allowed');
+            if (!missing) {
+                alert('Adjust failed: ' + (err?.error || err?.message || 'unknown'));
+                return;
+            }
+
+            try {
+                let cur = itemsCache.find(x => x.id === item_id);
+                if (!cur) {
+                    const items = await apiGet('/app/items');
+                    itemsCache = Array.isArray(items) ? items : [];
+                    cur = itemsCache.find(x => x.id === item_id);
+                }
+                if (!cur) throw new Error('Item not found');
+
+                const baseQty = adjustCtx && adjustCtx.id === item_id ? Number(adjustCtx.qty) : Number(cur.qty);
+                const newQty = Number((baseQty + delta).toFixed(4));
+                const update = {
+                    name: cur.name,
+                    sku: cur.sku ?? null,
+                    qty: newQty,
+                    unit: cur.unit,
+                    vendor_id: cur.vendor_id ?? undefined,
+                    price: cur.price ?? undefined,
+                    location: cur.location ?? null
+                };
+                await apiPut(`/app/items/${item_id}`, update);
+                alert('Adjusted without journal: /app/inventory/adjust not available.');
+                document.getElementById('adjust-modal').style.display = 'none';
+                document.body.classList.remove('modal-open');
+                adjustCtx = null;
+                loadItems();
+            } catch (e2) {
+                alert('Adjust fallback failed: ' + (e2?.error || e2?.message || 'unknown'));
+            }
         }
     };
 
