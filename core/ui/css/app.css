@@ -442,18 +442,18 @@ textarea {
 
 /* Dark modal */
 .modal {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  position: fixed; inset: 0;
+  display: flex; align-items: center; justify-content: center;
   padding: 24px;
-  background: rgba(0,0,0,0.50);
-  z-index: 1000;
+  background: rgba(0,0,0,0.5);
+  z-index: 2000;
 }
 .modal-content {
+  margin: 0;
+  width: 480px; max-width: min(92vw, 540px);
+  max-height: 90vh; overflow: auto;
   background: #1e1f22; color: #e6e6e6;
-  padding: 20px; border-radius: 12px; width: 460px; max-width: 92%;
+  padding: 20px; border-radius: 12px;
   box-shadow: 0 12px 32px rgba(0,0,0,0.45);
 }
 .modal-content h3 { color: #e6e6e6; margin: 0 0 12px; }
