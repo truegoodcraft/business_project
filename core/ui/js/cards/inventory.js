@@ -3,6 +3,7 @@
 // ESM. Uses existing API helpers that inject X-Session-Token.
 
 import { apiGet, apiPost, apiPut, apiDelete, ensureToken } from '../api.js';
+import { request as rawRequest } from '../token.js';
 
 export async function mountInventory(container) {
     await ensureToken();
@@ -109,6 +110,7 @@ export async function mountInventory(container) {
         <div class="inventory-controls">
             <button id="add-item-btn">+ Add Item</button>
             <button id="refresh-btn">Refresh</button>
+            <button id="bulk-import-btn" class="pro-btn" style="background:#1e1f22;color:#e6e6e6;border:1px solid #2a2c30;border-radius:10px;padding:6px 14px;">Bulk Import (Pro)</button>
         </div>
         <table id="items-table">
             <thead>
@@ -192,11 +194,397 @@ export async function mountInventory(container) {
                 </form>
             </div>
         </div>
+
+        <!-- Bulk Import -->
+        <div id="bulk-modal" class="modal" style="display:none">
+            <div class="modal-content" style="background:#1e1f22;color:#e6e6e6;border-radius:10px;padding:24px;box-shadow:0 14px 40px rgba(0,0,0,0.55);width:520px;max-height:90vh;overflow:auto;">
+                <h3 style="margin-top:0;">Bulk Import (Pro)</h3>
+                <div class="bulk-section" style="margin-bottom:16px;">
+                    <label style="display:block;margin-bottom:12px;">
+                        Upload CSV or XLSX
+                        <input type="file" id="bulk-file" accept=".csv,.xlsx" style="display:block;margin-top:8px;background:#2a2c30;color:#e6e6e6;border:1px solid #3a3c40;border-radius:10px;padding:8px;">
+                    </label>
+                    <button type="button" id="bulk-preview-btn" style="background:#2a2c30;color:#e6e6e6;border-radius:10px;border:1px solid #3a3c40;padding:8px 16px;">Generate Preview</button>
+                </div>
+                <div id="bulk-mapping" style="display:none;margin-top:10px;"></div>
+                <div id="bulk-preview" style="display:none;margin-top:16px;">
+                    <table id="bulk-preview-table" style="width:100%;border-collapse:collapse;background:#1e1f22;border:1px solid #2a2c30;border-radius:10px;overflow:hidden;">
+                        <thead>
+                            <tr id="bulk-preview-head"></tr>
+                        </thead>
+                        <tbody id="bulk-preview-body"></tbody>
+                    </table>
+                </div>
+                <div id="bulk-status" style="display:none;margin-top:12px;color:#9cdcfe;font-size:0.9rem;"></div>
+                <div class="bulk-actions" style="display:flex;gap:12px;margin-top:20px;justify-content:flex-end;">
+                    <button type="button" id="bulk-commit-btn" style="background:#2a2c30;color:#e6e6e6;border-radius:10px;border:1px solid #3a3c40;padding:8px 18px;" disabled>Commit Import</button>
+                    <button type="button" id="bulk-cancel-btn" style="background:#2a2c30;color:#e6e6e6;border-radius:10px;border:1px solid #3a3c40;padding:8px 18px;">Close</button>
+                </div>
+            </div>
+        </div>
     `;
 
     const tbody = container.querySelector('#items-table tbody');
     let currentEditId = null;
     let itemsCache = [];
+
+    const BULK_FIELDS = [
+        { key: 'name', label: 'Name', required: true },
+        { key: 'sku', label: 'SKU' },
+        { key: 'qty', label: 'Quantity' },
+        { key: 'unit', label: 'Unit' },
+        { key: 'price', label: 'Price' },
+        { key: 'vendor_id', label: 'Vendor ID' },
+        { key: 'notes', label: 'Notes' }
+    ];
+
+    const bulkButton = container.querySelector('#bulk-import-btn');
+    const bulkModal = container.querySelector('#bulk-modal');
+    const bulkFileInput = container.querySelector('#bulk-file');
+    const bulkPreviewBtn = container.querySelector('#bulk-preview-btn');
+    const bulkCommitBtn = container.querySelector('#bulk-commit-btn');
+    const bulkCancelBtn = container.querySelector('#bulk-cancel-btn');
+    const bulkMapping = container.querySelector('#bulk-mapping');
+    const bulkPreviewWrap = container.querySelector('#bulk-preview');
+    const bulkPreviewHead = container.querySelector('#bulk-preview-head');
+    const bulkPreviewBody = container.querySelector('#bulk-preview-body');
+    const bulkStatus = container.querySelector('#bulk-status');
+
+    const bulkState = {
+        previewId: null,
+        columns: [],
+        previewRows: [],
+        totalRows: 0
+    };
+    let bulkMappingSelects = [];
+
+    function setBulkStatus(message, tone = 'info') {
+        if (!bulkStatus) return;
+        if (!message) {
+            bulkStatus.style.display = 'none';
+            bulkStatus.textContent = '';
+            return;
+        }
+        bulkStatus.textContent = message;
+        bulkStatus.style.display = '';
+        bulkStatus.style.color = tone === 'error' ? '#ff7b7b' : '#9cdcfe';
+    }
+
+    function resetBulkModal() {
+        bulkState.previewId = null;
+        bulkState.columns = [];
+        bulkState.previewRows = [];
+        bulkState.totalRows = 0;
+        bulkMappingSelects = [];
+        if (bulkFileInput) bulkFileInput.value = '';
+        if (bulkMapping) {
+            bulkMapping.innerHTML = '';
+            bulkMapping.style.display = 'none';
+        }
+        if (bulkPreviewHead) bulkPreviewHead.innerHTML = '';
+        if (bulkPreviewBody) bulkPreviewBody.innerHTML = '';
+        if (bulkPreviewWrap) bulkPreviewWrap.style.display = 'none';
+        if (bulkCommitBtn) bulkCommitBtn.disabled = true;
+        setBulkStatus('');
+    }
+
+    function renderBulkMapping(columns) {
+        if (!bulkMapping) return;
+        bulkMapping.innerHTML = '';
+        bulkMappingSelects = [];
+        if (!Array.isArray(columns) || columns.length === 0) {
+            bulkMapping.style.display = 'none';
+            return;
+        }
+
+        const grid = document.createElement('div');
+        grid.style.display = 'grid';
+        grid.style.gap = '10px';
+
+        BULK_FIELDS.forEach(field => {
+            const wrapper = document.createElement('label');
+            wrapper.style.display = 'flex';
+            wrapper.style.flexDirection = 'column';
+            wrapper.style.gap = '6px';
+            wrapper.style.color = '#e6e6e6';
+            wrapper.style.fontSize = '0.9rem';
+
+            const text = document.createElement('span');
+            text.textContent = field.required ? `${field.label} *` : field.label;
+            const select = document.createElement('select');
+            select.dataset.field = field.key;
+            select.style.background = '#2a2c30';
+            select.style.color = '#e6e6e6';
+            select.style.border = '1px solid #3a3c40';
+            select.style.borderRadius = '10px';
+            select.style.padding = '6px 10px';
+
+            const emptyOpt = document.createElement('option');
+            emptyOpt.value = '';
+            emptyOpt.textContent = '— Not mapped —';
+            select.appendChild(emptyOpt);
+
+            let guess = '';
+            const normalizedField = field.key.toLowerCase();
+            columns.forEach(col => {
+                const value = String(col);
+                const opt = document.createElement('option');
+                opt.value = value;
+                opt.textContent = value;
+                select.appendChild(opt);
+                const lc = value.toLowerCase();
+                if (!guess && (lc === normalizedField || lc.replace(/\s+/g, '') === normalizedField)) {
+                    guess = value;
+                }
+            });
+            if (!guess) {
+                const normalizedVariants = [
+                    normalizedField,
+                    normalizedField.replace(/_/g, ' '),
+                    normalizedField.replace(/_/g, '')
+                ].filter(Boolean);
+                guess = columns.find(col => {
+                    const lc = String(col).toLowerCase();
+                    return normalizedVariants.some(token => token && lc.includes(token));
+                }) || '';
+            }
+            if (guess) select.value = guess;
+
+            wrapper.appendChild(text);
+            wrapper.appendChild(select);
+            grid.appendChild(wrapper);
+            bulkMappingSelects.push(select);
+        });
+
+        bulkMapping.appendChild(grid);
+        bulkMapping.style.display = '';
+    }
+
+    function renderBulkPreviewTable(columns, rows) {
+        if (!bulkPreviewHead || !bulkPreviewBody) return;
+        bulkPreviewHead.innerHTML = '';
+        bulkPreviewBody.innerHTML = '';
+        if (!Array.isArray(columns) || columns.length === 0) {
+            if (bulkPreviewWrap) bulkPreviewWrap.style.display = 'none';
+            return;
+        }
+
+        columns.forEach(col => {
+            const th = document.createElement('th');
+            th.textContent = col;
+            th.style.padding = '6px 10px';
+            th.style.background = '#2b2d31';
+            th.style.textAlign = 'left';
+            bulkPreviewHead.appendChild(th);
+        });
+
+        const previewRows = Array.isArray(rows) ? rows : [];
+        const limited = previewRows.slice(0, 10);
+        if (limited.length === 0) {
+            const tr = document.createElement('tr');
+            const td = document.createElement('td');
+            td.textContent = 'No preview rows available yet.';
+            td.colSpan = columns.length;
+            td.style.padding = '10px';
+            td.style.textAlign = 'center';
+            td.style.background = '#1e1f22';
+            tr.appendChild(td);
+            bulkPreviewBody.appendChild(tr);
+        }
+        limited.forEach(row => {
+            const tr = document.createElement('tr');
+            tr.style.borderBottom = '1px solid #2a2c30';
+            columns.forEach(col => {
+                const td = document.createElement('td');
+                const value = row && Object.prototype.hasOwnProperty.call(row, col) ? row[col] : '';
+                td.textContent = value === null || value === undefined ? '' : String(value);
+                td.style.padding = '6px 10px';
+                td.style.background = '#1e1f22';
+                tr.appendChild(td);
+            });
+            bulkPreviewBody.appendChild(tr);
+        });
+
+        if (bulkPreviewWrap) bulkPreviewWrap.style.display = '';
+    }
+
+    function gatherBulkMapping() {
+        const mapping = {};
+        bulkMappingSelects.forEach(select => {
+            if (select.value) {
+                mapping[select.dataset.field] = select.value;
+            }
+        });
+        return mapping;
+    }
+
+    function openBulkModal() {
+        resetBulkModal();
+        if (bulkModal) bulkModal.style.display = 'block';
+        document.body.classList.add('modal-open');
+    }
+
+    function anyModalOpen() {
+        const ids = ['item-modal', 'adjust-modal', 'bulk-modal'];
+        return ids.some(id => {
+            const el = document.getElementById(id);
+            return el && el.style.display !== 'none';
+        });
+    }
+
+    function hideBulkModal() {
+        if (bulkModal) bulkModal.style.display = 'none';
+        resetBulkModal();
+        if (!anyModalOpen()) {
+            document.body.classList.remove('modal-open');
+        }
+    }
+
+    if (bulkModal) {
+        bulkModal.addEventListener('click', (ev) => {
+            if (ev.target === bulkModal) hideBulkModal();
+        });
+    }
+
+    if (!document.body.dataset.bulkEscBound) {
+        document.addEventListener('keydown', (ev) => {
+            if (ev.key === 'Escape' && bulkModal && bulkModal.style.display === 'block') {
+                hideBulkModal();
+            }
+        });
+        document.body.dataset.bulkEscBound = '1';
+    }
+
+    if (bulkButton) {
+        bulkButton.disabled = true;
+        bulkButton.style.opacity = '0.4';
+        bulkButton.title = 'Requires Pro license';
+    }
+
+    async function initBulkImport() {
+        if (!bulkButton) return;
+        try {
+            const license = await apiGet('/dev/license');
+            const enabled = Boolean(license?.features?.import_commit);
+            if (enabled) {
+                bulkButton.disabled = false;
+                bulkButton.style.opacity = '1';
+                bulkButton.title = '';
+            } else {
+                bulkButton.disabled = true;
+                bulkButton.style.opacity = '0.4';
+                bulkButton.title = 'Requires Pro license';
+            }
+        } catch {
+            bulkButton.disabled = true;
+            bulkButton.style.opacity = '0.4';
+            bulkButton.title = 'Requires Pro license';
+        }
+    }
+
+    if (bulkButton) {
+        bulkButton.addEventListener('click', () => {
+            if (bulkButton.disabled) return;
+            openBulkModal();
+        });
+    }
+
+    if (bulkCancelBtn) {
+        bulkCancelBtn.onclick = () => hideBulkModal();
+    }
+
+    if (bulkPreviewBtn) {
+        bulkPreviewBtn.onclick = async () => {
+            if (!bulkFileInput || bulkFileInput.files.length === 0) {
+                setBulkStatus('Select a CSV or XLSX file to continue.', 'error');
+                return;
+            }
+            setBulkStatus('Generating preview…');
+            bulkPreviewBtn.disabled = true;
+            if (bulkCommitBtn) bulkCommitBtn.disabled = true;
+            try {
+                const formData = new FormData();
+                formData.append('file', bulkFileInput.files[0]);
+                const resp = await rawRequest('/app/items/bulk_preview', {
+                    method: 'POST',
+                    body: formData
+                });
+                const text = await resp.text();
+                let data = {};
+                if (text) {
+                    try {
+                        data = JSON.parse(text);
+                    } catch {
+                        data = { error: text };
+                    }
+                }
+                if (!resp.ok) {
+                    const msg = data?.detail || data?.error || data?.message || 'Preview failed';
+                    throw new Error(msg);
+                }
+
+                const columns = Array.isArray(data.columns) ? data.columns : [];
+                if (!columns.length) {
+                    throw new Error('No columns detected in file.');
+                }
+                bulkState.previewId = data.preview_id;
+                bulkState.columns = columns;
+                bulkState.previewRows = Array.isArray(data.preview_rows) ? data.preview_rows : [];
+                const totalRows = Number.parseInt(data.total_rows, 10);
+                bulkState.totalRows = Number.isFinite(totalRows) ? totalRows : bulkState.previewRows.length;
+
+                renderBulkMapping(columns);
+                renderBulkPreviewTable(columns, bulkState.previewRows);
+
+                const rowsLabel = bulkState.totalRows === 1 ? 'row' : 'rows';
+                setBulkStatus(`Preview ready. ${bulkState.totalRows} ${rowsLabel} detected.`);
+                if (bulkCommitBtn) bulkCommitBtn.disabled = false;
+            } catch (err) {
+                const msg = err?.message || 'Preview failed';
+                if (msg === 'missing_openpyxl') {
+                    setBulkStatus('XLSX preview requires openpyxl on the server.', 'error');
+                } else {
+                    setBulkStatus(msg, 'error');
+                }
+            } finally {
+                bulkPreviewBtn.disabled = false;
+            }
+        };
+    }
+
+    if (bulkCommitBtn) {
+        bulkCommitBtn.onclick = async () => {
+            if (!bulkState.previewId) {
+                setBulkStatus('Generate a preview before committing.', 'error');
+                return;
+            }
+            const mapping = gatherBulkMapping();
+            if (!mapping.name) {
+                setBulkStatus('Map the Name column before committing.', 'error');
+                return;
+            }
+
+            setBulkStatus('Committing import…');
+            bulkCommitBtn.disabled = true;
+            try {
+                const result = await apiPost('/app/items/bulk_commit', {
+                    preview_id: bulkState.previewId,
+                    mapping
+                });
+                const created = result?.created ?? 0;
+                const updated = result?.updated ?? 0;
+                const skipped = result?.skipped ?? 0;
+                alert(`Bulk import complete: ${created} created, ${updated} updated, ${skipped} skipped.`);
+                hideBulkModal();
+                await loadItems();
+            } catch (err) {
+                setBulkStatus('Commit failed: ' + (err?.error || err?.message || 'unknown'), 'error');
+                bulkCommitBtn.disabled = false;
+            }
+        };
+    }
+
+    initBulkImport();
 
     async function loadItems() {
         try {
@@ -314,9 +702,13 @@ export async function mountInventory(container) {
     }
 
     function closeModals() {
-        document.getElementById('item-modal').style.display = 'none';
-        document.getElementById('adjust-modal').style.display = 'none';
-        document.body.classList.remove('modal-open');
+        const itemModal = document.getElementById('item-modal');
+        const adjustModal = document.getElementById('adjust-modal');
+        if (itemModal) itemModal.style.display = 'none';
+        if (adjustModal) adjustModal.style.display = 'none';
+        if (!anyModalOpen()) {
+            document.body.classList.remove('modal-open');
+        }
     }
 
     async function deleteItem(id) {
