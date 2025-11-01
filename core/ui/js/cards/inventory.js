@@ -7,6 +7,10 @@ import { apiGet, apiPost, apiPut, apiDelete, ensureToken } from '../api.js';
 export async function mountInventory(container) {
     await ensureToken();
 
+    console.log(
+        'Inventory endpoints:\n  Load: GET /app/items\n  Create: POST /app/items\n  Update: PUT /app/items/{id}\n  Delete: DELETE /app/items/{id}\n  Adjust primary: POST /app/inventory/adjust {item_id, delta, reason}\n  Adjust fallback: GET /app/items + PUT /app/items/{id} {qty}'
+    );
+
     const UNIT_SETS = {
         ea: ['ea'],
         metric: ['mm', 'cm', 'm', 'km', 'g', 'kg', 'ml', 'l', 'm2', 'm3'],
@@ -192,11 +196,13 @@ export async function mountInventory(container) {
 
     const tbody = container.querySelector('#items-table tbody');
     let currentEditId = null;
+    let itemsCache = [];
 
     async function loadItems() {
         try {
             const items = await apiGet('/app/items');
             const list = Array.isArray(items) ? items : [];
+            itemsCache = list;
             renderTable(list);
         } catch (err) {
             alert('Failed to load items: ' + (err?.error || err?.message || 'unknown'));
@@ -382,7 +388,7 @@ export async function mountInventory(container) {
         closeModals();
     };
 
-    // ===== Adjust Qty — hybrid: try Pro journal, else PUT fallback =====
+    // ===== Adjust Qty — try Pro journal; else list->PUT fallback =====
     document.getElementById('adjust-form').onsubmit = async (e) => {
         e.preventDefault();
 
@@ -391,31 +397,42 @@ export async function mountInventory(container) {
         const delta   = Number(form.delta.value);
         const reason  = String(form.reason.value || '').trim();
 
-        if (!Number.isFinite(item_id) || Number.isNaN(delta)) {
+        if (!Number.isFinite(item_id) || !Number.isFinite(delta)) {
             alert('Adjust requires a valid item and numeric delta.');
             return;
         }
 
         const payload = { item_id, delta, reason };
 
-        // Helper: decide if journal endpoint is missing
         const isMissing = (err) => {
             const s = err?.status || err?.code;
             const m = (err?.error || err?.message || '').toLowerCase();
             return s === 404 || s === 405 || m.includes('not found') || m.includes('method not allowed');
         };
 
-        // Fallback PUT: GET current -> compute -> PUT {qty}
+        // fetch current item WITHOUT using GET /app/items/{id} (405 on this server)
+        const fetchItem = async (id) => {
+            // prefer cache from table render
+            let it = (Array.isArray(itemsCache) ? itemsCache : []).find(x => x.id === id);
+            if (!it) {
+                const list = await apiGet('/app/items');              // <-- list endpoint
+                itemsCache = Array.isArray(list) ? list : (list?.items ?? []);
+                it = itemsCache.find(x => x.id === id);
+            }
+            if (!it) throw new Error('Item not found');
+            return it;
+        };
+
         const fallbackPut = async () => {
-            const item = await apiGet(`/app/items/${item_id}`);
-            const cur  = Number(item?.qty ?? 0);
+            const curIt = await fetchItem(item_id);
+            const cur   = Number(curIt.qty ?? 0);
             const newQty = Number((cur + delta).toFixed(4));
-            await apiPut(`/app/items/${item_id}`, { qty: newQty });
+            await apiPut(`/app/items/${item_id}`, { qty: newQty }); // send ONLY qty
             console.log('inventory.js: adjust: fallback-put', { item_id, delta, newQty });
         };
 
         try {
-            // Try Pro path first; keeps framework for later
+            // keep Pro framework
             await apiPost('/app/inventory/adjust', payload);
             console.log('inventory.js: adjust: journaled', { item_id, delta });
         } catch (err) {
@@ -423,11 +440,9 @@ export async function mountInventory(container) {
                 alert('Adjust failed: ' + (err?.error || err?.message || 'unknown'));
                 return;
             }
-            // journal not present → free-tier path
             await fallbackPut();
         }
 
-        // Close and refresh
         document.getElementById('adjust-modal').style.display = 'none';
         document.body.classList.remove('modal-open');
         await loadItems();
