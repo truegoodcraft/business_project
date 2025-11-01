@@ -17,8 +17,16 @@ export async function mountInventory(container) {
     const unitSystemEl = () => document.getElementById('unit-system');
     const unitSelectEl = () => document.getElementById('unit-select');
 
+    // cache used by adjust fallback
     let itemsCache = [];
-    let adjustCtx = null; // { id, qty } remembered when opening Adjust
+
+    // currency symbol from UI preference
+    function currencySymbol() {
+        const cur = localStorage.getItem('priceCurrency') || 'USD';
+        const map = { USD: '$', EUR: '€', GBP: '£', CAD: '$', AUD: '$', JPY: '¥', CNY: '¥' };
+        return map[cur] || '$';
+    }
+    function safeUnit(u) { return (u || '').toString().toLowerCase(); }
 
     function fillUnitOptions(system, current) {
         const sel = unitSelectEl();
@@ -100,7 +108,6 @@ export async function mountInventory(container) {
                     <th>Name</th>
                     <th>SKU</th>
                     <th>Qty</th>
-                    <th>Unit</th>
                     <th>Vendor</th>
                     <th>Price</th>
                     <th>Location</th>
@@ -193,22 +200,29 @@ export async function mountInventory(container) {
     }
 
     function renderTable(items) {
-        tbody.innerHTML = items.map(item => `
-            <tr data-id="${item.id}">
-                <td>${escapeHtml(item.name)}</td>
-                <td>${escapeHtml(item.sku || '')}</td>
-                <td>${item.qty}</td>
-                <td>${escapeHtml(item.unit)}</td>
-                <td>${item.vendor_id ?? ''}</td>
-                <td>${item.price ?? ''}</td>
-                <td>${escapeHtml(item.location || '')}</td>
-                <td>
-                    <button class="edit-btn">Edit</button>
-                    <button class="adjust-btn">±</button>
-                    <button class="delete-btn">Delete</button>
-                </td>
-            </tr>
-        `).join('');
+        const sym = currencySymbol();
+        tbody.innerHTML = items.map(item => {
+            const unit = safeUnit(item.unit);
+            const qtyUnit = `${item.qty} ${unit || ''}`.trim();
+            const vendor = item.vendor_id || '';
+            const price = (item.price ?? '') === '' ? '' : `${sym}${item.price}`;
+            const loc = item.location ? escapeHtml(item.location) : 'Shop';
+            return `
+      <tr data-id="${item.id}">
+        <td>${escapeHtml(item.name || '')}</td>
+        <td>${escapeHtml(item.sku || '')}</td>
+        <td>${qtyUnit.toUpperCase()}</td>
+        <td>${vendor}</td>
+        <td>${price}</td>
+        <td>${loc}</td>
+        <td>
+          <button class="edit-btn">Edit</button>
+          <button class="adjust-btn">±</button>
+          <button class="delete-btn">Delete</button>
+        </td>
+      </tr>
+    `;
+        }).join('');
 
         tbody.querySelectorAll('.edit-btn').forEach(btn => {
             btn.onclick = () => openEditModal(getItemFromRow(btn.closest('tr')));
@@ -223,15 +237,18 @@ export async function mountInventory(container) {
 
     function getItemFromRow(row) {
         const id = row.dataset.id;
+        const qtyUnit = row.cells[2].textContent.trim().split(/\s+/);
+        const qty = parseFloat(qtyUnit[0] || '0');
+        const unit = qtyUnit.slice(1).join(' ') || '';
         return {
             id: parseInt(id),
             name: row.cells[0].textContent,
             sku: row.cells[1].textContent,
-            qty: parseFloat(row.cells[2].textContent),
-            unit: row.cells[3].textContent,
-            vendor_id: row.cells[4].textContent ? parseInt(row.cells[4].textContent) : null,
-            price: row.cells[5].textContent ? parseFloat(row.cells[5].textContent) : null,
-            location: row.cells[6].textContent
+            qty,
+            unit: unit.toLowerCase(),
+            vendor_id: row.cells[3].textContent ? parseInt(row.cells[3].textContent) : null,
+            price: row.cells[4].textContent ? parseFloat(row.cells[4].textContent.replace(/[^\d.]/g, '')) : null,
+            location: row.cells[5].textContent
         };
     }
 
@@ -272,21 +289,18 @@ export async function mountInventory(container) {
     }
 
     function openAdjustModal(item) {
-        adjustCtx = { id: item.id, qty: Number(item.qty) };
         document.getElementById('current-qty').textContent = item.qty;
         const form = document.getElementById('adjust-form');
         form.item_id.value = item.id;
         form.delta.value = '';
         form.reason.value = '';
         document.getElementById('adjust-modal').style.display = 'block';
-        document.body.classList.add('modal-open');
     }
 
     function closeModals() {
         document.getElementById('item-modal').style.display = 'none';
         document.getElementById('adjust-modal').style.display = 'none';
         document.body.classList.remove('modal-open');
-        adjustCtx = null;
     }
 
     async function deleteItem(id) {
@@ -295,7 +309,7 @@ export async function mountInventory(container) {
             await apiDelete(`/app/items/${id}`);
             loadItems();
         } catch (err) {
-            alert('Delete failed: ' + (err.error || err.message));
+            alert('Delete failed: ' + (err?.error || err?.message || 'unknown'));
         }
     }
 
@@ -314,10 +328,15 @@ export async function mountInventory(container) {
     document.getElementById('item-form').onsubmit = async (e) => {
         e.preventDefault();
         const f = e.target;
-        localStorage.setItem('priceCurrency', currencySelect().value);
+
+        // remember UI currency, not sent to backend
+        const curEl = document.getElementById('price-currency');
+        if (curEl) localStorage.setItem('priceCurrency', curEl.value || 'USD');
 
         const vendorVal = document.getElementById('vendor-select')?.value || '';
-        const data = compactPayload({
+
+        // build base data from form
+        let data = {
             name: f.name.value.trim(),
             sku: f.sku.value.trim() || null,
             qty: parseFloat(f.qty.value),
@@ -325,7 +344,16 @@ export async function mountInventory(container) {
             vendor_id: vendorVal ? parseInt(vendorVal) : undefined,
             price: f.price.value ? parseFloat(f.price.value) : undefined,
             location: f.location.value.trim() || null
-        });
+        };
+        data = compactPayload(data);
+
+        // create requires name; update must not send empty/undefined name
+        if (!currentEditId) {
+            if (!data.name) { alert('Name required'); return; }
+        } else {
+            // never send name on PUT; let backend keep existing
+            delete data.name;
+        }
 
         try {
             if (currentEditId) {
@@ -333,10 +361,10 @@ export async function mountInventory(container) {
             } else {
                 await apiPost('/app/items', data);
             }
-            closeModals();
+            document.getElementById('item-modal').style.display = 'none';
+            document.body.classList.remove('modal-open');
             loadItems();
         } catch (err) {
-            console.error('Save failed:', err);
             alert('Save failed: ' + (err?.error || err?.message || 'unknown'));
         }
     };
@@ -358,7 +386,6 @@ export async function mountInventory(container) {
             await apiPost('/app/inventory/adjust', payload);
             document.getElementById('adjust-modal').style.display = 'none';
             document.body.classList.remove('modal-open');
-            adjustCtx = null;
             loadItems();
             return;
         } catch (err) {
@@ -380,22 +407,11 @@ export async function mountInventory(container) {
                 }
                 if (!cur) throw new Error('Item not found');
 
-                const baseQty = adjustCtx && adjustCtx.id === item_id ? Number(adjustCtx.qty) : Number(cur.qty);
-                const newQty = Number((baseQty + delta).toFixed(4));
-                const update = {
-                    name: cur.name,
-                    sku: cur.sku ?? null,
-                    qty: newQty,
-                    unit: cur.unit,
-                    vendor_id: cur.vendor_id ?? undefined,
-                    price: cur.price ?? undefined,
-                    location: cur.location ?? null
-                };
-                await apiPut(`/app/items/${item_id}`, update);
-                alert('Adjusted without journal: /app/inventory/adjust not available.');
+                const newQty = Number((Number(cur.qty) + delta).toFixed(4));
+                await apiPut(`/app/items/${item_id}`, { qty: newQty });
+                alert('Adjusted without journal (fallback).');
                 document.getElementById('adjust-modal').style.display = 'none';
                 document.body.classList.remove('modal-open');
-                adjustCtx = null;
                 loadItems();
             } catch (e2) {
                 alert('Adjust fallback failed: ' + (e2?.error || e2?.message || 'unknown'));
