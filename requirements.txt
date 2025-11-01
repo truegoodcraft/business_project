@@ -16,6 +16,7 @@ fastapi
 uvicorn[standard]
 pydantic>=2
 python-multipart
+openpyxl>=3.1.0
 sqlalchemy
 Send2Trash==1.8.2
 pywin32>=306; platform_system == "Windows"
