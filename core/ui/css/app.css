@@ -440,44 +440,49 @@ textarea {
 /* Inventory card */
 .inventory-controls { margin: 10px 0; }
 
-/* Dark modal */
+/* Centered, full-screen modal backdrop */
 .modal {
-  position: fixed; inset: 0;
-  display: flex; align-items: center; justify-content: center;
-  padding: 24px;
-  background: rgba(0,0,0,0.5);
-  z-index: 2000;
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.50);
+  z-index: 1000;
 }
+
 .modal-content {
-  margin: 0;
-  width: 480px; max-width: min(92vw, 540px);
-  max-height: 90vh; overflow: auto;
-  background: #1e1f22; color: #e6e6e6;
-  padding: 20px; border-radius: 12px;
+  background: #1e1f22;
+  color: #e6e6e6;
+  padding: 20px;
+  border-radius: 12px;
+  width: 460px;
+  max-width: 92%;
   box-shadow: 0 12px 32px rgba(0,0,0,0.45);
 }
-.modal-content h3 { color: #e6e6e6; margin: 0 0 12px; }
-.modal-content label { display: block; margin: 10px 0 6px; color: #cfcfcf; }
+
+.modal-content h3 { margin: 0 0 12px; }
+.modal-content label { display:block; margin:10px 0 6px; color:#cfcfcf; }
 .modal-content input, .modal-content select {
-  width: 100%; padding: 10px 12px; border-radius: 10px;
-  border: 1px solid #2b2d31; background: #2a2c30; color: #f1f1f1;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #2b2d31;
+  background: #2a2c30;
+  color: #f1f1f1;
 }
 .modal-content button { margin: 12px 8px 0 0; border-radius: 10px; }
 
 .row-compact { display: grid; grid-template-columns: 160px 1fr; gap: 8px; }
 
-/* Table polish */
-#items-table {
-  width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 10px;
-  overflow: hidden; border-radius: 12px;
-}
-#items-table thead th {
-  background: #2b2d31; color: #dfe1e6; padding: 10px; font-weight: 600;
-}
-#items-table td {
-  background: #1f2125; color: #e6e6e6; padding: 10px; border-top: 1px solid #2b2d31;
-}
-#items-table tr:hover td { background: #23262b; }
+/* Table: dark + soft hover */
+#items-table { width:100%; border-collapse:separate; border-spacing:0; margin-top:10px; overflow:hidden; border-radius:12px; }
+#items-table thead th { background:#2b2d31; color:#dfe1e6; padding:10px; font-weight:600; }
+#items-table td { background:#1f2125; color:#e6e6e6; padding:10px; border-top:1px solid #2b2d31; }
+#items-table tr:hover td { background:#23262b; }
 
-/* Hide token chip */
+/* Hide token chip if present */
 .token-badge, #token-badge { display: none !important; }
+
+/* Lock background scroll while a modal is open */
+body.modal-open { overflow: hidden; }

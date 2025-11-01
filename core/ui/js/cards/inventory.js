@@ -17,10 +17,14 @@ export async function mountInventory(container) {
     const unitSystemEl = () => document.getElementById('unit-system');
     const unitSelectEl = () => document.getElementById('unit-select');
 
-    // cache used by adjust fallback
-    let itemsCache = [];
-
     // currency symbol from UI preference
+    function toNumber(x) {
+        if (typeof x === 'number') return x;
+        const s = String(x).replace(',', '.').trim();
+        const n = Number(s);
+        if (Number.isNaN(n)) throw new Error('Invalid number');
+        return n;
+    }
     function currencySymbol() {
         const cur = localStorage.getItem('priceCurrency') || 'USD';
         const map = { USD: '$', EUR: '€', GBP: '£', CAD: '$', AUD: '$', JPY: '¥', CNY: '¥' };
@@ -192,8 +196,8 @@ export async function mountInventory(container) {
     async function loadItems() {
         try {
             const items = await apiGet('/app/items');
-            itemsCache = Array.isArray(items) ? items : [];
-            renderTable(itemsCache);
+            const list = Array.isArray(items) ? items : [];
+            renderTable(list);
         } catch (err) {
             alert('Failed to load items: ' + (err?.error || err?.message || 'unknown'));
         }
@@ -202,18 +206,23 @@ export async function mountInventory(container) {
     function renderTable(items) {
         const sym = currencySymbol();
         tbody.innerHTML = items.map(item => {
+            const qty = item.qty ?? 0;
             const unit = safeUnit(item.unit);
-            const qtyUnit = `${item.qty} ${unit || ''}`.trim();
-            const vendor = item.vendor_id || '';
-            const price = (item.price ?? '') === '' ? '' : `${sym}${item.price}`;
+            const qtyUnit = `${qty} ${unit ? unit.toUpperCase() : ''}`.trim();
+            const vendor = item.vendor_id ? escapeHtml(String(item.vendor_id)) : '';
+            let price = '';
+            if (item.price !== undefined && item.price !== null && item.price !== '') {
+                const priceNum = Number(item.price);
+                if (!Number.isNaN(priceNum)) price = `${sym}${priceNum}`;
+            }
             const loc = item.location ? escapeHtml(item.location) : 'Shop';
             return `
       <tr data-id="${item.id}">
         <td>${escapeHtml(item.name || '')}</td>
         <td>${escapeHtml(item.sku || '')}</td>
-        <td>${qtyUnit.toUpperCase()}</td>
+        <td>${escapeHtml(qtyUnit)}</td>
         <td>${vendor}</td>
-        <td>${price}</td>
+        <td>${price ? escapeHtml(price) : ''}</td>
         <td>${loc}</td>
         <td>
           <button class="edit-btn">Edit</button>
@@ -295,6 +304,7 @@ export async function mountInventory(container) {
         form.delta.value = '';
         form.reason.value = '';
         document.getElementById('adjust-modal').style.display = 'block';
+        document.body.classList.add('modal-open');
     }
 
     function closeModals() {
@@ -319,7 +329,7 @@ export async function mountInventory(container) {
     function compactPayload(o) {
         const out = {};
         for (const [k, v] of Object.entries(o)) {
-            if (v === '' || v === null || Number.isNaN(v)) continue;
+            if (v === '' || v === null || v === undefined || Number.isNaN(v)) continue;
             out[k] = v;
         }
         return out;
@@ -341,7 +351,7 @@ export async function mountInventory(container) {
             sku: f.sku.value.trim() || null,
             qty: parseFloat(f.qty.value),
             unit: f.querySelector('input[name="unit"]').value || null,
-            vendor_id: vendorVal ? parseInt(vendorVal) : undefined,
+            vendor_id: vendorVal ? parseInt(vendorVal, 10) : undefined,
             price: f.price.value ? parseFloat(f.price.value) : undefined,
             location: f.location.value.trim() || null
         };
@@ -361,8 +371,7 @@ export async function mountInventory(container) {
             } else {
                 await apiPost('/app/items', data);
             }
-            document.getElementById('item-modal').style.display = 'none';
-            document.body.classList.remove('modal-open');
+            closeModals();
             loadItems();
         } catch (err) {
             alert('Save failed: ' + (err?.error || err?.message || 'unknown'));
@@ -376,46 +385,52 @@ export async function mountInventory(container) {
     document.getElementById('adjust-form').onsubmit = async (e) => {
         e.preventDefault();
         const form = e.target;
-        const item_id = parseInt(form.item_id.value);
-        const delta = parseFloat(form.delta.value);
-        const reason = form.reason.value.trim();
-
-        const payload = { item_id, delta, reason };
+        const id = parseInt(form.item_id.value, 10);
+        let delta;
+        let reason;
+        try {
+            delta = toNumber(form.delta.value);
+        } catch {
+            alert('Enter a valid number for Change.');
+            return;
+        }
+        reason = form.reason.value.trim();
+        if (delta === 0) {
+            alert('Change must be non-zero.');
+            return;
+        }
+        if (!reason) {
+            alert('Reason is required.');
+            return;
+        }
 
         try {
-            await apiPost('/app/inventory/adjust', payload);
-            document.getElementById('adjust-modal').style.display = 'none';
-            document.body.classList.remove('modal-open');
+            await apiPost('/app/inventory/adjust', { item_id: id, delta, reason });
+            closeModals();
             loadItems();
             return;
         } catch (err) {
-            const status = err?.status || err?.code;
-            const msg = (err?.error || err?.message || '').toLowerCase();
-
-            const missing = status === 404 || status === 405 || msg.includes('not found') || msg.includes('method not allowed');
+            const s = (err?.response?.status ?? err?.status ?? err?.code ?? 0);
+            const m = (err?.error || err?.message || '').toString().toLowerCase();
+            const missing = (s === 404 || s === 405 || s === 501) || m.includes('not found') || m.includes('method not allowed') || m.includes('no route') || m.includes('unknown endpoint');
             if (!missing) {
                 alert('Adjust failed: ' + (err?.error || err?.message || 'unknown'));
                 return;
             }
+        }
 
-            try {
-                let cur = itemsCache.find(x => x.id === item_id);
-                if (!cur) {
-                    const items = await apiGet('/app/items');
-                    itemsCache = Array.isArray(items) ? items : [];
-                    cur = itemsCache.find(x => x.id === item_id);
-                }
-                if (!cur) throw new Error('Item not found');
-
-                const newQty = Number((Number(cur.qty) + delta).toFixed(4));
-                await apiPut(`/app/items/${item_id}`, { qty: newQty });
-                alert('Adjusted without journal (fallback).');
-                document.getElementById('adjust-modal').style.display = 'none';
-                document.body.classList.remove('modal-open');
-                loadItems();
-            } catch (e2) {
-                alert('Adjust fallback failed: ' + (e2?.error || e2?.message || 'unknown'));
-            }
+        try {
+            const items = await apiGet('/app/items');
+            const list = Array.isArray(items) ? items : [];
+            const row = list.find(x => Number(x.id) === id);
+            if (!row) throw new Error('Item not found');
+            const newQty = Number((Number(row.qty) + delta).toFixed(4));
+            await apiPut(`/app/items/${id}`, { qty: newQty });
+            alert('Adjusted without journal (fallback).');
+            closeModals();
+            loadItems();
+        } catch (e2) {
+            alert('Adjust fallback failed: ' + (e2?.error || e2?.message || 'unknown'));
         }
     };
 
@@ -432,3 +447,5 @@ function escapeHtml(text) {
     div.textContent = text;
     return div.innerHTML;
 }
+
+console.info(`Inventory endpoints:\n  Load: GET /app/items\n  Create: POST /app/items\n  Update: PUT /app/items/{id}\n  Delete: DELETE /app/items/{id}\n  Adjust primary: POST /app/inventory/adjust {item_id, delta, reason}\n  Adjust fallback: GET /app/items + PUT /app/items/{id} {qty}`);
