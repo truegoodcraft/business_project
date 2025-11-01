@@ -504,18 +504,28 @@ class InventoryRun(BaseModel):
     note: Optional[str] = None
 
 
-_LOCALAPPDATA = os.environ.get("LOCALAPPDATA", ".")
-BUS_ROOT = (Path(_LOCALAPPDATA) / "BUSCore").resolve()
-APP_DIR = BUS_ROOT / "app"
+_LOCALAPPDATA = Path(os.environ.get("LOCALAPPDATA", "."))
+_ENV_BUS_ROOT = os.environ.get("BUS_ROOT")
+if _ENV_BUS_ROOT:
+    BUS_ROOT = Path(_ENV_BUS_ROOT).expanduser().resolve()
+    APP_DIR = BUS_ROOT
+    DB_PATH = (APP_DIR / "app.db").resolve()
+    EXPORTS_DIR = APP_DIR / "exports"
+else:
+    _DEFAULT_BASE = (_LOCALAPPDATA / "BUSCore").resolve()
+    BUS_ROOT = (_DEFAULT_BASE / "app").resolve()
+    APP_DIR = BUS_ROOT
+    DB_PATH = (_DEFAULT_BASE / "_app.db").resolve()
+    EXPORTS_DIR = (_DEFAULT_BASE / "exports").resolve()
 DATA_DIR = APP_DIR / "data"
-EXPORTS_DIR = BUS_ROOT / "exports"
 JOURNAL_DIR = DATA_DIR / "journals"
-DB_PATH = (BUS_ROOT / "_app.db").resolve()
+IMPORTS_DIR = DATA_DIR / "imports"
 _LEGACY_DB_PATH = SA_DB_PATH.resolve()
 if _LEGACY_DB_PATH.exists() and _LEGACY_DB_PATH != DB_PATH:
     DB_PATH = _LEGACY_DB_PATH
-EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
-JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
+for path in (DATA_DIR, JOURNAL_DIR, IMPORTS_DIR, EXPORTS_DIR):
+    path.mkdir(parents=True, exist_ok=True)
+DB_URL = f"sqlite:///{DB_PATH}"
 _TEMPLATE_ROOT = Path(__file__).resolve().parents[2] / "templates"
 
 

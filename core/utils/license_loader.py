@@ -25,8 +25,12 @@ def _baseline_license() -> Dict[str, Any]:
 
 
 def _license_path() -> Path:
-    local_app_data = os.environ.get("LOCALAPPDATA", ".")
-    root = Path(local_app_data).expanduser() / "BUSCore"
+    bus_root = os.environ.get("BUS_ROOT")
+    if bus_root:
+        root = Path(bus_root).expanduser()
+    else:
+        local_app_data = os.environ.get("LOCALAPPDATA", ".")
+        root = Path(local_app_data).expanduser() / "BUSCore"
     root.mkdir(parents=True, exist_ok=True)
     return root / "license.json"
 
