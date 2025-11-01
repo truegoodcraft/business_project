@@ -382,56 +382,55 @@ export async function mountInventory(container) {
         closeModals();
     };
 
+    // ===== Adjust Qty — hybrid: try Pro journal, else PUT fallback =====
     document.getElementById('adjust-form').onsubmit = async (e) => {
         e.preventDefault();
-        const form = e.target;
-        const id = parseInt(form.item_id.value, 10);
-        let delta;
-        let reason;
-        try {
-            delta = toNumber(form.delta.value);
-        } catch {
-            alert('Enter a valid number for Change.');
-            return;
-        }
-        reason = form.reason.value.trim();
-        if (delta === 0) {
-            alert('Change must be non-zero.');
-            return;
-        }
-        if (!reason) {
-            alert('Reason is required.');
+
+        const form    = e.target;
+        const item_id = parseInt(form.item_id.value, 10);
+        const delta   = Number(form.delta.value);
+        const reason  = String(form.reason.value || '').trim();
+
+        if (!Number.isFinite(item_id) || Number.isNaN(delta)) {
+            alert('Adjust requires a valid item and numeric delta.');
             return;
         }
 
+        const payload = { item_id, delta, reason };
+
+        // Helper: decide if journal endpoint is missing
+        const isMissing = (err) => {
+            const s = err?.status || err?.code;
+            const m = (err?.error || err?.message || '').toLowerCase();
+            return s === 404 || s === 405 || m.includes('not found') || m.includes('method not allowed');
+        };
+
+        // Fallback PUT: GET current -> compute -> PUT {qty}
+        const fallbackPut = async () => {
+            const item = await apiGet(`/app/items/${item_id}`);
+            const cur  = Number(item?.qty ?? 0);
+            const newQty = Number((cur + delta).toFixed(4));
+            await apiPut(`/app/items/${item_id}`, { qty: newQty });
+            console.log('inventory.js: adjust: fallback-put', { item_id, delta, newQty });
+        };
+
         try {
-            await apiPost('/app/inventory/adjust', { item_id: id, delta, reason });
-            closeModals();
-            loadItems();
-            return;
+            // Try Pro path first; keeps framework for later
+            await apiPost('/app/inventory/adjust', payload);
+            console.log('inventory.js: adjust: journaled', { item_id, delta });
         } catch (err) {
-            const s = (err?.response?.status ?? err?.status ?? err?.code ?? 0);
-            const m = (err?.error || err?.message || '').toString().toLowerCase();
-            const missing = (s === 404 || s === 405 || s === 501) || m.includes('not found') || m.includes('method not allowed') || m.includes('no route') || m.includes('unknown endpoint');
-            if (!missing) {
+            if (!isMissing(err)) {
                 alert('Adjust failed: ' + (err?.error || err?.message || 'unknown'));
                 return;
             }
+            // journal not present → free-tier path
+            await fallbackPut();
         }
 
-        try {
-            const items = await apiGet('/app/items');
-            const list = Array.isArray(items) ? items : [];
-            const row = list.find(x => Number(x.id) === id);
-            if (!row) throw new Error('Item not found');
-            const newQty = Number((Number(row.qty) + delta).toFixed(4));
-            await apiPut(`/app/items/${id}`, { qty: newQty });
-            alert('Adjusted without journal (fallback).');
-            closeModals();
-            loadItems();
-        } catch (e2) {
-            alert('Adjust fallback failed: ' + (e2?.error || e2?.message || 'unknown'));
-        }
+        // Close and refresh
+        document.getElementById('adjust-modal').style.display = 'none';
+        document.body.classList.remove('modal-open');
+        await loadItems();
     };
 
     document.getElementById('cancel-adjust').onclick = () => {
