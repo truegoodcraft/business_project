@@ -114,11 +114,54 @@ def _check_state(state_b64: str) -> bool:
 
 app = FastAPI(title="BUS Core Alpha", version=VERSION)
 
-UI_DIR = Path(
-    os.environ.get("BUS_UI_DIR", Path(__file__).parent.parent / "ui")
-).resolve()
+_BUS_ROOT_ENV = os.environ.get("BUS_ROOT")
+_local_appdata = os.environ.get("LOCALAPPDATA")
+if _BUS_ROOT_ENV:
+    _bus_root_candidate = Path(_BUS_ROOT_ENV).expanduser()
+    BUS_ROOT = _bus_root_candidate.resolve()
+    APP_DIR = BUS_ROOT
+    DB_PATH = (APP_DIR / "app.db").resolve()
+    EXPORTS_DIR = APP_DIR / "exports"
+else:
+    if _local_appdata:
+        _default_base = Path(_local_appdata).expanduser() / "BUSCore"
+    else:
+        _default_base = Path.home() / "AppData" / "Local" / "BUSCore"
+    BUS_ROOT = (_default_base / "app").resolve()
+    APP_DIR = BUS_ROOT
+    DB_PATH = (_default_base / "_app.db").resolve()
+    EXPORTS_DIR = (_default_base / "exports").resolve()
+
+DATA_DIR = APP_DIR / "data"
+IMPORTS_DIR = DATA_DIR / "imports"
+JOURNAL_DIR = DATA_DIR / "journals"
+
+for path in (DATA_DIR, IMPORTS_DIR, JOURNAL_DIR, EXPORTS_DIR):
+    path.mkdir(parents=True, exist_ok=True)
+
+DEV_UI_DIR = APP_DIR / "core" / "ui"
+DEFAULT_UI_DIR = APP_DIR / "ui"
+_ui_override = os.environ.get("BUS_UI_DIR")
+if _BUS_ROOT_ENV:
+    _ui_candidate = DEV_UI_DIR if DEV_UI_DIR.joinpath("shell.html").exists() else DEFAULT_UI_DIR
+elif _ui_override:
+    _ui_candidate = Path(_ui_override).expanduser()
+else:
+    _ui_candidate = DEV_UI_DIR if DEV_UI_DIR.joinpath("shell.html").exists() else DEFAULT_UI_DIR
+
+UI_DIR = _ui_candidate.resolve()
 app.mount("/ui", StaticFiles(directory=str(UI_DIR), html=True), name="ui")
 UI_STATIC_DIR = UI_DIR
+
+
+async def _nocache_ui(request: Request, call_next):
+    resp = await call_next(request)
+    if os.environ.get("BUS_ROOT") and request.url.path.startswith("/ui/"):
+        resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+app.add_middleware(BaseHTTPMiddleware, dispatch=_nocache_ui)
 
 TOKEN_HEADER = "X-Session-Token"
 PUBLIC_PATHS = {"/", "/session/token"}
@@ -160,6 +203,17 @@ async def dev_writes_set(req: Request, body: dict):
     return {"enabled": enabled}
 
 
+@app.get("/dev/paths")
+def dev_paths():
+    return {
+        "BUS_ROOT": str(BUS_ROOT),
+        "APP_DIR": str(APP_DIR),
+        "DATA_DIR": str(DATA_DIR),
+        "UI_DIR": str(UI_DIR),
+        "DB_PATH": str(DB_PATH),
+    }
+
+
 @app.get("/ui", include_in_schema=False)
 def ui_root():
     return RedirectResponse(url="/ui/shell.html", status_code=307)
@@ -175,20 +229,12 @@ async def health():
     return {"ok": True}
 
 
-@app.middleware("http")
-async def ui_nocache_headers(request: Request, call_next):
-    response = await call_next(request)
-    if request.url.path.startswith("/ui/"):
-        response.headers.setdefault("Cache-Control", "no-cache")
-    return response
-
-
 @app.get("/")
 def _root():
     return RedirectResponse(url="/ui/shell.html")
 
 
-TOKEN_FILE = Path("data/session_token.txt")
+TOKEN_FILE = DATA_DIR / "session_token.txt"
 
 
 def _load_or_create_token() -> str:
@@ -504,27 +550,9 @@ class InventoryRun(BaseModel):
     note: Optional[str] = None
 
 
-_LOCALAPPDATA = Path(os.environ.get("LOCALAPPDATA", "."))
-_ENV_BUS_ROOT = os.environ.get("BUS_ROOT")
-if _ENV_BUS_ROOT:
-    BUS_ROOT = Path(_ENV_BUS_ROOT).expanduser().resolve()
-    APP_DIR = BUS_ROOT
-    DB_PATH = (APP_DIR / "app.db").resolve()
-    EXPORTS_DIR = APP_DIR / "exports"
-else:
-    _DEFAULT_BASE = (_LOCALAPPDATA / "BUSCore").resolve()
-    BUS_ROOT = (_DEFAULT_BASE / "app").resolve()
-    APP_DIR = BUS_ROOT
-    DB_PATH = (_DEFAULT_BASE / "_app.db").resolve()
-    EXPORTS_DIR = (_DEFAULT_BASE / "exports").resolve()
-DATA_DIR = APP_DIR / "data"
-JOURNAL_DIR = DATA_DIR / "journals"
-IMPORTS_DIR = DATA_DIR / "imports"
 _LEGACY_DB_PATH = SA_DB_PATH.resolve()
 if _LEGACY_DB_PATH.exists() and _LEGACY_DB_PATH != DB_PATH:
     DB_PATH = _LEGACY_DB_PATH
-for path in (DATA_DIR, JOURNAL_DIR, IMPORTS_DIR, EXPORTS_DIR):
-    path.mkdir(parents=True, exist_ok=True)
 DB_URL = f"sqlite:///{DB_PATH}"
 _TEMPLATE_ROOT = Path(__file__).resolve().parents[2] / "templates"
 
@@ -1795,4 +1823,15 @@ def create_app():
 
 
 
-__all__ = ["app", "APP", "UI_DIR", "UI_STATIC_DIR", "build_app", "create_app", "SESSION_TOKEN"]
+__all__ = [
+    "app",
+    "APP",
+    "APP_DIR",
+    "DATA_DIR",
+    "DB_URL",
+    "UI_DIR",
+    "UI_STATIC_DIR",
+    "build_app",
+    "create_app",
+    "SESSION_TOKEN",
+]

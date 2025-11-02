@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import csv
 import json
-import os
 import time
 from datetime import date, datetime
 from io import BytesIO, StringIO
@@ -17,25 +16,15 @@ from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from core.api.http import APP_DIR
 from core.services.models import Attachment, Item, Task, Vendor, get_session
 from core.utils.license_loader import feature_enabled
 
 router = APIRouter(tags=["app"])
 
 
-def _resolve_data_dir() -> Path:
-    base = os.environ.get("LOCALAPPDATA")
-    if base:
-        root = Path(base).expanduser() / "BUSCore" / "app" / "data"
-    else:
-        root = Path("data")
-    root.mkdir(parents=True, exist_ok=True)
-    return root
-
-
-DATA_DIR = _resolve_data_dir()
-IMPORTS_DIR = DATA_DIR / "imports"
-JOURNAL_DIR = DATA_DIR / "journals"
+IMPORTS_DIR = APP_DIR / "data" / "imports"
+JOURNAL_DIR = APP_DIR / "data" / "journals"
 AUDIT_PATH = JOURNAL_DIR / "plugin_audit.jsonl"
 
 for directory in (IMPORTS_DIR, JOURNAL_DIR):
