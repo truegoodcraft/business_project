@@ -29,13 +29,16 @@ def _license_path() -> Path:
     if bus_root:
         root = Path(bus_root).expanduser()
     else:
-        local_app_data = os.environ.get("LOCALAPPDATA", ".")
-        root = Path(local_app_data).expanduser() / "BUSCore"
-    root.mkdir(parents=True, exist_ok=True)
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        if local_app_data:
+            root = Path(local_app_data).expanduser() / "BUSCore"
+        else:
+            root = Path.home() / "AppData" / "Local" / "BUSCore"
     return root / "license.json"
 
 
 def _write_license(path: Path, data: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
 
 
