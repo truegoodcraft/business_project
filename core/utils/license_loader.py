@@ -26,7 +26,8 @@ def _baseline_license() -> Dict[str, Any]:
 
 
 def _license_path() -> Path:
-    return APP_DIR / "license.json"
+    parent_candidate = APP_DIR.parent / "license.json"
+    return parent_candidate if parent_candidate.exists() else APP_DIR / "license.json"
 
 
 def _write_license(path: Path, data: Dict[str, Any]) -> None:
