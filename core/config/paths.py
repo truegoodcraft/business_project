@@ -1,5 +1,5 @@
-from pathlib import Path
 import os
+from pathlib import Path
 
 if "LOCALAPPDATA" not in os.environ:
     os.environ["LOCALAPPDATA"] = str(Path.home() / "AppData" / "Local")
@@ -17,4 +17,8 @@ DB_URL = f"sqlite:///{DB_PATH}"
 
 DEV_UI_DIR = APP_DIR / "core" / "ui"
 DEFAULT_UI_DIR = APP_DIR / "ui"
-UI_DIR = DEV_UI_DIR if DEV_UI_DIR.joinpath("shell.html").exists() else DEFAULT_UI_DIR
+
+IS_DEV = bool(os.environ.get("BUS_ROOT"))
+
+# Force repo UI in dev; keep previous default in prod
+UI_DIR = DEV_UI_DIR if IS_DEV else DEFAULT_UI_DIR
