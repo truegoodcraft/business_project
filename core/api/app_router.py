@@ -16,18 +16,16 @@ from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from core.api.http import APP_DIR
+from core.config.paths import APP_DIR, DATA_DIR, JOURNALS_DIR, IMPORTS_DIR
 from core.services.models import Attachment, Item, Task, Vendor, get_session
 from core.utils.license_loader import feature_enabled
 
 router = APIRouter(tags=["app"])
 
 
-IMPORTS_DIR = APP_DIR / "data" / "imports"
-JOURNAL_DIR = APP_DIR / "data" / "journals"
-AUDIT_PATH = JOURNAL_DIR / "plugin_audit.jsonl"
+AUDIT_PATH = JOURNALS_DIR / "plugin_audit.jsonl"
 
-for directory in (IMPORTS_DIR, JOURNAL_DIR):
+for directory in (DATA_DIR, JOURNALS_DIR, IMPORTS_DIR):
     directory.mkdir(parents=True, exist_ok=True)
 
 
@@ -192,7 +190,7 @@ def journal_mutate(db: Session, action: str, payload: Dict[str, object]) -> None
         "action": action,
         **payload,
     }
-    journal_path = JOURNAL_DIR / "bulk_import.jsonl"
+    journal_path = JOURNALS_DIR / "bulk_import.jsonl"
     with journal_path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
