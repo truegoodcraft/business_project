@@ -1,45 +1,28 @@
 from pathlib import Path
-import os
-import json
+import os, json
 from typing import Dict, Any
 
-# --- PATH: BUS_ROOT = dev, AppData = prod ---
 def _license_path() -> Path:
+    # Dev: BUS_ROOT; Prod: AppData
     if os.environ.get("BUS_ROOT"):
         return Path(os.environ["BUS_ROOT"]) / "license.json"
-    else:
-        return Path(os.environ["LOCALAPPDATA"]) / "BUSCore" / "license.json"
+    return Path(os.environ["LOCALAPPDATA"]) / "BUSCore" / "license.json"
 
-# --- LOAD: Fresh every call in dev ---
 def get_license(*, force_reload: bool | None = None) -> Dict[str, Any]:
-    if force_reload is None:
-        force_reload = bool(os.environ.get("BUS_ROOT"))
-    
+    # No cache in dev. Always reload when BUS_ROOT is set.
+    force_reload = True if os.environ.get("BUS_ROOT") else bool(force_reload)
     path = _license_path()
-    data = {"tier": "community", "features": {}, "plugins": {}}
-    
-    if not force_reload and hasattr(get_license, "_cached"):
-        return get_license._cached  # Prod cache
-    
+    data: Dict[str, Any] = {"tier": "community", "features": {}, "plugins": {}}
     try:
         with path.open("r", encoding="utf-8") as f:
             raw = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        raw = {}
-    
-    # Normalize
-    data.update(raw)
-    data.setdefault("tier", "community")
-    data.setdefault("features", {})
-    data.setdefault("plugins", {})
-    
-    if force_reload:
-        return data
-    else:
-        get_license._cached = data
-        return data
+            if isinstance(raw, dict):
+                data.update(raw)
+    except Exception:
+        pass
+    return data
 
-# --- FEATURE CHECK: Always fresh in dev ---
 def feature_enabled(name: str) -> bool:
-    lic = get_license()  # Reloads every call when BUS_ROOT set
+    # Force fresh read so gates reflect current license file
+    lic = get_license(force_reload=True)
     return bool(lic.get("features", {}).get(name, False))
