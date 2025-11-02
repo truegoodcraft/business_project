@@ -7,6 +7,8 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict
 
+import os
+
 from core.config.paths import APP_DIR
 
 DEFAULT_TIER = "community"
@@ -26,8 +28,12 @@ def _baseline_license() -> Dict[str, Any]:
 
 
 def _license_path() -> Path:
-    parent_candidate = APP_DIR.parent / "license.json"
-    return parent_candidate if parent_candidate.exists() else APP_DIR / "license.json"
+    """Return the expected license path respecting ``BUS_ROOT`` when set."""
+
+    root_env = os.environ.get("BUS_ROOT")
+    if root_env:
+        return Path(root_env) / "license.json"
+    return APP_DIR / "license.json"
 
 
 def _write_license(path: Path, data: Dict[str, Any]) -> None:
@@ -87,34 +93,35 @@ def _load_license() -> Dict[str, Any]:
 
 
 _LICENSE_DATA: Dict[str, Any] = _load_license()
-_LICENSE_PATH: Path = _license_path()
 
 
 def reload_license() -> Dict[str, Any]:
     """Reload the license from disk and update cached state."""
 
-    global _LICENSE_DATA, _LICENSE_PATH
+    global _LICENSE_DATA
     _LICENSE_DATA = _load_license()
-    _LICENSE_PATH = _license_path()
     return get_license()
 
 
-def get_license() -> Dict[str, Any]:
-    """Return a copy of the currently loaded license."""
+def get_license(force_reload: bool = False) -> Dict[str, Any]:
+    """Return the current license, bypassing cache for dev overrides."""
 
+    if force_reload or os.environ.get("BUS_ROOT"):
+        return deepcopy(_load_license())
     return deepcopy(_LICENSE_DATA)
 
 
 def license_path() -> Path:
     """Return the path to the license file."""
 
-    return _LICENSE_PATH
+    return _license_path()
 
 
 def feature_enabled(name: str) -> bool:
     """Return whether the named feature is enabled."""
 
-    features = _LICENSE_DATA.get("features")
+    license_data = get_license(force_reload=bool(os.environ.get("BUS_ROOT")))
+    features = license_data.get("features")
     if isinstance(features, dict):
         value = features.get(name)
         if isinstance(value, bool):
@@ -132,7 +139,8 @@ def feature_enabled(name: str) -> bool:
 def plugin_enabled(pid: str) -> bool:
     """Return whether the plugin with ``pid`` is enabled."""
 
-    plugins = _LICENSE_DATA.get("plugins")
+    license_data = get_license(force_reload=bool(os.environ.get("BUS_ROOT")))
+    plugins = license_data.get("plugins")
     if isinstance(plugins, dict):
         entry = plugins.get(pid)
         if isinstance(entry, bool):

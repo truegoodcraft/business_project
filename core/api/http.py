@@ -153,9 +153,11 @@ def require_token(req: Request):
 
 # Add these routes to app
 @app.get("/dev/license")
-async def dev_license(req: Request):
-    require_token(req)
-    return JSONResponse(LICENSE)
+def dev_license():
+    from core.utils.license_loader import _license_path
+
+    lic = get_license(force_reload=True)
+    return {"path": str(_license_path()), "license": lic}
 
 
 @app.get("/dev/writes")
