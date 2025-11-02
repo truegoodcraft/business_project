@@ -41,7 +41,6 @@ from starlette.status import HTTP_401_UNAUTHORIZED
 
 from core.services.capabilities import registry
 from core.services.capabilities.registry import MANIFEST_PATH
-from core.services.models import DB_PATH as SA_DB_PATH
 from core.policy.guard import require_owner_commit
 from core.policy.model import Policy
 from core.policy.store import load_policy, save_policy, get_writes_enabled, set_writes_enabled
@@ -69,7 +68,16 @@ from core.settings.reader_state import (
 )
 from core.reader.api import router as reader_local_router
 from core.organizer.api import router as organizer_router
-from core.api.app_router import router as app_router
+from core.config.paths import (
+    APP_DIR,
+    BUS_ROOT,
+    DATA_DIR,
+    JOURNALS_DIR,
+    IMPORTS_DIR,
+    DB_PATH,
+    DB_URL,
+    UI_DIR,
+)
 
 if os.name == "nt":  # pragma: no cover - windows specific
     from core.broker.pipes import NamedPipeServer
@@ -114,42 +122,9 @@ def _check_state(state_b64: str) -> bool:
 
 app = FastAPI(title="BUS Core Alpha", version=VERSION)
 
-_BUS_ROOT_ENV = os.environ.get("BUS_ROOT")
-_local_appdata = os.environ.get("LOCALAPPDATA")
-if _BUS_ROOT_ENV:
-    _bus_root_candidate = Path(_BUS_ROOT_ENV).expanduser()
-    BUS_ROOT = _bus_root_candidate.resolve()
-    APP_DIR = BUS_ROOT
-    DB_PATH = (APP_DIR / "app.db").resolve()
-    EXPORTS_DIR = APP_DIR / "exports"
-else:
-    if _local_appdata:
-        _default_base = Path(_local_appdata).expanduser() / "BUSCore"
-    else:
-        _default_base = Path.home() / "AppData" / "Local" / "BUSCore"
-    BUS_ROOT = (_default_base / "app").resolve()
-    APP_DIR = BUS_ROOT
-    DB_PATH = (_default_base / "_app.db").resolve()
-    EXPORTS_DIR = (_default_base / "exports").resolve()
+EXPORTS_DIR = APP_DIR / "exports"
+EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
-DATA_DIR = APP_DIR / "data"
-IMPORTS_DIR = DATA_DIR / "imports"
-JOURNAL_DIR = DATA_DIR / "journals"
-
-for path in (DATA_DIR, IMPORTS_DIR, JOURNAL_DIR, EXPORTS_DIR):
-    path.mkdir(parents=True, exist_ok=True)
-
-DEV_UI_DIR = APP_DIR / "core" / "ui"
-DEFAULT_UI_DIR = APP_DIR / "ui"
-_ui_override = os.environ.get("BUS_UI_DIR")
-if _BUS_ROOT_ENV:
-    _ui_candidate = DEV_UI_DIR if DEV_UI_DIR.joinpath("shell.html").exists() else DEFAULT_UI_DIR
-elif _ui_override:
-    _ui_candidate = Path(_ui_override).expanduser()
-else:
-    _ui_candidate = DEV_UI_DIR if DEV_UI_DIR.joinpath("shell.html").exists() else DEFAULT_UI_DIR
-
-UI_DIR = _ui_candidate.resolve()
 app.mount("/ui", StaticFiles(directory=str(UI_DIR), html=True), name="ui")
 UI_STATIC_DIR = UI_DIR
 
@@ -205,12 +180,19 @@ async def dev_writes_set(req: Request, body: dict):
 
 @app.get("/dev/paths")
 def dev_paths():
+    from core.config import paths
+
     return {
-        "BUS_ROOT": str(BUS_ROOT),
-        "APP_DIR": str(APP_DIR),
-        "DATA_DIR": str(DATA_DIR),
-        "UI_DIR": str(UI_DIR),
-        "DB_PATH": str(DB_PATH),
+        k: str(getattr(paths, k))
+        for k in [
+            "BUS_ROOT",
+            "APP_DIR",
+            "DATA_DIR",
+            "JOURNALS_DIR",
+            "IMPORTS_DIR",
+            "DB_PATH",
+            "UI_DIR",
+        ]
     }
 
 
@@ -428,7 +410,14 @@ def require_writes() -> None:
 protected = APIRouter(dependencies=[Depends(require_token_ctx)])
 protected.include_router(reader_local_router)
 protected.include_router(organizer_router)
-protected.include_router(app_router, prefix="/app")
+
+from core.api.app_router import router as app_router
+
+app.include_router(
+    app_router,
+    prefix="/app",
+    dependencies=[Depends(require_token_ctx)],
+)
 oauth = APIRouter()
 
 
@@ -516,7 +505,7 @@ def app_import_commit(req: ImportReq, _w: None = Depends(require_writes)):
 # --- Debug: journal info (auth required; does NOT require writes on) ---
 @protected.get("/dev/journal/info")
 def journal_info(n: int = 5):
-    journal_path = JOURNAL_DIR / "inventory.jsonl"
+    journal_path = JOURNALS_DIR / "inventory.jsonl"
     exists = journal_path.exists()
     lines: List[str] = []
     if exists:
@@ -531,7 +520,7 @@ def journal_info(n: int = 5):
         "BUS_ROOT": str(BUS_ROOT),
         "APP_DIR": str(APP_DIR),
         "DATA_DIR": str(DATA_DIR),
-        "JOURNAL_DIR": str(JOURNAL_DIR),
+        "JOURNAL_DIR": str(JOURNALS_DIR),
         "inventory_path": str(journal_path),
         "exists": exists,
         "tail": lines,
@@ -550,10 +539,6 @@ class InventoryRun(BaseModel):
     note: Optional[str] = None
 
 
-_LEGACY_DB_PATH = SA_DB_PATH.resolve()
-if _LEGACY_DB_PATH.exists() and _LEGACY_DB_PATH != DB_PATH:
-    DB_PATH = _LEGACY_DB_PATH
-DB_URL = f"sqlite:///{DB_PATH}"
 _TEMPLATE_ROOT = Path(__file__).resolve().parents[2] / "templates"
 
 
@@ -756,7 +741,7 @@ def inventory_run(
             raise
 
     snapshot_version = int(time.time())
-    journal_path = JOURNAL_DIR / "inventory.jsonl"
+    journal_path = JOURNALS_DIR / "inventory.jsonl"
     record = {
         "ts": snapshot_version,
         "inputs": inputs,

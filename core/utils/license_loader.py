@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
-import os
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict
+
+from core.config.paths import APP_DIR
 
 DEFAULT_TIER = "community"
 DEFAULT_FEATURES: Dict[str, bool] = {
@@ -25,16 +26,7 @@ def _baseline_license() -> Dict[str, Any]:
 
 
 def _license_path() -> Path:
-    bus_root = os.environ.get("BUS_ROOT")
-    if bus_root:
-        root = Path(bus_root).expanduser()
-    else:
-        local_app_data = os.environ.get("LOCALAPPDATA")
-        if local_app_data:
-            root = Path(local_app_data).expanduser() / "BUSCore"
-        else:
-            root = Path.home() / "AppData" / "Local" / "BUSCore"
-    return root / "license.json"
+    return APP_DIR / "license.json"
 
 
 def _write_license(path: Path, data: Dict[str, Any]) -> None:
