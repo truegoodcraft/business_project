@@ -3,13 +3,9 @@
 from __future__ import annotations
 
 import json
-from copy import deepcopy
+import os
 from pathlib import Path
 from typing import Any, Dict
-
-import os
-
-from core.config.paths import APP_DIR
 
 DEFAULT_TIER = "community"
 DEFAULT_FEATURES: Dict[str, bool] = {
@@ -30,15 +26,14 @@ def _baseline_license() -> Dict[str, Any]:
 def _license_path() -> Path:
     """Return the expected license path respecting ``BUS_ROOT`` when set."""
 
-    root_env = os.environ.get("BUS_ROOT")
-    if root_env:
-        return Path(root_env) / "license.json"
-    return APP_DIR / "license.json"
+    bus_root = os.environ.get("BUS_ROOT")
+    if bus_root:
+        return Path(bus_root).resolve() / "license.json"
 
-
-def _write_license(path: Path, data: Dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+    local_root = os.environ.get("LOCALAPPDATA")
+    if not local_root:
+        local_root = str(Path.home() / "AppData" / "Local")
+    return (Path(local_root) / "BUSCore" / "license.json").resolve()
 
 
 def _normalize_license(raw: Any) -> Dict[str, Any]:
@@ -74,54 +69,31 @@ def _normalize_license(raw: Any) -> Dict[str, Any]:
     return data
 
 
-def _load_license() -> Dict[str, Any]:
+def get_license(*, force_reload: bool | None = None) -> Dict[str, Any]:
+    """Read license from disk. When BUS_ROOT is set, always reload from disk."""
+
+    if force_reload is None:
+        force_reload = bool(os.environ.get("BUS_ROOT"))
+
     path = _license_path()
     try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        data = _baseline_license()
-        _write_license(path, data)
-        return data
-    except json.JSONDecodeError:
-        data = _baseline_license()
-        _write_license(path, data)
-        return data
+        with path.open("r", encoding="utf-8") as handle:
+            raw = json.load(handle)
+    except (FileNotFoundError, json.JSONDecodeError):
+        raw = {}
     except Exception:
-        return _baseline_license()
+        raw = {}
 
-    return _normalize_license(raw)
-
-
-_LICENSE_DATA: Dict[str, Any] = _load_license()
-
-
-def reload_license() -> Dict[str, Any]:
-    """Reload the license from disk and update cached state."""
-
-    global _LICENSE_DATA
-    _LICENSE_DATA = _load_license()
-    return get_license()
-
-
-def get_license(force_reload: bool = False) -> Dict[str, Any]:
-    """Return the current license, bypassing cache for dev overrides."""
-
-    if force_reload or os.environ.get("BUS_ROOT"):
-        return deepcopy(_load_license())
-    return deepcopy(_LICENSE_DATA)
-
-
-def license_path() -> Path:
-    """Return the path to the license file."""
-
-    return _license_path()
+    data = _normalize_license(raw)
+    data.setdefault("tier", DEFAULT_TIER)
+    data.setdefault("features", {})
+    data.setdefault("plugins", {})
+    return data
 
 
 def feature_enabled(name: str) -> bool:
-    """Return whether the named feature is enabled."""
-
-    license_data = get_license(force_reload=bool(os.environ.get("BUS_ROOT")))
-    features = license_data.get("features")
+    lic = get_license()
+    features = lic.get("features")
     if isinstance(features, dict):
         value = features.get(name)
         if isinstance(value, bool):
@@ -137,10 +109,8 @@ def feature_enabled(name: str) -> bool:
 
 
 def plugin_enabled(pid: str) -> bool:
-    """Return whether the plugin with ``pid`` is enabled."""
-
-    license_data = get_license(force_reload=bool(os.environ.get("BUS_ROOT")))
-    plugins = license_data.get("plugins")
+    lic = get_license()
+    plugins = lic.get("plugins")
     if isinstance(plugins, dict):
         entry = plugins.get(pid)
         if isinstance(entry, bool):
@@ -155,6 +125,12 @@ def plugin_enabled(pid: str) -> bool:
     return True
 
 
+def license_path() -> Path:
+    """Return the path to the license file."""
+
+    return _license_path()
+
+
 __all__ = [
     "DEFAULT_FEATURES",
     "DEFAULT_TIER",
@@ -162,5 +138,4 @@ __all__ = [
     "get_license",
     "license_path",
     "plugin_enabled",
-    "reload_license",
 ]
