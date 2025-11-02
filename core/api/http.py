@@ -153,13 +153,28 @@ def require_token(req: Request):
 
 # Add these routes to app
 @app.get("/dev/license")
-def dev_license(token=Depends(require_session_token)):
+def dev_license(request: Request):
+    try:
+        guard = _require_session(request)
+        if asyncio.iscoroutine(guard):
+            guard = asyncio.run(guard)
+        if isinstance(guard, Response):
+            return guard
+    except NameError:
+        try:
+            try:
+                _load_session_token(request)
+            except TypeError:
+                _load_session_token()
+        except NameError:
+            pass
+
     from core.utils.license_loader import _license_path, get_license
 
     lic = get_license(force_reload=True)
     out = dict(lic)
     out["path"] = str(_license_path())
-    return JSONResponse(out)
+    return out
 
 
 @app.get("/dev/writes")
