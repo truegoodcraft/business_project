@@ -153,11 +153,13 @@ def require_token(req: Request):
 
 # Add these routes to app
 @app.get("/dev/license")
-def dev_license():
-    from core.utils.license_loader import _license_path
+def dev_license(token=Depends(require_session_token)):
+    from core.utils.license_loader import _license_path, get_license
 
     lic = get_license(force_reload=True)
-    return {"path": str(_license_path()), "license": lic}
+    out = dict(lic)
+    out["path"] = str(_license_path())
+    return JSONResponse(out)
 
 
 @app.get("/dev/writes")
@@ -369,6 +371,10 @@ def require_token(request: Request) -> str:
     _require_token(token)
     assert token is not None
     return token
+
+
+def require_session_token(request: Request) -> str:
+    return require_token(request)
 
 
 async def _require_session(req: Request):
