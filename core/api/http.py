@@ -27,9 +27,9 @@ from fastapi import (
     HTTPException,
     Query,
     Request,
-    Response,
 )
-from fastapi.responses import FileResponse, RedirectResponse, JSONResponse, StreamingResponse
+from fastapi import Response
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 import requests
@@ -125,6 +125,19 @@ app = FastAPI(title="BUS Core Alpha", version=VERSION)
 UI_DIR = Path(__file__).parent.parent / "ui"
 app.mount("/ui", StaticFiles(directory=UI_DIR, html=True), name="ui")
 
+
+@app.get("/", include_in_schema=False)
+def root():
+    return RedirectResponse(url="/ui/")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    f = Path(__file__).parent.parent / "ui" / "favicon.ico"
+    if f.exists():
+        return FileResponse(f)
+    return Response(status_code=204)
+
 EXPORTS_DIR = APP_DIR / "exports"
 EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -141,7 +154,7 @@ async def _nocache_ui(request: Request, call_next):
 app.add_middleware(BaseHTTPMiddleware, dispatch=_nocache_ui)
 
 TOKEN_HEADER = "X-Session-Token"
-PUBLIC_PATHS = {"/", "/session/token"}
+PUBLIC_PATHS = {"/", "/session/token", "/favicon.ico"}
 PUBLIC_PREFIX = "/ui/"
 
 
