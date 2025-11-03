@@ -22,3 +22,4 @@ IS_DEV = bool(os.environ.get("BUS_ROOT"))
 
 # Force repo UI in dev; keep previous default in prod
 UI_DIR = DEV_UI_DIR if IS_DEV else DEFAULT_UI_DIR
+UI_DIR.mkdir(parents=True, exist_ok=True)

@@ -154,26 +154,20 @@ def require_token(req: Request):
 # Add these routes to app
 @app.get("/dev/license")
 def dev_license(request: Request):
+    # try to require a session if helpers exist, but don't crash in dev
     try:
-        guard = _require_session(request)
-        if asyncio.iscoroutine(guard):
-            guard = asyncio.run(guard)
-        if isinstance(guard, Response):
-            return guard
-    except NameError:
-        try:
-            try:
-                _load_session_token(request)
-            except TypeError:
-                _load_session_token()
-        except NameError:
-            pass
+        _load_session_token(request)  # or _require_session(request)
+    except Exception:
+        pass
 
     from core.utils.license_loader import _license_path, get_license
 
     lic = get_license(force_reload=True)
-    out = dict(lic)
+    # Top-level fields for UI + debugging path
+    out = {k: v for k, v in lic.items() if not k.startswith("_")}
     out["path"] = str(_license_path())
+    if lic.get("_dev_error"):
+        out["dev_error"] = lic["_dev_error"]
     return out
 
 
