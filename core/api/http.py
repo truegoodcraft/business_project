@@ -122,10 +122,12 @@ def _check_state(state_b64: str) -> bool:
 
 app = FastAPI(title="BUS Core Alpha", version=VERSION)
 
+UI_DIR = Path(__file__).parent.parent / "ui"
+app.mount("/ui", StaticFiles(directory=UI_DIR, html=True), name="ui")
+
 EXPORTS_DIR = APP_DIR / "exports"
 EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
-app.mount("/ui", StaticFiles(directory=str(UI_DIR), html=True), name="ui")
 UI_STATIC_DIR = UI_DIR
 
 
