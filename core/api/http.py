@@ -27,9 +27,8 @@ from fastapi import (
     HTTPException,
     Query,
     Request,
-    Response,
 )
-from fastapi.responses import FileResponse, RedirectResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 import requests
@@ -41,7 +40,6 @@ from starlette.status import HTTP_401_UNAUTHORIZED
 
 from core.services.capabilities import registry
 from core.services.capabilities.registry import MANIFEST_PATH
-from core.services.models import DB_PATH as SA_DB_PATH
 from core.policy.guard import require_owner_commit
 from core.policy.model import Policy
 from core.policy.store import load_policy, save_policy, get_writes_enabled, set_writes_enabled
@@ -55,7 +53,7 @@ from core.runtime.probe import PROBE_TIMEOUT_SEC
 from core.secrets import SecretError, Secrets
 from core.version import VERSION
 from core.utils.export import export_db, import_preview as _import_preview, import_commit as _import_commit
-from core.utils.license_loader import feature_enabled, get_license
+from core.utils.license_loader import get_license
 from tgc.bootstrap_fs import DATA, LOGS
 
 from pydantic import BaseModel, Field
@@ -69,7 +67,15 @@ from core.settings.reader_state import (
 )
 from core.reader.api import router as reader_local_router
 from core.organizer.api import router as organizer_router
-from core.api.app_router import router as app_router
+from core.config.paths import (
+    APP_DIR,
+    BUS_ROOT,
+    DATA_DIR,
+    JOURNALS_DIR,
+    IMPORTS_DIR,
+    DB_PATH,
+    DB_URL,
+)
 
 if os.name == "nt":  # pragma: no cover - windows specific
     from core.broker.pipes import NamedPipeServer
@@ -114,14 +120,72 @@ def _check_state(state_b64: str) -> bool:
 
 app = FastAPI(title="BUS Core Alpha", version=VERSION)
 
-UI_DIR = Path(
-    os.environ.get("BUS_UI_DIR", Path(__file__).parent.parent / "ui")
-).resolve()
-app.mount("/ui", StaticFiles(directory=str(UI_DIR), html=True), name="ui")
+
+def _first_existing(paths):
+    for p in paths:
+        if p and p.exists() and p.is_dir():
+            return p
+    return None
+
+
+CWD = Path.cwd()
+BASE = Path(__file__).resolve().parent.parent  # core/
+CANDIDATES = [
+    Path(os.getenv("BUS_UI_DIR")) if os.getenv("BUS_UI_DIR") else None,
+    BASE / "ui",
+    CWD / "core" / "ui",
+    CWD / "ui",
+]
+UI_DIR = _first_existing(CANDIDATES)
+
+if UI_DIR:
+    print(f"[ui] Serving /ui from: {UI_DIR}")
+    app.mount("/ui", StaticFiles(directory=UI_DIR, html=True), name="ui")
+else:
+    print("[ui] WARNING: UI directory not found. Set BUS_UI_DIR or create core/ui")
+
+
+@app.get("/", include_in_schema=False)
+def _root():
+    return RedirectResponse(url="/ui/")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def _favicon():
+    if UI_DIR:
+        ico = UI_DIR / "favicon.ico"
+        if ico.exists():
+            return FileResponse(ico)
+    return Response(status_code=204)
+
+
+@app.get("/ui/", include_in_schema=False)
+def _ui_entry():
+    if not UI_DIR:
+        return Response(status_code=404)
+    for name in ("index.html", "shell.html"):
+        p = UI_DIR / name
+        if p.exists():
+            return FileResponse(p)
+    return Response(status_code=404)
+
+EXPORTS_DIR = APP_DIR / "exports"
+EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
 UI_STATIC_DIR = UI_DIR
 
+
+async def _nocache_ui(request: Request, call_next):
+    resp = await call_next(request)
+    if os.environ.get("BUS_ROOT") and request.url.path.startswith("/ui/"):
+        resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+app.add_middleware(BaseHTTPMiddleware, dispatch=_nocache_ui)
+
 TOKEN_HEADER = "X-Session-Token"
-PUBLIC_PATHS = {"/", "/session/token"}
+PUBLIC_PATHS = {"/", "/session/token", "/favicon.ico"}
 PUBLIC_PREFIX = "/ui/"
 
 
@@ -135,9 +199,19 @@ def require_token(req: Request):
 
 # Add these routes to app
 @app.get("/dev/license")
-async def dev_license(req: Request):
-    require_token(req)
-    return JSONResponse(LICENSE)
+def dev_license(request: Request):
+    # Try to require a session if helpers exist; don't crash in dev
+    try:
+        _load_session_token(request)  # or _require_session(request)
+    except Exception:
+        pass
+
+    from core.utils.license_loader import _license_path, get_license
+
+    lic = get_license(force_reload=True)
+    out = {k: v for k, v in lic.items()}
+    out["path"] = str(_license_path())
+    return out
 
 
 @app.get("/dev/writes")
@@ -160,6 +234,24 @@ async def dev_writes_set(req: Request, body: dict):
     return {"enabled": enabled}
 
 
+@app.get("/dev/paths")
+def dev_paths():
+    from core.config import paths
+
+    return {
+        k: str(getattr(paths, k))
+        for k in [
+            "BUS_ROOT",
+            "APP_DIR",
+            "DATA_DIR",
+            "JOURNALS_DIR",
+            "IMPORTS_DIR",
+            "DB_PATH",
+            "UI_DIR",
+        ]
+    }
+
+
 @app.get("/ui", include_in_schema=False)
 def ui_root():
     return RedirectResponse(url="/ui/shell.html", status_code=307)
@@ -175,20 +267,12 @@ async def health():
     return {"ok": True}
 
 
-@app.middleware("http")
-async def ui_nocache_headers(request: Request, call_next):
-    response = await call_next(request)
-    if request.url.path.startswith("/ui/"):
-        response.headers.setdefault("Cache-Control", "no-cache")
-    return response
-
-
 @app.get("/")
 def _root():
     return RedirectResponse(url="/ui/shell.html")
 
 
-TOKEN_FILE = Path("data/session_token.txt")
+TOKEN_FILE = DATA_DIR / "session_token.txt"
 
 
 def _load_or_create_token() -> str:
@@ -341,6 +425,10 @@ def require_token(request: Request) -> str:
     return token
 
 
+def require_session_token(request: Request) -> str:
+    return require_token(request)
+
+
 async def _require_session(req: Request):
     token = _extract_token(req)
     if not token:
@@ -382,7 +470,14 @@ def require_writes() -> None:
 protected = APIRouter(dependencies=[Depends(require_token_ctx)])
 protected.include_router(reader_local_router)
 protected.include_router(organizer_router)
-protected.include_router(app_router, prefix="/app")
+
+from core.api.app_router import router as app_router
+
+app.include_router(
+    app_router,
+    prefix="/app",
+    dependencies=[Depends(require_token_ctx)],
+)
 oauth = APIRouter()
 
 
@@ -455,9 +550,6 @@ def app_import_preview(req: ImportReq, _w: None = Depends(require_writes)):
 
 @protected.post("/app/import/commit")
 def app_import_commit(req: ImportReq, _w: None = Depends(require_writes)):
-    if not feature_enabled("import_commit"):
-        raise HTTPException(status_code=403, detail={"error": "feature_locked"})
-
     res = _import_commit(req.path, req.password)
     if not res.get("ok"):
         err = res.get("error", "commit_failed")
@@ -470,7 +562,7 @@ def app_import_commit(req: ImportReq, _w: None = Depends(require_writes)):
 # --- Debug: journal info (auth required; does NOT require writes on) ---
 @protected.get("/dev/journal/info")
 def journal_info(n: int = 5):
-    journal_path = JOURNAL_DIR / "inventory.jsonl"
+    journal_path = JOURNALS_DIR / "inventory.jsonl"
     exists = journal_path.exists()
     lines: List[str] = []
     if exists:
@@ -485,7 +577,7 @@ def journal_info(n: int = 5):
         "BUS_ROOT": str(BUS_ROOT),
         "APP_DIR": str(APP_DIR),
         "DATA_DIR": str(DATA_DIR),
-        "JOURNAL_DIR": str(JOURNAL_DIR),
+        "JOURNAL_DIR": str(JOURNALS_DIR),
         "inventory_path": str(journal_path),
         "exists": exists,
         "tail": lines,
@@ -504,18 +596,6 @@ class InventoryRun(BaseModel):
     note: Optional[str] = None
 
 
-_LOCALAPPDATA = os.environ.get("LOCALAPPDATA", ".")
-BUS_ROOT = (Path(_LOCALAPPDATA) / "BUSCore").resolve()
-APP_DIR = BUS_ROOT / "app"
-DATA_DIR = APP_DIR / "data"
-EXPORTS_DIR = BUS_ROOT / "exports"
-JOURNAL_DIR = DATA_DIR / "journals"
-DB_PATH = (BUS_ROOT / "_app.db").resolve()
-_LEGACY_DB_PATH = SA_DB_PATH.resolve()
-if _LEGACY_DB_PATH.exists() and _LEGACY_DB_PATH != DB_PATH:
-    DB_PATH = _LEGACY_DB_PATH
-EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
-JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
 _TEMPLATE_ROOT = Path(__file__).resolve().parents[2] / "templates"
 
 
@@ -543,9 +623,6 @@ def rfq_generate(
     token: str = Depends(require_token),
     _writes: None = Depends(require_writes),
 ):
-    if not feature_enabled("rfq"):
-        raise HTTPException(status_code=403, detail={"error": "feature_locked"})
-
     item_ids = list(dict.fromkeys(body.items or []))
     vendor_ids = list(dict.fromkeys(body.vendors or []))
 
@@ -675,9 +752,6 @@ def inventory_run(
     token: str = Depends(require_token),
     _writes: None = Depends(require_writes),
 ):
-    if not feature_enabled("batch_run"):
-        raise HTTPException(status_code=403, detail={"error": "feature_locked"})
-
     inputs = {int(k): float(v) for k, v in (body.inputs or {}).items()}
     outputs = {int(k): float(v) for k, v in (body.outputs or {}).items()}
     ids = set(inputs) | set(outputs)
@@ -718,7 +792,7 @@ def inventory_run(
             raise
 
     snapshot_version = int(time.time())
-    journal_path = JOURNAL_DIR / "inventory.jsonl"
+    journal_path = JOURNALS_DIR / "inventory.jsonl"
     record = {
         "ts": snapshot_version,
         "inputs": inputs,
@@ -1785,4 +1859,15 @@ def create_app():
 
 
 
-__all__ = ["app", "APP", "UI_DIR", "UI_STATIC_DIR", "build_app", "create_app", "SESSION_TOKEN"]
+__all__ = [
+    "app",
+    "APP",
+    "APP_DIR",
+    "DATA_DIR",
+    "DB_URL",
+    "UI_DIR",
+    "UI_STATIC_DIR",
+    "build_app",
+    "create_app",
+    "SESSION_TOKEN",
+]

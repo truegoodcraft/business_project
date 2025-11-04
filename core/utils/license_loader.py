@@ -1,158 +1,60 @@
-"""Local license loader and helpers for feature gating."""
-
-from __future__ import annotations
-
-import json
-import os
-from copy import deepcopy
 from pathlib import Path
+import os, json
 from typing import Any, Dict
 
-DEFAULT_TIER = "community"
-DEFAULT_FEATURES: Dict[str, bool] = {
-    "rfq": False,
-    "batch_run": False,
-    "import_commit": False,
-}
-
-
-def _baseline_license() -> Dict[str, Any]:
-    return {
-        "tier": DEFAULT_TIER,
-        "features": dict(DEFAULT_FEATURES),
-        "plugins": {},
-    }
-
+_DEFAULT = {"tier": "community", "features": {}, "plugins": {}}
 
 def _license_path() -> Path:
-    local_app_data = os.environ.get("LOCALAPPDATA", ".")
-    root = Path(local_app_data).expanduser() / "BUSCore"
-    root.mkdir(parents=True, exist_ok=True)
-    return root / "license.json"
+    # Dev: BUS_ROOT\license.json ; Prod: %LOCALAPPDATA%\BUSCore\license.json
+    if os.environ.get("BUS_ROOT"):
+        return Path(os.environ["BUS_ROOT"]).resolve() / "license.json"
+    return Path(os.environ["LOCALAPPDATA"]) / "BUSCore" / "license.json"
 
 
-def _write_license(path: Path, data: Dict[str, Any]) -> None:
-    path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+def _coerce_bool(v: Any) -> bool:
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, (int, float)):
+        return v != 0
+    if isinstance(v, str):
+        return v.strip().lower() in ("1", "true", "yes", "on", "enabled")
+    if isinstance(v, dict):
+        # allow {"enabled": true}
+        if "enabled" in v:
+            return _coerce_bool(v["enabled"])
+    return bool(v)
 
 
-def _normalize_license(raw: Any) -> Dict[str, Any]:
-    data = _baseline_license()
-    if not isinstance(raw, dict):
-        return data
+def get_license(*, force_reload: bool | None = None) -> Dict[str, Any]:
+    """
+    ALWAYS read from disk in dev (BUS_ROOT set). No cache.
+    Accept UTF-8 and UTF-8 with BOM.
+    """
+    path = _license_path()
+    data: Dict[str, Any] = dict(_DEFAULT)
+    try:
+        with path.open("r", encoding="utf-8-sig") as f:  # BOM-safe
+            raw = json.load(f)
+        if isinstance(raw, dict):
+            data.update(raw)
+    except Exception:
+        # keep defaults if file missing/invalid
+        pass
 
-    tier = raw.get("tier")
-    if isinstance(tier, str) and tier.strip():
-        data["tier"] = tier
+    # Normalize features/plugins
+    feats = data.get("features", {})
+    if not isinstance(feats, dict):
+        feats = {}
+    data["features"] = {k: _coerce_bool(v) for k, v in feats.items()}
 
-    raw_features = raw.get("features")
-    if isinstance(raw_features, dict):
-        for key, value in raw_features.items():
-            if isinstance(value, bool):
-                data["features"][str(key)] = value
-            elif isinstance(value, dict):
-                flag = value.get("enabled")
-                if isinstance(flag, bool):
-                    data["features"][str(key)] = flag
-                else:
-                    data["features"][str(key)] = bool(flag)
-            else:
-                data["features"][str(key)] = bool(value)
+    if not isinstance(data.get("plugins"), dict):
+        data["plugins"] = {}
 
-    raw_plugins = raw.get("plugins")
-    if isinstance(raw_plugins, dict):
-        normalized_plugins: Dict[str, Any] = {}
-        for key, value in raw_plugins.items():
-            normalized_plugins[str(key)] = value
-        data["plugins"] = normalized_plugins
-
+    data.setdefault("tier", "community")
     return data
 
 
-def _load_license() -> Dict[str, Any]:
-    path = _license_path()
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        data = _baseline_license()
-        _write_license(path, data)
-        return data
-    except json.JSONDecodeError:
-        data = _baseline_license()
-        _write_license(path, data)
-        return data
-    except Exception:
-        return _baseline_license()
-
-    return _normalize_license(raw)
-
-
-_LICENSE_DATA: Dict[str, Any] = _load_license()
-_LICENSE_PATH: Path = _license_path()
-
-
-def reload_license() -> Dict[str, Any]:
-    """Reload the license from disk and update cached state."""
-
-    global _LICENSE_DATA, _LICENSE_PATH
-    _LICENSE_DATA = _load_license()
-    _LICENSE_PATH = _license_path()
-    return get_license()
-
-
-def get_license() -> Dict[str, Any]:
-    """Return a copy of the currently loaded license."""
-
-    return deepcopy(_LICENSE_DATA)
-
-
-def license_path() -> Path:
-    """Return the path to the license file."""
-
-    return _LICENSE_PATH
-
-
 def feature_enabled(name: str) -> bool:
-    """Return whether the named feature is enabled."""
-
-    features = _LICENSE_DATA.get("features")
-    if isinstance(features, dict):
-        value = features.get(name)
-        if isinstance(value, bool):
-            return value
-        if isinstance(value, dict):
-            flag = value.get("enabled")
-            if isinstance(flag, bool):
-                return flag
-            return bool(flag)
-        if value is not None:
-            return bool(value)
-    return bool(DEFAULT_FEATURES.get(name, False))
-
-
-def plugin_enabled(pid: str) -> bool:
-    """Return whether the plugin with ``pid`` is enabled."""
-
-    plugins = _LICENSE_DATA.get("plugins")
-    if isinstance(plugins, dict):
-        entry = plugins.get(pid)
-        if isinstance(entry, bool):
-            return entry
-        if isinstance(entry, dict):
-            flag = entry.get("enabled")
-            if isinstance(flag, bool):
-                return flag
-            return bool(flag)
-        if entry is not None:
-            return bool(entry)
-    return True
-
-
-__all__ = [
-    "DEFAULT_FEATURES",
-    "DEFAULT_TIER",
-    "feature_enabled",
-    "get_license",
-    "license_path",
-    "plugin_enabled",
-    "reload_license",
-]
+    # CRITICAL: force fresh read so gates reflect current file in dev
+    lic = get_license(force_reload=True)
+    return bool(lic.get("features", {}).get(name, False))

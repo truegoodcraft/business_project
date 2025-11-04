@@ -48,7 +48,6 @@ class Vendor(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, nullable=False)
     contact = Column(String, nullable=True)
-    notes = Column(Text, nullable=True)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
 
 
