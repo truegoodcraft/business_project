@@ -15,6 +15,11 @@
     .tab{padding:10px 16px;cursor:pointer;border-left:4px solid transparent}
     .tab.active{background:#333;border-left-color:var(--accent);font-weight:600}
     .tab:hover:not(.active){background:#2a2a2a}
+    .nav-group{display:none;flex-direction:column;padding-left:16px;gap:4px;margin-top:4px}
+    .nav-group.open{display:flex}
+    .nav-group .nav-item{padding:8px 16px;border-left:4px solid transparent;color:inherit;text-decoration:none;display:block;border-radius:4px}
+    .nav-group .nav-item:hover{background:#2a2a2a}
+    .nav-group .nav-item.nav-subitem{font-size:13px;color:#ccc}
     #main{flex:1;padding:20px;overflow:auto}
     .card{background:#242424;padding:16px;border-radius:8px;margin-bottom:16px}
     .card h2{margin:0 0 8px;color:var(--accent)}
@@ -28,7 +33,12 @@
     <h1>BUS Core</h1>
     <div class="tab active" data-tab="writes">Writes</div>
     <div class="tab" data-tab="tools">Tools</div>
-    <a href="#/tools/contacts" class="tab" data-tab="tools-contacts">Contacts</a>
+    <div class="nav-group" data-group="tools">
+      <!-- Contacts under Tools -->
+      <a href="#/tools/contacts" class="tab nav-item nav-subitem" data-tab="tools-contacts" data-group="tools">
+        <span>Contacts</span>
+      </a>
+    </div>
     <div class="tab" data-tab="dev">Dev</div>
   </nav>
   <main id="main">

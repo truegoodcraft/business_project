@@ -77,31 +77,33 @@ export async function mountVendors(container) {
 
   newBtn.onclick = () => {
     modal.open({
-      id: null, name: '', contact: '', email: '', phone: '', notes: '', _kind: mode
+      id: null,
+      name: '',
+      contact: '',
+      email: '',
+      phone: '',
+      notes: '',
+      _kind: mode
     });
   };
 
   modal.onSubmit = async (m) => {
     if ((m._kind || mode) === 'vendor') {
       await ensureToken();
-      const payload = { name: m.name };
-      if (m.contact) payload.contact = m.contact; // send only if backend supports this field
-      try {
-        await apiPost('/app/vendors', payload);
-      } catch (e) {
-        alert('Failed to create vendor');
-      }
+      const payload = { name: m.name.trim() };
+      if (m.contact && m.contact.trim()) payload.contact = m.contact.trim();
+      try { await apiPost('/app/vendors', payload); } catch {}
     } else {
-      const customers = loadCustomers();
-      customers.push({
+      const list = loadCustomers();
+      list.push({
         id: `c-${crypto.randomUUID()}`,
-        name: m.name,
-        contact: m.contact || null,
-        email: m.email || null,
-        phone: m.phone || null,
-        notes: m.notes || null
+        name: m.name.trim(),
+        contact: (m.contact || '').trim() || null,
+        email: (m.email || '').trim() || null,
+        phone: (m.phone || '').trim() || null,
+        notes: (m.notes || '').trim() || null
       });
-      saveCustomers(customers);
+      saveCustomers(list);
     }
     modal.close();
     await loadAndRender();
@@ -201,19 +203,25 @@ function createModal(){
 
   const form=document.createElement('form'); form.style.display='grid'; form.style.gridTemplateColumns='1fr 1fr'; form.style.gap='10px';
   const fields=[
-    ['name','Name','text',true],
-    ['contact','Contact','text',false],
-    ['email','Email','email',false],
-    ['phone','Phone','text',false],
+    { key:'name', label:'Name', type:'text', required:true },
+    { key:'contact', label:'Contact', type:'text', required:false },
+    { key:'email', label:'Email', type:'email', required:false },
+    { key:'phone', label:'Phone', type:'text', required:false },
+    { key:'notes', label:'Notes', type:'textarea', required:false, span:true }
   ];
   const inputs={};
-  for(const [k,label,type,req] of fields){
+  for(const field of fields){
+    const { key, label, type, required, span } = field;
     const wrap=document.createElement('label'); wrap.style.display='grid'; wrap.style.gap='6px'; wrap.style.fontSize='12px';
     wrap.textContent=label;
-    const input=document.createElement('input'); input.type=type; input.name=k; input.required=!!req;
+    const input=type==='textarea'?document.createElement('textarea'):document.createElement('input');
+    if(type!=='textarea'){ input.type=type; }
+    input.name=key; input.required=!!required;
     input.style.background='#111318'; input.style.color='#e5e7eb'; input.style.border='1px solid #2b3246';
     input.style.borderRadius='10px'; input.style.padding='8px'; input.style.width='100%'; input.style.boxSizing='border-box';
-    inputs[k]=input; wrap.appendChild(input); form.appendChild(wrap);
+    if(type==='textarea'){ input.style.minHeight='80px'; input.style.resize='vertical'; }
+    if(span){ wrap.style.gridColumn='1 / -1'; }
+    inputs[key]=input; wrap.appendChild(input); form.appendChild(wrap);
   }
 
   const actions=document.createElement('div'); actions.style.display='flex'; actions.style.gap='10px'; actions.style.justifyContent='flex-end'; actions.style.marginTop='10px';
@@ -236,6 +244,7 @@ function createModal(){
     e.preventDefault();
     const model={ ...api._current };
     for(const k in inputs){ model[k]=inputs[k].value; }
+    if(!model.name || !model.name.trim()) return;
     if(typeof api.onSubmit==='function'){ await api.onSubmit(model); }
   });
   return api;

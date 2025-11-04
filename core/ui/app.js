@@ -1,12 +1,12 @@
 import { ensureToken, apiGet, apiJson, apiGetJson } from "./js/token.js";
-import { mountWrites }    from "/ui/js/cards/writes.js";
-import { mountOrganizer } from "/ui/js/cards/organizer.js";
-import { mountBackup }    from "/ui/js/cards/backup.js";
-import { mountInventory } from "/ui/js/cards/inventory.js";
-import { mountRfq }       from "/ui/js/cards/rfq.js";
-import { mountDev }       from "/ui/js/cards/dev.js";
-import { mountSettings }  from "/ui/js/cards/settings.js";
-import * as ContactsCard  from "/ui/js/cards/vendors.js";
+import { mountWrites }    from "./js/cards/writes.js";
+import { mountOrganizer } from "./js/cards/organizer.js";
+import { mountBackup }    from "./js/cards/backup.js";
+import { mountInventory } from "./js/cards/inventory.js";
+import { mountRfq }       from "./js/cards/rfq.js";
+import { mountDev }       from "./js/cards/dev.js";
+import { mountSettings }  from "./js/cards/settings.js";
+import * as ContactsCard  from "./js/cards/vendors.js";
 
 const app = document.getElementById("app");
 let headerHost = null;
@@ -17,6 +17,7 @@ let licenseInfo = null;
 let writesState = null;
 let wBadge = null;
 let tokenDisplay = null;
+let toolsNavGroup = null;
 
 const mountContacts =
   ContactsCard.mountContacts || ContactsCard.mount || ContactsCard.default;
@@ -27,6 +28,17 @@ const CONTACT_ROUTE_HASHES = new Set([
   '#/vendors',
   '#/contacts',
 ]);
+
+const routeTable = new Map();
+const router = {
+  register(hash, handler) {
+    if (handler === mountContacts && CONTACT_ROUTE_HASHES.has(hash)) {
+      routeTable.set(hash, () => switchTab('tools-contacts'));
+    } else {
+      routeTable.set(hash, handler);
+    }
+  }
+};
 
 const tabs = {
   writes: async (ctx) => mountWrites(cardHost, ctx),
@@ -49,13 +61,11 @@ const tabs = {
   },
 };
 
-const routeTable = new Map([
-  ["#/inventory", () => switchTab("inventory")],
-  ["#/tools/contacts", () => switchTab("tools-contacts")],
-  ["#/tools/vendors", () => switchTab("tools-contacts")],
-  ["#/vendors", () => switchTab("tools-contacts")],
-  ["#/contacts", () => switchTab("tools-contacts")],
-]);
+router.register('#/inventory', () => switchTab('inventory'));
+router.register('#/tools/contacts', mountContacts);
+router.register('#/tools/vendors',  mountContacts);
+router.register('#/vendors',         mountContacts);
+router.register('#/contacts',        mountContacts);
 
 document.addEventListener('DOMContentLoaded', async () => {
   try {
@@ -88,6 +98,7 @@ async function init() {
     await refreshWrites();
     await checkHealth();
     bindTabs();
+    toolsNavGroup = document.querySelector('.nav-group[data-group="tools"]');
     if (!(await handleRoute(window.location.hash))) {
       await switchTab(currentTab);
     }
@@ -205,8 +216,17 @@ async function switchTab(id) {
   if (!cardHost) return;
   currentTab = id;
   document.querySelectorAll('.tab').forEach(tab => {
-    tab.classList.toggle('active', tab.dataset.tab === id);
+    const tabId = tab.dataset.tab;
+    const isActive = tabId === id || (id === 'tools-contacts' && tabId === 'tools');
+    tab.classList.toggle('active', isActive);
   });
+  if (!toolsNavGroup) {
+    toolsNavGroup = document.querySelector('.nav-group[data-group="tools"]');
+  }
+  const showTools = id === 'tools' || id === 'tools-contacts';
+  if (toolsNavGroup) {
+    toolsNavGroup.classList.toggle('open', showTools);
+  }
   const hash = window.location.hash;
   const isInventoryHash = hash === '#/inventory';
   const isContactsHash = CONTACT_ROUTE_HASHES.has(hash);
