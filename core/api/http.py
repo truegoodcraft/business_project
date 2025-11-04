@@ -28,8 +28,7 @@ from fastapi import (
     Query,
     Request,
 )
-from fastapi import Response
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 import requests
@@ -54,7 +53,7 @@ from core.runtime.probe import PROBE_TIMEOUT_SEC
 from core.secrets import SecretError, Secrets
 from core.version import VERSION
 from core.utils.export import export_db, import_preview as _import_preview, import_commit as _import_commit
-from core.utils.license_loader import feature_enabled, get_license
+from core.utils.license_loader import get_license
 from tgc.bootstrap_fs import DATA, LOGS
 
 from pydantic import BaseModel, Field
@@ -76,7 +75,6 @@ from core.config.paths import (
     IMPORTS_DIR,
     DB_PATH,
     DB_URL,
-    UI_DIR,
 )
 
 if os.name == "nt":  # pragma: no cover - windows specific
@@ -122,21 +120,54 @@ def _check_state(state_b64: str) -> bool:
 
 app = FastAPI(title="BUS Core Alpha", version=VERSION)
 
-UI_DIR = Path(__file__).parent.parent / "ui"
-app.mount("/ui", StaticFiles(directory=UI_DIR, html=True), name="ui")
+
+def _first_existing(paths):
+    for p in paths:
+        if p and p.exists() and p.is_dir():
+            return p
+    return None
+
+
+CWD = Path.cwd()
+BASE = Path(__file__).resolve().parent.parent  # core/
+CANDIDATES = [
+    Path(os.getenv("BUS_UI_DIR")) if os.getenv("BUS_UI_DIR") else None,
+    BASE / "ui",
+    CWD / "core" / "ui",
+    CWD / "ui",
+]
+UI_DIR = _first_existing(CANDIDATES)
+
+if UI_DIR:
+    print(f"[ui] Serving /ui from: {UI_DIR}")
+    app.mount("/ui", StaticFiles(directory=UI_DIR, html=True), name="ui")
+else:
+    print("[ui] WARNING: UI directory not found. Set BUS_UI_DIR or create core/ui")
 
 
 @app.get("/", include_in_schema=False)
-def root():
+def _root():
     return RedirectResponse(url="/ui/")
 
 
 @app.get("/favicon.ico", include_in_schema=False)
-def favicon():
-    f = Path(__file__).parent.parent / "ui" / "favicon.ico"
-    if f.exists():
-        return FileResponse(f)
+def _favicon():
+    if UI_DIR:
+        ico = UI_DIR / "favicon.ico"
+        if ico.exists():
+            return FileResponse(ico)
     return Response(status_code=204)
+
+
+@app.get("/ui/", include_in_schema=False)
+def _ui_entry():
+    if not UI_DIR:
+        return Response(status_code=404)
+    for name in ("index.html", "shell.html"):
+        p = UI_DIR / name
+        if p.exists():
+            return FileResponse(p)
+    return Response(status_code=404)
 
 EXPORTS_DIR = APP_DIR / "exports"
 EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -519,9 +550,6 @@ def app_import_preview(req: ImportReq, _w: None = Depends(require_writes)):
 
 @protected.post("/app/import/commit")
 def app_import_commit(req: ImportReq, _w: None = Depends(require_writes)):
-    if not feature_enabled("import_commit"):
-        raise HTTPException(status_code=403, detail={"error": "feature_locked"})
-
     res = _import_commit(req.path, req.password)
     if not res.get("ok"):
         err = res.get("error", "commit_failed")
@@ -595,9 +623,6 @@ def rfq_generate(
     token: str = Depends(require_token),
     _writes: None = Depends(require_writes),
 ):
-    if not feature_enabled("rfq"):
-        raise HTTPException(status_code=403, detail={"error": "feature_locked"})
-
     item_ids = list(dict.fromkeys(body.items or []))
     vendor_ids = list(dict.fromkeys(body.vendors or []))
 
@@ -727,9 +752,6 @@ def inventory_run(
     token: str = Depends(require_token),
     _writes: None = Depends(require_writes),
 ):
-    if not feature_enabled("batch_run"):
-        raise HTTPException(status_code=403, detail={"error": "feature_locked"})
-
     inputs = {int(k): float(v) for k, v in (body.inputs or {}).items()}
     outputs = {int(k): float(v) for k, v in (body.outputs or {}).items()}
     ids = set(inputs) | set(outputs)
