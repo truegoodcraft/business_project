@@ -19,17 +19,20 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Literal
 from urllib.parse import urlencode
 
+from fastapi import FastAPI
 from fastapi import (
     APIRouter,
     Body,
     Depends,
-    FastAPI,
     HTTPException,
     Query,
     Request,
 )
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.applications import Starlette
+from starlette.responses import FileResponse, RedirectResponse, Response
+from starlette.routing import Route, Mount
 
 import requests
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -122,37 +125,26 @@ app = FastAPI(title="BUS Core Alpha", version=VERSION)
 
 
 # --- BEGIN UI MOUNT ---
-ui_env = os.getenv("BUS_UI_DIR")
 UI_DIR = None
+ui_env = os.getenv("BUS_UI_DIR")
 if ui_env:
-    UI_DIR = Path(ui_env).expanduser().resolve()
-    print(f"[ui] ENV BUS_UI_DIR = {ui_env} -> {UI_DIR}")
-    if not UI_DIR.exists() or not UI_DIR.is_dir():
-        print(f"[ui] WARNING: BUS_UI_DIR not found: {UI_DIR}")
-        UI_DIR = None
+    p = Path(ui_env).expanduser().resolve()
+    print(f"[ui] ENV BUS_UI_DIR = {ui_env} -> {p}")
+    if p.exists() and p.is_dir():
+        UI_DIR = p
+    else:
+        print(f"[ui] WARNING: BUS_UI_DIR not found: {p}")
 
 if UI_DIR is None:
-    fallback = (Path(__file__).resolve().parent.parent / "ui")
+    fallback = Path(__file__).resolve().parent.parent / "ui"
     if fallback.exists() and fallback.is_dir():
         UI_DIR = fallback.resolve()
         print(f"[ui] Fallback to: {UI_DIR}")
     else:
-        print("[ui] ERROR: No UI directory found. Set BUS_UI_DIR or create core/ui")
-
-if UI_DIR:
-    app.mount("/ui", StaticFiles(directory=str(UI_DIR), html=True), name="ui")
-    print(f"[ui] MOUNTED /ui -> {UI_DIR}")
-else:
-    print("[ui] NO UI MOUNTED")
+        print("[ui] ERROR: No UI directory found")
 
 
-@app.get("/", include_in_schema=False)
-def _root():
-    return RedirectResponse(url="/ui/")
-
-
-@app.get("/ui/", include_in_schema=False)
-def _ui_entry():
+def _ui_index(request):
     if not UI_DIR:
         return Response(status_code=404)
     idx = UI_DIR / "index.html"
@@ -164,13 +156,22 @@ def _ui_entry():
     return Response(status_code=404)
 
 
-@app.get("/favicon.ico", include_in_schema=False)
-def _favicon():
-    if UI_DIR:
-        ico = UI_DIR / "favicon.ico"
-        if ico.exists():
-            return FileResponse(ico)
-    return Response(status_code=204)
+if UI_DIR:
+    ui_app = Starlette(routes=[
+        # /ui/ => index.html or shell.html
+        Route("/", endpoint=_ui_index, include_in_schema=False),
+        # all other assets under /ui/**
+        Mount("/", app=StaticFiles(directory=str(UI_DIR), html=False), name="ui-assets"),
+    ])
+    app.mount("/ui", ui_app, name="ui")
+    print(f"[ui] MOUNTED /ui -> {UI_DIR}")
+else:
+    print("[ui] NO UI MOUNTED")
+
+
+@app.get("/", include_in_schema=False)
+def _root():
+    return RedirectResponse(url="/ui/")
 # --- END UI MOUNT ---
 
 EXPORTS_DIR = APP_DIR / "exports"
