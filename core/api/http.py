@@ -121,33 +121,47 @@ def _check_state(state_b64: str) -> bool:
 app = FastAPI(title="BUS Core Alpha", version=VERSION)
 
 
-def _first_existing(paths):
-    for p in paths:
-        if p and p.exists() and p.is_dir():
-            return p
-    return None
+# --- BEGIN UI MOUNT ---
+ui_env = os.getenv("BUS_UI_DIR")
+UI_DIR = None
+if ui_env:
+    UI_DIR = Path(ui_env).expanduser().resolve()
+    print(f"[ui] ENV BUS_UI_DIR = {ui_env} -> {UI_DIR}")
+    if not UI_DIR.exists() or not UI_DIR.is_dir():
+        print(f"[ui] WARNING: BUS_UI_DIR not found: {UI_DIR}")
+        UI_DIR = None
 
-
-CWD = Path.cwd()
-BASE = Path(__file__).resolve().parent.parent  # core/
-CANDIDATES = [
-    Path(os.getenv("BUS_UI_DIR")) if os.getenv("BUS_UI_DIR") else None,
-    BASE / "ui",
-    CWD / "core" / "ui",
-    CWD / "ui",
-]
-UI_DIR = _first_existing(CANDIDATES)
+if UI_DIR is None:
+    fallback = (Path(__file__).resolve().parent.parent / "ui")
+    if fallback.exists() and fallback.is_dir():
+        UI_DIR = fallback.resolve()
+        print(f"[ui] Fallback to: {UI_DIR}")
+    else:
+        print("[ui] ERROR: No UI directory found. Set BUS_UI_DIR or create core/ui")
 
 if UI_DIR:
-    print(f"[ui] Serving /ui from: {UI_DIR}")
-    app.mount("/ui", StaticFiles(directory=UI_DIR, html=True), name="ui")
+    app.mount("/ui", StaticFiles(directory=str(UI_DIR), html=True), name="ui")
+    print(f"[ui] MOUNTED /ui -> {UI_DIR}")
 else:
-    print("[ui] WARNING: UI directory not found. Set BUS_UI_DIR or create core/ui")
+    print("[ui] NO UI MOUNTED")
 
 
 @app.get("/", include_in_schema=False)
 def _root():
     return RedirectResponse(url="/ui/")
+
+
+@app.get("/ui/", include_in_schema=False)
+def _ui_entry():
+    if not UI_DIR:
+        return Response(status_code=404)
+    idx = UI_DIR / "index.html"
+    sh = UI_DIR / "shell.html"
+    if idx.exists():
+        return FileResponse(idx)
+    if sh.exists():
+        return FileResponse(sh)
+    return Response(status_code=404)
 
 
 @app.get("/favicon.ico", include_in_schema=False)
@@ -157,17 +171,7 @@ def _favicon():
         if ico.exists():
             return FileResponse(ico)
     return Response(status_code=204)
-
-
-@app.get("/ui/", include_in_schema=False)
-def _ui_entry():
-    if not UI_DIR:
-        return Response(status_code=404)
-    for name in ("index.html", "shell.html"):
-        p = UI_DIR / name
-        if p.exists():
-            return FileResponse(p)
-    return Response(status_code=404)
+# --- END UI MOUNT ---
 
 EXPORTS_DIR = APP_DIR / "exports"
 EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
