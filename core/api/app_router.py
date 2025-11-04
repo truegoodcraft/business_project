@@ -19,7 +19,6 @@ from sqlalchemy.orm import Session
 from core.config.paths import APP_DIR, DATA_DIR, JOURNALS_DIR, IMPORTS_DIR
 from core.services.models import Attachment, Item, Task, Vendor, get_session
 from core.api.http import require_session_token as require_session
-from core.utils.license_loader import feature_enabled
 
 router = APIRouter(tags=["app"])
 
@@ -37,61 +36,31 @@ def get_db() -> Generator[Session, None, None]:
     yield from get_session()
 
 
-# ---- Contacts endpoints --------------------------------------------------
-
-
-@router.get("/app/contacts")
-def get_contacts(db: Session = Depends(get_db)):
-    return db.query(Vendor).all()
-
-
-@router.post("/app/contacts")
-def create_contact(
-    data: dict, db: Session = Depends(get_db), token: str = Depends(require_session)
-):
-    obj = Vendor(**data)
-    db.add(obj)
-    db.commit()
-    db.refresh(obj)
-    return obj
-
-
-@router.put("/app/contacts/{id}")
-def update_contact(
-    id: int,
-    data: dict,
+# Unchanged contract for inventory dropdown: only vendors, shape [{id, name}]
+@router.get("/app/vendors")
+def get_vendors(
     db: Session = Depends(get_db),
     token: str = Depends(require_session),
 ):
-    obj = db.get(Vendor, id)
-    if not obj:
-        raise HTTPException(status_code=404, detail="not_found")
-    for k, v in data.items():
-        if k == "id":
-            continue
-        setattr(obj, k, v)
-    db.commit()
-    db.refresh(obj)
-    return obj
-
-
-@router.delete("/app/contacts/{id}")
-def delete_contact(
-    id: int, db: Session = Depends(get_db), token: str = Depends(require_session)
-):
-    obj = db.get(Vendor, id)
-    if not obj:
-        raise HTTPException(status_code=404, detail="not_found")
-    db.delete(obj)
-    db.commit()
-    return {"deleted": id}
-
-
-# Unchanged contract for inventory dropdown: only vendors, shape [{id, name}]
-@router.get("/app/vendors")
-def get_vendors(db: Session = Depends(get_db)):
-    rows = db.query(Vendor).filter(Vendor.type == "vendor").all()
+    rows = db.query(Vendor).all()
     return [{"id": r.id, "name": r.name} for r in rows]
+
+
+@router.post("/app/vendors")
+def create_app_vendor(
+    payload: VendorCreate,
+    db: Session = Depends(get_db),
+    token: str = Depends(require_session),
+):
+    vendor = Vendor(name=payload.name, contact=payload.contact)
+    db.add(vendor)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="vendor_name_conflict") from exc
+    db.refresh(vendor)
+    return {"id": vendor.id, "name": vendor.name}
 
 
 def _cleanup_old_previews() -> None:
@@ -326,12 +295,6 @@ def _extract_row_data(row: Dict[str, object], mapping: Dict[str, str]) -> Tuple[
 class VendorBase(BaseModel):
     name: str
     contact: Optional[str] = None
-    type: Optional[str] = "vendor"
-    email: Optional[str] = None
-    phone: Optional[str] = None
-    notes: Optional[str] = None
-    lead_time_days: Optional[int] = None
-    material_specialty: Optional[str] = None
 
 
 class BulkCommitBody(BaseModel):
@@ -346,12 +309,6 @@ class VendorCreate(VendorBase):
 class VendorUpdate(BaseModel):
     name: Optional[str] = None
     contact: Optional[str] = None
-    type: Optional[str] = None
-    email: Optional[str] = None
-    phone: Optional[str] = None
-    notes: Optional[str] = None
-    lead_time_days: Optional[int] = None
-    material_specialty: Optional[str] = None
 
 
 class VendorOut(VendorBase):
@@ -563,9 +520,6 @@ async def items_bulk_commit(
     db: Session = Depends(get_db),
     _session: None = Depends(_ensure_session),
 ) -> dict:
-    if not feature_enabled("import_commit"):
-        raise HTTPException(status_code=403, detail="feature_locked")
-
     try:
         preview = _load_preview(body.preview_id)
     except FileNotFoundError as exc:

@@ -47,15 +47,7 @@ class Vendor(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, nullable=False)
-    # 'vendor' or 'customer'
-    type = Column(String, nullable=False, default="vendor")
     contact = Column(String, nullable=True)
-    email = Column(String, nullable=True)
-    phone = Column(String, nullable=True)
-    notes = Column(Text, nullable=True)
-    # vendor-only convenience fields; nullable for customers
-    lead_time_days = Column(Integer, nullable=True)
-    material_specialty = Column(String, nullable=True)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
 
 
