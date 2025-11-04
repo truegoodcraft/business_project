@@ -6,6 +6,7 @@ import { mountInventory } from "/ui/js/cards/inventory.js";
 import { mountRfq }       from "/ui/js/cards/rfq.js";
 import { mountDev }       from "/ui/js/cards/dev.js";
 import { mountSettings }  from "/ui/js/cards/settings.js";
+import * as ContactsCard  from "/ui/js/cards/vendors.js";
 
 const app = document.getElementById("app");
 let headerHost = null;
@@ -16,6 +17,16 @@ let licenseInfo = null;
 let writesState = null;
 let wBadge = null;
 let tokenDisplay = null;
+
+const mountContacts =
+  ContactsCard.mountContacts || ContactsCard.mount || ContactsCard.default;
+
+const CONTACT_ROUTE_HASHES = new Set([
+  '#/tools/contacts',
+  '#/tools/vendors',
+  '#/vendors',
+  '#/contacts',
+]);
 
 const tabs = {
   writes: async (ctx) => mountWrites(cardHost, ctx),
@@ -31,10 +42,19 @@ const tabs = {
   },
   dev: async () => mountDev(cardHost),
   inventory: async () => mountInventory(cardHost),
+  'tools-contacts': async (ctx) => {
+    if (typeof mountContacts === 'function') {
+      await mountContacts(cardHost, ctx);
+    }
+  },
 };
 
 const routeTable = new Map([
   ["#/inventory", () => switchTab("inventory")],
+  ["#/tools/contacts", () => switchTab("tools-contacts")],
+  ["#/tools/vendors", () => switchTab("tools-contacts")],
+  ["#/vendors", () => switchTab("tools-contacts")],
+  ["#/contacts", () => switchTab("tools-contacts")],
 ]);
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -165,8 +185,14 @@ function bindTabs() {
         } else {
           switchTab('inventory');
         }
+      } else if (tabId === 'tools-contacts') {
+        if (!CONTACT_ROUTE_HASHES.has(window.location.hash)) {
+          window.location.hash = '#/tools/contacts';
+        } else {
+          switchTab('tools-contacts');
+        }
       } else {
-        if (window.location.hash === '#/inventory') {
+        if (window.location.hash === '#/inventory' || CONTACT_ROUTE_HASHES.has(window.location.hash)) {
           history.replaceState(null, '', window.location.pathname + window.location.search);
         }
         switchTab(tabId);
@@ -181,7 +207,13 @@ async function switchTab(id) {
   document.querySelectorAll('.tab').forEach(tab => {
     tab.classList.toggle('active', tab.dataset.tab === id);
   });
-  if (id !== 'inventory' && window.location.hash === '#/inventory') {
+  const hash = window.location.hash;
+  const isInventoryHash = hash === '#/inventory';
+  const isContactsHash = CONTACT_ROUTE_HASHES.has(hash);
+  if (id !== 'inventory' && isInventoryHash) {
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+  }
+  if (id !== 'tools-contacts' && isContactsHash) {
     history.replaceState(null, '', window.location.pathname + window.location.search);
   }
   await renderView();
@@ -229,4 +261,11 @@ window.bus = Object.freeze({
   mountRfq:       () => switchTab('tools').then(() => mountRfq(cardHost)),
   mountSettings:  () => switchTab('tools').then(() => mountSettings(cardHost)),
   mountDev:       () => switchTab('dev'),
+  mountContacts:  () => {
+    if (!CONTACT_ROUTE_HASHES.has(window.location.hash)) {
+      window.location.hash = '#/tools/contacts';
+    } else {
+      switchTab('tools-contacts');
+    }
+  },
 });
