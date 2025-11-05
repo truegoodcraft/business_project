@@ -92,7 +92,18 @@ export async function mountVendors(container) {
       await ensureToken();
       const payload = { name: m.name.trim() };
       if (m.contact && m.contact.trim()) payload.contact = m.contact.trim();
-      try { await apiPost('/app/vendors', payload); } catch {}
+      try {
+        await apiPost('/app/vendors', payload);
+      } catch (err) {
+        const status = err?.status || err?.code;
+        const message = String(err?.error || err?.message || '').toLowerCase();
+        if (status === 409 || message.includes('conflict') || message.includes('exists')) {
+          alert('Vendor already exists');
+          return;
+        }
+        alert(err?.message || err?.error || 'Unable to save vendor');
+        return;
+      }
     } else {
       const list = loadCustomers();
       list.push({
