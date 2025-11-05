@@ -46,7 +46,15 @@
     <div class="tab" data-tab="dev">Dev</div>
   </nav>
   <main id="main">
-    <div id="app"></div>
+    <div id="app">
+      <div class="card" data-view="contacts">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;">
+          <h2 style="margin:0;">Contacts</h2>
+          <button type="button" data-action="open-contacts-modal">Add Contact</button>
+        </div>
+        <p style="margin:0;color:#9ca3af;">Loading…</p>
+      </div>
+    </div>
   </main>
 
   <div id="contacts-modal"
