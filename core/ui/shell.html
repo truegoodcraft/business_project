@@ -26,6 +26,11 @@
     button{background:var(--accent);color:#fff;border:none;padding:8px 12px;border-radius:6px;cursor:pointer}
     button:hover{opacity:.9}
     pre{background:#111;padding:12px;border-radius:6px;overflow:auto;font-size:12px}
+    #contacts-modal.hidden{display:none}
+    #contacts-modal.open{display:flex}
+    #contacts-modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:transparent}
+    #contacts-modal .modal-backdrop{position:absolute;inset:0;background:rgba(0,0,0,0.5)}
+    #contacts-modal .modal-dialog{position:relative;z-index:1}
   </style>
 </head>
 <body>
@@ -45,11 +50,18 @@
     <div id="app"></div>
   </main>
 
-  <div id="contacts-modal" data-role="contacts-modal" role="dialog" aria-modal="true" aria-labelledby="contacts-modal-title" class="modal" style="display:none">
-    <div class="modal-content modal-dialog">
+  <div id="contacts-modal"
+       data-role="contacts-modal"
+       role="dialog"
+       aria-modal="true"
+       aria-labelledby="contacts-modal-title"
+       class="modal hidden">
+    <div class="modal-backdrop" aria-hidden="true"></div>
+    <div class="modal-dialog modal-content">
       <header class="modal-header">
         <h2 id="contacts-modal-title">Add Contact</h2>
       </header>
+
       <form data-role="contacts-form" class="modal-body">
         <div class="field">
           <label for="contact-name">Name</label>
