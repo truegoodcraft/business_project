@@ -77,151 +77,6 @@ export async function mountVendors(container) {
   const modal = createModal();
   document.body.appendChild(modal.root);
 
-  const contactsModal = document.querySelector('[data-role="contacts-modal"]');
-  const contactsForm = contactsModal?.querySelector('[data-role="contacts-form"]');
-  const contactsSaveBtn = contactsModal?.querySelector('[data-role="contacts-save"]');
-  const contactsOpenBtn = document.querySelector('[data-action="open-contacts-modal"]');
-  const contactsCloseBtn = contactsModal?.querySelector('[data-action="close-contacts-modal"]');
-  const vendorOnlyWrap = contactsModal?.querySelector('[data-visible-when="vendor"]');
-
-  function updateVendorOnly() {
-    if (!vendorOnlyWrap || !contactsForm) return;
-    const t = String(contactsForm.elements.type.value || '').toLowerCase();
-    vendorOnlyWrap.style.display = t === 'vendor' ? '' : 'none';
-  }
-
-  function setContactsBusy(b) {
-    if (!contactsSaveBtn) return;
-    if (!contactsSaveBtn.dataset._orig) {
-      contactsSaveBtn.dataset._orig = contactsSaveBtn.textContent || 'Save';
-    }
-    contactsSaveBtn.disabled = !!b;
-    contactsSaveBtn.textContent = b ? 'Saving…' : contactsSaveBtn.dataset._orig;
-  }
-
-  function openContactsModal(preset = {}) {
-    if (!contactsModal || !contactsForm) return;
-    contactsForm.reset();
-    if (preset.name) contactsForm.elements.name.value = preset.name;
-    const typeField = contactsForm.elements.type;
-    const presetType = (preset.type || mode || '').toLowerCase();
-    if (typeField) {
-      typeField.value = presetType || '';
-    }
-    if (preset.email) contactsForm.elements.email.value = preset.email;
-    if (preset.material) contactsForm.elements.material.value = preset.material;
-    if (preset.lead_time_days != null) contactsForm.elements.lead_time_days.value = preset.lead_time_days;
-    if (preset.notes) contactsForm.elements.notes.value = preset.notes;
-    updateVendorOnly();
-    contactsModal.classList.remove('hidden');
-    contactsModal.classList.add('open');
-    contactsModal.style.display = 'flex';
-    document.body.classList.add('modal-open');
-    contactsForm.elements.name?.focus();
-  }
-
-  function closeContactsModal() {
-    if (!contactsModal) return;
-    contactsModal.classList.add('hidden');
-    contactsModal.classList.remove('open');
-    contactsModal.style.display = 'none';
-    const otherOpen = Array.from(document.querySelectorAll('.modal')).some((el) => {
-      if (el === contactsModal) return false;
-      return getComputedStyle(el).display !== 'none';
-    });
-    if (!otherOpen) {
-      document.body.classList.remove('modal-open');
-    }
-  }
-
-  contactsOpenBtn?.addEventListener('click', () => openContactsModal({ type: mode }));
-
-  if (contactsModal && !contactsModal.dataset.contactsOverlayBound) {
-    contactsModal.addEventListener('click', (e) => {
-      if (e.target === contactsModal || e.target.classList.contains('modal-backdrop')) {
-        closeContactsModal();
-      }
-    });
-    contactsModal.dataset.contactsOverlayBound = '1';
-  }
-
-  if (contactsCloseBtn && !contactsCloseBtn.dataset.contactsCloseBound) {
-    contactsCloseBtn.addEventListener('click', () => closeContactsModal());
-    contactsCloseBtn.dataset.contactsCloseBound = '1';
-  }
-
-  if (contactsModal && !contactsModal.dataset.contactsEscBound) {
-    const escHandler = (e) => {
-      if (e.key === 'Escape' && !contactsModal.classList.contains('hidden')) {
-        closeContactsModal();
-      }
-    };
-    document.addEventListener('keydown', escHandler);
-    contactsModal.dataset.contactsEscBound = '1';
-  }
-
-  if (contactsForm && !contactsForm.dataset.contactsTypeBound) {
-    contactsForm.elements.type?.addEventListener('change', updateVendorOnly);
-    contactsForm.dataset.contactsTypeBound = '1';
-  }
-
-  if (contactsForm) {
-    updateVendorOnly();
-  }
-
-  if (contactsForm && !contactsForm.dataset.contactsSubmitBound) {
-    contactsForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      if (contactsSaveBtn?.disabled) return;
-
-      const fd = new FormData(contactsForm);
-      const name = String(fd.get('name') || '').trim();
-      let type = String(fd.get('type') || '').trim().toLowerCase();
-      const email = String(fd.get('email') || '').trim();
-      const material = String(fd.get('material') || '').trim();
-      const leadRaw = String(fd.get('lead_time_days') || '').trim();
-      const notes = String(fd.get('notes') || '').trim();
-
-      if (!name) { alert('Name required'); return; }
-      if (type !== 'vendor' && type !== 'customer') { alert('Type required'); return; }
-
-      let lead_time_days = null;
-      if (leadRaw) {
-        const n = parseInt(leadRaw, 10);
-        if (Number.isNaN(n)) { alert('Lead time must be a number'); return; }
-        lead_time_days = n;
-      }
-
-      const payload = {
-        name,
-        type,
-        ...(email ? { email } : {}),
-        ...(type === 'vendor' && material ? { material } : {}),
-        ...(lead_time_days != null ? { lead_time_days } : {}),
-        ...(notes ? { notes } : {}),
-      };
-
-      try {
-        setContactsBusy(true);
-        await ensureToken();
-        await apiPost('/app/contacts', payload);
-        closeContactsModal();
-        document.dispatchEvent(new CustomEvent('contacts:changed', { bubbles: true }));
-      } catch (err) {
-        const status = err?.status || err?.response?.status;
-        if (status === 404 || status === 405) {
-          alert('Contacts endpoint is not available yet (HTTP ' + status + '). Please add /app/contacts on the backend.');
-        } else {
-          alert('Could not save contact.');
-        }
-        console.error('POST /app/contacts failed', err);
-      } finally {
-        setContactsBusy(false);
-      }
-    });
-    contactsForm.dataset.contactsSubmitBound = '1';
-  }
-
   modal.onSubmit = async (m) => {
     if ((m._kind || mode) === 'vendor') {
       await ensureToken();
@@ -256,6 +111,150 @@ export async function mountVendors(container) {
   };
 
   container.append(header, table);
+
+  const contactsModal = document.querySelector('[data-role="contacts-modal"]');
+  const contactsForm = contactsModal?.querySelector('[data-role="contacts-form"]');
+  const contactsSaveBtn = contactsModal?.querySelector('[data-role="contacts-save"]');
+  const contactsOpenBtn = document.querySelector('[data-action="open-contacts-modal"]');
+  const contactsCloseBtn = contactsModal?.querySelector('[data-action="close-contacts-modal"]');
+  const vendorOnlyWrap = contactsModal?.querySelector('[data-visible-when="vendor"]');
+
+  function updateVendorOnly() {
+    if (!vendorOnlyWrap || !contactsForm) return;
+    const t = String(contactsForm.elements.type.value || '').toLowerCase();
+    vendorOnlyWrap.style.display = t === 'vendor' ? '' : 'none';
+  }
+
+  function setContactsBusy(busy) {
+    if (!contactsSaveBtn) return;
+    if (!contactsSaveBtn.dataset._orig) {
+      contactsSaveBtn.dataset._orig = contactsSaveBtn.textContent || 'Save';
+    }
+    contactsSaveBtn.disabled = !!busy;
+    contactsSaveBtn.textContent = busy ? 'Saving…' : contactsSaveBtn.dataset._orig;
+  }
+
+  function openContactsModal(preset = {}) {
+    if (!contactsModal || !contactsForm) return;
+    contactsForm.reset();
+    if (preset.name) contactsForm.elements.name.value = preset.name;
+    const typeField = contactsForm.elements.type;
+    const presetType = (preset.type || mode || '').toLowerCase();
+    if (typeField) {
+      typeField.value = presetType || '';
+    }
+    if (preset.email) contactsForm.elements.email.value = preset.email;
+    if (preset.material) contactsForm.elements.material.value = preset.material;
+    if (preset.lead_time_days != null) contactsForm.elements.lead_time_days.value = preset.lead_time_days;
+    if (preset.notes) contactsForm.elements.notes.value = preset.notes;
+    updateVendorOnly();
+    contactsModal.classList.remove('hidden');
+    contactsModal.classList.add('open');
+    document.body.classList.add('modal-open');
+    contactsForm.elements.name?.focus();
+  }
+
+  function closeContactsModal() {
+    if (!contactsModal) return;
+    contactsModal.classList.add('hidden');
+    contactsModal.classList.remove('open');
+    const otherOpen = Array.from(document.querySelectorAll('.modal')).some((el) => {
+      if (el === contactsModal) return false;
+      return getComputedStyle(el).display !== 'none';
+    });
+    if (!otherOpen) {
+      document.body.classList.remove('modal-open');
+    }
+  }
+
+  contactsOpenBtn?.addEventListener('click', () => openContactsModal({ type: mode }));
+
+  if (contactsModal && !contactsModal.dataset.contactsOverlayBound) {
+    contactsModal.addEventListener('click', (event) => {
+      if (event.target === contactsModal || event.target.classList.contains('modal-backdrop')) {
+        closeContactsModal();
+      }
+    });
+    contactsModal.dataset.contactsOverlayBound = '1';
+  }
+
+  if (contactsCloseBtn && !contactsCloseBtn.dataset.contactsCloseBound) {
+    contactsCloseBtn.addEventListener('click', () => closeContactsModal());
+    contactsCloseBtn.dataset.contactsCloseBound = '1';
+  }
+
+  if (contactsModal && !contactsModal.dataset.contactsEscBound) {
+    const escHandler = (event) => {
+      if (event.key === 'Escape' && !contactsModal.classList.contains('hidden')) {
+        closeContactsModal();
+      }
+    };
+    document.addEventListener('keydown', escHandler);
+    contactsModal.dataset.contactsEscBound = '1';
+  }
+
+  if (contactsForm && !contactsForm.dataset.contactsTypeBound) {
+    contactsForm.elements.type?.addEventListener('change', updateVendorOnly);
+    contactsForm.dataset.contactsTypeBound = '1';
+  }
+
+  if (contactsForm) {
+    updateVendorOnly();
+  }
+
+  if (contactsForm && !contactsForm.dataset.contactsSubmitBound) {
+    contactsForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (contactsSaveBtn?.disabled) return;
+
+      const fd = new FormData(contactsForm);
+      const name = String(fd.get('name') || '').trim();
+      let type = String(fd.get('type') || '').trim().toLowerCase();
+      const email = String(fd.get('email') || '').trim();
+      const material = String(fd.get('material') || '').trim();
+      const leadRaw = String(fd.get('lead_time_days') || '').trim();
+      const notes = String(fd.get('notes') || '').trim();
+
+      if (!name) { alert('Name required'); return; }
+      if (type !== 'vendor' && type !== 'customer') { alert('Type required'); return; }
+
+      let lead_time_days = null;
+      if (leadRaw) {
+        const n = parseInt(leadRaw, 10);
+        if (Number.isNaN(n)) { alert('Lead time must be a number'); return; }
+        lead_time_days = n;
+      }
+
+      const payload = {
+        name,
+        type,
+        ...(email ? { email } : {}),
+        ...(type === 'vendor' && material ? { material } : {}),
+        ...(lead_time_days != null ? { lead_time_days } : {}),
+        ...(notes ? { notes } : {}),
+      };
+
+      try {
+        setContactsBusy(true);
+        await ensureToken();
+        await apiPost('/app/contacts', payload);
+        closeContactsModal();
+        await loadAndRender();
+        document.dispatchEvent(new CustomEvent('contacts:changed', { bubbles: true }));
+      } catch (err) {
+        const status = err?.status || err?.response?.status;
+        if (status === 404 || status === 405) {
+          alert('Contacts endpoint is not available yet (HTTP ' + status + '). Please add /app/contacts on the backend.');
+        } else {
+          alert('Could not save contact.');
+        }
+        console.error('POST /app/contacts failed', err);
+      } finally {
+        setContactsBusy(false);
+      }
+    });
+    contactsForm.dataset.contactsSubmitBound = '1';
+  }
 
   async function loadAndRender() {
     // vendors from server
