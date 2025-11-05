@@ -714,6 +714,7 @@ export async function mountInventory(container) {
     async function deleteItem(id) {
         if (!confirm('Delete this item?')) return;
         try {
+            await ensureToken();
             await apiDelete(`/app/items/${id}`);
             loadItems();
         } catch (err) {
@@ -764,8 +765,24 @@ export async function mountInventory(container) {
         }
 
         try {
+            await ensureToken();
             if (currentEditId) {
-                await apiPut(`/app/items/${currentEditId}`, data);
+                try {
+                    await apiPut(`/app/items/${currentEditId}`, data);
+                } catch (err) {
+                    try {
+                        const resp = await rawRequest(`/app/items/${currentEditId}`, {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(data)
+                        });
+                        if (!resp.ok) {
+                            throw new Error(`PATCH failed: ${resp.status}`);
+                        }
+                    } catch {
+                        await apiPost('/app/items', { id: currentEditId, ...data });
+                    }
+                }
             } else {
                 await apiPost('/app/items', data);
             }
@@ -803,16 +820,37 @@ export async function mountInventory(container) {
             return s === 404 || s === 405 || m.includes('not found') || m.includes('method not allowed');
         };
 
-        // Fallback PUT: GET current -> compute -> PUT {qty}
         const fallbackPut = async () => {
-            const item = await apiGet(`/app/items/${item_id}`);
-            const cur  = Number(item?.qty ?? 0);
+            await ensureToken();
+            const all = await apiGet('/app/items');
+            const item = (Array.isArray(all) ? all : []).find(x => Number(x.id) === item_id) || { qty: 0 };
+            const cur = Number(item.qty || 0);
             const newQty = Number((cur + delta).toFixed(4));
-            await apiPut(`/app/items/${item_id}`, { qty: newQty });
-            console.log('inventory.js: adjust: fallback-put', { item_id, delta, newQty });
+
+            try {
+                await apiPut(`/app/items/${item_id}`, { qty: newQty });
+                return;
+            } catch (e) {}
+
+            try {
+                const resp = await rawRequest(`/app/items/${item_id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ qty: newQty })
+                });
+                if (resp.ok) return;
+            } catch (e) {}
+
+            try {
+                await apiPost('/app/items', { id: item_id, qty: newQty });
+                return;
+            } catch (e) {}
+
+            throw new Error('No supported update method for /app/items');
         };
 
         try {
+            await ensureToken();
             // Try Pro path first; keeps framework for later
             await apiPost('/app/inventory/adjust', payload);
             console.log('inventory.js: adjust: journaled', { item_id, delta });
