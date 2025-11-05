@@ -228,8 +228,10 @@ function createModal(){
   const cancel=document.createElement('button'); cancel.type='button'; cancel.textContent='Cancel'; styleBtn(cancel);
   const save=document.createElement('button'); save.type='submit'; save.textContent='Save'; styleBtn(save);
   actions.append(cancel,save);
-
-  panel.append(title,form,actions); root.appendChild(panel);
+  // span actions across form columns and place inside the form
+  actions.style.gridColumn='1 / -1';
+  form.append(actions);
+  panel.append(title,form); root.appendChild(panel);
 
   const api={
     root,
