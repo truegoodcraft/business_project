@@ -1,4 +1,4 @@
-import { apiGet, apiPost, apiPut, apiDelete, ensureToken } from '../api.js';
+import { apiGet, apiPost, apiDelete, ensureToken } from '../api.js';
 
 const LS_KEY = 'contacts.customers.v1';
 const loadCustomers = () => { try { return JSON.parse(localStorage.getItem(LS_KEY) || '[]'); } catch { return []; } };
@@ -14,7 +14,7 @@ export async function mountVendors(container) {
 
   let mode = 'vendor'; // 'vendor' | 'customer'
 
-  // Header with toggle + New button
+  // Header with toggle + Add Contact button
   const header = document.createElement('div');
   header.style.display = 'flex';
   header.style.alignItems = 'center';
@@ -47,17 +47,13 @@ export async function mountVendors(container) {
   }
   renderToggle();
 
-  const newBtn = document.createElement('button');
-  newBtn.textContent = 'New';
-  styleBtn(newBtn);
-
   const addContactBtn = document.createElement('button');
   addContactBtn.type = 'button';
   addContactBtn.textContent = 'Add Contact';
   addContactBtn.dataset.action = 'open-contacts-modal';
   styleBtn(addContactBtn);
 
-  header.append(title, toggle, newBtn, addContactBtn);
+  header.append(title, toggle, addContactBtn);
 
   // Table
   const table = document.createElement('table');
@@ -81,22 +77,10 @@ export async function mountVendors(container) {
   const modal = createModal();
   document.body.appendChild(modal.root);
 
-  newBtn.onclick = () => {
-    modal.open({
-      id: null,
-      name: '',
-      contact: '',
-      email: '',
-      phone: '',
-      notes: '',
-      _kind: mode
-    });
-  };
-
   const contactsModal = document.querySelector('[data-role="contacts-modal"]');
   const contactsForm = contactsModal?.querySelector('[data-role="contacts-form"]');
   const contactsSaveBtn = contactsModal?.querySelector('[data-role="contacts-save"]');
-  const contactsOpenBtn = header.querySelector('[data-action="open-contacts-modal"]');
+  const contactsOpenBtn = document.querySelector('[data-action="open-contacts-modal"]');
   const contactsCloseBtn = contactsModal?.querySelector('[data-action="close-contacts-modal"]');
   const vendorOnlyWrap = contactsModal?.querySelector('[data-visible-when="vendor"]');
 
@@ -115,24 +99,22 @@ export async function mountVendors(container) {
     contactsSaveBtn.textContent = b ? 'Saving…' : contactsSaveBtn.dataset._orig;
   }
 
-  function anyOtherModalVisible(except) {
-    return Array.from(document.querySelectorAll('.modal')).some((el) => {
-      if (el === except) return false;
-      return getComputedStyle(el).display !== 'none';
-    });
-  }
-
   function openContactsModal(preset = {}) {
     if (!contactsModal || !contactsForm) return;
     contactsForm.reset();
     if (preset.name) contactsForm.elements.name.value = preset.name;
+    const typeField = contactsForm.elements.type;
     const presetType = (preset.type || mode || '').toLowerCase();
-    if (presetType) contactsForm.elements.type.value = presetType;
+    if (typeField) {
+      typeField.value = presetType || '';
+    }
     if (preset.email) contactsForm.elements.email.value = preset.email;
     if (preset.material) contactsForm.elements.material.value = preset.material;
     if (preset.lead_time_days != null) contactsForm.elements.lead_time_days.value = preset.lead_time_days;
     if (preset.notes) contactsForm.elements.notes.value = preset.notes;
     updateVendorOnly();
+    contactsModal.classList.remove('hidden');
+    contactsModal.classList.add('open');
     contactsModal.style.display = 'flex';
     document.body.classList.add('modal-open');
     contactsForm.elements.name?.focus();
@@ -140,8 +122,14 @@ export async function mountVendors(container) {
 
   function closeContactsModal() {
     if (!contactsModal) return;
+    contactsModal.classList.add('hidden');
+    contactsModal.classList.remove('open');
     contactsModal.style.display = 'none';
-    if (!anyOtherModalVisible(contactsModal)) {
+    const otherOpen = Array.from(document.querySelectorAll('.modal')).some((el) => {
+      if (el === contactsModal) return false;
+      return getComputedStyle(el).display !== 'none';
+    });
+    if (!otherOpen) {
       document.body.classList.remove('modal-open');
     }
   }
@@ -150,7 +138,7 @@ export async function mountVendors(container) {
 
   if (contactsModal && !contactsModal.dataset.contactsOverlayBound) {
     contactsModal.addEventListener('click', (e) => {
-      if (e.target === contactsModal) {
+      if (e.target === contactsModal || e.target.classList.contains('modal-backdrop')) {
         closeContactsModal();
       }
     });
@@ -164,7 +152,7 @@ export async function mountVendors(container) {
 
   if (contactsModal && !contactsModal.dataset.contactsEscBound) {
     const escHandler = (e) => {
-      if (e.key === 'Escape' && getComputedStyle(contactsModal).display !== 'none') {
+      if (e.key === 'Escape' && !contactsModal.classList.contains('hidden')) {
         closeContactsModal();
       }
     };
@@ -175,6 +163,10 @@ export async function mountVendors(container) {
   if (contactsForm && !contactsForm.dataset.contactsTypeBound) {
     contactsForm.elements.type?.addEventListener('change', updateVendorOnly);
     contactsForm.dataset.contactsTypeBound = '1';
+  }
+
+  if (contactsForm) {
+    updateVendorOnly();
   }
 
   if (contactsForm && !contactsForm.dataset.contactsSubmitBound) {
@@ -216,8 +208,13 @@ export async function mountVendors(container) {
         closeContactsModal();
         document.dispatchEvent(new CustomEvent('contacts:changed', { bubbles: true }));
       } catch (err) {
+        const status = err?.status || err?.response?.status;
+        if (status === 404 || status === 405) {
+          alert('Contacts endpoint is not available yet (HTTP ' + status + '). Please add /app/contacts on the backend.');
+        } else {
+          alert('Could not save contact.');
+        }
         console.error('POST /app/contacts failed', err);
-        alert('Could not save contact.');
       } finally {
         setContactsBusy(false);
       }
