@@ -44,6 +44,55 @@
   <main id="main">
     <div id="app"></div>
   </main>
+
+  <div id="contacts-modal" data-role="contacts-modal" role="dialog" aria-modal="true" aria-labelledby="contacts-modal-title" class="modal" style="display:none">
+    <div class="modal-content modal-dialog">
+      <header class="modal-header">
+        <h2 id="contacts-modal-title">Add Contact</h2>
+      </header>
+      <form data-role="contacts-form" class="modal-body">
+        <div class="field">
+          <label for="contact-name">Name</label>
+          <input id="contact-name" name="name" type="text" required />
+        </div>
+
+        <div class="field">
+          <label for="contact-type">Type</label>
+          <select id="contact-type" name="type" required>
+            <option value="">— Select —</option>
+            <option value="vendor">Vendor</option>
+            <option value="customer">Customer</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="contact-email">Email</label>
+          <input id="contact-email" name="email" type="email" />
+        </div>
+
+        <div class="field" data-visible-when="vendor">
+          <label for="contact-material">Material</label>
+          <input id="contact-material" name="material" type="text" />
+        </div>
+
+        <div class="field">
+          <label for="contact-leadtime">Lead time (days)</label>
+          <input id="contact-leadtime" name="lead_time_days" type="number" inputmode="numeric" />
+        </div>
+
+        <div class="field">
+          <label for="contact-notes">Notes</label>
+          <textarea id="contact-notes" name="notes"></textarea>
+        </div>
+
+        <footer class="modal-footer">
+          <button type="button" data-action="close-contacts-modal">Cancel</button>
+          <button type="submit" data-role="contacts-save">Save</button>
+        </footer>
+      </form>
+    </div>
+  </div>
+
   <script type="module" src="/ui/app.js?v=pingfix2"></script>
 </body>
 </html>
