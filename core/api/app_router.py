@@ -8,11 +8,12 @@ import time
 from datetime import date, datetime
 from io import BytesIO, StringIO
 from pathlib import Path
-from typing import Dict, Generator, List, Optional, Tuple
+from typing import Any, Dict, Generator, List, Optional, Tuple
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -61,6 +62,55 @@ def create_app_vendor(
         raise HTTPException(status_code=409, detail="vendor_name_conflict") from exc
     db.refresh(vendor)
     return {"id": vendor.id, "name": vendor.name}
+
+
+@router.post("/app/transactions")
+def add_transaction(
+    data: Dict[str, Any],
+    db: Session = Depends(get_db),
+    token: str = Depends(require_session),
+) -> Dict[str, Any]:
+    t = data.get("type")
+    amount_cents = data.get("amount_cents")
+    date = data.get("date")
+    if t != "expense":
+        raise HTTPException(status_code=400, detail="type must be 'expense' for this route")
+    if not isinstance(amount_cents, int) or amount_cents >= 0:
+        raise HTTPException(status_code=400, detail="amount_cents must be negative int")
+    if not date:
+        raise HTTPException(status_code=400, detail="date required (YYYY-MM-DD)")
+
+    db.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                type TEXT NOT NULL CHECK(type IN ('expense','revenue')),
+                amount_cents INTEGER NOT NULL,
+                category TEXT,
+                date TEXT NOT NULL,
+                notes TEXT,
+                created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+            );
+            """
+        )
+    )
+    db.execute(
+        text("CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);")
+    )
+    db.execute(
+        text(
+            """
+            INSERT INTO transactions (type, amount_cents, category, date, notes)
+            VALUES (:type, :amount_cents, :category, :date, :notes)
+            """
+        ),
+        data,
+    )
+    db.commit()
+    new_id = db.execute(text("SELECT last_insert_rowid()"))
+    last_row = new_id.scalar_one()
+    return {"status": "saved", "id": last_row}
 
 
 def _cleanup_old_previews() -> None:
