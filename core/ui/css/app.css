@@ -486,3 +486,15 @@ textarea {
 
 /* Lock background scroll while a modal is open */
 body.modal-open { overflow: hidden; }
+
+/* ---- Home donuts: 80x80 blank circles (Eval #9) ---- */
+.donut {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  display: inline-block;
+  margin: 0 20px;
+  border: none; /* override any prior outline rules */
+}
+.donut-in  { background: #0f0; }  /* green */
+.donut-out { background: #f00; }  /* red   */

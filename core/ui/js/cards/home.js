@@ -57,7 +57,26 @@ expenseForm?.addEventListener('submit', async (e) => {
   };
 
   try {
-    const res = await apiPost('/app/transactions', payload);
+    // Prefer global apiPost; otherwise use a local POST shim.
+    const poster = (typeof window.apiPost === 'function')
+      ? window.apiPost
+      : async (path, body) => {
+          const tok = await _getSessionToken();
+          const res = await fetch(path, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(tok ? { 'X-Session-Token': tok } : {})
+            },
+            body: JSON.stringify(body)
+          });
+          if (!res.ok) {
+            const txt = await res.text().catch(() => res.statusText);
+            throw new Error(`POST ${path} -> ${res.status} ${txt}`);
+          }
+          return res.json();
+        };
+    const res = await poster('/app/transactions', payload);
     closeExpenseModal();
     if (typeof showToast === 'function') showToast('Saved.');
     else alert('Saved.');
