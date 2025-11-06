@@ -3,10 +3,11 @@ export function mountHome() {
   if (!container) return;
   container.classList.remove('hidden');
   // stub data
-  document.querySelector('[data-role="net-30"]').textContent = 'Net (Last 30 Days): $0.00';
-  document.querySelector('[data-role="recent-transactions"] tbody').innerHTML = '';
-  // initial data load
-  if (typeof refreshHomeData === 'function') { refreshHomeData(); } else { try { refreshHomeData(); } catch(_) {} }
+  const netEl = document.querySelector('[data-role="net-30"]');
+  if (netEl) netEl.textContent = 'Net (Last 30 Days): $0.00';
+  const tbody = document.querySelector('[data-role="recent-transactions"] tbody');
+  if (tbody) tbody.innerHTML = '';
+  // initial data load will be triggered on DOMContentLoaded below
 }
 
 // ===== Expense modal wiring (MVP) =====
@@ -96,87 +97,97 @@ window.SMOKE.homeExpense = () => ({
 });
 
 // ===== Home data refresh (summary + recent) =====
-// Lightweight local GET with session token; falls back to direct fetch of /session/token.
-async function _getSessionToken() {
-  if (window._BUS_TOKEN) return window._BUS_TOKEN;
-  try {
-    const t = await fetch('/session/token').then(r => r.json());
-    window._BUS_TOKEN = t.token;
-    return window._BUS_TOKEN;
-  } catch {
-    return null;
-  }
+let activeFilter = null; // 'expense' | 'revenue' | null
+
+// Reuse apiGet if present; otherwise fallback to existing httpGetJson()
+async function _getJson(path){
+  if (typeof window.apiGet === 'function') return await window.apiGet(path);
+  if (typeof window.httpGetJson === 'function') return await window.httpGetJson(path);
+  // Last resort: tiny inline GET
+  const tok = (await (window._getSessionToken?.() ?? null)) || null;
+  const res = await fetch(path, { headers: tok ? { 'X-Session-Token': tok } : {} });
+  if (!res.ok) throw new Error(`GET ${path} -> ${res.status} ${res.statusText}`);
+  return res.json();
 }
-async function httpGetJson(path) {
-  try {
-    // Prefer app's apiGet if present
-    if (typeof window.apiGet === 'function') return await window.apiGet(path);
-    const tok = await _getSessionToken();
-    const res = await fetch(path, { headers: tok ? { 'X-Session-Token': tok } : {} });
-    if (!res.ok) throw new Error(res.status + ' ' + res.statusText);
-    return await res.json();
-  } catch (e) {
-    console.error('GET', path, e);
-    throw e;
-  }
+
+function formatUSD(cents){
+  const abs = Math.abs(cents) / 100;
+  const str = abs.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return cents < 0 ? `-$${str}` : `$${str}`;
 }
-function formatUSDFromCents(cents) {
-  const sign = cents < 0 ? '-' : '';
-  const abs = Math.abs(cents);
-  const dollars = Math.floor(abs / 100);
-  const pennies = (abs % 100).toString().padStart(2, '0');
-  return `${sign}$${dollars}.${pennies}`;
-}
+
 function renderRecentTable(items, filter) {
   const tbody = document.querySelector('[data-role="recent-transactions"] tbody');
   if (!tbody) return;
-  const rows = (items || [])
-    .filter(it => !filter || it.type === filter)
-    .map(it => {
-      const amt = formatUSDFromCents(it.amount_cents);
-      const note = (it.notes || '').replace(/\s+/g,' ').trim();
-      return `<tr data-type="${it.type}"><td>${it.date}</td><td>${it.type}</td><td>${amt}</td><td>${note}</td></tr>`;
-    })
-    .join('');
-  tbody.innerHTML = rows || '';
+  const arr = (items || []);
+  const filtered = filter ? arr.filter(it => it.type === filter) : arr;
+  const html = filtered.map(it => {
+    const amt = formatUSD(it.amount_cents);
+    const note = (it.notes || '').replace(/\s+/g,' ').trim();
+    return `<tr data-type="${it.type}"><td>${it.date}</td><td>${it.type}</td><td>${amt}</td><td>${note}</td></tr>`;
+  }).join('');
+  tbody.innerHTML = html || '';
 }
-let _homeFilter = null; // 'revenue' | 'expense' | null
 async function refreshHomeData() {
-  // Summary (30d)
   try {
-    const sum = await httpGetJson('/app/transactions/summary?window=30d');
+    // Compute since (30 days back, inclusive)
+    const since = new Date();
+    since.setDate(since.getDate() - 30);
+    const sinceStr = since.toISOString().slice(0,10);
+
+    const [summary, recentResp] = await Promise.all([
+      _getJson('/app/transactions/summary?window=30d'),
+      _getJson(`/app/transactions?since=${sinceStr}&limit=10`)
+    ]);
+
+    // Net line
     const netEl = document.querySelector('[data-role="net-30"]');
-    if (netEl) netEl.textContent = `Net (Last 30 Days): ${formatUSDFromCents(sum.net_cents)}`;
-    // Donut placeholders: just write totals as text for now
-    const dIn = document.querySelector('[data-role="donut-in"]');
-    const dOut = document.querySelector('[data-role="donut-out"]');
-    if (dIn) dIn.textContent = `In: ${formatUSDFromCents(sum.in_cents)}`;
-    if (dOut) dOut.textContent = `Out: ${formatUSDFromCents(sum.out_cents)}`;
-  } catch (e) {
-    console.error('summary refresh failed', e);
-  }
-  // Recent items (limit 10; since optional)
-  try {
-    const today = new Date();
-    const cutoff = new Date(today.getTime() - 29*24*60*60*1000).toISOString().slice(0,10); // ~30d window inclusive
-    const recent = await httpGetJson(`/app/transactions?since=${cutoff}&limit=10`);
-    renderRecentTable(recent.items || [], _homeFilter);
-  } catch (e) {
-    console.error('recent refresh failed', e);
+    if (netEl) netEl.textContent = `Net (Last 30 Days): ${formatUSD(summary.net_cents)}`;
+
+    // Donuts remain blank circles; attach amounts as titles (hover) and aria-labels
+    const dIn  = document.querySelector('[data-role="donut-in"].donut');
+    const dOut = document.querySelector('[data-role="donut-out"].donut');
+    if (dIn)  { dIn.title  = `In: ${formatUSD(summary.in_cents)}`;  dIn.setAttribute('aria-label', dIn.title); }
+    if (dOut) { dOut.title = `Out: ${formatUSD(summary.out_cents)}`; dOut.setAttribute('aria-label', dOut.title); }
+
+    // Recent table
+    const items = (recentResp && recentResp.items) ? recentResp.items : [];
+    renderRecentTable(items, activeFilter);
+
+    // Title
+    const titleEl = document.querySelector('.table-title');
+    if (titleEl) {
+      if (activeFilter === 'expense') titleEl.textContent = 'Expenses Only (Last 10)';
+      else if (activeFilter === 'revenue') titleEl.textContent = 'Revenue Only (Last 10)';
+      else titleEl.textContent = 'Last transactions (10)';
+    }
+  } catch (err) {
+    console.error('refreshHomeData failed', err);
   }
 }
 // Expose for other code (e.g., after save)
 window.refreshHomeData = refreshHomeData;
 
-// Donut click filter wiring
-document.addEventListener('click', (e) => {
-  const t = e.target;
-  if (t?.matches?.('[data-role="donut-in"]')) {
-    _homeFilter = _homeFilter === 'revenue' ? null : 'revenue';
+// Delegate donut clicks (bind once)
+if (!window._homeDonutBound) {
+  document.addEventListener('click', (e) => {
+    const donut = e.target?.closest?.('.donut');
+    if (!donut) return;
+    const isIn = donut.classList.contains('donut-in');
+    const type = isIn ? 'revenue' : 'expense';
+    activeFilter = (activeFilter === type) ? null : type;
+    // toggle active class for visual state (CSS may style .active later)
+    document.querySelectorAll('.donut').forEach(d => d.classList.remove('active'));
+    if (activeFilter && donut) donut.classList.add('active');
     refreshHomeData();
-  }
-  if (t?.matches?.('[data-role="donut-out"]')) {
-    _homeFilter = _homeFilter === 'expense' ? null : 'expense';
-    refreshHomeData();
-  }
-});
+  });
+  window._homeDonutBound = true;
+}
+
+// Initial load (once DOM is ready)
+if (!window._homeInitBound) {
+  document.addEventListener('DOMContentLoaded', () => {
+    try { refreshHomeData(); } catch (_) {}
+  });
+  window._homeInitBound = true;
+}
