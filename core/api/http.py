@@ -16,7 +16,7 @@ import uuid
 from ctypes import wintypes
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Literal
+from typing import Any, Dict, Generator, List, Optional, Literal
 from urllib.parse import urlencode
 
 from fastapi import FastAPI
@@ -40,6 +40,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.cors import CORSMiddleware
 from starlette.status import HTTP_401_UNAUTHORIZED
+from sqlalchemy.orm import Session
 
 from core.services.capabilities import registry
 from core.services.capabilities.registry import MANIFEST_PATH
@@ -79,6 +80,7 @@ from core.config.paths import (
     DB_PATH,
     DB_URL,
 )
+from core.services.models import get_session
 
 if os.name == "nt":  # pragma: no cover - windows specific
     from core.broker.pipes import NamedPipeServer
@@ -178,6 +180,10 @@ EXPORTS_DIR = APP_DIR / "exports"
 EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
 UI_STATIC_DIR = UI_DIR
+
+
+def get_db() -> Generator[Session, None, None]:
+    yield from get_session()
 
 
 async def _nocache_ui(request: Request, call_next):
@@ -476,13 +482,8 @@ protected = APIRouter(dependencies=[Depends(require_token_ctx)])
 protected.include_router(reader_local_router)
 protected.include_router(organizer_router)
 
-from core.api.app_router import router as app_router
+from . import app_router  # noqa: F401
 
-app.include_router(
-    app_router,
-    prefix="/app",
-    dependencies=[Depends(require_token_ctx)],
-)
 oauth = APIRouter()
 
 
