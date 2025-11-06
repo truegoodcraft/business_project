@@ -260,12 +260,25 @@ function initManufacturing() {
         body: JSON.stringify(body),
       });
 
-      if (res.status === 501 || res.status === 404) {
+      if (res.status === 501 || res.status === 403) {
+        alert('Manufacturing not available on this tier.');
         locked = true;
+        btn.disabled = true;
+        btn.textContent = 'Unavailable';
         if (hint) {
           hint.textContent = 'Manufacturing not available on this tier.';
+          hint.classList.remove('hidden');
         }
+        return;
+      }
+
+      if (res.status === 404) {
+        locked = true;
         btn.textContent = 'Unavailable';
+        if (hint) {
+          hint.textContent = 'Manufacturing not available on this tier.';
+          hint.classList.remove('hidden');
+        }
         return;
       }
 

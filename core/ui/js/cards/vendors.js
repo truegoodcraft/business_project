@@ -483,16 +483,16 @@ export async function mountVendors(container) {
 
   await renderContactsTable();
 
-  // Defensive: neutralize any legacy openers lingering in the DOM
+  // Defensive: neutralize any legacy openers still in DOM
   document
     .querySelectorAll(
       '[data-action="contact-edit-legacy"], [data-action="open-contact"], [data-action="new-contact"], [data-action="new"]'
     )
-    .forEach((btn) => {
-      const clone = btn.cloneNode(true);
+    .forEach((el) => {
+      const clone = el.cloneNode(true);
       clone.disabled = true;
       clone.title = 'Replaced by new Contacts UI';
-      btn.replaceWith(clone);
+      el.replaceWith(clone);
     });
   // --- END SPEC-1 BODY ---
 }
