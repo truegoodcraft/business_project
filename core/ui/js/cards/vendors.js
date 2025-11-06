@@ -1,8 +1,6 @@
-import { apiGet, apiPost, apiDelete, ensureToken } from '../api.js';
+import { apiGet, apiPost, ensureToken } from '../api.js';
 
 const LS_KEY = 'contacts.customers.v1';
-const loadCustomers = () => { try { return JSON.parse(localStorage.getItem(LS_KEY) || '[]'); } catch { return []; } };
-const saveCustomers = (arr) => localStorage.setItem(LS_KEY, JSON.stringify(arr));
 
 export async function mountVendors(container) {
   // --- BEGIN SPEC-1 BODY ---
@@ -12,40 +10,16 @@ export async function mountVendors(container) {
   container.style.padding = '16px';
   container.style.borderRadius = '12px';
 
-  let mode = 'vendor'; // 'vendor' | 'customer'
-
-  // Header with toggle + Add Contact button
   const header = document.createElement('div');
   header.style.display = 'flex';
   header.style.alignItems = 'center';
-  header.style.gap = '10px';
+  header.style.justifyContent = 'space-between';
+  header.style.gap = '12px';
   header.style.marginBottom = '12px';
 
   const title = document.createElement('h2');
   title.textContent = 'Contacts';
   title.style.margin = '0';
-
-  const toggle = document.createElement('div');
-  toggle.style.display = 'inline-flex';
-  toggle.style.border = '1px solid #2b3246';
-  toggle.style.borderRadius = '10px';
-  function mkToggleBtn(txt, val) {
-    const b = document.createElement('button');
-    b.textContent = txt;
-    b.style.padding = '6px 10px';
-    b.style.border = '0';
-    b.style.cursor = 'pointer';
-    b.style.background = val === mode ? '#23293a' : 'transparent';
-    b.style.color = '#e5e7eb';
-    b.onclick = () => { mode = val; renderToggle(); };
-    return b;
-  }
-  function renderToggle() {
-    toggle.innerHTML = '';
-    toggle.append(mkToggleBtn('Vendor','vendor'), mkToggleBtn('Customer','customer'));
-    loadAndRender();
-  }
-  renderToggle();
 
   const addContactBtn = document.createElement('button');
   addContactBtn.type = 'button';
@@ -53,19 +27,20 @@ export async function mountVendors(container) {
   addContactBtn.dataset.action = 'open-contacts-modal';
   styleBtn(addContactBtn);
 
-  header.append(title, toggle, addContactBtn);
+  header.append(title, addContactBtn);
 
-  // Table
   const table = document.createElement('table');
+  table.dataset.role = 'contacts-table';
+  table.className = 'table';
   table.style.width = '100%';
   table.style.borderCollapse = 'separate';
   table.style.borderSpacing = '0';
   table.style.background = '#111318';
   table.style.borderRadius = '10px';
+  table.style.overflow = 'hidden';
   const thead = document.createElement('thead');
   thead.innerHTML = `
     <tr>
-      <th style="text-align:left;padding:10px;background:#1a1f2b">Name</th>
       <th style="text-align:left;padding:10px;background:#1a1f2b">Type</th>
       <th style="text-align:left;padding:10px;background:#1a1f2b">Contact</th>
       <th style="text-align:left;padding:10px;background:#1a1f2b">Actions</th>
@@ -74,6 +49,224 @@ export async function mountVendors(container) {
   table.append(thead, tbody);
 
   container.append(header, table);
+
+  const tbl = document.querySelector('[data-role="contacts-table"]');
+  const tbodyEl = tbl?.querySelector('tbody');
+  const drawer = document.querySelector('[data-role="contacts-drawer"]');
+  const drawerBackdrop = drawer?.querySelector('.drawer-backdrop');
+  const drawerCloseBtn = drawer?.querySelector('.drawer-header [data-action="close-contacts-drawer"]');
+  const linkedList = drawer?.querySelector('[data-role="linked-items"]');
+  const field = (name) => drawer?.querySelector(`[data-field="${name}"]`);
+
+  function openDrawer() {
+    if (!drawer) return;
+    drawer.classList.remove('hidden');
+    drawer.setAttribute('aria-hidden', 'false');
+  }
+  function closeDrawer() {
+    if (!drawer) return;
+    drawer.classList.add('hidden');
+    drawer.setAttribute('aria-hidden', 'true');
+    if (linkedList) linkedList.innerHTML = '';
+  }
+
+  if (drawer && !drawer.dataset.contactsDrawerBound) {
+    drawerBackdrop?.addEventListener('click', closeDrawer);
+    drawerCloseBtn?.addEventListener('click', closeDrawer);
+    drawer.dataset.contactsDrawerBound = '1';
+  }
+  const bodyEl = document.body;
+  if (drawer && bodyEl && !bodyEl.dataset.contactsDrawerEscBound) {
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !drawer.classList.contains('hidden')) {
+        closeDrawer();
+      }
+    });
+    bodyEl.dataset.contactsDrawerEscBound = '1';
+  }
+
+  async function loadContactsList() {
+    try {
+      const list = await apiGet('/app/contacts');
+      if (Array.isArray(list)) return list;
+    } catch (e) {
+      const s = e?.status || e?.response?.status;
+      if (s !== 404 && s !== 405) console.warn('GET /app/contacts failed', e);
+    }
+
+    let vendors = [];
+    try {
+      vendors = await apiGet('/app/vendors');
+    } catch (err) {
+      console.warn('GET /app/vendors fallback failed', err);
+      vendors = [];
+    }
+    vendors = Array.isArray(vendors)
+      ? vendors.map((v) => ({
+          id: v.id,
+          type: 'vendor',
+          name: v.name,
+          email: v.email,
+          material: v.material,
+          lead_time_days: v.lead_time_days,
+          notes: v.notes,
+        }))
+      : [];
+
+    let customers = [];
+    try {
+      customers = JSON.parse(localStorage.getItem(LS_KEY) || '[]');
+    } catch {
+      customers = [];
+    }
+    customers = Array.isArray(customers)
+      ? customers.map((c, i) => ({
+          id: c.id || `local:${i}`,
+          type: 'customer',
+          name: c.name,
+          email: c.email,
+          notes: c.notes,
+        }))
+      : [];
+
+    return [...vendors, ...customers];
+  }
+
+  async function openContactDrawer(contact) {
+    if (!drawer) return;
+    const set = (k, v) => {
+      const el = field(k);
+      if (el) el.textContent = v ?? '';
+    };
+
+    const typeLabel = (contact.type || '').toString();
+    set('type', typeLabel ? typeLabel.replace(/^./, (m) => m.toUpperCase()) : '');
+    set('name', contact.name || '');
+    set('email', contact.email || '');
+    set('material', contact.type === 'vendor' ? contact.material || '' : '');
+    set('lead_time_days', contact.lead_time_days != null ? String(contact.lead_time_days) : '');
+    set('notes', contact.notes || '');
+
+    drawer.querySelectorAll('.vendor-only').forEach((el) => {
+      el.style.display = contact.type === 'vendor' ? '' : 'none';
+    });
+
+    if (linkedList) {
+      linkedList.innerHTML = '';
+      if (contact.type === 'vendor' && contact.id != null && String(contact.id)) {
+        const loading = document.createElement('li');
+        loading.textContent = 'Loading linked items…';
+        linkedList.appendChild(loading);
+        try {
+          const items = await apiGet(`/app/items?vendor_id=${encodeURIComponent(contact.id)}`);
+          linkedList.innerHTML = '';
+          const arr = Array.isArray(items) ? items : [];
+          arr.forEach((item) => {
+            const li = document.createElement('li');
+            const name = item.name || '(unnamed)';
+            const qty = item.qty != null ? item.qty : 0;
+            li.textContent = `${name} — qty: ${qty}`;
+            linkedList.appendChild(li);
+          });
+          if (!linkedList.children.length) {
+            const li = document.createElement('li');
+            li.textContent = 'No linked items.';
+            linkedList.appendChild(li);
+          }
+        } catch (err) {
+          linkedList.innerHTML = '';
+          const li = document.createElement('li');
+          li.textContent = 'Could not load linked items.';
+          linkedList.appendChild(li);
+          console.warn('GET /app/items vendor linked items failed', err);
+        }
+      } else {
+        const li = document.createElement('li');
+        li.textContent = 'Linked items available for vendors only.';
+        linkedList.appendChild(li);
+      }
+    }
+
+    openDrawer();
+  }
+
+  async function renderContactsTable() {
+    if (!tbodyEl) return;
+    const list = await loadContactsList();
+    tbodyEl.innerHTML = '';
+
+    if (!list.length) {
+      const emptyRow = document.createElement('tr');
+      const emptyCell = document.createElement('td');
+      emptyCell.colSpan = 3;
+      emptyCell.textContent = 'No contacts yet.';
+      emptyCell.style.padding = '12px 16px';
+      emptyCell.style.color = '#9ca3af';
+      emptyRow.appendChild(emptyCell);
+      tbodyEl.appendChild(emptyRow);
+      return;
+    }
+
+    for (const c of list) {
+      const tr = document.createElement('tr');
+      tr.dataset.contactId = String(c.id ?? '');
+      tr.dataset.contactType = String(c.type ?? '');
+
+      const typeCell = document.createElement('td');
+      typeCell.style.padding = '10px';
+      typeCell.style.borderTop = '1px solid #222733';
+      typeCell.textContent = (c.type || '').toString().replace(/^./, (m) => m.toUpperCase());
+
+      const nameCell = document.createElement('td');
+      nameCell.style.padding = '10px';
+      nameCell.style.borderTop = '1px solid #222733';
+      nameCell.textContent = (c.name || '').toString();
+
+      const actionsCell = document.createElement('td');
+      actionsCell.style.padding = '10px';
+      actionsCell.style.borderTop = '1px solid #222733';
+
+      const actionsWrap = document.createElement('div');
+      actionsWrap.style.display = 'flex';
+      actionsWrap.style.gap = '8px';
+
+      const editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.dataset.action = 'contact-edit';
+      editBtn.textContent = 'Edit';
+      styleBtn(editBtn);
+
+      const delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.dataset.action = 'contact-delete';
+      delBtn.textContent = 'Delete';
+      delBtn.disabled = true;
+      styleBtn(delBtn);
+      delBtn.style.cursor = 'not-allowed';
+      delBtn.style.opacity = '0.5';
+      delBtn.onmouseenter = null;
+      delBtn.onmouseleave = null;
+
+      actionsWrap.append(editBtn, delBtn);
+      actionsCell.append(actionsWrap);
+
+      tr.append(typeCell, nameCell, actionsCell);
+
+      tr.addEventListener('click', (event) => {
+        if (event.target instanceof HTMLElement && event.target.closest('button')) {
+          return;
+        }
+        openContactDrawer(c);
+      });
+
+      editBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        openContactDrawer(c);
+      });
+
+      tbodyEl.appendChild(tr);
+    }
+  }
 
   const contactsModal = document.querySelector('[data-role="contacts-modal"]');
   const contactsForm = contactsModal?.querySelector('[data-role="contacts-form"]');
@@ -97,22 +290,12 @@ export async function mountVendors(container) {
     contactsSaveBtn.textContent = busy ? 'Saving…' : contactsSaveBtn.dataset._orig;
   }
 
-  function disableLegacyEditButton(btn) {
-    if (!btn) return null;
-    const clone = btn.cloneNode(true);
-    clone.disabled = true;
-    clone.dataset.action = 'contact-edit';
-    clone.title = 'Edit coming soon';
-    btn.replaceWith(clone);
-    return clone;
-  }
-
   function openContactsModal(preset = {}) {
     if (!contactsModal || !contactsForm) return;
     contactsForm.reset();
     if (preset.name) contactsForm.elements.name.value = preset.name;
     const typeField = contactsForm.elements.type;
-    const presetType = (preset.type || mode || '').toLowerCase();
+    const presetType = (preset.type || '').toLowerCase();
     if (typeField) {
       typeField.value = presetType || '';
     }
@@ -132,7 +315,7 @@ export async function mountVendors(container) {
     contactsModal.classList.remove('open');
   }
 
-  contactsOpenBtn?.addEventListener('click', () => openContactsModal({ type: mode }));
+  contactsOpenBtn?.addEventListener('click', () => openContactsModal());
 
   if (contactsModal && !contactsModal.dataset.contactsOverlayBound) {
     contactsModal.addEventListener('click', (event) => {
@@ -206,7 +389,7 @@ export async function mountVendors(container) {
         await ensureToken();
         await apiPost('/app/contacts', payload);
         closeContactsModal();
-        await loadAndRender();
+        await renderContactsTable();
         document.dispatchEvent(new CustomEvent('contacts:changed', { bubbles: true }));
       } catch (err) {
         const status = err?.status || err?.response?.status;
@@ -223,77 +406,27 @@ export async function mountVendors(container) {
     contactsForm.dataset.contactsSubmitBound = '1';
   }
 
-  async function loadAndRender() {
-    // vendors from server
-    let vendors = [];
-    try {
-      vendors = await apiGet('/app/vendors'); // [{id,name}]
-    } catch {
-      vendors = [];
-    }
-    // customers from local storage
-    const customers = loadCustomers(); // [{id,name,contact,email,phone,notes}]
-    renderRows(vendors, customers);
+  if (container.__contactsRefreshHandler) {
+    document.removeEventListener('contacts:changed', container.__contactsRefreshHandler);
+    document.removeEventListener('vendors:changed', container.__contactsRefreshHandler);
+    document.removeEventListener('customers:changed', container.__contactsRefreshHandler);
   }
 
-  function renderRows(vendors, customers) {
-    tbody.innerHTML = '';
-    const rows = [
-      ...vendors.map(v => ({ id: v.id, name: v.name, contact: v.contact || '', _type: 'Vendor', _local: false })),
-      ...customers.map(c => ({ id: c.id, name: c.name, contact: c.contact || '', _type: 'Customer', _local: true, _full: c }))
-    ];
-    for (const r of rows) {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td style="padding:10px;border-top:1px solid #222733">${esc(r.name)}</td>
-        <td style="padding:10px;border-top:1px solid #222733">${r._type}</td>
-        <td style="padding:10px;border-top:1px solid #222733">${esc(r.contact || '')}</td>
-        <td style="padding:10px;border-top:1px solid #222733">
-          <div style="display:flex;gap:8px;">
-            <button class="edit">Edit</button>
-            <button class="del">Delete</button>
-          </div>
-        </td>`;
-      let editBtn = tr.querySelector('.edit');
-      if (editBtn) {
-        editBtn = disableLegacyEditButton(editBtn);
-        if (editBtn) {
-          styleBtn(editBtn);
-          editBtn.style.cursor = 'not-allowed';
-          editBtn.onmouseenter = null;
-          editBtn.onmouseleave = null;
-        }
-      }
+  const refreshContactsTable = () => {
+    renderContactsTable().catch((err) => console.error('renderContactsTable failed', err));
+  };
 
-      const delBtn = tr.querySelector('.del');
-      if (delBtn) {
-        styleBtn(delBtn);
-        delBtn.onclick = async () => {
-          if (!confirm(`Delete ${r.name}?`)) return;
-          if (r._local) {
-            const list = loadCustomers().filter(x => x.id !== r.id);
-            saveCustomers(list);
-            renderRows(vendors, list);
-          } else {
-            // Only attempt if DELETE exists; ignore 404
-            try {
-              await ensureToken();
-              await apiDelete(`/app/vendors/${r.id}`);
-            } catch {}
-            await loadAndRender();
-          }
-        };
-      }
+  container.__contactsRefreshHandler = refreshContactsTable;
 
-      tbody.appendChild(tr);
-    }
-  }
+  document.addEventListener('contacts:changed', refreshContactsTable);
+  document.addEventListener('vendors:changed', refreshContactsTable);
+  document.addEventListener('customers:changed', refreshContactsTable);
 
-  await loadAndRender();
+  closeDrawer();
+
+  await renderContactsTable();
   // --- END SPEC-1 BODY ---
 }
-
-function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function styleBtn(btn){
   btn.style.background = '#23293a';
   btn.style.color = '#e5e7eb';
