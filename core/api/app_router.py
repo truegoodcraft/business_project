@@ -8,7 +8,7 @@ import time
 from datetime import date, datetime
 from io import BytesIO, StringIO
 from pathlib import Path
-from typing import Any, Dict, Generator, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
@@ -17,9 +17,17 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from .http import (
+    app,
+    get_db,
+    _require_session,
+    require_token_ctx,
+    require_session_token,
+)
 from core.config.paths import APP_DIR, DATA_DIR, JOURNALS_DIR, IMPORTS_DIR
-from core.services.models import Attachment, Item, Task, Vendor, get_session
-from core.api.http import require_session_token as require_session
+from core.services.models import Attachment, Item, Task, Vendor
+
+require_session = require_session_token
 
 router = APIRouter(tags=["app"])
 
@@ -31,10 +39,6 @@ for directory in (DATA_DIR, JOURNALS_DIR, IMPORTS_DIR):
 
 
 PREVIEW_RETENTION_SECONDS = 24 * 60 * 60
-
-
-def get_db() -> Generator[Session, None, None]:
-    yield from get_session()
 
 
 # Unchanged contract for inventory dropdown: only vendors, shape [{id, name}]
@@ -285,9 +289,7 @@ def _append_plugin_audit(action: str, request: Request, payload: Dict[str, objec
 
 
 async def _ensure_session(request: Request) -> None:
-    from core.api.http import _require_session as require_session
-
-    failure = await require_session(request)
+    failure = await _require_session(request)
     if failure is not None:
         raise HTTPException(status_code=failure.status_code, detail={"error": "unauthorized"})
 
@@ -478,12 +480,12 @@ def _require_entity(db: Session, entity_type: str, entity_id: int) -> None:
 
 
 @router.get("/vendors", response_model=List[VendorOut])
-def list_vendors(db: Session = Depends(get_session)) -> List[Vendor]:
+def list_vendors(db: Session = Depends(get_db)) -> List[Vendor]:
     return db.query(Vendor).order_by(Vendor.id.desc()).all()
 
 
 @router.post("/vendors", response_model=VendorOut)
-def create_vendor(payload: VendorCreate, db: Session = Depends(get_session)) -> Vendor:
+def create_vendor(payload: VendorCreate, db: Session = Depends(get_db)) -> Vendor:
     vendor = Vendor(**payload.dict())
     db.add(vendor)
     try:
@@ -497,7 +499,7 @@ def create_vendor(payload: VendorCreate, db: Session = Depends(get_session)) -> 
 
 @router.put("/vendors/{vendor_id}", response_model=VendorOut)
 def update_vendor(
-    vendor_id: int, payload: VendorUpdate, db: Session = Depends(get_session)
+    vendor_id: int, payload: VendorUpdate, db: Session = Depends(get_db)
 ) -> Vendor:
     vendor = db.get(Vendor, vendor_id)
     if vendor is None:
@@ -515,7 +517,7 @@ def update_vendor(
 
 
 @router.delete("/vendors/{vendor_id}")
-def delete_vendor(vendor_id: int, db: Session = Depends(get_session)) -> dict:
+def delete_vendor(vendor_id: int, db: Session = Depends(get_db)) -> dict:
     vendor = db.get(Vendor, vendor_id)
     if vendor is None:
         raise HTTPException(status_code=404, detail="vendor_not_found")
@@ -691,7 +693,7 @@ async def items_bulk_commit(
 @router.get("/items", response_model=List[ItemOut])
 def list_items(
     vendor_id: Optional[int] = Query(default=None),
-    db: Session = Depends(get_session),
+    db: Session = Depends(get_db),
 ) -> List[Item]:
     query = db.query(Item)
     if vendor_id is not None:
@@ -700,7 +702,7 @@ def list_items(
 
 
 @router.post("/items", response_model=ItemOut)
-def create_item(payload: ItemCreate, db: Session = Depends(get_session)) -> Item:
+def create_item(payload: ItemCreate, db: Session = Depends(get_db)) -> Item:
     _require_vendor(db, payload.vendor_id)
     item = Item(
         vendor_id=payload.vendor_id,
@@ -719,7 +721,7 @@ def create_item(payload: ItemCreate, db: Session = Depends(get_session)) -> Item
 
 @router.put("/items/{item_id}", response_model=ItemOut)
 def update_item(
-    item_id: int, payload: ItemUpdate, db: Session = Depends(get_session)
+    item_id: int, payload: ItemUpdate, db: Session = Depends(get_db)
 ) -> Item:
     item = db.get(Item, item_id)
     if item is None:
@@ -737,7 +739,7 @@ def update_item(
 
 
 @router.delete("/items/{item_id}")
-def delete_item(item_id: int, db: Session = Depends(get_session)) -> dict:
+def delete_item(item_id: int, db: Session = Depends(get_db)) -> dict:
     item = db.get(Item, item_id)
     if item is None:
         raise HTTPException(status_code=404, detail="item_not_found")
@@ -752,7 +754,7 @@ def delete_item(item_id: int, db: Session = Depends(get_session)) -> dict:
 @router.get("/tasks", response_model=List[TaskOut])
 def list_tasks(
     item_id: Optional[int] = Query(default=None),
-    db: Session = Depends(get_session),
+    db: Session = Depends(get_db),
 ) -> List[Task]:
     query = db.query(Task)
     if item_id is not None:
@@ -761,7 +763,7 @@ def list_tasks(
 
 
 @router.post("/tasks", response_model=TaskOut)
-def create_task(payload: TaskCreate, db: Session = Depends(get_session)) -> Task:
+def create_task(payload: TaskCreate, db: Session = Depends(get_db)) -> Task:
     _require_item(db, payload.item_id)
     task = Task(
         item_id=payload.item_id,
@@ -778,7 +780,7 @@ def create_task(payload: TaskCreate, db: Session = Depends(get_session)) -> Task
 
 @router.put("/tasks/{task_id}", response_model=TaskOut)
 def update_task(
-    task_id: int, payload: TaskUpdate, db: Session = Depends(get_session)
+    task_id: int, payload: TaskUpdate, db: Session = Depends(get_db)
 ) -> Task:
     task = db.get(Task, task_id)
     if task is None:
@@ -794,7 +796,7 @@ def update_task(
 
 
 @router.delete("/tasks/{task_id}")
-def delete_task(task_id: int, db: Session = Depends(get_session)) -> dict:
+def delete_task(task_id: int, db: Session = Depends(get_db)) -> dict:
     task = db.get(Task, task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="task_not_found")
@@ -810,7 +812,7 @@ def delete_task(task_id: int, db: Session = Depends(get_session)) -> dict:
     "/attachments/{entity_type}/{entity_id}", response_model=List[AttachmentOut]
 )
 def list_attachments(
-    entity_type: str, entity_id: int, db: Session = Depends(get_session)
+    entity_type: str, entity_id: int, db: Session = Depends(get_db)
 ) -> List[Attachment]:
     _require_entity(db, entity_type, entity_id)
     return (
@@ -831,7 +833,7 @@ def create_attachment(
     entity_type: str,
     entity_id: int,
     payload: AttachmentBase,
-    db: Session = Depends(get_session),
+    db: Session = Depends(get_db),
 ) -> Attachment:
     _require_entity(db, entity_type, entity_id)
     attachment = Attachment(
@@ -847,13 +849,20 @@ def create_attachment(
 
 
 @router.delete("/attachments/{attachment_id}")
-def delete_attachment(attachment_id: int, db: Session = Depends(get_session)) -> dict:
+def delete_attachment(attachment_id: int, db: Session = Depends(get_db)) -> dict:
     attachment = db.get(Attachment, attachment_id)
     if attachment is None:
         raise HTTPException(status_code=404, detail="attachment_not_found")
     db.delete(attachment)
     db.commit()
     return {"ok": True}
+
+
+app.include_router(
+    router,
+    prefix="/app",
+    dependencies=[Depends(require_token_ctx)],
+)
 
 
 __all__ = ["router"]
