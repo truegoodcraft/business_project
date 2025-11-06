@@ -26,6 +26,12 @@
     button{background:var(--accent);color:#fff;border:none;padding:8px 12px;border-radius:6px;cursor:pointer}
     button:hover{opacity:.9}
     pre{background:#111;padding:12px;border-radius:6px;overflow:auto;font-size:12px}
+    .hidden{display:none!important}
+    .top-bar{display:flex;align-items:center;justify-content:flex-end;margin-bottom:16px;gap:12px}
+    .tabs{display:flex;gap:8px;margin-bottom:16px}
+    .tabs button{background:#2b2f36;color:#e6e6e6;border:1px solid #363b44;padding:8px 14px;border-radius:10px;cursor:pointer}
+    .tabs button.active{background:var(--accent);border-color:var(--accent);color:#fff}
+    .tab-panel{display:flex;flex-direction:column;gap:16px}
     .modal.hidden{display:none}
     .modal.open{display:flex}
     .modal .modal-backdrop{position:absolute;inset:0;background:rgba(0,0,0,0.5)}
@@ -62,22 +68,70 @@
   </nav>
   <main id="main">
     <div id="app">
-      <div class="card" data-view="contacts">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;">
-          <h2 style="margin:0;">Contacts</h2>
-          <button type="button" data-action="open-contacts-modal">Add Contact</button>
+      <header class="top-bar">
+        <span id="license-badge" data-role="license-badge">License: community</span>
+      </header>
+
+      <nav class="tabs" data-role="main-tabs">
+        <button data-tab="manufacturing" class="active">Manufacturing</button>
+        <button data-tab="tasks">Tasks</button>
+        <button data-tab="backup">Backup</button>
+      </nav>
+
+      <section data-tab-panel="manufacturing" class="tab-panel">
+        <div class="card">
+          <form data-role="mfg-run-form">
+            <div class="field">
+              <label for="mfg-notes">Notes</label>
+              <input id="mfg-notes" name="notes" type="text" placeholder="Run notes (optional)">
+            </div>
+            <button type="submit" data-role="mfg-run-btn">Run Manufacturing</button>
+            <small data-role="mfg-hint" class="muted">Disabled if backend returns 501.</small>
+          </form>
         </div>
-        <table data-role="contacts-table" class="table" style="width:100%;border-collapse:separate;border-spacing:0;background:#111318;border-radius:10px;overflow:hidden">
-          <thead>
-            <tr>
-              <th style="text-align:left;padding:10px;background:#1a1f2b">Type</th>
-              <th style="text-align:left;padding:10px;background:#1a1f2b">Contact</th>
-              <th style="text-align:left;padding:10px;background:#1a1f2b">Actions</th>
-            </tr>
-          </thead>
-          <tbody><!-- rows rendered by vendors.js --></tbody>
-        </table>
-      </div>
+
+        <div class="card" data-view="contacts">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;">
+            <h2 style="margin:0;">Contacts</h2>
+            <button type="button" data-action="open-contacts-modal">Add Contact</button>
+          </div>
+          <table data-role="contacts-table" class="table" style="width:100%;border-collapse:separate;border-spacing:0;background:#111318;border-radius:10px;overflow:hidden">
+            <thead>
+              <tr>
+                <th style="text-align:left;padding:10px;background:#1a1f2b">Type</th>
+                <th style="text-align:left;padding:10px;background:#1a1f2b">Contact</th>
+                <th style="text-align:left;padding:10px;background:#1a1f2b">Actions</th>
+              </tr>
+            </thead>
+            <tbody><!-- rows rendered by vendors.js --></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section data-tab-panel="tasks" class="tab-panel hidden">
+        <div class="card" data-role="tasks-card">
+          <div class="toolbar" style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
+            <input type="text" data-role="task-title-input" placeholder="New task title" style="flex:1;min-width:160px;">
+            <select data-role="task-status-input">
+              <option value="todo">todo</option>
+              <option value="doing">doing</option>
+              <option value="done">done</option>
+            </select>
+            <button type="button" data-action="task-add">Add Task</button>
+          </div>
+          <table class="table" data-role="tasks-table" style="width:100%;border-collapse:separate;border-spacing:0;background:#111318;border-radius:10px;overflow:hidden">
+            <thead><tr><th>Title</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section data-tab-panel="backup" class="tab-panel hidden">
+        <div class="card">
+          <button type="button" data-action="export-backup">Export</button>
+          <small class="muted">Downloads current app.db (or fallback endpoint).</small>
+        </div>
+      </section>
     </div>
   </main>
 

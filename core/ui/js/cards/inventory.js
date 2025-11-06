@@ -135,6 +135,16 @@ export async function mountInventory(container) {
                     <label>Name: <input name="name" required></label><br>
                     <label>SKU: <input name="sku"></label><br>
 
+                    <label>Type:
+                        <select name="type" id="item-type">
+                            <option value="">— select —</option>
+                            <option value="material">material</option>
+                            <option value="consumable">consumable</option>
+                            <option value="product">product</option>
+                            <option value="asset">asset</option>
+                        </select>
+                    </label><br>
+
                     <label>Qty:
                         <input name="qty" type="number" step="0.01" required>
                     </label><br>
@@ -610,8 +620,9 @@ export async function mountInventory(container) {
                 if (!Number.isNaN(priceNum)) price = `${sym}${priceNum}`;
             }
             const loc = item.location ? escapeHtml(item.location) : 'Shop';
+            const typeAttr = escapeHtml((item.type || '').toString().toLowerCase());
             return `
-      <tr data-id="${item.id}">
+      <tr data-id="${item.id}" data-type="${typeAttr}">
         <td>${escapeHtml(item.name || '')}</td>
         <td>${escapeHtml(item.sku || '')}</td>
         <td>${escapeHtml(qtyUnit)}</td>
@@ -649,6 +660,7 @@ export async function mountInventory(container) {
             sku: row.cells[1].textContent,
             qty,
             unit: unit.toLowerCase(),
+            type: (row.dataset.type || '').toLowerCase(),
             vendor_id: row.cells[3].textContent ? parseInt(row.cells[3].textContent) : null,
             price: row.cells[4].textContent ? parseFloat(row.cells[4].textContent.replace(/[^\d.]/g, '')) : null,
             location: row.cells[5].textContent
@@ -664,6 +676,9 @@ export async function mountInventory(container) {
         form.name.value = item.name || '';
         form.sku.value = item.sku || '';
         form.qty.value = item.qty ?? 0;
+        if (form.type) {
+            form.type.value = (item.type || '').toLowerCase();
+        }
         form.location.value = item.location || '';
         form.id.value = item.id ?? '';
 
@@ -743,6 +758,7 @@ export async function mountInventory(container) {
         if (curEl) localStorage.setItem('priceCurrency', curEl.value || 'USD');
 
         const vendorVal = document.getElementById('vendor-select')?.value || '';
+        const typeValue = (f.type?.value || '').trim().toLowerCase();
 
         // build base data from form
         let data = {
@@ -752,7 +768,8 @@ export async function mountInventory(container) {
             unit: f.querySelector('input[name="unit"]').value || null,
             vendor_id: vendorVal ? parseInt(vendorVal, 10) : undefined,
             price: f.price.value ? parseFloat(f.price.value) : undefined,
-            location: f.location.value.trim() || null
+            location: f.location.value.trim() || null,
+            ...(typeValue ? { type: typeValue } : {}),
         };
         data = compactPayload(data);
 
@@ -813,54 +830,59 @@ export async function mountInventory(container) {
 
         const payload = { item_id, delta, reason };
 
-        // Helper: decide if journal endpoint is missing
-        const isMissing = (err) => {
-            const s = err?.status || err?.code;
-            const m = (err?.error || err?.message || '').toLowerCase();
-            return s === 404 || s === 405 || m.includes('not found') || m.includes('method not allowed');
-        };
-
-        const fallbackPut = async () => {
-            await ensureToken();
-            const all = await apiGet('/app/items');
-            const item = (Array.isArray(all) ? all : []).find(x => Number(x.id) === item_id) || { qty: 0 };
-            const cur = Number(item.qty || 0);
-            const newQty = Number((cur + delta).toFixed(4));
+        async function fallbackAdjust(targetId, change) {
+            let cur = null;
+            try {
+                const item = await apiGet(`/app/items/${targetId}`);
+                cur = item?.qty ?? null;
+            } catch {
+                try {
+                    const all = await apiGet('/app/items');
+                    const hit = (Array.isArray(all) ? all : []).find((it) => String(it.id) === String(targetId));
+                    cur = hit?.qty ?? null;
+                } catch {
+                    cur = null;
+                }
+            }
+            if (cur == null) cur = 0;
+            const newQty = Number(cur) + Number(change);
 
             try {
-                await apiPut(`/app/items/${item_id}`, { qty: newQty });
-                return;
-            } catch (e) {}
+                return await apiPut(`/app/items/${targetId}`, { qty: newQty });
+            } catch (e1) {
+                try {
+                    const token = await ensureToken();
+                    const res = await fetch(`/app/items/${targetId}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json', 'X-Session-Token': token },
+                        body: JSON.stringify({ qty: newQty }),
+                    });
+                    if (!res.ok) throw new Error(String(res.status));
+                    return await res.json();
+                } catch (e2) {
+                    return await apiPost('/app/items', { id: targetId, qty: newQty });
+                }
+            }
+        }
 
+        async function adjust(body) {
             try {
-                const resp = await rawRequest(`/app/items/${item_id}`, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ qty: newQty })
-                });
-                if (resp.ok) return;
-            } catch (e) {}
-
-            try {
-                await apiPost('/app/items', { id: item_id, qty: newQty });
-                return;
-            } catch (e) {}
-
-            throw new Error('No supported update method for /app/items');
-        };
+                await apiPost('/app/inventory/adjust', body);
+            } catch (err) {
+                const status = err?.status || err?.response?.status || err?.code;
+                if (status === 404 || status === 405) {
+                    await fallbackAdjust(body.item_id, body.delta);
+                } else {
+                    throw err;
+                }
+            }
+        }
 
         try {
-            await ensureToken();
-            // Try Pro path first; keeps framework for later
-            await apiPost('/app/inventory/adjust', payload);
-            console.log('inventory.js: adjust: journaled', { item_id, delta });
+            await adjust(payload);
         } catch (err) {
-            if (!isMissing(err)) {
-                alert('Adjust failed: ' + (err?.error || err?.message || 'unknown'));
-                return;
-            }
-            // journal not present → free-tier path
-            await fallbackPut();
+            alert('Adjust failed: ' + (err?.error || err?.message || 'unknown'));
+            return;
         }
 
         // Close and refresh
