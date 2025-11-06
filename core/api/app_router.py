@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 import json
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from io import BytesIO, StringIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -39,6 +39,26 @@ for directory in (DATA_DIR, JOURNALS_DIR, IMPORTS_DIR):
 
 
 PREVIEW_RETENTION_SECONDS = 24 * 60 * 60
+
+
+# Ensure transactions table exists for expense/revenue tracking.
+def _ensure_transactions_table(db: Session) -> None:
+    db.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                type TEXT NOT NULL CHECK(type IN ('expense','revenue')),
+                amount_cents INTEGER NOT NULL,
+                category TEXT,
+                date TEXT NOT NULL,
+                notes TEXT,
+                created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+            );
+            """
+        )
+    )
+    db.execute(text("CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);"))
 
 
 # Unchanged contract for inventory dropdown: only vendors, shape [{id, name}]
@@ -84,24 +104,7 @@ def add_transaction(
     if not date:
         raise HTTPException(status_code=400, detail="date required (YYYY-MM-DD)")
 
-    db.execute(
-        text(
-            """
-            CREATE TABLE IF NOT EXISTS transactions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                type TEXT NOT NULL CHECK(type IN ('expense','revenue')),
-                amount_cents INTEGER NOT NULL,
-                category TEXT,
-                date TEXT NOT NULL,
-                notes TEXT,
-                created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-            );
-            """
-        )
-    )
-    db.execute(
-        text("CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);")
-    )
+    _ensure_transactions_table(db)
     db.execute(
         text(
             """
@@ -115,6 +118,93 @@ def add_transaction(
     new_id = db.execute(text("SELECT last_insert_rowid()"))
     last_row = new_id.scalar_one()
     return {"status": "saved", "id": last_row}
+
+
+@router.get("/transactions")
+def list_transactions(
+    since: Optional[str] = None,
+    limit: int = 10,
+    db: Session = Depends(get_db),
+    token: str = Depends(require_session),
+) -> Dict[str, Any]:
+    if limit < 1 or limit > 100:
+        raise HTTPException(status_code=400, detail="limit must be 1..100")
+    if since is not None and (len(since) != 10 or since[4] != "-" or since[7] != "-"):
+        raise HTTPException(status_code=400, detail="since must be YYYY-MM-DD")
+
+    _ensure_transactions_table(db)
+    params: Dict[str, Any] = {"limit": limit}
+    where_clause = ""
+    if since:
+        where_clause = "WHERE date >= :since"
+        params["since"] = since
+
+    sql = f"""
+        SELECT id, type, amount_cents, category, date, notes, created_at
+        FROM transactions
+        {where_clause}
+        ORDER BY date DESC, id DESC
+        LIMIT :limit
+    """
+    rows = db.execute(text(sql), params).fetchall()
+    items: List[Dict[str, Any]] = [
+        {
+            "id": row[0],
+            "type": row[1],
+            "amount_cents": row[2],
+            "category": row[3],
+            "date": row[4],
+            "notes": row[5],
+            "created_at": row[6],
+        }
+        for row in rows
+    ]
+    return {"items": items}
+
+
+@router.get("/transactions/summary")
+def transactions_summary(
+    window: str = "30d",
+    db: Session = Depends(get_db),
+    token: str = Depends(require_session),
+) -> Dict[str, Any]:
+    if not window.endswith("d"):
+        raise HTTPException(status_code=400, detail="window must be like '30d'")
+    try:
+        days = int(window[:-1])
+        if days < 1 or days > 3650:
+            raise ValueError()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="invalid window") from exc
+
+    cutoff = (date.today() - timedelta(days=days)).isoformat()
+    _ensure_transactions_table(db)
+    row = db.execute(
+        text(
+            """
+            SELECT
+                COALESCE(SUM(CASE WHEN type='revenue' AND amount_cents > 0 THEN amount_cents ELSE 0 END), 0) AS in_cents,
+                COALESCE(SUM(CASE WHEN type='expense' AND amount_cents < 0 THEN -amount_cents ELSE 0 END), 0) AS out_cents
+            FROM transactions
+            WHERE date >= :cutoff
+            """
+        ),
+        {"cutoff": cutoff},
+    ).fetchone()
+
+    if row is None:
+        row = (0, 0)
+
+    in_cents = int(row[0] or 0)
+    out_cents = int(row[1] or 0)
+    net_cents = in_cents - out_cents
+    return {
+        "window": window,
+        "since": cutoff,
+        "in_cents": in_cents,
+        "out_cents": out_cents,
+        "net_cents": net_cents,
+    }
 
 
 def _cleanup_old_previews() -> None:
