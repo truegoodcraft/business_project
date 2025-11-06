@@ -68,6 +68,34 @@
         <span id="license-badge" data-role="license-badge">License: community</span>
       </header>
 
+      <!-- Home screen container -->
+      <div data-role="home-screen" class="card">
+        <div class="home-actions">
+          <button data-action="open-expense-modal" class="btn btn-red btn-large">Add Expense</button>
+          <button data-action="open-revenue-modal" class="btn btn-green btn-large">Add Revenue</button>
+        </div>
+
+        <div class="snapshot">
+          <div data-role="net-30">Net (Last 30 Days): $0.00</div>
+          <div class="donuts">
+            <div data-role="donut-in"></div>
+            <div data-role="donut-out"></div>
+          </div>
+        </div>
+
+        <div class="recent-table">
+          <table data-role="recent-transactions">
+            <thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Notes</th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <a href="#/transactions">View all →</a>
+        </div>
+      </div>
+
+      <!-- Modals (empty shells) -->
+      <div data-role="expense-modal" class="modal hidden">…</div>
+      <div data-role="revenue-modal" class="modal hidden">…</div>
+
       <section data-route="tools">
         <!-- Tools page header tabs (scoped to Tools page only) -->
         <div data-role="tools-tabs-root" class="hidden">
