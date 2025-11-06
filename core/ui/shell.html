@@ -56,15 +56,11 @@
 <body>
   <nav id="sidebar">
     <h1>BUS Core</h1>
-    <div class="tab active" data-tab="writes">Writes</div>
-    <div class="tab" data-tab="tools">Tools</div>
-    <div class="nav-group" data-group="tools">
-      <!-- Contacts under Tools -->
-      <a href="#/tools/contacts" class="tab nav-item nav-subitem" data-tab="tools-contacts" data-group="tools">
-        <span>Contacts</span>
-      </a>
-    </div>
-    <div class="tab" data-tab="dev">Dev</div>
+    <ul class="nav">
+      <li><a href="#/writes" data-role="nav-link" data-route="writes">Writes</a></li>
+      <li><a href="#/tools"  data-role="nav-link" data-route="tools">Tools</a></li>
+      <li><a href="#/dev"    data-role="nav-link" data-route="dev">Dev</a></li>
+    </ul>
   </nav>
   <main id="main">
     <div id="app">
@@ -74,45 +70,25 @@
 
       <section data-route="tools">
         <!-- Tools page header tabs (scoped to Tools page only) -->
-        <div data-role="tools-tabs-root">
-          <nav class="tabs" data-role="main-tabs">
-            <button data-tab="manufacturing">Manufacturing</button>
-            <button data-tab="tasks">Tasks</button>
-            <button data-tab="backup">Backup</button>
-          </nav>
+        <div data-role="tools-tabs-root" class="hidden">
+          <!-- Tabs header -->
+          <div data-role="main-tabs" class="tabs">
+            <button type="button" data-tab="manufacturing">Manufacturing</button>
+            <button type="button" data-tab="tasks">Tasks</button>
+            <button type="button" data-tab="backup">Backup</button>
+          </div>
 
+          <!-- Tabs panels (kept empty here; JS shows/hides) -->
           <section data-tab-panel="manufacturing" class="tab-panel hidden">
-            <form data-role="mfg-run-form">
-              <div class="field">
-                <label for="mfg-notes">Notes</label>
-                <input id="mfg-notes" name="notes" type="text" placeholder="Run notes (optional)">
-              </div>
-              <button type="submit" data-role="mfg-run-btn">Run Manufacturing</button>
-              <small data-role="mfg-hint" class="muted hidden">Disabled on this tier.</small>
-            </form>
+            <!-- Manufacturing stub form lives in JS or existing markup -->
           </section>
-
           <section data-tab-panel="tasks" class="tab-panel hidden">
-            <div data-role="tasks-card">
-              <div class="toolbar">
-                <input type="text" data-role="task-title-input" placeholder="New task title">
-                <select data-role="task-status-input">
-                  <option value="todo">todo</option>
-                  <option value="doing">doing</option>
-                  <option value="done">done</option>
-                </select>
-                <button type="button" data-action="task-add">Add Task</button>
-              </div>
-              <table class="table" data-role="tasks-table">
-                <thead><tr><th>Title</th><th>Status</th><th>Actions</th></tr></thead>
-                <tbody></tbody>
-              </table>
-            </div>
+            <!-- Local tasks table lives in JS or existing markup -->
           </section>
-
           <section data-tab-panel="backup" class="tab-panel hidden">
-            <button type="button" data-action="export-backup">Export</button>
-            <small class="muted">Downloads current app.db (or fallback endpoint).</small>
+            <!-- Backup export button already present elsewhere; JS will wire -->
+            <button data-action="export-backup" class="btn btn-primary btn-block">Export</button>
+            <p>Downloads current app.db (or fallback endpoint).</p>
           </section>
         </div>
 
