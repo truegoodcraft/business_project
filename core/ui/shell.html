@@ -72,22 +72,48 @@
         <span id="license-badge" data-role="license-badge">License: community</span>
       </header>
 
-      <nav class="tabs" data-role="main-tabs">
-        <button data-tab="manufacturing" class="active">Manufacturing</button>
-        <button data-tab="tasks">Tasks</button>
-        <button data-tab="backup">Backup</button>
-      </nav>
+      <section data-route="tools">
+        <!-- Tools page header tabs (scoped to Tools page only) -->
+        <div data-role="tools-tabs-root">
+          <nav class="tabs" data-role="main-tabs">
+            <button data-tab="manufacturing">Manufacturing</button>
+            <button data-tab="tasks">Tasks</button>
+            <button data-tab="backup">Backup</button>
+          </nav>
 
-      <section data-tab-panel="manufacturing" class="tab-panel">
-        <div class="card">
-          <form data-role="mfg-run-form">
-            <div class="field">
-              <label for="mfg-notes">Notes</label>
-              <input id="mfg-notes" name="notes" type="text" placeholder="Run notes (optional)">
+          <section data-tab-panel="manufacturing" class="tab-panel hidden">
+            <form data-role="mfg-run-form">
+              <div class="field">
+                <label for="mfg-notes">Notes</label>
+                <input id="mfg-notes" name="notes" type="text" placeholder="Run notes (optional)">
+              </div>
+              <button type="submit" data-role="mfg-run-btn">Run Manufacturing</button>
+              <small data-role="mfg-hint" class="muted hidden">Disabled on this tier.</small>
+            </form>
+          </section>
+
+          <section data-tab-panel="tasks" class="tab-panel hidden">
+            <div data-role="tasks-card">
+              <div class="toolbar">
+                <input type="text" data-role="task-title-input" placeholder="New task title">
+                <select data-role="task-status-input">
+                  <option value="todo">todo</option>
+                  <option value="doing">doing</option>
+                  <option value="done">done</option>
+                </select>
+                <button type="button" data-action="task-add">Add Task</button>
+              </div>
+              <table class="table" data-role="tasks-table">
+                <thead><tr><th>Title</th><th>Status</th><th>Actions</th></tr></thead>
+                <tbody></tbody>
+              </table>
             </div>
-            <button type="submit" data-role="mfg-run-btn">Run Manufacturing</button>
-            <small data-role="mfg-hint" class="muted">Disabled if backend returns 501.</small>
-          </form>
+          </section>
+
+          <section data-tab-panel="backup" class="tab-panel hidden">
+            <button type="button" data-action="export-backup">Export</button>
+            <small class="muted">Downloads current app.db (or fallback endpoint).</small>
+          </section>
         </div>
 
         <div class="card" data-view="contacts">
@@ -105,31 +131,6 @@
             </thead>
             <tbody><!-- rows rendered by vendors.js --></tbody>
           </table>
-        </div>
-      </section>
-
-      <section data-tab-panel="tasks" class="tab-panel hidden">
-        <div class="card" data-role="tasks-card">
-          <div class="toolbar" style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
-            <input type="text" data-role="task-title-input" placeholder="New task title" style="flex:1;min-width:160px;">
-            <select data-role="task-status-input">
-              <option value="todo">todo</option>
-              <option value="doing">doing</option>
-              <option value="done">done</option>
-            </select>
-            <button type="button" data-action="task-add">Add Task</button>
-          </div>
-          <table class="table" data-role="tasks-table" style="width:100%;border-collapse:separate;border-spacing:0;background:#111318;border-radius:10px;overflow:hidden">
-            <thead><tr><th>Title</th><th>Status</th><th>Actions</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </section>
-
-      <section data-tab-panel="backup" class="tab-panel hidden">
-        <div class="card">
-          <button type="button" data-action="export-backup">Export</button>
-          <small class="muted">Downloads current app.db (or fallback endpoint).</small>
         </div>
       </section>
     </div>

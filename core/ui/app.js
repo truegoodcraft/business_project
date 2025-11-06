@@ -18,6 +18,10 @@ let writesState = null;
 let wBadge = null;
 let tokenDisplay = null;
 let toolsNavGroup = null;
+let organizerMounted = false;
+let contactsMounted = false;
+let tabsInitialized = false;
+let selectToolsTab = null;
 
 const mountContacts =
   ContactsCard.mountContacts || ContactsCard.mount || ContactsCard.default;
@@ -40,6 +44,21 @@ const router = {
   }
 };
 
+function currentHash() {
+  return (location.hash || '#/').replace(/^#/, '');
+}
+
+function isToolsRoute() {
+  const h = currentHash();
+  return h === '/tools' || h.startsWith('/tools/');
+}
+
+function showToolsTabs(show) {
+  const root = document.querySelector('[data-role="tools-tabs-root"]');
+  if (!root) return;
+  root.classList.toggle('hidden', !show);
+}
+
 const tabs = {
   writes: async (ctx) => mountWrites(cardHost, ctx),
   tools: async () => {
@@ -61,7 +80,8 @@ const tabs = {
   },
 };
 
-router.register('#/inventory', () => switchTab('inventory'));
+router.register('#/tools',      () => switchTab('tools'));
+router.register('#/inventory',  () => switchTab('inventory'));
 router.register('#/tools/contacts', mountContacts);
 router.register('#/tools/vendors',  mountContacts);
 router.register('#/vendors',         mountContacts);
@@ -75,13 +95,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     } else {
       await init();             // existing init logic unchanged
     }
+    await onRouteChange();
     console.log('BOOT OK');
   } catch (e) {
     console.error('BOOT FAIL', e);
   }
 });
 
-window.addEventListener('hashchange', () => {
+window.addEventListener('hashchange', async () => {
+  await onRouteChange();
   handleRoute(window.location.hash);
 });
 
@@ -205,10 +227,18 @@ async function initLicenseBadge() {
   }
 }
 
-function initTabs() {
-  const tabs = document.querySelector('[data-role="main-tabs"]');
-  if (!tabs) return;
-  const panels = Array.from(document.querySelectorAll('[data-tab-panel]'));
+function initTabsScoped() {
+  const scope = document.querySelector('[data-role="tools-tabs-root"]');
+  if (!scope) return;
+  const tabs = scope.querySelector('[data-role="main-tabs"]');
+  const panels = scope.querySelectorAll('[data-tab-panel]');
+  if (!tabs || !panels.length) return;
+
+  if (tabsInitialized) {
+    return;
+  }
+  tabsInitialized = true;
+
   const buttons = Array.from(tabs.querySelectorAll('[data-tab]'));
   const show = (name) => {
     panels.forEach((panel) => {
@@ -219,11 +249,14 @@ function initTabs() {
       btn.classList.toggle('active', btn.getAttribute('data-tab') === name);
     });
   };
+
   tabs.addEventListener('click', (event) => {
     const btn = event.target.closest('[data-tab]');
     if (!btn) return;
     show(btn.getAttribute('data-tab'));
   });
+
+  selectToolsTab = show;
   show('manufacturing');
 }
 
@@ -304,26 +337,44 @@ function initManufacturing() {
 
 async function bootstrapMainShell() {
   await initLicenseBadge();
-  initTabs();
+}
+
+async function onRouteChange() {
+  const tools = isToolsRoute();
+  const hashValue = currentHash();
+  showToolsTabs(tools);
+  if (!tools) return;
+
+  initTabsScoped();
+  if (hashValue === '/tools') {
+    selectToolsTab?.('manufacturing');
+  }
   initManufacturing();
-  mountBackupExport();
+  mountBackupExport?.();
 
   if (typeof mountOrganizer === 'function') {
-    try {
-      await mountOrganizer(document.querySelector('[data-role="tasks-card"]') || null);
-    } catch (err) {
-      console.error('tasks init failed', err);
+    const tasksHost = document.querySelector('[data-role="tasks-card"]');
+    if (tasksHost && !organizerMounted) {
+      try {
+        await mountOrganizer(tasksHost);
+        organizerMounted = true;
+      } catch (err) {
+        console.error('tasks init failed', err);
+      }
     }
   }
 
   const contactsHost = document.querySelector('[data-view="contacts"]');
-  if (contactsHost && typeof mountContacts === 'function') {
+  if (contactsHost && typeof mountContacts === 'function' && !contactsMounted) {
     try {
       await mountContacts(contactsHost);
+      contactsMounted = true;
     } catch (err) {
       console.error('contacts init failed', err);
     }
   }
+
+  window.mountInventoryCard?.();
 }
 
 function bindTabs() {
@@ -344,9 +395,20 @@ function bindTabs() {
         } else {
           switchTab('tools-contacts');
         }
+      } else if (tabId === 'tools') {
+        if (window.location.hash !== '#/tools') {
+          window.location.hash = '#/tools';
+        } else {
+          switchTab('tools');
+          onRouteChange();
+        }
       } else {
-        if (window.location.hash === '#/inventory' || CONTACT_ROUTE_HASHES.has(window.location.hash)) {
+        const wasInventory = window.location.hash === '#/inventory';
+        const wasContacts = CONTACT_ROUTE_HASHES.has(window.location.hash);
+        const wasTools = isToolsRoute();
+        if (wasInventory || wasContacts || wasTools) {
           history.replaceState(null, '', window.location.pathname + window.location.search);
+          onRouteChange();
         }
         switchTab(tabId);
       }
@@ -356,6 +418,9 @@ function bindTabs() {
 
 async function switchTab(id) {
   if (!cardHost) return;
+  if (id === 'tools' && window.location.hash !== '#/tools') {
+    window.location.hash = '#/tools';
+  }
   currentTab = id;
   document.querySelectorAll('.tab').forEach(tab => {
     const tabId = tab.dataset.tab;
@@ -372,11 +437,16 @@ async function switchTab(id) {
   const hash = window.location.hash;
   const isInventoryHash = hash === '#/inventory';
   const isContactsHash = CONTACT_ROUTE_HASHES.has(hash);
+  const isToolsHash = isToolsRoute();
   if (id !== 'inventory' && isInventoryHash) {
     history.replaceState(null, '', window.location.pathname + window.location.search);
   }
   if (id !== 'tools-contacts' && isContactsHash) {
     history.replaceState(null, '', window.location.pathname + window.location.search);
+  }
+  if (id !== 'tools' && id !== 'tools-contacts' && isToolsHash) {
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+    showToolsTabs(false);
   }
   await renderView();
 }
