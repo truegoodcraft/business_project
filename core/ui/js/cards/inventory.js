@@ -906,3 +906,13 @@ function escapeHtml(text) {
 }
 
 console.info(`Inventory endpoints:\n  Load: GET /app/items\n  Create: POST /app/items\n  Update: PUT /app/items/{id}\n  Delete: DELETE /app/items/{id}\n  Adjust primary: POST /app/inventory/adjust {item_id, delta, reason}\n  Adjust fallback: GET /app/items + PUT /app/items/{id} {qty}`);
+
+if (!window.mountInventoryCard) {
+    window.mountInventoryCard = function mountInventoryCard() {
+        try {
+            if (typeof initInventory === 'function') initInventory();
+        } catch (e) {
+            console.error('mountInventoryCard error', e);
+        }
+    };
+}
