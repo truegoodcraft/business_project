@@ -1,12 +1,13 @@
 import { ensureToken } from "./js/token.js";
 import { mountBackupExport } from "./js/cards/backup.js";
 import * as ContactsCard from "./js/cards/vendors.js";
+import { mountHome } from "./js/cards/home.js";
 
 const mountContacts =
   ContactsCard.mountContacts || ContactsCard.mount || ContactsCard.default;
 
 const getRoute = () => {
-  const h = (location.hash || '#/tools').replace(/^#\/?/, '');
+  const h = (location.hash || '#/home').replace(/^#\/?/, '');
   const base = h.split(/[\/?]/)[0] || 'tools';
   return base;
 };
@@ -66,6 +67,10 @@ const onRouteChange = async () => {
   const route = getRoute();
   setActiveNav(route);
 
+  if (route === 'home' || route === '') {
+    mountHome();
+  }
+
   const isTools = (route === 'tools');
   showToolsTabs(isTools);
 
@@ -97,7 +102,7 @@ const safeRouteChange = () => {
 window.addEventListener('hashchange', safeRouteChange);
 window.addEventListener('load', safeRouteChange);
 
-if (!location.hash) location.replace('#/tools');
+if (!location.hash) location.hash = '#/home';
 
 document.addEventListener('DOMContentLoaded', async () => {
   try {
