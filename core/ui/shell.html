@@ -70,25 +70,29 @@
 
       <!-- Home screen container -->
       <div data-role="home-screen" class="card">
+        <!-- 1) Primary actions -->
         <div class="home-actions">
           <button data-action="open-expense-modal" class="btn btn-red btn-large">Add Expense</button>
           <button data-action="open-revenue-modal" class="btn btn-green btn-large">Add Revenue</button>
         </div>
 
+        <!-- 2) Net 30 (bold, one line) + 3) In/Out (smaller) -->
         <div class="snapshot">
-          <div data-role="net-30">Net (Last 30 Days): $0.00</div>
-          <div class="donuts">
-            <div data-role="donut-in"></div>
-            <div data-role="donut-out"></div>
+          <div data-role="net-30" class="net-line">Net (Last 30 Days): $0.00</div>
+          <div class="io-lines">
+            <div data-role="donut-in">In: $0.00</div>
+            <div data-role="donut-out">Out: $0.00</div>
           </div>
         </div>
 
+        <!-- 4) Last transactions (10) -->
         <div class="recent-table">
+          <h3 class="table-title">Last transactions (10)</h3>
           <table data-role="recent-transactions">
             <thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Notes</th></tr></thead>
             <tbody></tbody>
           </table>
-          <a href="#/transactions">View all →</a>
+          <!-- View All link intentionally removed until full table + donut shipped -->
         </div>
       </div>
 
