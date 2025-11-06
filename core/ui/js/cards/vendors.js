@@ -2,6 +2,25 @@ import { apiGet, apiPost, ensureToken } from '../api.js';
 
 const LS_KEY = 'contacts.customers.v1';
 
+async function vendorExistsByName(name) {
+  const target = (name || '').trim().toLowerCase();
+  if (!target) return false;
+  const normalize = (value) => String(value || '').trim().toLowerCase();
+  try {
+    const list = await apiGet('/app/vendors');
+    const arr = Array.isArray(list) ? list : Array.isArray(list?.items) ? list.items : [];
+    return arr.some((vendor) => normalize(vendor?.name) === target);
+  } catch {
+    try {
+      const fallback = await apiGet('/app/vendors/list');
+      const arr = Array.isArray(fallback) ? fallback : [];
+      return arr.some((vendor) => normalize(vendor?.name) === target);
+    } catch {
+      return false;
+    }
+  }
+}
+
 export async function mountVendors(container) {
   // --- BEGIN SPEC-1 BODY ---
   container.innerHTML = '';
@@ -384,13 +403,51 @@ export async function mountVendors(container) {
         ...(notes ? { notes } : {}),
       };
 
+      let vendorCreated = false;
+
       try {
         setContactsBusy(true);
         await ensureToken();
-        await apiPost('/app/contacts', payload);
-        closeContactsModal();
-        await renderContactsTable();
-        document.dispatchEvent(new CustomEvent('contacts:changed', { bubbles: true }));
+
+        if (type === 'vendor') {
+          if (await vendorExistsByName(name)) {
+            alert('Vendor already exists');
+            return;
+          }
+          const vendorPayload = {
+            name,
+            ...(email ? { email } : {}),
+            ...(material ? { material } : {}),
+            ...(lead_time_days != null ? { lead_time_days } : {}),
+            ...(notes ? { notes } : {}),
+          };
+          try {
+            await apiPost('/app/vendors', vendorPayload);
+            vendorCreated = true;
+            document.dispatchEvent(new CustomEvent('vendors:changed', { bubbles: true }));
+          } catch (vendorErr) {
+            const vs = vendorErr?.status || vendorErr?.response?.status;
+            if (vs !== 404 && vs !== 405) {
+              throw vendorErr;
+            }
+          }
+        }
+
+        try {
+          await apiPost('/app/contacts', payload);
+          closeContactsModal();
+          await renderContactsTable();
+          document.dispatchEvent(new CustomEvent('contacts:changed', { bubbles: true }));
+        } catch (err) {
+          const status = err?.status || err?.response?.status;
+          if ((status === 404 || status === 405) && vendorCreated) {
+            closeContactsModal();
+            await renderContactsTable();
+            document.dispatchEvent(new CustomEvent('contacts:changed', { bubbles: true }));
+            return;
+          }
+          throw err;
+        }
       } catch (err) {
         const status = err?.status || err?.response?.status;
         if (status === 404 || status === 405) {

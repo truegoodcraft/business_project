@@ -1,7 +1,7 @@
 import { ensureToken, apiGet, apiJson, apiGetJson } from "./js/token.js";
 import { mountWrites }    from "./js/cards/writes.js";
 import { mountOrganizer } from "./js/cards/organizer.js";
-import { mountBackup }    from "./js/cards/backup.js";
+import { mountBackup, mountBackupExport }    from "./js/cards/backup.js";
 import { mountInventory } from "./js/cards/inventory.js";
 import { mountRfq }       from "./js/cards/rfq.js";
 import { mountDev }       from "./js/cards/dev.js";
@@ -70,7 +70,11 @@ router.register('#/contacts',        mountContacts);
 document.addEventListener('DOMContentLoaded', async () => {
   try {
     await ensureToken();        // wait for session token first
-    await init();               // existing init logic unchanged
+    if (document.querySelector('[data-role="main-tabs"]')) {
+      await bootstrapMainShell();
+    } else {
+      await init();             // existing init logic unchanged
+    }
     console.log('BOOT OK');
   } catch (e) {
     console.error('BOOT FAIL', e);
@@ -182,6 +186,131 @@ async function renderHeader() {
     </div>
   `;
   headerHost.append(header);
+}
+
+async function initLicenseBadge() {
+  const el = document.querySelector('[data-role="license-badge"]');
+  if (!el) return;
+  try {
+    const token = await ensureToken();
+    const res = await fetch('/dev/license', {
+      headers: { 'X-Session-Token': token },
+    });
+    if (!res.ok) throw new Error(String(res.status));
+    const lic = await res.json();
+    el.textContent = `License: ${lic?.tier || lic?.license || 'community'}`;
+  } catch (err) {
+    console.warn('license badge fetch failed', err);
+    el.textContent = 'License: community';
+  }
+}
+
+function initTabs() {
+  const tabs = document.querySelector('[data-role="main-tabs"]');
+  if (!tabs) return;
+  const panels = Array.from(document.querySelectorAll('[data-tab-panel]'));
+  const buttons = Array.from(tabs.querySelectorAll('[data-tab]'));
+  const show = (name) => {
+    panels.forEach((panel) => {
+      const on = panel.getAttribute('data-tab-panel') === name;
+      panel.classList.toggle('hidden', !on);
+    });
+    buttons.forEach((btn) => {
+      btn.classList.toggle('active', btn.getAttribute('data-tab') === name);
+    });
+  };
+  tabs.addEventListener('click', (event) => {
+    const btn = event.target.closest('[data-tab]');
+    if (!btn) return;
+    show(btn.getAttribute('data-tab'));
+  });
+  show('manufacturing');
+}
+
+function initManufacturing() {
+  const form = document.querySelector('[data-role="mfg-run-form"]');
+  const btn = document.querySelector('[data-role="mfg-run-btn"]');
+  const notes = form?.querySelector('#mfg-notes');
+  const hint = document.querySelector('[data-role="mfg-hint"]');
+  if (!form || !btn) return;
+  if (form.dataset.mfgBound) return;
+  form.dataset.mfgBound = '1';
+
+  const originalText = btn.textContent || 'Run Manufacturing';
+  let locked = false;
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (locked) return;
+
+    btn.disabled = true;
+    btn.textContent = 'Running…';
+
+    try {
+      const body = {};
+      const note = notes?.value?.trim();
+      if (note) body.notes = note;
+      const token = await ensureToken();
+      const res = await fetch('/app/inventory/run', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Session-Token': token,
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (res.status === 501 || res.status === 404) {
+        locked = true;
+        if (hint) {
+          hint.textContent = 'Manufacturing not available on this tier.';
+        }
+        btn.textContent = 'Unavailable';
+        return;
+      }
+
+      if (!res.ok) throw new Error(String(res.status));
+      alert('Manufacturing run submitted.');
+      if (notes) notes.value = '';
+    } catch (err) {
+      console.error('mfg run failed', err);
+      alert('Could not run manufacturing.');
+    } finally {
+      if (locked) {
+        btn.disabled = true;
+      } else {
+        btn.disabled = false;
+        btn.textContent = originalText;
+      }
+      if (!locked && btn.textContent !== originalText) {
+        btn.textContent = originalText;
+      }
+    }
+  });
+}
+
+async function bootstrapMainShell() {
+  await initLicenseBadge();
+  initTabs();
+  initManufacturing();
+  mountBackupExport();
+
+  if (typeof mountOrganizer === 'function') {
+    try {
+      await mountOrganizer(document.querySelector('[data-role="tasks-card"]') || null);
+    } catch (err) {
+      console.error('tasks init failed', err);
+    }
+  }
+
+  const contactsHost = document.querySelector('[data-view="contacts"]');
+  if (contactsHost && typeof mountContacts === 'function') {
+    try {
+      await mountContacts(contactsHost);
+    } catch (err) {
+      console.error('contacts init failed', err);
+    }
+  }
 }
 
 function bindTabs() {
