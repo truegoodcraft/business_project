@@ -68,7 +68,7 @@ def create_app_vendor(
     return {"id": vendor.id, "name": vendor.name}
 
 
-@router.post("/app/transactions")
+@router.post("/transactions")
 def add_transaction(
     data: Dict[str, Any],
     db: Session = Depends(get_db),
