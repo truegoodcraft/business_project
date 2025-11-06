@@ -482,6 +482,18 @@ export async function mountVendors(container) {
   closeDrawer();
 
   await renderContactsTable();
+
+  // Defensive: neutralize any legacy openers lingering in the DOM
+  document
+    .querySelectorAll(
+      '[data-action="contact-edit-legacy"], [data-action="open-contact"], [data-action="new-contact"], [data-action="new"]'
+    )
+    .forEach((btn) => {
+      const clone = btn.cloneNode(true);
+      clone.disabled = true;
+      clone.title = 'Replaced by new Contacts UI';
+      btn.replaceWith(clone);
+    });
   // --- END SPEC-1 BODY ---
 }
 function styleBtn(btn){
