@@ -25,6 +25,7 @@ from .http import (
     require_session_token,
 )
 from core.config.paths import APP_DIR, DATA_DIR, JOURNALS_DIR, IMPORTS_DIR
+from core.appdb.paths import app_data_dir
 from core.services.models import Attachment, Item, Task, Vendor
 
 require_session = require_session_token
@@ -179,7 +180,8 @@ def transactions_summary(
 
     cutoff = (date.today() - timedelta(days=days)).isoformat()
     _ensure_transactions_table(db)
-    row = db.execute(
+    # Totals
+    totals_row = db.execute(
         text(
             """
             SELECT
@@ -191,12 +193,41 @@ def transactions_summary(
         ),
         {"cutoff": cutoff},
     ).fetchone()
+    if totals_row is None:
+        totals_row = (0, 0)
+    in_cents = int(totals_row[0] or 0)
+    out_cents = int(totals_row[1] or 0)
 
-    if row is None:
-        row = (0, 0)
+    # Category breakdowns (per type)
+    cat_rows = db.execute(
+        text(
+            """
+            SELECT
+                type,
+                COALESCE(category, 'uncategorized') AS category,
+                SUM(
+                  CASE
+                    WHEN type='expense' THEN -amount_cents
+                    ELSE amount_cents
+                  END
+                ) AS cents
+            FROM transactions
+            WHERE date >= :cutoff
+            GROUP BY type, category
+            ORDER BY type, category
+            """
+        ),
+        {"cutoff": cutoff},
+    ).fetchall()
+    income_cats: List[Dict[str, Any]] = []
+    expense_cats: List[Dict[str, Any]] = []
+    for row in cat_rows:
+        entry = {"name": row[1], "amount_cents": int(row[2] or 0)}
+        if row[0] == "revenue":
+            income_cats.append(entry)
+        elif row[0] == "expense":
+            expense_cats.append(entry)
 
-    in_cents = int(row[0] or 0)
-    out_cents = int(row[1] or 0)
     net_cents = in_cents - out_cents
     return {
         "window": window,
@@ -204,7 +235,46 @@ def transactions_summary(
         "in_cents": in_cents,
         "out_cents": out_cents,
         "net_cents": net_cents,
+        "income": {"total_cents": in_cents, "categories": income_cats},
+        "expense": {"total_cents": out_cents, "categories": expense_cats},
     }
+
+
+# ---- Business Profile (per-install JSON) ----
+@router.get("/business_profile")
+def get_business_profile() -> Dict[str, Any]:
+    """Reads %LOCALAPPDATA%\\BUSCore\\business_profile.json if present; else returns minimal defaults."""
+    path = app_data_dir() / "BUSCore" / "business_profile.json"  # app_data_dir already includes BUSCore; keep explicit subdir stable
+    # tolerate either location (app_data_dir root or nested BUSCore) for compatibility
+    candidates = [app_data_dir() / "business_profile.json", path]
+    for p in candidates:
+        if p.exists():
+            try:
+                return json.loads(p.read_text(encoding="utf-8"))
+            except Exception:
+                raise HTTPException(status_code=500, detail="invalid profile file")
+    return {"business_name": None, "logo_path": None}
+
+
+@router.post("/business_profile")
+def set_business_profile(body: Dict[str, Any]) -> Dict[str, Any]:
+    """Overwrites/creates the JSON profile: business_name, logo_path, optional address fields."""
+    out = {
+        "business_name": body.get("business_name"),
+        "logo_path": body.get("logo_path"),
+        "address_line1": body.get("address_line1"),
+        "address_line2": body.get("address_line2"),
+        "city": body.get("city"),
+        "region": body.get("region"),
+        "postal_code": body.get("postal_code"),
+        "country": body.get("country"),
+        "phone": body.get("phone"),
+        "email": body.get("email"),
+    }
+    path = app_data_dir() / "business_profile.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"ok": True}
 
 
 def _cleanup_old_previews() -> None:
