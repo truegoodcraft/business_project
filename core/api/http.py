@@ -58,6 +58,7 @@ from core.secrets import SecretError, Secrets
 from core.version import VERSION
 from core.utils.export import export_db, import_preview as _import_preview, import_commit as _import_commit
 from core.utils.license_loader import get_license
+from core.appdb.paths import app_data_dir
 from tgc.bootstrap_fs import DATA, LOGS
 
 from pydantic import BaseModel, Field
@@ -717,8 +718,18 @@ def rfq_generate(
         except Exception as exc:
             raise HTTPException(status_code=500, detail="template_not_found") from exc
 
+        # Load per-install business profile (v1: minimal fields)
+        profile = {"business_name": None, "logo_path": None}
+        try:
+            p = app_data_dir() / "business_profile.json"
+            if p.exists():
+                profile = json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            profile = {"business_name": None, "logo_path": None}
+
         payload = {
             "ts_iso": ts_iso,
+            "business_profile": profile,
             "vendors": [
                 {
                     "id": vid,

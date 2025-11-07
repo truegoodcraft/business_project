@@ -2,6 +2,7 @@ import { ensureToken } from "./js/token.js";
 import { mountBackupExport } from "./js/cards/backup.js";
 import * as ContactsCard from "./js/cards/vendors.js";
 import { mountHome } from "./js/cards/home.js";
+import "./js/cards/home_donuts.js";
 
 const mountContacts =
   ContactsCard.mountContacts || ContactsCard.mount || ContactsCard.default;

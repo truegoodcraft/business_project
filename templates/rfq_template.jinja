@@ -1,5 +1,18 @@
 # Request for Quotation — {{ ts_iso }}
 
+{% if business_profile %}
+**{{ business_profile.business_name or 'Untitled Business' }}**
+{% if business_profile.logo_path %}Logo: {{ business_profile.logo_path }}{% endif %}
+{% if business_profile.address_line1 or business_profile.city %}
+{{ business_profile.address_line1 }} {{ business_profile.address_line2 }}
+{{ business_profile.city }} {{ business_profile.region }} {{ business_profile.postal_code }} {{ business_profile.country }}
+{% endif %}
+{% if business_profile.phone or business_profile.email %}
+{{ business_profile.phone }} {{ business_profile.email }}
+{% endif %}
+---
+{% endif %}
+
 {% for v in vendors %}
 ## Vendor: {{ v.name }}
 Contact: {{ v.contact or 'N/A' }}
