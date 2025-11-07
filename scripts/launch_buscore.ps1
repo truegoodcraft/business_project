@@ -18,7 +18,7 @@
 
 $ErrorActionPreference="Stop"
 $HostAddr="127.0.0.1"; $Port=8765
-$AppRoot="$env:LOCALAPPDATA\BUSCore\app\business_project-main"
+$AppRoot="$env:LOCALAPPDATA\BUSCore\app\tgc-bus-core"
 $UiDir = Join-Path $AppRoot "core\ui"
 
 # kill listener
