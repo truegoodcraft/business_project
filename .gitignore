@@ -39,6 +39,9 @@ logs/
 local*.log
 npm-debug.log*
 lerna-debug.log*
+exports/
+imports/
+*.db
 
 # Testing artifacts
 .pytest_cache/
@@ -60,6 +63,8 @@ session_token.txt
 .env
 .env.*
 .envrc
+*.secret
+secrets/
 
 # OS files
 .DS_Store

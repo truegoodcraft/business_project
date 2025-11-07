@@ -11,7 +11,7 @@ Everything runs offline; optional encrypted export/import handles sync between m
 
 ## 2. Module Layout
 ```text
-BUSCore/
+tgc-bus-core/
 │
 ├── core/
 │   ├── api/

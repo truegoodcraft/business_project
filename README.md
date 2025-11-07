@@ -49,8 +49,8 @@ Prereqs:
 Clone and set up:
 
 ```bash
-git clone <YOUR_REPO_URL> business_project-main
-cd business_project-main
+git clone <YOUR_REPO_URL> tgc-bus-core
+cd tgc-bus-core
 
 python -m venv .venv
 # Windows:
