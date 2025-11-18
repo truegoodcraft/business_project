@@ -22,13 +22,13 @@ from dataclasses import dataclass, asdict, field
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 
+from core.appdb.paths import state_dir as buscore_state_dir
 from core.version import VERSION
 
 def _state_dir() -> Path:
-    # Windows: %LOCALAPPDATA%\TGC\state ; Others: ~/.tgc/state
+    # Windows: %LOCALAPPDATA%\BUSCore\state ; Others: ~/.tgc/state
     if os.name == "nt":
-        base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
-        return Path(base) / "TGC" / "state"
+        return buscore_state_dir()
     return Path.home() / ".tgc" / "state"
 
 MANIFEST_PATH = _state_dir() / "system_manifest.json"

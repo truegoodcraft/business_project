@@ -38,7 +38,7 @@ class GoogleDriveProvider:
         self._log = logger("provider.google_drive")
         self._settings_loader = settings_loader
         self._sess = requests.Session()
-        self._sess.headers.update({"User-Agent": "TGC/drive-provider"})
+        self._sess.headers.update({"User-Agent": "BUSCore/drive-provider"})
         self._cached_token: Optional[str] = None
         self._cached_refresh: Optional[str] = None
         self._expires_at: float = 0.0

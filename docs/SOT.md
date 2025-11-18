@@ -220,7 +220,7 @@ get_session (SQLAlchemy dependency) yields scoped sessions against the SQLite da
 
 get_broker initializes the plugin broker singleton with secrets, capability registry, and reader settings loaders.
 
-Secrets manager stores encrypted secrets under %LOCALAPPDATA%\TGC\secrets (or ~/.tgc/secrets) with optional OS keyring integration.
+Secrets manager stores encrypted secrets under %LOCALAPPDATA%\BUSCore\secrets (or ~/.tgc/secrets) with optional OS keyring integration.
 
 Reader settings utilities (load_settings, save_settings, get_allowed_local_roots, set_allowed_local_roots) keep settings_reader.json synced across requests.
 
@@ -239,7 +239,7 @@ Session token persistence: both the main app and helper utilities write the acti
 
 Reader settings stored at %LOCALAPPDATA%\BUSCore\settings_reader.json; policy config at %LOCALAPPDATA%\BUSCore\config.json.
 
-Capability manifests and HMAC key live under %LOCALAPPDATA%\TGC\state, while secrets fall back to %LOCALAPPDATA%\TGC\secrets / ~/.tgc/secrets.
+Capability manifests and HMAC key live under %LOCALAPPDATA%\BUSCore\state, while secrets fall back to %LOCALAPPDATA%\BUSCore\secrets / ~/.tgc/secrets.
 
 Index state JSON resides at data/index_state.json, updated via the index endpoints.
 

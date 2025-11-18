@@ -24,6 +24,8 @@ import stat
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+from core.appdb.paths import app_data_dir
+
 
 def _root() -> Path:
     return Path(__file__).resolve().parents[2]  # repo root
@@ -39,8 +41,7 @@ def _logs_dir() -> Path:
 
 def _state_dir() -> Path:
     if os.name == "nt":
-        base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
-        return Path(base) / "TGC"
+        return app_data_dir()
     return Path.home() / ".tgc"
 
 

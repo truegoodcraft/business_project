@@ -22,7 +22,7 @@ The BUS Core Alpha runtime is built for transparency and local control. This doc
 
 ## Capabilities & Manifests
 
-* Core signs capability manifests with an internal HMAC key stored under the local profile directory (`~/.tgc/state` or `%LOCALAPPDATA%\TGC\state`).
+* Core signs capability manifests with an internal HMAC key stored under the local profile directory (`~/.tgc/state` or `%LOCALAPPDATA%\BUSCore\state`).
 * `/capabilities` builds the manifest in-memory, returns it immediately, and writes to disk asynchronously (never blocks the request path).
 * `/nodes.manifest.sync` validates signatures from remote peers but never writes without verification.
 

@@ -16,6 +16,7 @@ from urllib import error, request
 import uvicorn
 
 from core.api.http import UI_STATIC_DIR, build_app
+from core.appdb.paths import secrets_dir, state_dir
 from core.utils.license_loader import _license_path
 from tgc.bootstrap_fs import DATA, LOGS, TOKEN_FILE
 
@@ -33,6 +34,9 @@ def _base_directory() -> Path:
 def _ensure_runtime_dirs() -> None:
     for path in (DATA, LOGS):
         path.mkdir(parents=True, exist_ok=True)
+    if os.name == "nt":
+        secrets_dir()
+        state_dir()
 
 
 def _ensure_license_file() -> Path:

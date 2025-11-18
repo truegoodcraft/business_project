@@ -20,6 +20,10 @@ $ErrorActionPreference="Stop"
 $HostAddr="127.0.0.1"; $Port=8765
 $AppRoot="$env:LOCALAPPDATA\BUSCore\app\tgc-bus-core"
 $UiDir = Join-Path $AppRoot "core\ui"
+$BcRoot = Join-Path $env:LOCALAPPDATA 'BUSCore'
+$null = New-Item -ItemType Directory -Force -Path $BcRoot
+$null = New-Item -ItemType Directory -Force -Path (Join-Path $BcRoot 'secrets')
+$null = New-Item -ItemType Directory -Force -Path (Join-Path $BcRoot 'state')
 
 # kill listener
 $listenerPid = (Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue |
