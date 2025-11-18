@@ -293,17 +293,39 @@ def ui_index():
 
 
 def _health_details_payload() -> Dict[str, Any]:
-    license_payload: Dict[str, Any]
-    if isinstance(LICENSE, dict):
-        license_payload = json.loads(json.dumps(LICENSE))  # shallow copy for safety
-    else:
-        license_payload = {}
+    lic = get_license() or {"tier": "community", "features": {}, "plugins": {}}
+    if not isinstance(lic, dict):
+        lic = {"tier": "community", "features": {}, "plugins": {}}
+    lic.setdefault("tier", "community")
+    if not isinstance(lic.get("features"), dict):
+        lic["features"] = {}
+    if not isinstance(lic.get("plugins"), dict):
+        lic["plugins"] = {}
+
+    policy_dict: Dict[str, Any] = {}
+    try:
+        if CORE and hasattr(CORE, "policy") and hasattr(CORE.policy, "as_dict"):
+            policy_dict = CORE.policy.as_dict()
+    except NameError:
+        policy_dict = {}
+
+    rid = None
+    try:
+        rid = getattr(CORE, "run_id", None)
+    except NameError:
+        rid = None
+    try:
+        rid = rid or RUN_ID
+    except NameError:
+        pass
+    rid = str(rid or uuid.uuid4())
+
     return {
         "ok": True,
         "version": VERSION,
-        "policy": load_policy().model_dump(),
-        "license": license_payload,
-        "run-id": RUN_ID,
+        "policy": policy_dict,
+        "license": lic,
+        "run-id": rid,
     }
 
 
