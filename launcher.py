@@ -16,6 +16,7 @@ from urllib import error, request
 import uvicorn
 
 from core.api.http import UI_STATIC_DIR, build_app
+from core.utils.license_loader import _license_path
 from tgc.bootstrap_fs import DATA, LOGS, TOKEN_FILE
 
 DEFAULT_PORT = 8765
@@ -32,6 +33,15 @@ def _base_directory() -> Path:
 def _ensure_runtime_dirs() -> None:
     for path in (DATA, LOGS):
         path.mkdir(parents=True, exist_ok=True)
+
+
+def _ensure_license_file() -> Path:
+    path = _license_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.exists():
+        path.write_text('{"tier":"community","features":{},"plugins":{}}', encoding="utf-8")
+        print(f"Created default license at: {path}")
+    return path
 
 
 def _is_port_free(port: int) -> bool:
@@ -123,6 +133,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     os.chdir(base_dir)
 
     _ensure_runtime_dirs()
+    license_path = _ensure_license_file()
 
     try:
         port, explicit, previous = _select_port(args.port, DATA)
@@ -139,6 +150,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     print(f"Session token saved at: {TOKEN_FILE.resolve()}")
     print(f"Served UI from: {UI_STATIC_DIR.resolve()}")
+    print(f"License file: {license_path}")
 
     config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="info")
     server = uvicorn.Server(config)
@@ -152,7 +164,17 @@ def main(argv: Optional[list[str]] = None) -> int:
     server_thread = threading.Thread(target=server.run, name="uvicorn-server", daemon=True)
     server_thread.start()
 
-    if not server.started.wait(timeout=10):
+    def _wait_for_startup(timeout: float = 10.0) -> bool:
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if getattr(server, "started", False):
+                return True
+            if not server_thread.is_alive():
+                break
+            time.sleep(0.1)
+        return bool(getattr(server, "started", False))
+
+    if not _wait_for_startup():
         print("Error: server failed to start")
         server.should_exit = True
         server_thread.join(timeout=5)
