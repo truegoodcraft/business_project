@@ -10,7 +10,7 @@ This document explains how BUS Core Alpha handles data, where it is stored, and 
 | `data/audit.log` | Audit chain (JSONL) | Hash chained; records commit/rollback/replay events. |
 | `logs/` | Runtime logs | Per-run file named `core_<run_id>.log`; `/logs` endpoint tails last 200 lines. |
 | `data/session_token.txt` | Current session token | Regenerated on each boot; can be cleared via `config clear --what data`. |
-| `~/.tgc/secrets` or `%LOCALAPPDATA%\TGC\secrets` | Encrypted secrets store | Managed by `core.secrets`; populated through `python app.py secrets set ...`. |
+| `~/.tgc/secrets` or `%LOCALAPPDATA%\BUSCore\secrets` | Encrypted secrets store | Managed by `core.secrets`; populated through `python app.py secrets set ...`. |
 | `plugins/<id>/settings.json` | Optional read-only plugin settings | Never written by plugins; toggle read-only via `python app.py config settings-ro`. |
 | `~/.tgc/state/system_manifest.json` | Last capability manifest | Written asynchronously by `/capabilities`. |
 

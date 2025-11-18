@@ -35,7 +35,7 @@ def _http_session(name: str) -> requests.Session:
     Prefer a local session; do not call broker.http_session (it may not exist).
     """
     s = requests.Session()
-    s.headers.update({"User-Agent": f"TGC/{SERVICE_ID}-{VERSION}"})
+    s.headers.update({"User-Agent": f"BUSCore/{SERVICE_ID}-{VERSION}"})
     # conservative timeouts via mount adapters could be added later
     return s
 

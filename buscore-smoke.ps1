@@ -65,6 +65,24 @@ if ($tokResp.Status -ne 200) {
 $token = (ConvertFrom-Json $tokResp.Body).token
 $AUTH = @{ "X-Session-Token" = $token; "Accept" = "application/json" }
 
+# Hard cutover assertions (Windows-only, SoT)
+$legacyRoot = Join-Path $env:LOCALAPPDATA 'TGC'
+if (Test-Path $legacyRoot) {
+  $hit = Get-ChildItem -Force -Recurse $legacyRoot -ErrorAction SilentlyContinue | Select-Object -First 1
+  if (-not $hit) {
+    $hit = Get-Item -LiteralPath $legacyRoot -ErrorAction SilentlyContinue
+  }
+  if ($hit) {
+    throw "Legacy TGC path found: $($hit.FullName)"
+  }
+}
+
+$bcRoot = Join-Path $env:LOCALAPPDATA 'BUSCore'
+$null = New-Item -ItemType Directory -Force -Path $bcRoot -ErrorAction SilentlyContinue
+$null = New-Item -ItemType Directory -Force -Path (Join-Path $bcRoot 'secrets') -ErrorAction SilentlyContinue
+$null = New-Item -ItemType Directory -Force -Path (Join-Path $bcRoot 'state') -ErrorAction SilentlyContinue
+Write-Host "paths: hard cutover validated"
+
 # --- Protected health
 $hz = Invoke-Api -Method GET -Url "$BASE/health" -Headers $AUTH
 $keysPresent = $false,$false,$false,$false
