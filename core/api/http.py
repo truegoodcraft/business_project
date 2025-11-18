@@ -215,7 +215,7 @@ async def _nocache_ui(request: Request, call_next):
 app.add_middleware(BaseHTTPMiddleware, dispatch=_nocache_ui)
 
 TOKEN_HEADER = "X-Session-Token"
-PUBLIC_PATHS = {"/", "/session/token", "/favicon.ico"}
+PUBLIC_PATHS = {"/", "/session/token", "/favicon.ico", "/health"}
 PUBLIC_PREFIX = "/ui/"
 
 
@@ -292,8 +292,31 @@ def ui_index():
     return RedirectResponse(url="/ui/shell.html", status_code=307)
 
 
+def _health_details_payload() -> Dict[str, Any]:
+    return _with_run_id(
+        {
+            "ok": True,
+            "version": VERSION,
+            "policy": load_policy().model_dump(),
+            "licenses": {
+                "core": {
+                    "name": "PolyForm-Noncommercial-1.0.0",
+                    "url": "https://polyformproject.org/licenses/noncommercial/1.0.0/",
+                },
+                "plugins_default": {
+                    "name": "Apache-2.0",
+                    "url": "https://www.apache.org/licenses/LICENSE-2.0",
+                },
+            },
+        }
+    )
+
+
 @app.get("/health")
-async def health():
+async def health(request: Request) -> Dict[str, Any]:
+    token = get_session_token(request)
+    if validate_session_token(token):
+        return _health_details_payload()
     return {"ok": True}
 
 
@@ -329,6 +352,24 @@ if not isinstance(LICENSE, dict):
 LICENSE["tier"] = LICENSE.get("tier") or "unknown"
 if not isinstance(LICENSE.get("features"), dict):
     LICENSE["features"] = {}
+
+_COMMUNITY_ONLY = {"community", "free", "", None}
+
+
+def _require_license(feature_label: str) -> None:
+    """Gate premium endpoints based on the resolved license tier."""
+
+    lic = get_license(force_reload=True)  # SoT: using existing get_license
+    tier = str(lic.get("tier") or "community").lower()
+    if tier in _COMMUNITY_ONLY:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "license_required",
+                "feature": feature_label,
+                "tier": tier or "community",
+            },
+        )
 if not isinstance(LICENSE.get("plugins"), dict):
     LICENSE["plugins"] = {}
 WRITES_ENABLED = get_writes_enabled()
@@ -575,6 +616,8 @@ def app_import_preview(req: ImportReq, _w: None = Depends(require_writes)):
 
 @protected.post("/app/import/commit")
 def app_import_commit(req: ImportReq, _w: None = Depends(require_writes)):
+    _require_license("import.commit")
+
     res = _import_commit(req.path, req.password)
     if not res.get("ok"):
         err = res.get("error", "commit_failed")
@@ -648,6 +691,8 @@ def rfq_generate(
     token: str = Depends(require_token),
     _writes: None = Depends(require_writes),
 ):
+    _require_license("rfq.generate")
+
     item_ids = list(dict.fromkeys(body.items or []))
     vendor_ids = list(dict.fromkeys(body.vendors or []))
 
@@ -787,6 +832,8 @@ def inventory_run(
     token: str = Depends(require_token),
     _writes: None = Depends(require_writes),
 ):
+    _require_license("inventory.run")
+
     inputs = {int(k): float(v) for k, v in (body.inputs or {}).items()}
     outputs = {int(k): float(v) for k, v in (body.outputs or {}).items()}
     ids = set(inputs) | set(outputs)
@@ -1598,23 +1645,7 @@ def plans_export(plan_id: str) -> Response:
 
 @protected.get("/health")
 def protected_health() -> Dict[str, Any]:
-    return _with_run_id(
-        {
-            "ok": True,
-            "version": VERSION,
-            "policy": load_policy().model_dump(),
-            "licenses": {
-                "core": {
-                    "name": "PolyForm-Noncommercial-1.0.0",
-                    "url": "https://polyformproject.org/licenses/noncommercial/1.0.0/",
-                },
-                "plugins_default": {
-                    "name": "Apache-2.0",
-                    "url": "https://www.apache.org/licenses/LICENSE-2.0",
-                },
-            },
-        }
-    )
+    return _health_details_payload()
 
 
 @protected.get("/plugins")
