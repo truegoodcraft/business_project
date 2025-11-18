@@ -7,15 +7,50 @@ import json
 import os
 import shutil
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any, Dict, Optional
-from urllib import error, request
 
 BASE_URL = os.environ.get("BUSCORE_BASE_URL", "http://127.0.0.1:8765")
 
 
 def _fmt_bool(value: bool) -> str:
-    return "true" if value else "false"
+    return "T" if value else "F"
+
+
+def _req(
+    method: str,
+    url: str,
+    token: Optional[str] = None,
+    data: Optional[Dict[str, Any]] = None,
+    headers: Optional[Dict[str, str]] = None,
+    timeout: int = 10,
+):
+    h = {"Accept": "application/json"}
+    if headers:
+        h.update(headers)
+    if token:
+        h["X-Session-Token"] = token
+    body = None
+    if data is not None:
+        body = json.dumps(data).encode("utf-8")
+        h.setdefault("Content-Type", "application/json")
+    req = urllib.request.Request(url, data=body, method=method, headers=h)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.getcode(), r.read()
+    except urllib.error.HTTPError as e:
+        return e.code, e.read()
+    except urllib.error.URLError as e:
+        return 0, str(e).encode("utf-8")
+
+
+def _snip(b: Optional[bytes]) -> str:
+    try:
+        return (b or b"")[:200].decode("utf-8", "replace")
+    except Exception:
+        return repr(b)[:200]
 
 
 def _request(
@@ -24,51 +59,29 @@ def _request(
     *,
     token: Optional[str] = None,
     payload: Optional[Dict[str, Any]] = None,
-    timeout: float = 10.0,
 ) -> Dict[str, Any]:
-    url = f"{BASE_URL}{path}"
-    headers: Dict[str, str] = {}
-    data = None
-    if token:
-        headers["X-Session-Token"] = token
-    if payload is not None:
-        data = json.dumps(payload).encode("utf-8")
-        headers["Content-Type"] = "application/json"
-    req = request.Request(url, data=data, headers=headers, method=method)
-    try:
-        with request.urlopen(req, timeout=timeout) as resp:
-            body = resp.read().decode("utf-8", "replace")
-            status = resp.status
-    except error.HTTPError as exc:
-        body = exc.read().decode("utf-8", "replace")
-        status = exc.code
-    except Exception as exc:  # pragma: no cover - network failures
-        return {"status": None, "body": str(exc), "json": None}
+    status, body = _req(method, f"{BASE_URL}{path}", token=token, data=payload)
     parsed: Optional[Any]
     try:
-        parsed = json.loads(body)
+        parsed = json.loads(body.decode("utf-8"))
     except Exception:
         parsed = None
     return {"status": status, "body": body, "json": parsed}
 
 
 def _expect_token() -> str:
-    resp = _request("GET", "/session/token")
-    if not resp.get("status") == 200:
-        raise SystemExit(f"Failed to fetch session token: {resp}")
-    payload = resp.get("json")
-    if isinstance(payload, dict) and payload.get("token"):
-        return str(payload["token"])
-    if isinstance(payload, dict) and payload.get("token") is None and "token" in payload:
-        return ""
-    # Some builds return raw token text
-    body = resp.get("body", "").strip()
-    if body:
-        try:
-            data = json.loads(body)
-            return str(data.get("token", body))
-        except Exception:
-            return body
+    status, body = _req("GET", f"{BASE_URL}/session/token")
+    if status != 200:
+        raise SystemExit(
+            f"Failed to fetch session token: status {status}, body={_snip(body)}"
+        )
+    try:
+        payload = json.loads(body.decode("utf-8"))
+    except Exception:
+        payload = None
+    if isinstance(payload, dict) and "token" in payload:
+        token_value = payload.get("token")
+        return "" if token_value is None else str(token_value)
     raise SystemExit("Session token missing from /session/token response")
 
 
@@ -106,8 +119,8 @@ def main() -> None:
     hp_keys = [
         isinstance(hp_json, dict) and "version" in hp_json,
         isinstance(hp_json, dict) and "policy" in hp_json,
-        isinstance(hp_json, dict) and "licenses" in hp_json,
-        isinstance(hp_json, dict) and "run_id" in hp_json,
+        isinstance(hp_json, dict) and "license" in hp_json,
+        isinstance(hp_json, dict) and "run-id" in hp_json,
     ]
 
     ui_shell = _request("GET", "/ui/shell.html")
@@ -192,52 +205,94 @@ def main() -> None:
     item_delete = _request("DELETE", f"/app/items/{item_id}", token=token)
     vendor_delete = _request("DELETE", f"/app/vendors/{vendor_id}", token=token)
 
+    def _fmt_status(status: Optional[int], body: Optional[bytes]) -> str:
+        if status == 200:
+            return str(status)
+        return f"{status}, body={_snip(body)}"
+
     vendor_statuses = "/".join(
-        str(x)
-        for x in (
-            vendor_create.get("status"),
-            vendor_read.get("status"),
-            vendor_update.get("status"),
-            vendor_delete.get("status"),
+        _fmt_status(resp.get("status"), resp.get("body"))
+        for resp in (
+            vendor_create,
+            vendor_read,
+            vendor_update,
+            vendor_delete,
         )
     )
     item_statuses = "/".join(
-        str(x)
-        for x in (
-            item_create.get("status"),
-            items_get.get("status"),
-            item_update.get("status"),
-            item_delete.get("status"),
+        _fmt_status(resp.get("status"), resp.get("body"))
+        for resp in (
+            item_create,
+            items_get,
+            item_update,
+            item_delete,
         )
     )
 
+    def _line_with_status(prefix: str, resp: Dict[str, Any], suffix: str) -> str:
+        status = resp.get("status")
+        line = f"{prefix}: status {status}"
+        if status != 200:
+            line += f", body={_snip(resp.get('body'))}"
+        return f"{line}{suffix}"
+
     print(
-        f"health(public): status {health_public.get('status')}, body {{\"ok\": true}} seen: {_fmt_bool(public_ok)}"
-    )
-    print(
-        "health(protected): status {}, keys present [version, policy, license, run-id]: {}".format(
-            health_protected.get("status"),
-            [
-                _fmt_bool(flag)
-                for flag in hp_keys
-            ],
+        _line_with_status(
+            "health(public)",
+            health_public,
+            f", body {{\"ok\": true}} seen: {_fmt_bool(public_ok)}",
         )
     )
-    print(f"ui(shell): status {ui_shell.get('status')}, length>0: {_fmt_bool(ui_non_empty)}")
     print(
-        f"import.preview (writes on): status {import_preview.get('status')} (expect 200)"
+        _line_with_status(
+            "health(protected)",
+            health_protected,
+            ", keys [version,policy,license,run-id]: [{}]".format(
+                ",".join(_fmt_bool(flag) for flag in hp_keys)
+            ),
+        )
     )
     print(
-        f"items.PUT(one-off): status {item_update.get('status')} (expect 200)"
+        _line_with_status(
+            "ui(shell)",
+            ui_shell,
+            f", length>0: {_fmt_bool(ui_non_empty)}",
+        )
     )
     print(
-        f"rfq.generate: status {rfq_generate.get('status')} (expect rejection)"
+        _line_with_status(
+            "import.preview (writes on)",
+            import_preview,
+            " (expect 200; if missing_db -> note \"Not specified in the SoT you’ve given me.\")",
+        )
     )
     print(
-        f"inventory.run: status {inventory_run.get('status')} (expect rejection)"
+        _line_with_status(
+            "items.PUT(one-off)",
+            item_update,
+            " (expect 200)",
+        )
     )
     print(
-        f"import.commit: status {import_commit.get('status')} (expect rejection)"
+        _line_with_status(
+            "rfq.generate",
+            rfq_generate,
+            " (expect rejection)",
+        )
+    )
+    print(
+        _line_with_status(
+            "inventory.run",
+            inventory_run,
+            " (expect rejection)",
+        )
+    )
+    print(
+        _line_with_status(
+            "import.commit",
+            import_commit,
+            " (expect rejection)",
+        )
     )
     print(
         f"vendors CRUD baseline: create/read/update/delete status {vendor_statuses} (expect 200 each)"
