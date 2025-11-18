@@ -1,5 +1,7 @@
 # TGC BUS Core (Business Utility System Core)
 
+**SoT (developer workflow & licensing) last synced:** 2025-11-18.
+
 **Owner:** True Good Craft  
 **License:** GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)
 
@@ -38,37 +40,64 @@ Right now this is an **alpha** aimed at developers and power users, not yet a po
   - **Free core** (AGPL)
   - **Optional PRO plugins** (separate commercial license)
 
-## Getting started (dev)
+## Two-window dev flow
 
-Prereqs:
+> **⚠️ Development & smoke testing use the uvicorn commands shown below.** `launcher.py` is not used for the dev flow.
 
-- Python 3.11+
-- Git
-- Windows (v1 focus; other platforms later)
+Run two PowerShell windows exactly as shown.
 
-Clone and set up:
+**Window A (server):**
 
-```bash
-git clone <YOUR_REPO_URL> tgc-bus-core
-cd tgc-bus-core
+```powershell
+# 1) Go to the project folder
+cd "D:\Vault Overhaul\TGC-BUS-Core-main"
 
-python -m venv .venv
-# Windows:
-.venv\Scripts\activate
-pip install -r requirements.txt
+# 2) Install deps (uses your global Python)
+python -m pip install -r requirements.txt
+
+# 3) Make sure the app can import the repo modules
+$env:PYTHONPATH = (Get-Location).Path
+
+# 4) Guarantee a default license for dev
+$lic = Join-Path $env:LOCALAPPDATA 'BUSCore\license.json'
+if (!(Test-Path $lic)) {
+  New-Item -ItemType Directory -Force -Path (Split-Path $lic) | Out-Null
+  '{"tier":"community","features":{},"plugins":{}}' | Set-Content -Path $lic
+}
+
+# 5) (Optional) Point UI path if your app expects it
+$env:BUS_UI_DIR = (Join-Path (Get-Location) 'core\ui')
+
+# 6) Run the server
+python -m uvicorn core.api.http:create_app --host 127.0.0.1 --port 8765 --reload
 ```
 
-Run the backend (adjust entrypoint if different):
+**Window B (smoke):**
 
-```bash
-python app.py
+```powershell
+# 1) Go to the project folder
+cd "D:\Vault Overhaul\TGC-BUS-Core-main"
+
+# 2) Wait for the server to be up
+$u = 'http://127.0.0.1:8765/session/token'
+$max = 30
+for ($i=0; $i -lt $max; $i++) {
+  try { Invoke-WebRequest -UseBasicParsing $u -TimeoutSec 2 | Out-Null; break } catch { Start-Sleep -Seconds 1 }
+}
+
+# 3) Run smoke
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\buscore-smoke.ps1"
 ```
 
-Then open the UI in your browser (adjust path if needed):
+### Run smoke
 
-```text
-http://localhost:8000/ui/shell.html
-```
+`buscore-smoke.ps1` is the canonical SoT harness. Smoke must be **100% green** for a change to be accepted. The Window A script above creates the required `%LOCALAPPDATA%\BUSCore\license.json` if it is missing.
+
+### Health & UI
+
+- Public `GET /health` returns `{"ok": true}` (200).
+- Protected `GET /health` (with `X-Session-Token`) returns 200 with `version`, `policy`, `license`, and `run-id`.
+- `GET /ui/shell.html` must return HTTP 200 with content.
 
 ## Project structure (high level)
 

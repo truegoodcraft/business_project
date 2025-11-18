@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Deprecated — use buscore-smoke.ps1
 """SoT-aligned smoke tests for BUS Core licensing and baseline CRUD."""
 
 from __future__ import annotations
