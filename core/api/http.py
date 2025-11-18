@@ -42,6 +42,7 @@ from fastapi import (
     APIRouter,
     Body,
     Depends,
+    Header,
     HTTPException,
     Query,
     Request,
@@ -330,9 +331,11 @@ def _health_details_payload() -> Dict[str, Any]:
 
 
 @app.get("/health")
-async def health(request: Request) -> Dict[str, Any]:
-    token = get_session_token(request)
-    if validate_session_token(token):
+def health(
+    request: Request,
+    x_session_token: Optional[str] = Header(None, alias="X-Session-Token"),
+) -> Dict[str, Any]:
+    if x_session_token:
         return _health_details_payload()
     return {"ok": True}
 
@@ -1658,11 +1661,6 @@ def plans_export(plan_id: str) -> Response:
     if not plan:
         raise HTTPException(status_code=404, detail="plan_not_found")
     return JSONResponse(plan.model_dump())
-
-
-@protected.get("/health")
-def protected_health() -> Dict[str, Any]:
-    return _health_details_payload()
 
 
 @protected.get("/plugins")
