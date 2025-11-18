@@ -293,23 +293,18 @@ def ui_index():
 
 
 def _health_details_payload() -> Dict[str, Any]:
-    return _with_run_id(
-        {
-            "ok": True,
-            "version": VERSION,
-            "policy": load_policy().model_dump(),
-            "licenses": {
-                "core": {
-                    "name": "PolyForm-Noncommercial-1.0.0",
-                    "url": "https://polyformproject.org/licenses/noncommercial/1.0.0/",
-                },
-                "plugins_default": {
-                    "name": "Apache-2.0",
-                    "url": "https://www.apache.org/licenses/LICENSE-2.0",
-                },
-            },
-        }
-    )
+    license_payload: Dict[str, Any]
+    if isinstance(LICENSE, dict):
+        license_payload = json.loads(json.dumps(LICENSE))  # shallow copy for safety
+    else:
+        license_payload = {}
+    return {
+        "ok": True,
+        "version": VERSION,
+        "policy": load_policy().model_dump(),
+        "license": license_payload,
+        "run-id": RUN_ID,
+    }
 
 
 @app.get("/health")
