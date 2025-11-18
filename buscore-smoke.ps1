@@ -54,7 +54,7 @@ function PrintResult($label, $resp, [bool]$expect200){
 
 # --- Public health
 $hp = Invoke-Api -Method GET -Url "$BASE/health"
-Write-Host ("health(public): status {0}, body {""ok"": true} seen: {1}" -f $hp.Status, ($hp.Body -match '"ok"\s*:\s*true'))
+Write-Host ("health(public): status {0}, body {{""ok"": true}} seen: {1}" -f $hp.Status, [bool]($hp.Body -match '"ok"\s*:\s*true'))
 
 # --- Token
 $tokResp = Invoke-Api -Method GET -Url "$BASE/session/token"
