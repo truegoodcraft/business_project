@@ -18,12 +18,10 @@
 
 import { ensureToken } from "./js/token.js";
 import { mountBackupExport } from "./js/cards/backup.js";
-import mountVendors, { mountContacts as mountContactsGlue } from "./js/cards/vendors.js";
+import mountVendors, { mountContacts } from "./js/cards/vendors.js";
 import { mountHome } from "./js/cards/home.js";
 import "./js/cards/home_donuts.js";
 import { mountInventory, unmountInventory } from "./js/cards/inventory.js";
-
-const mountContacts = mountContactsGlue || mountVendors;
 
 const getRoute = () => {
   let route = location.hash.replace('#/', '');
@@ -52,8 +50,8 @@ let contactsMounted = false;
 const ensureContactsMounted = async () => {
   if (contactsMounted) return;
   const host = document.querySelector('[data-view="contacts"]');
-  if (!host || typeof mountContacts !== 'function') return;
-  await mountContacts(host);
+  if (!host) return;
+  await mountVendors(host);
   contactsMounted = true;
 };
 
@@ -62,17 +60,15 @@ const onRouteChange = async () => {
   setActiveNav(route);
 
   if (route === 'contacts') {
-    // Hide other screens
-    document.querySelector('[data-role="home-screen"]')?.classList.add('hidden');
-    document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
-
-    // Show Contacts screen
-    document.querySelector('[data-role="contacts-screen"]')?.classList.remove('hidden');
-
-    // Mount existing Contacts logic into the card we moved
-    await ensureContactsMounted();
     // Close Tools drawer if open
     document.querySelector('[data-role="tools-subnav"]')?.classList.add('hidden');
+
+    // Hide legacy Tools screens if any
+    document.querySelector('[data-role="tools-screen"]')?.classList.add('hidden');
+
+    // Show Contacts page
+    mountContacts();
+    await ensureContactsMounted();
     return;
   }
 
@@ -122,7 +118,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const toolsToggle = document.querySelector('[data-action="toggle-tools"]');
   const drawer = document.querySelector('[data-role="tools-subnav"]');
   const inventoryLink = document.querySelector('[data-link="tools-inventory"]');
-  const contactsLink = document.querySelector('[data-link="tools-contacts"]');
+  const contactsLink = document.querySelector('[data-link="tools-contacts"], a[href="#/contacts"]');
 
   if (toolsToggle && drawer) {
     toolsToggle.addEventListener('click', (e) => {
@@ -138,7 +134,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   if (contactsLink && drawer) {
-    contactsLink.addEventListener('click', () => drawer.classList.add('hidden'));
+    contactsLink.addEventListener('click', () => drawer?.classList.add('hidden'));
   }
 
   window.addEventListener('hashchange', () => {
