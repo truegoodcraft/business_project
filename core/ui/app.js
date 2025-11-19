@@ -83,6 +83,7 @@ document.addEventListener('click', (e) => {
 let contactsMounted = false;
 
 const ensureContactsMounted = async () => {
+  if (location.hash === '#/tools') return; // skip while on Tools
   if (contactsMounted) return;
   const host = document.querySelector('[data-view="contacts"]');
   if (!host || typeof mountContacts !== 'function') return;
@@ -94,22 +95,22 @@ const onRouteChange = async () => {
   const route = getRoute();
   setActiveNav(route);
 
+  showToolsTabs?.(route === 'tools');
+
+  if (route === 'tools') {
+    // Show only Tools screen; do not fall through to Vendors/Contacts
+    showScreen?.('tools');
+    mountTools();
+    return; // prevent ensureContactsMounted / Vendors logic from running on Tools
+  }
+
   if (route === 'home' || route === '') {
     showScreen('home');   // show only Home
     mountHome();          // keep existing Home logic
     return;
   }
-
-  const isTools = (route === 'tools');
-  showToolsTabs?.(isTools);
-
-  if (!isTools) {
-    showScreen(null);
-    return;
-  }
-
-  showScreen('tools');
-  mountTools();
+  
+  showScreen(null);
   return;
 };
 
@@ -133,29 +134,23 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 });
 
-// Toggle Tools subnav and avoid blue/bright active style
+// Tools subnav toggle + neutralize bright active state
 (function initToolsSubnav() {
-  const toolsNav = document.querySelector('[data-role="nav-tools"] > a[data-link="tools"]');
+  const toolsAnchor = document.querySelector('[data-role="nav-tools"] > a[data-link="tools"]');
   const subnav = document.querySelector('[data-role="tools-subnav"]');
 
-  if (toolsNav && subnav) {
-    toolsNav.addEventListener('click', () => {
+  if (toolsAnchor && subnav) {
+    toolsAnchor.addEventListener('click', () => {
+      // Open the sub-menu when clicking Tools
       subnav.classList.remove('hidden');
     });
 
     window.addEventListener('hashchange', () => {
       const route = location.hash.replace('#/', '');
-      if (route !== 'tools') {
-        subnav.classList.add('hidden');
-      }
+      // Keep it open on Tools; collapse on others
+      if (route !== 'tools') subnav.classList.add('hidden');
     });
   }
-
-  document.addEventListener('click', (e) => {
-    const a = e.target.closest('a[data-link]');
-    if (!a) return;
-    a.setAttribute('data-active-neutral', '1');
-  });
 })();
 
 function initManufacturing() {

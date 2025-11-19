@@ -1,22 +1,21 @@
-// Tools screen mount (list-only; no external side effects)
+// Tools screen mount: list-only, prevent legacy content from showing
 export function mountTools() {
   const toolsScreen = document.querySelector('[data-role="tools-screen"]');
-  const legacyToolsSection = toolsScreen?.querySelector('section[data-route="tools"]');
-  const toolsList = toolsScreen?.querySelector('[data-role="tools-list"]');
-
   if (!toolsScreen) return;
 
-  // Show Tools surface; ensure only list shows
-  toolsScreen.classList.remove('hidden');
-  if (legacyToolsSection) legacyToolsSection.classList.add('hidden');
-  if (toolsList) toolsList.classList.remove('hidden');
+  // Ensure only the list is visible
+  const toolsList = toolsScreen.querySelector('[data-role="tools-list"]');
+  const legacySection = toolsScreen.querySelector('section[data-route="tools"]');
 
-  // Defensive: hide any stray "Contacts" card inside Tools wrapper if present
-  toolsScreen.querySelectorAll('*').forEach(el => {
-    const heading = el.matches('h2,h3,h4') ? el.textContent?.trim().toLowerCase() : '';
-    if (heading === 'contacts') {
-      const card = el.closest('.card, section, div');
-      if (card) card.classList.add('hidden');
+  toolsScreen.classList.remove('hidden');
+  if (toolsList) toolsList.classList.remove('hidden');
+  if (legacySection) legacySection.classList.add('hidden');
+
+  // Extra safety: hide any Contacts card accidentally injected under Tools
+  toolsScreen.querySelectorAll('.card, section, div').forEach(el => {
+    const h = el.querySelector('h2,h3,h4');
+    if (h && h.textContent && h.textContent.trim().toLowerCase() === 'contacts') {
+      el.classList.add('hidden');
     }
   });
 }
