@@ -21,6 +21,7 @@ import { mountBackupExport } from "./js/cards/backup.js";
 import * as ContactsCard from "./js/cards/vendors.js";
 import { mountHome } from "./js/cards/home.js";
 import "./js/cards/home_donuts.js";
+import { mountInventory, unmountInventory } from "./js/cards/inventory.js";
 
 const mountContacts =
   ContactsCard.mountContacts || ContactsCard.mount || ContactsCard.default;
@@ -61,12 +62,20 @@ const onRouteChange = async () => {
   const route = getRoute();
   setActiveNav(route);
 
+  if (route === 'inventory') {
+    // Show Inventory only
+    mountInventory();
+    return;
+  }
+
   if (route === 'home' || route === '') {
     showScreen('home');   // show only Home
     mountHome();          // keep existing Home logic
+    unmountInventory();   // ensure Inventory hides when returning Home
     return;
   }
-  
+
+  unmountInventory();
   showScreen(null);
   return;
 };

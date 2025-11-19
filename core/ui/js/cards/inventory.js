@@ -23,7 +23,7 @@
 import { apiGet, apiPost, apiPut, apiDelete, ensureToken } from '../api.js';
 import { request as rawRequest } from '../token.js';
 
-export async function mountInventory(container) {
+export async function _mountInventory(container) {
     await ensureToken();
 
     console.log(
@@ -934,3 +934,39 @@ if (!window.mountInventoryCard) {
         }
     };
 }
+
+// --- GLUE START (add at bottom of the existing Inventory file) ---
+
+let __inventoryBooted = false;
+
+export function mountInventory() {
+    const home = document.querySelector('[data-role="home-screen"]');
+    const inv  = document.querySelector('[data-role="inventory-screen"]');
+
+    // Hide Home; show Inventory shell
+    if (home) home.classList.add('hidden');
+    if (inv)  inv.classList.remove('hidden');
+
+    // One-time boot of whatever initializer already exists
+    if (!__inventoryBooted) {
+        __inventoryBooted = true;
+
+        const host = document.querySelector('[data-role="inventory-root"]') || inv;
+
+        // Call the existing initializer if present (do not create new logic)
+        if (typeof initInventory === 'function')       initInventory();
+        else if (typeof renderInventory === 'function') renderInventory();
+        else if (typeof startInventory === 'function')  startInventory();
+        else if (typeof setupInventory === 'function')  setupInventory();
+        // If this module already exported a mount, call it once:
+        else if (typeof _mountInventory === 'function' && host) _mountInventory(host);
+        // If none of the above exist, do nothing (UI may be static).
+    }
+}
+
+export function unmountInventory() {
+    const inv = document.querySelector('[data-role="inventory-screen"]');
+    if (inv) inv.classList.add('hidden');
+}
+
+// --- GLUE END ---
