@@ -516,3 +516,27 @@ body.modal-open { overflow: hidden; }
 }
 .donut-in  { background: #0f0; }  /* green */
 .donut-out { background: #f00; }  /* red   */
+/* Neutralize "bright blue" active nav state without removing classes */
+.sidebar .nav a[data-active-neutral="1"],
+.sidebar .nav a.active {
+  background: transparent !important;
+  color: inherit !important;
+  box-shadow: none !important;
+  filter: none !important;
+}
+
+/* Tools subnav appearance */
+.sidebar [data-role="tools-subnav"] {
+  margin: 4px 0 0 0;
+  padding-left: 12px;
+  list-style: none;
+}
+.sidebar [data-role="tools-subnav"].hidden { display: none; }
+.sidebar [data-role="tools-subnav"] a {
+  opacity: 0.9;
+  text-decoration: none;
+}
+.sidebar [data-role="tools-subnav"] a:hover {
+  opacity: 1;
+  text-decoration: underline;
+}

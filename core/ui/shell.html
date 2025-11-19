@@ -57,9 +57,14 @@
   <nav id="sidebar">
     <h1>BUS Core</h1>
     <ul class="nav">
-      <li><a href="#/writes" data-role="nav-link" data-route="writes">Writes</a></li>
-      <li><a href="#/tools"  data-role="nav-link" data-route="tools">Tools</a></li>
-      <li><a href="#/dev"    data-role="nav-link" data-route="dev">Dev</a></li>
+      <li data-role="nav-tools">
+        <a href="#/tools"  data-role="nav-link" data-route="tools" data-link="tools">Tools</a>
+        <ul data-role="tools-subnav" class="hidden">
+          <li><a href="#/inventory" data-link="tools-inventory">Inventory</a></li>
+          <!-- Future tools can be added here -->
+        </ul>
+      </li>
+      <li><a href="#/dev"    data-role="nav-link" data-route="dev">Settings</a></li>
     </ul>
   </nav>
   <main id="main">
@@ -133,7 +138,16 @@
 
       <!-- Tools screen (hidden by default) -->
       <div data-role="tools-screen" class="hidden">
-        <section data-route="tools">
+        <!-- NEW: minimal list-only surface for Tools -->
+        <div data-role="tools-list" class="">
+          <h2 class="text-xl">Tools</h2>
+          <ul>
+            <li><a href="#/inventory">Inventory</a></li>
+          </ul>
+        </div>
+
+        <!-- Keep legacy Tools content, but hide it so Contacts never shows on Tools -->
+        <section data-route="tools" class="hidden">
           <!-- Tools page header tabs (scoped to Tools page only) -->
           <div data-role="tools-tabs-root" class="hidden">
             <!-- Tabs header -->

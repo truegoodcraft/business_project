@@ -101,33 +101,16 @@ const onRouteChange = async () => {
   }
 
   const isTools = (route === 'tools');
-  showToolsTabs(isTools);
+  showToolsTabs?.(isTools);
 
-  // For non-home, non-tools routes (e.g., writes/dev), hide both Home & Tools
   if (!isTools) {
     showScreen(null);
     return;
   }
 
-  // Tools route: show only Tools and mount it
   showScreen('tools');
   mountTools();
-
-  try {
-    await ensureContactsMounted();
-  } catch (err) {
-    console.warn('contacts mount failed', err);
-  }
-
-  initManufacturing();
-  mountBackupExport?.();
-  if (typeof window.mountInventoryCard === 'function') {
-    try {
-      window.mountInventoryCard();
-    } catch (err) {
-      console.warn('mountInventoryCard failed', err);
-    }
-  }
+  return;
 };
 
 const safeRouteChange = () => {
@@ -149,6 +132,31 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.error('BOOT FAIL', e);
   }
 });
+
+// Toggle Tools subnav and avoid blue/bright active style
+(function initToolsSubnav() {
+  const toolsNav = document.querySelector('[data-role="nav-tools"] > a[data-link="tools"]');
+  const subnav = document.querySelector('[data-role="tools-subnav"]');
+
+  if (toolsNav && subnav) {
+    toolsNav.addEventListener('click', () => {
+      subnav.classList.remove('hidden');
+    });
+
+    window.addEventListener('hashchange', () => {
+      const route = location.hash.replace('#/', '');
+      if (route !== 'tools') {
+        subnav.classList.add('hidden');
+      }
+    });
+  }
+
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest('a[data-link]');
+    if (!a) return;
+    a.setAttribute('data-active-neutral', '1');
+  });
+})();
 
 function initManufacturing() {
   const form = document.querySelector('[data-role="mfg-run-form"]');
