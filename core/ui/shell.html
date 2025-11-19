@@ -105,6 +105,26 @@
         </div>
       </div>
 
+      <!-- Contacts screen (hidden by default) -->
+      <div data-role="contacts-screen" class="hidden">
+        <div class="card" data-view="contacts">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;">
+            <h2 style="margin:0;">Contacts</h2>
+            <button type="button" data-action="open-contacts-modal">Add Contact</button>
+          </div>
+          <table data-role="contacts-table" class="table" style="width:100%;border-collapse:separate;border-spacing:0;background:#111318;border-radius:10px;overflow:hidden">
+            <thead>
+              <tr>
+                <th style="text-align:left;padding:10px;background:#1a1f2b">Type</th>
+                <th style="text-align:left;padding:10px;background:#1a1f2b">Contact</th>
+                <th style="text-align:left;padding:10px;background:#1a1f2b">Actions</th>
+              </tr>
+            </thead>
+            <tbody><!-- rows rendered by vendors.js --></tbody>
+          </table>
+        </div>
+      </div>
+
       <div data-role="inventory-screen" class="hidden">
         <div data-role="inventory-root" class="card"></div>
       </div>
@@ -175,23 +195,6 @@
               <button data-action="export-backup" class="btn btn-primary btn-block">Export</button>
               <p>Downloads current app.db (or fallback endpoint).</p>
             </section>
-          </div>
-
-          <div class="card" data-view="contacts">
-            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;">
-              <h2 style="margin:0;">Contacts</h2>
-              <button type="button" data-action="open-contacts-modal">Add Contact</button>
-            </div>
-            <table data-role="contacts-table" class="table" style="width:100%;border-collapse:separate;border-spacing:0;background:#111318;border-radius:10px;overflow:hidden">
-              <thead>
-                <tr>
-                  <th style="text-align:left;padding:10px;background:#1a1f2b">Type</th>
-                  <th style="text-align:left;padding:10px;background:#1a1f2b">Contact</th>
-                  <th style="text-align:left;padding:10px;background:#1a1f2b">Actions</th>
-                </tr>
-              </thead>
-              <tbody><!-- rows rendered by vendors.js --></tbody>
-            </table>
           </div>
         </section>
       </div>

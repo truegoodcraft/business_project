@@ -23,6 +23,8 @@ import { mountHome } from "./js/cards/home.js";
 import "./js/cards/home_donuts.js";
 import { mountInventory, unmountInventory } from "./js/cards/inventory.js";
 
+const mountContacts = mountContactsGlue || mountVendors;
+
 const getRoute = () => {
   let route = location.hash.replace('#/', '');
   if (route === '' || route === 'home' || route === 'BUSCore') route = 'home';
@@ -50,8 +52,8 @@ let contactsMounted = false;
 const ensureContactsMounted = async () => {
   if (contactsMounted) return;
   const host = document.querySelector('[data-view="contacts"]');
-  if (!host || typeof mountVendors !== 'function') return;
-  await mountVendors(host);
+  if (!host || typeof mountContacts !== 'function') return;
+  await mountContacts(host);
   contactsMounted = true;
 };
 
@@ -59,21 +61,25 @@ const onRouteChange = async () => {
   const route = getRoute();
   setActiveNav(route);
 
-  if (route === 'inventory') {
-    // Show Inventory only
-    mountInventory();
+  if (route === 'contacts') {
+    // Hide other screens
+    document.querySelector('[data-role="home-screen"]')?.classList.add('hidden');
+    document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
+
+    // Show Contacts screen
+    document.querySelector('[data-role="contacts-screen"]')?.classList.remove('hidden');
+
+    // Mount existing Contacts logic into the card we moved
+    await ensureContactsMounted();
+    // Close Tools drawer if open
+    document.querySelector('[data-role="tools-subnav"]')?.classList.add('hidden');
     return;
   }
 
-  if (route === 'contacts') {
-    // Close the Tools drawer if it’s open
-    try {
-      const drawer = document.querySelector('[data-role="tools-subnav"]');
-      if (drawer) drawer.classList.add('hidden');
-    } catch {}
-
-    await ensureContactsMounted();
-    mountContactsGlue?.();
+  if (route === 'inventory') {
+    // Show Inventory only
+    document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
+    mountInventory();
     return;
   }
 
@@ -81,10 +87,12 @@ const onRouteChange = async () => {
     showScreen('home');   // show only Home
     mountHome();          // keep existing Home logic
     unmountInventory();   // ensure Inventory hides when returning Home
+    document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
     return;
   }
 
   unmountInventory();
+  document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
   showScreen(null);
   return;
 };
