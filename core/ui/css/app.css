@@ -540,3 +540,21 @@ body.modal-open { overflow: hidden; }
   opacity: 1;
   text-decoration: underline;
 }
+/* Left nav: neutralize bright/blue active state */
+.sidebar .nav a.active,
+.sidebar .nav a.is-active,
+.sidebar .nav a[data-active="1"] {
+  background: transparent !important;
+  color: inherit !important;
+  box-shadow: none !important;
+  filter: none !important;
+}
+
+/* Tools sub-menu */
+.sidebar [data-role="tools-subnav"] { margin-top: 4px; padding-left: 12px; list-style: none; }
+.sidebar [data-role="tools-subnav"].hidden { display: none; }
+.sidebar [data-role="tools-subnav"] a { text-decoration: none; opacity: 0.9; }
+.sidebar [data-role="tools-subnav"] a:hover { opacity: 1; text-decoration: underline; }
+
+/* Force-hide legacy Tools section even if other code toggles it */
+[data-role="tools-screen"] section[data-route="tools"] { display: none !important; }
