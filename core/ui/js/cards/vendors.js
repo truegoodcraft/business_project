@@ -525,3 +525,39 @@ function styleBtn(btn){
   btn.onmouseleave = () => btn.style.background = '#23293a';
 }
 export default mountVendors;
+
+// -------- Contacts Glue (do not modify existing logic above) --------
+
+export function mountContacts() {
+  // Show the Vendors/Contacts container if it exists
+  const contactsCard = document.querySelector('[data-view="contacts"]');
+  if (!contactsCard) return;
+
+  // Ensure any outer Vendors container is visible (common patterns)
+  const vendorsSection = contactsCard.closest('section[data-route="vendors"], [data-role="vendors-screen"], [data-view="vendors"]');
+  if (vendorsSection) vendorsSection.classList.remove('hidden');
+
+  // Hide Home / Inventory shells if present
+  const home = document.querySelector('[data-role="home-screen"]');
+  if (home) home.classList.add('hidden');
+  const inv = document.querySelector('[data-role="inventory-screen"]');
+  if (inv) inv.classList.add('hidden');
+
+  // Show Contacts card and hide sibling vendor cards in the same container
+  contactsCard.classList.remove('hidden');
+
+  // Hide other sibling cards in Vendors screen so only Contacts is visible
+  const siblings = contactsCard.parentElement ? Array.from(contactsCard.parentElement.children) : [];
+  siblings.forEach(el => {
+    if (el !== contactsCard && (el.matches('.card') || el.hasAttribute('data-view'))) {
+      el.classList.add('hidden');
+    }
+  });
+
+  // If the module already had initialization (tables, fetches, events), it will run as usual.
+  // In case the code expects a one-time init, try calling known initializers once.
+  if (typeof ensureContactsMounted === 'function') {
+    // If ensureContactsMounted exists in this module/app, it will wire tables/listeners safely (idempotent)
+    try { ensureContactsMounted(); } catch {}
+  }
+}
