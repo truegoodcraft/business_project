@@ -558,3 +558,53 @@ body.modal-open { overflow: hidden; }
 
 /* Force-hide legacy Tools section even if other code toggles it */
 [data-role="tools-screen"] section[data-route="tools"] { display: none !important; }
+/* Left nav: white text and no bullets */
+.sidebar .nav,
+.sidebar .nav ul,
+#sidebar .nav,
+#sidebar .nav ul {
+  list-style: none;
+  padding-left: 0;
+  margin-left: 0;
+}
+.sidebar .nav a,
+#sidebar .nav a {
+  color: #fff;
+  text-decoration: none;
+}
+
+/* Tools drawer styling */
+.sidebar [data-role="tools-subnav"].hidden,
+#sidebar [data-role="tools-subnav"].hidden {
+  display: none;
+}
+.sidebar [data-role="tools-subnav"].drawer,
+#sidebar [data-role="tools-subnav"].drawer {
+  position: static;
+  inset: auto;
+  width: auto;
+  height: auto;
+  display: block;
+  pointer-events: auto;
+  visibility: visible;
+  background: transparent;
+  box-shadow: none;
+  list-style: none;
+  margin-top: 4px;
+  padding-left: 12px;
+  transition: none;
+}
+.sidebar [data-role="tools-subnav"] a,
+#sidebar [data-role="tools-subnav"] a {
+  opacity: 0.95;
+}
+.sidebar [data-role="tools-subnav"] a:hover,
+#sidebar [data-role="tools-subnav"] a:hover {
+  opacity: 1;
+  text-decoration: underline;
+}
+
+/* Ensure no Tools card ever appears */
+[data-role="tools-screen"] {
+  display: none !important;
+}
