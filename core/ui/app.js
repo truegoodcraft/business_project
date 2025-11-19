@@ -26,8 +26,9 @@ const mountContacts =
   ContactsCard.mountContacts || ContactsCard.mount || ContactsCard.default;
 
 const getRoute = () => {
-  const h = (location.hash || '#/home').replace(/^#\/?/, '');
-  let base = h.split(/[\/?]/)[0] || 'home';
+  let route = location.hash.replace('#/', '');
+  if (route === '' || route === 'home' || route === 'BUSCore') route = 'home';
+  let base = route.split(/[\/?]/)[0] || 'home';
   if (base === 'settings') base = 'dev';
   return base;
 };
