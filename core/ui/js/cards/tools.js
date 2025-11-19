@@ -1,24 +1,22 @@
-// Tools screen mount (minimal, no external side effects)
+// Tools screen mount (list-only; no external side effects)
 export function mountTools() {
-  const home = document.querySelector('[data-role="home-screen"]');
-  const tools = document.querySelector('[data-role="tools-screen"]');
+  const toolsScreen = document.querySelector('[data-role="tools-screen"]');
+  const legacyToolsSection = toolsScreen?.querySelector('section[data-route="tools"]');
+  const toolsList = toolsScreen?.querySelector('[data-role="tools-list"]');
 
-  // Show Tools screen, hide Home
-  if (home) home.classList.add('hidden');
-  if (tools) {
-    tools.classList.remove('hidden');
+  if (!toolsScreen) return;
 
-    // Simple placeholder list of tools (only if not already present)
-    if (!tools.querySelector('[data-role="tools-list"]')) {
-      const list = document.createElement('ul');
-      list.setAttribute('data-role', 'tools-list');
-      list.style.margin = '0 0 12px 0';
-      list.innerHTML = `
-        <li>Manufacturing</li>
-        <li>Tasks</li>
-        <li>Backup</li>
-      `;
-      tools.prepend(list);
+  // Show Tools surface; ensure only list shows
+  toolsScreen.classList.remove('hidden');
+  if (legacyToolsSection) legacyToolsSection.classList.add('hidden');
+  if (toolsList) toolsList.classList.remove('hidden');
+
+  // Defensive: hide any stray "Contacts" card inside Tools wrapper if present
+  toolsScreen.querySelectorAll('*').forEach(el => {
+    const heading = el.matches('h2,h3,h4') ? el.textContent?.trim().toLowerCase() : '';
+    if (heading === 'contacts') {
+      const card = el.closest('.card, section, div');
+      if (card) card.classList.add('hidden');
     }
-  }
+  });
 }
