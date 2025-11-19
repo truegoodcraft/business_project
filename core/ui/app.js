@@ -20,7 +20,6 @@ import { ensureToken } from "./js/token.js";
 import { mountBackupExport } from "./js/cards/backup.js";
 import * as ContactsCard from "./js/cards/vendors.js";
 import { mountHome } from "./js/cards/home.js";
-import { mountTools } from "./js/cards/tools.js";
 import "./js/cards/home_donuts.js";
 
 const mountContacts =
@@ -28,7 +27,8 @@ const mountContacts =
 
 const getRoute = () => {
   const h = (location.hash || '#/home').replace(/^#\/?/, '');
-  const base = h.split(/[\/?]/)[0] || 'tools';
+  let base = h.split(/[\/?]/)[0] || 'home';
+  if (base === 'settings') base = 'dev';
   return base;
 };
 
@@ -46,44 +46,9 @@ function showScreen(name) {
   if (tools) tools.classList.toggle('hidden', name !== 'tools');
 }
 
-const showToolsTabs = (show) => {
-  const root = document.querySelector('[data-role="tools-tabs-root"]');
-  if (!root) return;
-  root.classList.toggle('hidden', !show);
-  if (show) {
-    const tabsNav = root.querySelector('[data-role="main-tabs"]');
-    if (!tabsNav) return;
-    const current = tabsNav.querySelector('[data-tab].active') || tabsNav.querySelector('[data-tab]');
-    if (current) {
-      const tab = current.getAttribute('data-tab');
-      selectTab(tab);
-    }
-  }
-};
-
-const selectTab = (tab) => {
-  const root = document.querySelector('[data-role="tools-tabs-root"]');
-  if (!root) return;
-  root.querySelectorAll('[data-role="main-tabs"] [data-tab]').forEach(b => {
-    b.classList.toggle('active', b.getAttribute('data-tab') === tab);
-  });
-  root.querySelectorAll('[data-tab-panel]').forEach(p => {
-    p.classList.toggle('hidden', p.getAttribute('data-tab-panel') !== tab);
-  });
-};
-
-document.addEventListener('click', (e) => {
-  const btn = e.target.closest('[data-role="main-tabs"] [data-tab]');
-  if (btn) {
-    e.preventDefault();
-    selectTab(btn.getAttribute('data-tab'));
-  }
-});
-
 let contactsMounted = false;
 
 const ensureContactsMounted = async () => {
-  if (location.hash === '#/tools') return; // skip while on Tools
   if (contactsMounted) return;
   const host = document.querySelector('[data-view="contacts"]');
   if (!host || typeof mountContacts !== 'function') return;
@@ -94,15 +59,6 @@ const ensureContactsMounted = async () => {
 const onRouteChange = async () => {
   const route = getRoute();
   setActiveNav(route);
-
-  showToolsTabs?.(route === 'tools');
-
-  if (route === 'tools') {
-    // Show only Tools screen; do not fall through to Vendors/Contacts
-    showScreen?.('tools');
-    mountTools();
-    return; // prevent ensureContactsMounted / Vendors logic from running on Tools
-  }
 
   if (route === 'home' || route === '') {
     showScreen('home');   // show only Home
@@ -134,23 +90,28 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 });
 
-// Tools subnav toggle + neutralize bright active state
-(function initToolsSubnav() {
-  const toolsAnchor = document.querySelector('[data-role="nav-tools"] > a[data-link="tools"]');
-  const subnav = document.querySelector('[data-role="tools-subnav"]');
+// Tools drawer toggle + selection handling
+(function initToolsDrawer() {
+  const toolsToggle = document.querySelector('[data-action="toggle-tools"]');
+  const drawer = document.querySelector('[data-role="tools-subnav"]');
+  const inventoryLink = document.querySelector('[data-link="tools-inventory"]');
 
-  if (toolsAnchor && subnav) {
-    toolsAnchor.addEventListener('click', () => {
-      // Open the sub-menu when clicking Tools
-      subnav.classList.remove('hidden');
-    });
-
-    window.addEventListener('hashchange', () => {
-      const route = location.hash.replace('#/', '');
-      // Keep it open on Tools; collapse on others
-      if (route !== 'tools') subnav.classList.add('hidden');
+  if (toolsToggle && drawer) {
+    toolsToggle.addEventListener('click', (e) => {
+      e.preventDefault();
+      drawer.classList.toggle('hidden');
     });
   }
+
+  if (inventoryLink && drawer) {
+    inventoryLink.addEventListener('click', () => {
+      drawer.classList.add('hidden');
+    });
+  }
+
+  window.addEventListener('hashchange', () => {
+    if (drawer) drawer.classList.add('hidden');
+  });
 })();
 
 function initManufacturing() {

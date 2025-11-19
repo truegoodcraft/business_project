@@ -22,7 +22,7 @@ import { ensureToken, apiGet, apiJson, apiGetJson } from '../token.js';
 export function mountDev(container) {
   container.innerHTML = `
     <div class="card">
-      <h2>Dev Tools</h2>
+      <h2>Settings</h2>
       <button id="btn-ping" class="btn">Ping Plugin</button>
       <pre id="ping-res" class="log"></pre>
       <div style="margin-top:12px">
