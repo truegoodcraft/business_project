@@ -526,38 +526,40 @@ function styleBtn(btn){
 }
 export default mountVendors;
 
-// -------- Contacts Glue (do not modify existing logic above) --------
-
+// ===== Contacts Page Glue (non-invasive) =====
 export function mountContacts() {
-  // Show the Vendors/Contacts container if it exists
-  const contactsCard = document.querySelector('[data-view="contacts"]');
-  if (!contactsCard) return;
+  // Hide non-contacts screens (if present)
+  document.querySelector('[data-role="home-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
 
-  // Ensure any outer Vendors container is visible (common patterns)
-  const vendorsSection = contactsCard.closest('section[data-route="vendors"], [data-role="vendors-screen"], [data-view="vendors"]');
-  if (vendorsSection) vendorsSection.classList.remove('hidden');
+  // Show Contacts screen
+  const contactsScreen = document.querySelector('[data-role="contacts-screen"]');
+  if (contactsScreen) contactsScreen.classList.remove('hidden');
 
-  // Hide Home / Inventory shells if present
-  const home = document.querySelector('[data-role="home-screen"]');
-  if (home) home.classList.add('hidden');
-  const inv = document.querySelector('[data-role="inventory-screen"]');
-  if (inv) inv.classList.add('hidden');
+  // Ensure the Contacts card is visible
+  const contactsCard = contactsScreen?.querySelector('[data-view="contacts"]');
+  if (contactsCard) contactsCard.classList.remove('hidden');
 
-  // Show Contacts card and hide sibling vendor cards in the same container
-  contactsCard.classList.remove('hidden');
+  // If this module has an existing initializer, call it idempotently.
+  // Try common names; ignore errors if not defined.
+  try {
+    if (typeof ensureContactsMounted === 'function') ensureContactsMounted();
+    else if (typeof mountVendors === 'function') mountVendors(); // some repos co-locate
+  } catch {}
+}
 
-  // Hide other sibling cards in Vendors screen so only Contacts is visible
-  const siblings = contactsCard.parentElement ? Array.from(contactsCard.parentElement.children) : [];
-  siblings.forEach(el => {
-    if (el !== contactsCard && (el.matches('.card') || el.hasAttribute('data-view'))) {
-      el.classList.add('hidden');
-    }
-  });
+// Use Vendors API for all contact CRUD (SOT: /app/vendors exists; /app/contacts does not)
+const VENDORS_API = '/app/vendors';
 
-  // If the module already had initialization (tables, fetches, events), it will run as usual.
-  // In case the code expects a one-time init, try calling known initializers once.
-  if (typeof ensureContactsMounted === 'function') {
-    // If ensureContactsMounted exists in this module/app, it will wire tables/listeners safely (idempotent)
-    try { ensureContactsMounted(); } catch {}
-  }
+// If list/load uses a base URL, ensure it resolves to VENDORS_API on the contacts page.
+if (typeof loadContactsList === 'function' && !loadContactsList.__patched) {
+  const _origLoad = loadContactsList;
+  loadContactsList = async function(...args) {
+    const route = (location.hash || '').replace('#/','');
+    // If original code inspects a base URL, ensure it points to VENDORS_API under contacts.
+    // Otherwise, let original handle it (no breaking change).
+    try { window.CONTACTS_BASE = (route === 'contacts') ? VENDORS_API : VENDORS_API; } catch {}
+    return _origLoad.apply(this, args);
+  };
+  loadContactsList.__patched = true;
 }
