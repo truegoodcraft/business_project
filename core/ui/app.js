@@ -18,13 +18,10 @@
 
 import { ensureToken } from "./js/token.js";
 import { mountBackupExport } from "./js/cards/backup.js";
-import * as ContactsCard from "./js/cards/vendors.js";
+import mountVendors, { mountContacts as mountContactsGlue } from "./js/cards/vendors.js";
 import { mountHome } from "./js/cards/home.js";
 import "./js/cards/home_donuts.js";
 import { mountInventory, unmountInventory } from "./js/cards/inventory.js";
-
-const mountContacts =
-  ContactsCard.mountContacts || ContactsCard.mount || ContactsCard.default;
 
 const getRoute = () => {
   let route = location.hash.replace('#/', '');
@@ -53,8 +50,8 @@ let contactsMounted = false;
 const ensureContactsMounted = async () => {
   if (contactsMounted) return;
   const host = document.querySelector('[data-view="contacts"]');
-  if (!host || typeof mountContacts !== 'function') return;
-  await mountContacts(host);
+  if (!host || typeof mountVendors !== 'function') return;
+  await mountVendors(host);
   contactsMounted = true;
 };
 
@@ -65,6 +62,18 @@ const onRouteChange = async () => {
   if (route === 'inventory') {
     // Show Inventory only
     mountInventory();
+    return;
+  }
+
+  if (route === 'contacts') {
+    // Close the Tools drawer if it’s open
+    try {
+      const drawer = document.querySelector('[data-role="tools-subnav"]');
+      if (drawer) drawer.classList.add('hidden');
+    } catch {}
+
+    await ensureContactsMounted();
+    mountContactsGlue?.();
     return;
   }
 
@@ -105,6 +114,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const toolsToggle = document.querySelector('[data-action="toggle-tools"]');
   const drawer = document.querySelector('[data-role="tools-subnav"]');
   const inventoryLink = document.querySelector('[data-link="tools-inventory"]');
+  const contactsLink = document.querySelector('[data-link="tools-contacts"]');
 
   if (toolsToggle && drawer) {
     toolsToggle.addEventListener('click', (e) => {
@@ -117,6 +127,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     inventoryLink.addEventListener('click', () => {
       drawer.classList.add('hidden');
     });
+  }
+
+  if (contactsLink && drawer) {
+    contactsLink.addEventListener('click', () => drawer.classList.add('hidden'));
   }
 
   window.addEventListener('hashchange', () => {
