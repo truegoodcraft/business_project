@@ -20,6 +20,7 @@ import { ensureToken } from "./js/token.js";
 import { mountBackupExport } from "./js/cards/backup.js";
 import * as ContactsCard from "./js/cards/vendors.js";
 import { mountHome } from "./js/cards/home.js";
+import { mountTools } from "./js/cards/tools.js";
 import "./js/cards/home_donuts.js";
 
 const mountContacts =
@@ -37,6 +38,13 @@ const setActiveNav = (route) => {
     a.classList.toggle('active', !!is);
   });
 };
+
+function showScreen(name) {
+  const home = document.querySelector('[data-role="home-screen"]');
+  const tools = document.querySelector('[data-role="tools-screen"]');
+  if (home)  home.classList.toggle('hidden',  name !== 'home');
+  if (tools) tools.classList.toggle('hidden', name !== 'tools');
+}
 
 const showToolsTabs = (show) => {
   const root = document.querySelector('[data-role="tools-tabs-root"]');
@@ -87,15 +95,23 @@ const onRouteChange = async () => {
   setActiveNav(route);
 
   if (route === 'home' || route === '') {
-    mountHome();
+    showScreen('home');   // show only Home
+    mountHome();          // keep existing Home logic
+    return;
   }
 
   const isTools = (route === 'tools');
   showToolsTabs(isTools);
 
+  // For non-home, non-tools routes (e.g., writes/dev), hide both Home & Tools
   if (!isTools) {
+    showScreen(null);
     return;
   }
+
+  // Tools route: show only Tools and mount it
+  showScreen('tools');
+  mountTools();
 
   try {
     await ensureContactsMounted();
