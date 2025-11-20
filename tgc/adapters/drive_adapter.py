@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Helpers for listing Google Drive files via the REST API."""
 
 from __future__ import annotations

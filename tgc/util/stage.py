@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Utilities for timing labeled stages of execution."""
 import sys
 import time

@@ -1,95 +1,64 @@
-# Byte-compiled / optimized / DLL files
+# --- Python build / bytecode ---
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
-
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
+.buildozer/
 dist/
-downloads/
-eggs/
+build/
 .eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-pip-wheel-metadata/
-share/python-wheels/
 *.egg-info/
-.installed.cfg
 *.egg
-MANIFEST
+pip-wheel-metadata/
 
-# Virtual environments
-env/
+# --- Virtual environments ---
+.venv/
 venv/
 ENV/
-env.bak/
-venv.bak/
-.venv/
+env/
 
-# Logs
-logs/
-*.log
-local*.log
-npm-debug.log*
-lerna-debug.log*
-exports/
-imports/
-*.db
-
-# Testing artifacts
+# --- Test / coverage / tooling caches ---
 .pytest_cache/
-.coverage
-.coverage.*
+.coverage*
 htmlcov/
-.tox/
-.nox/
-.cache
-nosetests.xml
-coverage.xml
-*.cover
+.mypy_cache/
+.pyre/
+.cache/
+.ipynb_checkpoints/
 
-# Data & secrets
-data/
-session_token.txt
-*.env
-*.local.env
-.env
-.env.*
-.envrc
-*.secret
-secrets/
-
-# OS files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-Desktop.ini
-
-# IDE / Editor
+# --- Editors / IDEs ---
 .vscode/
 .idea/
-*.swp
-*.swo
-*~
+*.code-workspace
 
-# Project-specific ignores
-consents.json
-plugins/*-plugin/plugin.secrets.local.env
-plugins/**/plugin.secrets.local.env
-plugins_user/*
-!plugins_user/.gitkeep
-reports/
-!reports/branding/
-!reports/branding/**
-staging/
+# --- OS junk ---
+.DS_Store
+Thumbs.db
+
+# --- Environment / secrets ---
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.cer
+
+# --- Databases / local data ---
+*.db
+*.sqlite
+*.sqlite3
+data/*.db
+core/**/db.sqlite3
+
+# --- Node (if UI uses npm/yarn/pnpm) ---
+core/ui/node_modules/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- Uvicorn / watchfiles ---
+.watchfiles*
+
+# --- Snapshots / reports ---
+__snapshots__/
+*.pdf
+*.xlsx

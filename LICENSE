@@ -1,19 +1,3 @@
-TGC BUS Core (Business Utility System Core)
-Copyright (C) 2025 True Good Craft
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as
-published by the Free Software Foundation, either version 3 of the
-License, or (at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License
-along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
                     GNU AFFERO GENERAL PUBLIC LICENSE
                        Version 3, 19 November 2007
 
@@ -41,9 +25,9 @@ want it, that you can change the software or use pieces of it in new
 free programs, and that you know you can do these things.
 
   Developers that use our General Public Licenses protect your rights
-with two steps: (1) assert copyright on the software, and (2) offer
-you this License which gives you legal permission to copy, distribute
-and/or modify the software.
+with two steps: (1) assert copyright on the software, and (2) offer you
+this License which gives you legal permission to copy, distribute and
+modify the software.
 
   A secondary benefit of defending all users' freedom is that
 improvements made in alternate versions of the program, if they
@@ -76,8 +60,7 @@ modification follow.
 
   0. Definitions.
 
-  "This License" refers to version 3 of the GNU Affero General Public
-License.
+  "This License" refers to version 3 of the GNU Affero General Public License.
 
   "Copyright" also means copyright-like laws that apply to other kinds of
 works, such as semiconductor masks.
@@ -216,8 +199,8 @@ and you may offer support or warranty protection for a fee.
 produce it from the Program, in the form of source code under the
 terms of section 4, provided that you also meet all of these conditions:
 
-    a) The work must carry prominent notices stating that you modified it,
-    and giving a relevant date.
+    a) The work must carry prominent notices stating that you modified
+    it, and giving a relevant date.
 
     b) The work must carry prominent notices stating that it is
     released under this License and any conditions added under section
@@ -313,12 +296,12 @@ commercial, industrial or non-consumer uses, unless such uses represent
 the only significant mode of use of the product.
 
   "Installation Information" for a User Product means any methods,
-procedures, authorization keys, or other information required to
-install and execute modified versions of a covered work in that User
-Product from a modified version of its Corresponding Source.  The
-information must suffice to ensure that the continued functioning of
-the modified object code is in no case prevented or interfered with
-solely because modification has been made.
+procedures, authorization keys, or other information required to install
+and execute modified versions of a covered work in that User Product from
+a modified version of its Corresponding Source.  The information must
+suffice to ensure that the continued functioning of the modified object
+code is in no case prevented or interfered with solely because
+modification has been made.
 
   If you convey an object code work under this section in, or with, or
 specifically for use in, a User Product, and the conveying occurs as
@@ -371,15 +354,15 @@ that material) supplement the terms of this License with terms:
     terms of sections 15 and 16 of this License; or
 
     b) Requiring preservation of specified reasonable legal notices or
-    author attributions in that material or in the Appropriate Legal
-    Notices displayed by works containing it; or
+author attributions in that material or in the Appropriate Legal Notices
+displayed by works containing it; or
 
     c) Prohibiting misrepresentation of the origin of that material, or
     requiring that modified versions of such material be marked in
     reasonable ways as different from the original version; or
 
     d) Limiting the use for publicity purposes of names of licensors or
-    authors of the material; or
+authors of the material; or
 
     e) Declining to grant rights under trademark law for use of some
     trade names, trademarks, or service marks; or
@@ -406,8 +389,8 @@ additional terms that apply to those files, or a notice indicating
 where to find the applicable terms.
 
   Additional terms, permissive or non-permissive, may be stated in the
-form of a separately written license, or stated as exceptions;
-the above requirements apply either way.
+form of a separately written license, or stated as exceptions; the
+above requirements apply either way.
 
   8. Termination.
 
@@ -548,11 +531,12 @@ otherwise be available to you under applicable patent law.
 otherwise) that contradict the conditions of this License, they do not
 excuse you from the conditions of this License.  If you cannot convey a
 covered work so as to satisfy simultaneously your obligations under this
-License and any other pertinent obligations, then as a consequence you may
-not convey it at all.  For example, if you agree to terms that obligate you
-to collect a royalty for further conveying from those to whom you convey
-the Program, the only way you could satisfy both those terms and this
-License would be to refrain entirely from conveying the Program.
+License and any other pertinent obligations, then as a consequence you
+may not convey it at all.  For example, if you agree to terms that
+obligate you to collect a royalty for further conveying from those to
+whom you convey the Program, the only way you could satisfy both those
+terms and this License would be to refrain entirely from conveying the
+Program.
 
   13. Remote Network Interaction; Use with the GNU General Public License.
 
@@ -615,14 +599,14 @@ ALL NECESSARY SERVICING, REPAIR OR CORRECTION.
   16. Limitation of Liability.
 
   IN NO EVENT UNLESS REQUIRED BY APPLICABLE LAW OR AGREED TO IN WRITING
-WILL ANY COPYRIGHT HOLDER, OR ANY OTHER PARTY WHO MODIFIES AND/OR CONVEYS
-THE PROGRAM AS PERMITTED ABOVE, BE LIABLE TO YOU FOR DAMAGES, INCLUDING ANY
-GENERAL, SPECIAL, INCIDENTAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF THE
-USE OR INABILITY TO USE THE PROGRAM (INCLUDING BUT NOT LIMITED TO LOSS OF
-DATA OR DATA BEING RENDERED INACCURATE OR LOSSES SUSTAINED BY YOU OR THIRD
-PARTIES OR A FAILURE OF THE PROGRAM TO OPERATE WITH ANY OTHER PROGRAMS),
-EVEN IF SUCH HOLDER OR OTHER PARTY HAS BEEN ADVISED OF THE POSSIBILITY OF
-SUCH DAMAGES.
+WILL ANY COPYRIGHT HOLDER, OR ANY OTHER PARTY WHO MODIFIES AND/OR
+CONVEYS THE PROGRAM AS PERMITTED ABOVE, BE LIABLE TO YOU FOR DAMAGES,
+INCLUDING ANY GENERAL, SPECIAL, INCIDENTAL OR CONSEQUENTIAL DAMAGES
+ARISING OUT OF THE USE OR INABILITY TO USE THE PROGRAM (INCLUDING BUT
+NOT LIMITED TO LOSS OF DATA OR DATA BEING RENDERED INACCURATE OR LOSSES
+SUSTAINED BY YOU OR THIRD PARTIES OR A FAILURE OF THE PROGRAM TO OPERATE
+WITH ANY OTHER PROGRAMS), EVEN IF SUCH HOLDER OR OTHER PARTY HAS BEEN
+ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
 
   17. Interpretation of Sections 15 and 16.
 
@@ -650,8 +634,8 @@ the "copyright" line and a pointer to where the full notice is found.
     Copyright (C) <year>  <name of author>
 
     This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU Affero General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
+    it under the terms of the GNU Affero General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
 
     This program is distributed in the hope that it will be useful,

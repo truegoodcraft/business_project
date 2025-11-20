@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Link Drive PDFs to Notion."""
 
 from __future__ import annotations

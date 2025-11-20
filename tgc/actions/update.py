@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Auto-update action for pulling the latest repository changes."""
 
 from __future__ import annotations

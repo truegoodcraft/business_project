@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 // Tools screen mount: list-only, prevent legacy content from showing
 export function mountTools() {
   const toolsScreen = document.querySelector('[data-role="tools-screen"]');

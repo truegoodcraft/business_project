@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 // TGC BUS Core (Business Utility System Core)
 // Copyright (C) 2025 True Good Craft
 //

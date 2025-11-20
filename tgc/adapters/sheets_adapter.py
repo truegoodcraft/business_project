@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Thin Google Sheets REST client helpers used across the project."""
 
 from __future__ import annotations

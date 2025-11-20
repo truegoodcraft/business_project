@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Helpers for building a spreadsheet index sourced from Google Drive."""
 
 from __future__ import annotations

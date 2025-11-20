@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Organization profile utilities for the controller."""
 
 from __future__ import annotations

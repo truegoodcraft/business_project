@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Master Index controller for generating Notion and Drive indexes."""
 
 from __future__ import annotations

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Core controller for orchestrating workflow actions."""
 
 from __future__ import annotations

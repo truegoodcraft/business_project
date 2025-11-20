@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Sync basic metrics to Google Sheets."""
 
 from __future__ import annotations

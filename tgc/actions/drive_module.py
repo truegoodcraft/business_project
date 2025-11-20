@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Interactive setup for the Google Drive module."""
 
 from __future__ import annotations

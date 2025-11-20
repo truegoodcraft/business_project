@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Optional Wave accounting adapter placeholder."""
 
 from __future__ import annotations

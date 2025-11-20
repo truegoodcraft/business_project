@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Canonical SoT smoke harness — must pass 100% on every change
 # Last updated to SoT: 2025-11-18
 # buscore-smoke.ps1 — SoT-aligned smoke (PowerShell, assumes server is already running)

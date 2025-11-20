@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """
 Reader plugin: multi-source read-only catalog (Drive + Local MVP).
 Safe version that does NOT depend on broker.http_session to avoid AttributeError.

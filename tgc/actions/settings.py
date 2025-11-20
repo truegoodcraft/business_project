@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """View and edit controller settings."""
 
 from __future__ import annotations

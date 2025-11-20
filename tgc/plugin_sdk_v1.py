@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Plugin SDK version 1.0 exports."""
 
 from __future__ import annotations

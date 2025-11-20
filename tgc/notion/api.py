@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Minimal Notion API client used by the controller."""
 
 from __future__ import annotations

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Developer utility to sign plugin directories with Ed25519."""
 
 from __future__ import annotations

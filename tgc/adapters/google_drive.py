@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Google Drive adapter providing read/write helpers with dry-run safety."""
 
 from __future__ import annotations

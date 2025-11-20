@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Interactive Notion access module management."""
 
 from __future__ import annotations

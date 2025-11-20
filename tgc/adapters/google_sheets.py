@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Google Sheets adapter providing lightweight read access utilities."""
 
 from __future__ import annotations

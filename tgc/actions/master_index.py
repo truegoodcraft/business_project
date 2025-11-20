@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Action for building the Master Index reports."""
 
 from __future__ import annotations

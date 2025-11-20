@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Bootstrap helpers to build the controller and adapters."""
 
 from __future__ import annotations

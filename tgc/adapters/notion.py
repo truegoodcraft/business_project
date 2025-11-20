@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Notion adapter with read/write access to the inventory vault."""
 
 from __future__ import annotations

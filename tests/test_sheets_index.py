@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 import pytest
 
 from tgc.actions.sheets_index import build_sheets_index, write_sheets_index_markdown

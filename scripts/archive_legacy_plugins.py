@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Archive the legacy plugins/ directory into archive/plugins_legacy_YYYYMMDD."""
 
 from __future__ import annotations
