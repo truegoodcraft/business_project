@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>BUS Core</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/svg+xml" href="/ui/favicon.svg" />
+  <link rel="stylesheet" href="/ui/css/app.css">
+  <style>
+    :root { --bg:#1a1a1a; --fg:#eee; --accent:#0a84ff; --sidebar:#222; }
+    *{box-sizing:border-box}
+    body{margin:0;font:14px/1.5 system-ui,Segoe UI,Arial;background:var(--bg);color:var(--fg);display:flex;height:100vh}
+    #sidebar{width:200px;background:var(--sidebar);padding:16px 0;border-right:1px solid #333}
+    #sidebar h1{margin:0 0 16px 16px;font-size:14px;color:#aaa}
+    .tab{padding:10px 16px;cursor:pointer;border-left:4px solid transparent}
+    .tab.active{background:#333;border-left-color:var(--accent);font-weight:600}
+    .tab:hover:not(.active){background:#2a2a2a}
+    .nav-group{display:none;flex-direction:column;padding-left:16px;gap:4px;margin-top:4px}
+    .nav-group.open{display:flex}
+    .nav-group .nav-item{padding:8px 16px;border-left:4px solid transparent;color:inherit;text-decoration:none;display:block;border-radius:4px}
+    .nav-group .nav-item:hover{background:#2a2a2a}
+    .nav-group .nav-item.nav-subitem{font-size:13px;color:#ccc}
+    #main{flex:1;padding:20px;overflow:auto}
+    .card{background:#242424;padding:16px;border-radius:8px;margin-bottom:16px}
+    .card h2{margin:0 0 8px;color:var(--accent)}
+    button{background:var(--accent);color:#fff;border:none;padding:8px 12px;border-radius:6px;cursor:pointer}
+    button:hover{opacity:.9}
+    pre{background:#111;padding:12px;border-radius:6px;overflow:auto;font-size:12px}
+    .hidden{display:none!important}
+    .top-bar{display:flex;align-items:center;justify-content:flex-end;margin-bottom:16px;gap:12px}
+    .tabs{display:flex;gap:8px;margin-bottom:16px}
+    .tabs button{background:#2b2f36;color:#e6e6e6;border:1px solid #363b44;padding:8px 14px;border-radius:10px;cursor:pointer}
+    .tabs button.active{background:var(--accent);border-color:var(--accent);color:#fff}
+    .tab-panel{display:flex;flex-direction:column;gap:16px}
+    .modal.hidden{display:none}
+    .modal.open{display:flex}
+    .modal .modal-backdrop{position:absolute;inset:0;background:rgba(0,0,0,0.5)}
+    .modal .modal-dialog{position:relative;z-index:1}
+    .drawer{position:fixed;inset:0;display:flex;justify-content:flex-end;pointer-events:none;z-index:60;transition:visibility 0s linear .3s}
+    .drawer.hidden{visibility:hidden}
+    .drawer:not(.hidden){pointer-events:auto;visibility:visible;transition-delay:0s}
+    .drawer .drawer-backdrop{position:absolute;inset:0;background:rgba(0,0,0,0.6);opacity:1;transition:opacity .3s ease}
+    .drawer.hidden .drawer-backdrop{opacity:0}
+    .drawer-panel{position:relative;width:360px;max-width:90vw;background:#1f2126;color:#e6e6e6;box-shadow:-4px 0 16px rgba(0,0,0,0.4);transform:translateX(0);transition:transform .3s ease;display:flex;flex-direction:column}
+    .drawer.hidden .drawer-panel{transform:translateX(100%)}
+    .drawer-header{display:flex;align-items:center;justify-content:space-between;padding:16px;border-bottom:1px solid #2c2f36}
+    .drawer-body{padding:16px;overflow-y:auto;max-height:calc(100vh - 64px);display:flex;flex-direction:column;gap:12px}
+    .drawer-body .kv{display:flex;justify-content:space-between;gap:12px;font-size:13px;background:#23262b;padding:8px 12px;border-radius:8px}
+    .drawer-body .kv .k{color:#9ca3af;text-transform:uppercase;font-size:11px}
+    .drawer-body .kv .v{color:#e6e6e6;word-break:break-word}
+    .drawer-body .mt{margin:16px 0 4px;font-size:14px;color:#cbd5f5}
+    .drawer-body .list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+    .drawer-body .list li{background:#23262b;padding:8px 12px;border-radius:8px;font-size:13px}
+  </style>
+</head>
+<body>
+  <nav id="sidebar">
+    <div class="brand">
+      <a href="#/BUSCore" data-link="brand-home">BUS Core</a>
+    </div>
+    <ul class="nav">
+      <li data-role="nav-tools">
+        <a href="#" data-link="tools" data-action="toggle-tools">Tools</a>
+        <ul data-role="tools-subnav" class="hidden drawer">
+          <li><a href="#/inventory" data-link="tools-inventory">Inventory</a></li>
+          <li><a href="#/contacts" data-link="tools-contacts">Contacts</a></li>
+        </ul>
+      </li>
+      <li><a href="#/settings" data-role="nav-link" data-route="dev">Settings</a></li>
+    </ul>
+  </nav>
+  <main id="main">
+    <div id="app">
+      <header class="top-bar">
+        <span id="license-badge" data-role="license-badge">License: community</span>
+      </header>
+
+      <!-- Home screen container -->
+      <div data-role="home-screen" class="card">
+        <!-- 1) Primary actions -->
+        <div class="home-actions">
+          <button data-action="open-expense-modal" class="btn btn-red btn-large">Add Expense</button>
+          <button data-action="open-revenue-modal" class="btn btn-green btn-large">Add Revenue</button>
+        </div>
+
+        <!-- 2) Net 30 (bold, one line) + 3) In/Out (smaller) -->
+        <div class="snapshot">
+          <div data-role="net-30" class="net-line">Net (Last 30 Days): $0.00</div>
+          <div class="io-lines">
+            <div class="donuts">
+              <div data-role="donut-in"  class="donut donut-in"></div>
+              <div data-role="donut-out" class="donut donut-out"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4) Last transactions (10) -->
+        <div class="recent-table">
+          <h3 class="table-title">Last transactions (10)</h3>
+          <table data-role="recent-transactions">
+            <thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Notes</th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <!-- View All link intentionally removed until full table + donut shipped -->
+        </div>
+      </div>
+
+      <!-- Contacts screen (hidden by default) -->
+      <div data-role="contacts-screen" class="hidden">
+        <div class="card" data-view="contacts">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;">
+            <h2 style="margin:0;">Contacts</h2>
+            <button type="button" data-action="open-contacts-modal">Add Contact</button>
+          </div>
+          <table data-role="contacts-table" class="table" style="width:100%;border-collapse:separate;border-spacing:0;background:#111318;border-radius:10px;overflow:hidden">
+            <thead>
+              <tr>
+                <th style="text-align:left;padding:10px;background:#1a1f2b">Type</th>
+                <th style="text-align:left;padding:10px;background:#1a1f2b">Contact</th>
+                <th style="text-align:left;padding:10px;background:#1a1f2b">Actions</th>
+              </tr>
+            </thead>
+            <tbody><!-- rows rendered by vendors.js --></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div data-role="inventory-screen" class="hidden">
+        <div data-role="inventory-root" class="card"></div>
+      </div>
+
+<!-- Expense modal — locked MVP fields -->
+<div data-role="expense-modal" class="modal hidden" aria-hidden="true">
+  <div class="modal-backdrop" data-action="close-expense-modal"></div>
+  <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="expense-title">
+    <form data-role="expense-form">
+      <h2 id="expense-title">Add Expense</h2>
+      <div class="field">
+        <label>Amount <span class="required">*</span></label>
+        <input type="number" step="0.01" name="amount" required inputmode="decimal" placeholder="0.00">
+      </div>
+      <div class="field">
+        <label>Category</label>
+        <input type="text" name="category" placeholder="e.g. filament">
+      </div>
+      <div class="field">
+        <label>Date</label>
+        <input type="date" name="date">
+      </div>
+      <div class="field">
+        <label>Notes</label>
+        <textarea name="notes" rows="2" placeholder="(optional)"></textarea>
+      </div>
+      <div class="modal-footer">
+        <button type="button" data-action="close-expense-modal">Cancel</button>
+        <button type="submit">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Revenue modal placeholder (unchanged) -->
+<div data-role="revenue-modal" class="modal hidden">…</div>
+
+      <!-- Tools screen (hidden by default) -->
+      <div data-role="tools-screen" class="hidden">
+        <!-- Simple list-only view for Tools -->
+        <div data-role="tools-list">
+          <h2 class="text-xl">Tools</h2>
+          <ul>
+            <li><a href="#/inventory">Inventory</a></li>
+          </ul>
+        </div>
+
+        <!-- Keep legacy Tools section but force hidden so its tabs/Contacts never show -->
+        <section data-route="tools" class="hidden">
+          <!-- Tools page header tabs (scoped to Tools page only) -->
+          <div data-role="tools-tabs-root" class="hidden">
+            <!-- Tabs header -->
+            <div data-role="main-tabs" class="tabs">
+              <button type="button" data-tab="manufacturing">Manufacturing</button>
+              <button type="button" data-tab="tasks">Tasks</button>
+              <button type="button" data-tab="backup">Backup</button>
+            </div>
+
+            <!-- Tabs panels (kept empty here; JS shows/hides) -->
+            <section data-tab-panel="manufacturing" class="tab-panel hidden">
+              <!-- Manufacturing stub form lives in JS or existing markup -->
+            </section>
+            <section data-tab-panel="tasks" class="tab-panel hidden">
+              <!-- Local tasks table lives in JS or existing markup -->
+            </section>
+            <section data-tab-panel="backup" class="tab-panel hidden">
+              <!-- Backup export button already present elsewhere; JS will wire -->
+              <button data-action="export-backup" class="btn btn-primary btn-block">Export</button>
+              <p>Downloads current app.db (or fallback endpoint).</p>
+            </section>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <aside data-role="contacts-drawer" class="drawer hidden" aria-hidden="true" role="dialog" aria-labelledby="contact-drawer-title">
+    <div class="drawer-backdrop" data-action="close-contacts-drawer"></div>
+    <div class="drawer-panel">
+      <header class="drawer-header">
+        <h3 id="contact-drawer-title" style="margin:0;font-size:18px;color:#f8fafc">Contact</h3>
+        <button type="button" data-action="close-contacts-drawer" aria-label="Close" style="background:transparent;border:none;color:#9ca3af;font-size:24px;cursor:pointer;line-height:1">×</button>
+      </header>
+      <section class="drawer-body">
+        <div class="kv"><span class="k">Type</span><span class="v" data-field="type"></span></div>
+        <div class="kv"><span class="k">Name</span><span class="v" data-field="name"></span></div>
+        <div class="kv"><span class="k">Email</span><span class="v" data-field="email"></span></div>
+        <div class="kv vendor-only"><span class="k">Material</span><span class="v" data-field="material"></span></div>
+        <div class="kv"><span class="k">Lead time (days)</span><span class="v" data-field="lead_time_days"></span></div>
+        <div class="kv"><span class="k">Notes</span><span class="v" data-field="notes"></span></div>
+
+        <h4 class="mt">Linked items</h4>
+        <ul data-role="linked-items" class="list"><!-- populated by vendors.js --></ul>
+      </section>
+    </div>
+  </aside>
+
+  <div id="contacts-modal"
+       data-role="contacts-modal"
+       role="dialog"
+       aria-modal="true"
+       aria-labelledby="contacts-modal-title"
+       class="modal hidden">
+    <div class="modal-backdrop" aria-hidden="true"></div>
+    <div class="modal-dialog modal-content">
+      <header class="modal-header">
+        <h2 id="contacts-modal-title">Add Contact</h2>
+        <button type="button" data-action="close-contacts-modal" aria-label="Close">×</button>
+      </header>
+
+      <form data-role="contacts-form" class="modal-body">
+        <div class="field">
+          <label for="contact-name">Name</label>
+          <input id="contact-name" name="name" type="text" required />
+        </div>
+
+        <div class="field">
+          <label for="contact-type">Type</label>
+          <select id="contact-type" name="type" required>
+            <option value="">— Select —</option>
+            <option value="vendor">Vendor</option>
+            <option value="customer">Customer</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="contact-email">Email</label>
+          <input id="contact-email" name="email" type="email" />
+        </div>
+
+        <div class="field" data-visible-when="vendor">
+          <label for="contact-material">Material</label>
+          <input id="contact-material" name="material" type="text" />
+        </div>
+
+        <div class="field">
+          <label for="contact-leadtime">Lead time (days)</label>
+          <input id="contact-leadtime" name="lead_time_days" type="number" inputmode="numeric" />
+        </div>
+
+        <div class="field">
+          <label for="contact-notes">Notes</label>
+          <textarea id="contact-notes" name="notes"></textarea>
+        </div>
+
+        <footer class="modal-footer">
+          <button type="button" data-action="close-contacts-modal">Cancel</button>
+          <button type="submit" data-role="contacts-save">Save</button>
+        </footer>
+      </form>
+    </div>
+  </div>
+
+  <script type="module" src="/ui/app.js?v=pingfix2"></script>
+</body>
+</html>

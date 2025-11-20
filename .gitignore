@@ -1,0 +1,64 @@
+# --- Python build / bytecode ---
+__pycache__/
+*.py[cod]
+*$py.class
+.buildozer/
+dist/
+build/
+.eggs/
+*.egg-info/
+*.egg
+pip-wheel-metadata/
+
+# --- Virtual environments ---
+.venv/
+venv/
+ENV/
+env/
+
+# --- Test / coverage / tooling caches ---
+.pytest_cache/
+.coverage*
+htmlcov/
+.mypy_cache/
+.pyre/
+.cache/
+.ipynb_checkpoints/
+
+# --- Editors / IDEs ---
+.vscode/
+.idea/
+*.code-workspace
+
+# --- OS junk ---
+.DS_Store
+Thumbs.db
+
+# --- Environment / secrets ---
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.cer
+
+# --- Databases / local data ---
+*.db
+*.sqlite
+*.sqlite3
+data/*.db
+core/**/db.sqlite3
+
+# --- Node (if UI uses npm/yarn/pnpm) ---
+core/ui/node_modules/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- Uvicorn / watchfiles ---
+.watchfiles*
+
+# --- Snapshots / reports ---
+__snapshots__/
+*.pdf
+*.xlsx

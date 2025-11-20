@@ -1,0 +1,25 @@
+# External dependencies required for integrations and controllers.
+notion-client>=2.2.0
+google-api-python-client>=2.120.0
+google-auth>=2.30.0
+google-auth-oauthlib>=1.2.0
+requests>=2.32.0
+# Secret storage / encryption
+keyring>=24.3.1
+argon2-cffi>=23.1.0  # Argon2id key derivation for encrypted exports
+cryptography>=43.0.0  # AES-GCM + PBKDF2 fallback
+# Cryptography utilities for plugin signing.
+# Optional for plugin signature verification
+# pynacl>=1.5,<2
+# The Notion module otherwise relies on the Python standard library.
+fastapi
+uvicorn[standard]
+pydantic>=2
+python-multipart
+openpyxl>=3.1.0
+sqlalchemy
+Send2Trash==1.8.2
+pywin32>=306; platform_system == "Windows"
+
+jinja2>=3.1
+reportlab>=4.2.0  # optional; only needed for fmt="pdf"

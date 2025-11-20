@@ -1,0 +1,84 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// TGC BUS Core (Business Utility System Core)
+// Copyright (C) 2025 True Good Craft
+//
+// This file is part of TGC BUS Core.
+//
+// TGC BUS Core is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// TGC BUS Core is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with TGC BUS Core.  If not, see <https://www.gnu.org/licenses/>.
+
+import { request, ensureToken } from './token.js';
+
+export { ensureToken };
+
+async function parseBody(response) {
+  const text = await response.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
+function buildError(status, body, statusText) {
+  const message =
+    (body && typeof body === 'object' && (body.error || body.message)) ||
+    (typeof body === 'string' && body) ||
+    statusText ||
+    `Request failed with status ${status}`;
+  const error = new Error(message);
+  error.status = status;
+  if (body && typeof body === 'object') {
+    Object.assign(error, body);
+  } else if (typeof body === 'string') {
+    error.error = message;
+  }
+  return error;
+}
+
+async function handleResponse(response) {
+  const body = await parseBody(response);
+  if (response.ok) {
+    return body;
+  }
+  throw buildError(response.status, body, response.statusText);
+}
+
+export async function apiGet(url, init) {
+  const response = await request(url, { method: 'GET', ...(init || {}) });
+  return handleResponse(response);
+}
+
+function createJsonInit(method, data, init) {
+  const headers = new Headers(init?.headers || {});
+  headers.set('Content-Type', 'application/json');
+  const body = data === undefined ? undefined : JSON.stringify(data ?? {});
+  return { method, body, ...init, headers };
+}
+
+export async function apiPost(url, data, init) {
+  const response = await request(url, createJsonInit('POST', data, init));
+  return handleResponse(response);
+}
+
+export async function apiPut(url, data, init) {
+  const response = await request(url, createJsonInit('PUT', data, init));
+  return handleResponse(response);
+}
+
+export async function apiDelete(url, data, init) {
+  const jsonInit = data === undefined ? { method: 'DELETE', ...(init || {}) } : createJsonInit('DELETE', data, init);
+  const response = await request(url, jsonInit);
+  return handleResponse(response);
+}
