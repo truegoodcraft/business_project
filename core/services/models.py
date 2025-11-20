@@ -66,6 +66,10 @@ class Vendor(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, nullable=False)
     contact = Column(String, nullable=True)
+    role = Column(String, nullable=False, server_default="vendor")
+    kind = Column(String, nullable=False, server_default="org")
+    organization_id = Column(Integer, ForeignKey("vendors.id"), nullable=True)
+    meta = Column(Text, nullable=True)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
 
 
@@ -80,6 +84,7 @@ class Item(Base):
     unit = Column(String, nullable=True)
     price = Column(Float, nullable=True)
     notes = Column(Text, nullable=True)
+    item_type = Column(String, nullable=False, server_default="product")
     created_at = Column(DateTime, nullable=False, server_default=func.now())
 
 

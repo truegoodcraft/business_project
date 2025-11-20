@@ -32,7 +32,6 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import text
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .http import (
@@ -78,33 +77,6 @@ def _ensure_transactions_table(db: Session) -> None:
         )
     )
     db.execute(text("CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);"))
-
-
-# Unchanged contract for inventory dropdown: only vendors, shape [{id, name}]
-@router.get("/app/vendors")
-def get_vendors(
-    db: Session = Depends(get_db),
-    token: str = Depends(require_session),
-):
-    rows = db.query(Vendor).all()
-    return [{"id": r.id, "name": r.name} for r in rows]
-
-
-@router.post("/app/vendors")
-def create_app_vendor(
-    payload: VendorCreate,
-    db: Session = Depends(get_db),
-    token: str = Depends(require_session),
-):
-    vendor = Vendor(name=payload.name, contact=payload.contact)
-    db.add(vendor)
-    try:
-        db.commit()
-    except IntegrityError as exc:
-        db.rollback()
-        raise HTTPException(status_code=409, detail="vendor_name_conflict") from exc
-    db.refresh(vendor)
-    return {"id": vendor.id, "name": vendor.name}
 
 
 @router.post("/transactions")
@@ -549,6 +521,13 @@ class VendorOut(VendorBase):
         orm_mode = True
 
 
+class ContactOut(VendorOut):
+    role: str
+    kind: str
+    organization_id: Optional[int] = None
+    meta: Optional[Dict[str, Any]] = None
+
+
 class ItemBase(BaseModel):
     vendor_id: Optional[int] = None
     sku: Optional[str] = None
@@ -557,6 +536,7 @@ class ItemBase(BaseModel):
     unit: Optional[str] = None
     price: Optional[float] = None
     notes: Optional[str] = None
+    item_type: Optional[str] = None
 
 
 class ItemCreate(ItemBase):
@@ -571,6 +551,7 @@ class ItemUpdate(BaseModel):
     unit: Optional[str] = None
     price: Optional[float] = None
     notes: Optional[str] = None
+    item_type: Optional[str] = None
 
 
 class ItemOut(ItemBase):
@@ -652,56 +633,6 @@ def _require_entity(db: Session, entity_type: str, entity_id: int) -> None:
         raise HTTPException(status_code=400, detail="unsupported_entity_type")
     if db.get(model, entity_id) is None:
         raise HTTPException(status_code=404, detail="entity_not_found")
-
-
-# ---- Vendor endpoints ----------------------------------------------------
-
-
-@router.get("/vendors", response_model=List[VendorOut])
-def list_vendors(db: Session = Depends(get_db)) -> List[Vendor]:
-    return db.query(Vendor).order_by(Vendor.id.desc()).all()
-
-
-@router.post("/vendors", response_model=VendorOut)
-def create_vendor(payload: VendorCreate, db: Session = Depends(get_db)) -> Vendor:
-    vendor = Vendor(**payload.dict())
-    db.add(vendor)
-    try:
-        db.commit()
-    except IntegrityError as exc:
-        db.rollback()
-        raise HTTPException(status_code=409, detail="vendor_name_conflict") from exc
-    db.refresh(vendor)
-    return vendor
-
-
-@router.put("/vendors/{vendor_id}", response_model=VendorOut)
-def update_vendor(
-    vendor_id: int, payload: VendorUpdate, db: Session = Depends(get_db)
-) -> Vendor:
-    vendor = db.get(Vendor, vendor_id)
-    if vendor is None:
-        raise HTTPException(status_code=404, detail="vendor_not_found")
-    updates = payload.dict(exclude_unset=True)
-    for field, value in updates.items():
-        setattr(vendor, field, value)
-    try:
-        db.commit()
-    except IntegrityError as exc:
-        db.rollback()
-        raise HTTPException(status_code=409, detail="vendor_name_conflict") from exc
-    db.refresh(vendor)
-    return vendor
-
-
-@router.delete("/vendors/{vendor_id}")
-def delete_vendor(vendor_id: int, db: Session = Depends(get_db)) -> dict:
-    vendor = db.get(Vendor, vendor_id)
-    if vendor is None:
-        raise HTTPException(status_code=404, detail="vendor_not_found")
-    db.delete(vendor)
-    db.commit()
-    return {"ok": True}
 
 
 # ---- Item endpoints ------------------------------------------------------
@@ -866,64 +797,6 @@ async def items_bulk_commit(
     )
 
     return summary
-
-
-@router.get("/items", response_model=List[ItemOut])
-def list_items(
-    vendor_id: Optional[int] = Query(default=None),
-    db: Session = Depends(get_db),
-) -> List[Item]:
-    query = db.query(Item)
-    if vendor_id is not None:
-        query = query.filter(Item.vendor_id == vendor_id)
-    return query.order_by(Item.id.desc()).all()
-
-
-@router.post("/items", response_model=ItemOut)
-def create_item(payload: ItemCreate, db: Session = Depends(get_db)) -> Item:
-    _require_vendor(db, payload.vendor_id)
-    item = Item(
-        vendor_id=payload.vendor_id,
-        sku=payload.sku,
-        name=payload.name,
-        qty=payload.qty if payload.qty is not None else 0,
-        unit=payload.unit,
-        price=payload.price,
-        notes=payload.notes,
-    )
-    db.add(item)
-    db.commit()
-    db.refresh(item)
-    return item
-
-
-@router.put("/items/{item_id}", response_model=ItemOut)
-def update_item(
-    item_id: int, payload: ItemUpdate, db: Session = Depends(get_db)
-) -> Item:
-    item = db.get(Item, item_id)
-    if item is None:
-        raise HTTPException(status_code=404, detail="item_not_found")
-    updates = payload.dict(exclude_unset=True)
-    if "vendor_id" in updates:
-        _require_vendor(db, updates.get("vendor_id"))
-    for field, value in updates.items():
-        if field == "qty" and value is None:
-            continue
-        setattr(item, field, value)
-    db.commit()
-    db.refresh(item)
-    return item
-
-
-@router.delete("/items/{item_id}")
-def delete_item(item_id: int, db: Session = Depends(get_db)) -> dict:
-    item = db.get(Item, item_id)
-    if item is None:
-        raise HTTPException(status_code=404, detail="item_not_found")
-    db.delete(item)
-    db.commit()
-    return {"ok": True}
 
 
 # ---- Task endpoints ------------------------------------------------------
