@@ -203,49 +203,52 @@ EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
 UI_STATIC_DIR = UI_DIR
 
 
-def _ensure_schema_upgrades(db: Session):
-    """
-    Idempotent SQLite migrations:
-    - Add missing columns (vendors: role, kind, organization_id, meta; items: item_type)
-    - Backfill existing rows for non-null defaults
-    - Create indexes if missing
-    Safe to call on every startup or first DB touch.
-    """
-
-    def has_column(table: str, col: str) -> bool:
+def _ensure_schema_upgrades(db: Session) -> None:
+    def _col_exists(table: str, col: str) -> bool:
         rows = db.execute(text(f"PRAGMA table_info('{table}')")).fetchall()
-        return any(r[1] == col for r in rows)
+        return any(r[1] == col for r in rows)  # r[1] = column name
 
-    if not has_column("vendors", "role"):
+    # vendors: additive columns
+    if not _col_exists("vendors", "role"):
         db.execute(text("ALTER TABLE vendors ADD COLUMN role TEXT DEFAULT 'vendor'"))
-    if not has_column("vendors", "kind"):
+    if not _col_exists("vendors", "kind"):
         db.execute(text("ALTER TABLE vendors ADD COLUMN kind TEXT DEFAULT 'org'"))
-    if not has_column("vendors", "organization_id"):
+    if not _col_exists("vendors", "organization_id"):
         db.execute(text("ALTER TABLE vendors ADD COLUMN organization_id INTEGER"))
-    if not has_column("vendors", "meta"):
+    if not _col_exists("vendors", "meta"):
         db.execute(text("ALTER TABLE vendors ADD COLUMN meta TEXT"))
 
-    if not has_column("items", "item_type"):
+    # items: additive column
+    if not _col_exists("items", "item_type"):
         db.execute(text("ALTER TABLE items ADD COLUMN item_type TEXT DEFAULT 'product'"))
 
+    # Backfill (idempotent)
     db.execute(text("UPDATE vendors SET role='vendor' WHERE role IS NULL"))
     db.execute(text("UPDATE vendors SET kind='org' WHERE kind IS NULL"))
-    db.execute(text("UPDATE items SET item_type='product' WHERE item_type IS NULL"))
+    db.execute(text("UPDATE vendors SET meta='{}' WHERE meta IS NULL OR trim(meta)=''"))
+    db.execute(text("UPDATE items SET item_type='product' WHERE item_type IS NULL OR trim(item_type)=''"))
 
-    db.execute(text("CREATE INDEX IF NOT EXISTS idx_vendors_role ON vendors(role)"))
-    db.execute(text("CREATE INDEX IF NOT EXISTS idx_vendors_kind ON vendors(kind)"))
-    db.execute(text("CREATE INDEX IF NOT EXISTS idx_vendors_org_id ON vendors(organization_id)"))
-    db.execute(text("CREATE INDEX IF NOT EXISTS idx_items_item_type ON items(item_type)"))
+    # Helpful indexes (idempotent)
+    db.execute(text("CREATE INDEX IF NOT EXISTS vendors_role_idx ON vendors(role)"))
+    db.execute(text("CREATE INDEX IF NOT EXISTS vendors_kind_idx ON vendors(kind)"))
+    db.execute(text("CREATE INDEX IF NOT EXISTS vendors_org_idx  ON vendors(organization_id)"))
+    db.execute(text("CREATE INDEX IF NOT EXISTS items_item_type_idx ON items(item_type)"))
 
     db.commit()
+
+
+@app.on_event("startup")
+def startup_migrations():
+    db = SessionLocal()
+    try:
+        _ensure_schema_upgrades(db)
+    finally:
+        db.close()
 
 
 def get_db() -> Generator[Session, None, None]:
     db = SessionLocal()
     try:
-        if not getattr(app.state, "_schema_upgraded", False):
-            _ensure_schema_upgrades(db)
-            app.state._schema_upgraded = True
         yield db
     finally:
         db.close()
@@ -608,7 +611,6 @@ protected.include_router(reader_local_router)
 protected.include_router(organizer_router)
 
 from . import app_router  # noqa: F401
-from core.api.routes.items import router as items_router
 from core.api.routes.vendors import router as vendors_router
 
 oauth = APIRouter()
@@ -1943,18 +1945,6 @@ def open_local(payload: Dict[str, Any]) -> Dict[str, Any]:
     return {"ok": True}
 
 
-app.include_router(
-    vendors_router,
-    prefix="/app",
-    dependencies=[Depends(require_token_ctx)],
-)
-app.include_router(
-    items_router,
-    prefix="/app",
-    dependencies=[Depends(require_token_ctx)],
-)
-
-
 @protected.post("/server/restart", response_model=None)
 def server_restart() -> Dict[str, Any]:
     """Exit the running process so it can be restarted manually."""
@@ -1971,7 +1961,14 @@ def server_restart() -> Dict[str, Any]:
 app.include_router(oauth)
 app.include_router(protected)
 
-APP = app
+def create_app():
+    if not getattr(app.state, "_domain_routes_registered", False):
+        app.include_router(vendors_router, prefix="/app")
+        app.state._domain_routes_registered = True
+    return app
+
+
+APP = create_app()
 
 
 def build_app():
@@ -1991,12 +1988,6 @@ def build_app():
     print(banner)
     log(banner)
     return app, SESSION_TOKEN
-
-
-def create_app():
-    return app
-
-
 
 
 __all__ = [
