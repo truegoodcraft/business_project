@@ -50,7 +50,7 @@ Run two PowerShell windows exactly as shown.
 
 ```powershell
 # 1) Go to the project folder
-cd "D:\Vault Overhaul\TGC-BUS-Core-main"
+cd "C:\path\to\TGC-BUS-Core"
 
 # 2) Install deps (uses your global Python)
 python -m pip install -r requirements.txt
@@ -76,7 +76,7 @@ python -m uvicorn core.api.http:create_app --host 127.0.0.1 --port 8765 --reload
 
 ```powershell
 # 1) Go to the project folder
-cd "D:\Vault Overhaul\TGC-BUS-Core-main"
+cd "C:\path\to\TGC-BUS-Core"
 
 # 2) Wait for the server to be up
 $u = 'http://127.0.0.1:8765/session/token'
