@@ -328,7 +328,7 @@ These are **process guardrails** to keep the UI from drifting. Any UI PR must fo
 **Window A — Server**
 
 ```powershell
-cd "D:\Vault Overhaul\TGC-BUS-Core-main"
+cd "C:\path\to\TGC-BUS-Core"
 python -m pip install -r requirements.txt
 $env:PYTHONPATH = (Get-Location).Path
 # Ensure a default license for dev if missing
