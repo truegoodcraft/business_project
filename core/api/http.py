@@ -59,6 +59,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.cors import CORSMiddleware
 from starlette.status import HTTP_401_UNAUTHORIZED
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from core.services.capabilities import registry
@@ -100,7 +101,7 @@ from core.config.paths import (
     DB_PATH,
     DB_URL,
 )
-from core.services.models import get_session
+from core.services.models import SessionLocal, get_session
 
 if os.name == "nt":  # pragma: no cover - windows specific
     from core.broker.pipes import NamedPipeServer
@@ -202,8 +203,52 @@ EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
 UI_STATIC_DIR = UI_DIR
 
 
+def _ensure_schema_upgrades(db: Session):
+    """
+    Idempotent SQLite migrations:
+    - Add missing columns (vendors: role, kind, organization_id, meta; items: item_type)
+    - Backfill existing rows for non-null defaults
+    - Create indexes if missing
+    Safe to call on every startup or first DB touch.
+    """
+
+    def has_column(table: str, col: str) -> bool:
+        rows = db.execute(text(f"PRAGMA table_info('{table}')")).fetchall()
+        return any(r[1] == col for r in rows)
+
+    if not has_column("vendors", "role"):
+        db.execute(text("ALTER TABLE vendors ADD COLUMN role TEXT DEFAULT 'vendor'"))
+    if not has_column("vendors", "kind"):
+        db.execute(text("ALTER TABLE vendors ADD COLUMN kind TEXT DEFAULT 'org'"))
+    if not has_column("vendors", "organization_id"):
+        db.execute(text("ALTER TABLE vendors ADD COLUMN organization_id INTEGER"))
+    if not has_column("vendors", "meta"):
+        db.execute(text("ALTER TABLE vendors ADD COLUMN meta TEXT"))
+
+    if not has_column("items", "item_type"):
+        db.execute(text("ALTER TABLE items ADD COLUMN item_type TEXT DEFAULT 'product'"))
+
+    db.execute(text("UPDATE vendors SET role='vendor' WHERE role IS NULL"))
+    db.execute(text("UPDATE vendors SET kind='org' WHERE kind IS NULL"))
+    db.execute(text("UPDATE items SET item_type='product' WHERE item_type IS NULL"))
+
+    db.execute(text("CREATE INDEX IF NOT EXISTS idx_vendors_role ON vendors(role)"))
+    db.execute(text("CREATE INDEX IF NOT EXISTS idx_vendors_kind ON vendors(kind)"))
+    db.execute(text("CREATE INDEX IF NOT EXISTS idx_vendors_org_id ON vendors(organization_id)"))
+    db.execute(text("CREATE INDEX IF NOT EXISTS idx_items_item_type ON items(item_type)"))
+
+    db.commit()
+
+
 def get_db() -> Generator[Session, None, None]:
-    yield from get_session()
+    db = SessionLocal()
+    try:
+        if not getattr(app.state, "_schema_upgraded", False):
+            _ensure_schema_upgrades(db)
+            app.state._schema_upgraded = True
+        yield db
+    finally:
+        db.close()
 
 
 async def _nocache_ui(request: Request, call_next):
@@ -563,6 +608,8 @@ protected.include_router(reader_local_router)
 protected.include_router(organizer_router)
 
 from . import app_router  # noqa: F401
+from core.api.routes.items import router as items_router
+from core.api.routes.vendors import router as vendors_router
 
 oauth = APIRouter()
 
@@ -1894,6 +1941,18 @@ def open_local(payload: Dict[str, Any]) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail="open_failed") from exc
 
     return {"ok": True}
+
+
+app.include_router(
+    vendors_router,
+    prefix="/app",
+    dependencies=[Depends(require_token_ctx)],
+)
+app.include_router(
+    items_router,
+    prefix="/app",
+    dependencies=[Depends(require_token_ctx)],
+)
 
 
 @protected.post("/server/restart", response_model=None)
