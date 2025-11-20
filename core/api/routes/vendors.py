@@ -144,26 +144,97 @@ class ContactUpdate(VendorUpdate):
 
 
 @router.post("/contacts", response_model=ContactOut)
-def create_contact(payload: ContactCreate, db: Session = Depends(get_db)) -> Vendor:
-    role = payload.role or "contact"
-    kind = payload.kind or "person"
-    if role not in ALLOWED_ROLES:
-        raise HTTPException(status_code=400, detail="invalid_role")
-    if kind not in ALLOWED_KINDS:
-        raise HTTPException(status_code=400, detail="invalid_kind")
-    contact = Vendor(
-        name=payload.name,
-        contact=payload.contact,
-        role=role,
-        kind=kind,
-        organization_id=payload.organization_id,
-        meta=_coerce_meta(payload.meta),
+def create_contact(contact_in: ContactCreate, db: Session = Depends(get_db)):
+    # Coerce defaults if omitted/missing
+    desired_role = getattr(contact_in, "role", None) or "contact"
+    desired_kind = getattr(contact_in, "kind", None) or "person"
+
+    # Normalize meta inbound -> TEXT (JSON-encoded)
+    inbound_meta = getattr(contact_in, "meta", None)
+    if isinstance(inbound_meta, dict):
+        meta_text = json.dumps(inbound_meta)
+    elif isinstance(inbound_meta, str):
+        try:
+            # accept JSON string; if not JSON, store as wrapper
+            json.loads(inbound_meta)
+            meta_text = inbound_meta
+        except Exception:
+            meta_text = json.dumps({"_raw": inbound_meta})
+    else:
+        meta_text = None
+
+    v = Vendor(
+        name=contact_in.name,
+        contact=getattr(contact_in, "contact", None),
+        role=desired_role,
+        kind=desired_kind,
+        organization_id=getattr(contact_in, "organization_id", None),
+        meta=meta_text,
     )
-    db.add(contact)
-    db.commit()
-    db.refresh(contact)
-    contact.meta = _parse_meta(contact.meta)
-    return contact
+
+    db.add(v)
+    try:
+        db.commit()
+        db.refresh(v)
+        row = v
+    except IntegrityError:
+        # UNIQUE(vendors.name) collision -> merge/upgrade existing row
+        db.rollback()
+        existing = db.query(Vendor).filter(Vendor.name == contact_in.name).first()
+        if not existing:
+            # Not a name-collision; bubble up
+            raise
+
+        # Upgrade role if needed
+        current_role = existing.role or "vendor"
+        if {current_role, desired_role} == {"vendor", "contact"}:
+            existing.role = "both"
+
+        # Only override kind if client explicitly sent it
+        if getattr(contact_in, "kind", None):
+            existing.kind = desired_kind
+
+        # Merge meta (incoming wins)
+        if inbound_meta is not None:
+            try:
+                existing_meta_obj = json.loads(existing.meta) if existing.meta else {}
+                if not isinstance(existing_meta_obj, dict):
+                    existing_meta_obj = {}
+            except Exception:
+                existing_meta_obj = {}
+
+            if isinstance(inbound_meta, str):
+                try:
+                    inbound_meta_obj = json.loads(inbound_meta) if inbound_meta else {}
+                except Exception:
+                    inbound_meta_obj = {"_raw": inbound_meta}
+            else:
+                inbound_meta_obj = inbound_meta or {}
+
+            existing_meta_obj.update(inbound_meta_obj)
+            existing.meta = json.dumps(existing_meta_obj)
+
+        db.add(existing)
+        db.commit()
+        db.refresh(existing)
+        row = existing
+
+    # Prepare response as a plain dict (UI expects dict here, not strict Pydantic)
+    try:
+        meta_obj = json.loads(row.meta) if row.meta else None
+    except Exception:
+        meta_obj = {"_raw": row.meta} if row.meta else None
+
+    return {
+        "id": row.id,
+        "name": row.name,
+        "contact": getattr(row, "contact", None),
+        "role": row.role,
+        "kind": row.kind,
+        "organization_id": row.organization_id,
+        "meta": meta_obj,
+        "created_at": row.created_at.isoformat() if getattr(row, "created_at", None) else None,
+    }
 
 
 @router.put("/contacts/{contact_id}", response_model=ContactOut)
