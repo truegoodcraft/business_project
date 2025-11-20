@@ -234,6 +234,27 @@ def _ensure_schema_upgrades(db: Session) -> None:
     db.execute(text("CREATE INDEX IF NOT EXISTS vendors_org_idx  ON vendors(organization_id)"))
     db.execute(text("CREATE INDEX IF NOT EXISTS items_item_type_idx ON items(item_type)"))
 
+    # ---- ensure vendors.name is NOT unique (unified Vendors/Contacts table) ----
+    # Drop any unique index on vendors(name), then create a non-unique index.
+    try:
+        idx_list = db.execute(text("PRAGMA index_list('vendors')")).fetchall()
+        for row in idx_list:
+            # PRAGMA index_list columns: seq, name, unique, origin, partial
+            idx_name = row[1]
+            is_unique = bool(row[2])
+            if not is_unique:
+                continue
+            cols = db.execute(text(f"PRAGMA index_info('{idx_name}')")).fetchall()
+            col_names = [c[2] for c in cols]  # seqno, cid, name
+            if len(col_names) == 1 and col_names[0] == "name":
+                db.execute(text(f'DROP INDEX IF EXISTS "{idx_name}"'))
+        # Ensure a non-unique index exists for performance
+        db.execute(text("CREATE INDEX IF NOT EXISTS ix_vendors_name ON vendors(name)"))
+    except Exception:
+        # As a fallback, try the common SQLAlchemy-generated name directly
+        db.execute(text("DROP INDEX IF EXISTS ix_vendors_name"))
+        db.execute(text("CREATE INDEX IF NOT EXISTS ix_vendors_name ON vendors(name)"))
+
     db.commit()
 
 
