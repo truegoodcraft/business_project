@@ -1,278 +1,226 @@
-from __future__ import annotations
-
+from typing import Any, Dict, Generator, List, Optional
 import json
-from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.exc import IntegrityError
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from core.api.http import get_db
-from core.api.http import require_session_token as require_session
-from core.api.app_router import ContactOut, VendorCreate, VendorOut, VendorUpdate
-from core.services.models import Vendor
+from core.policy.guard import require_owner_commit
+from core.services.models import SessionLocal, Vendor
 
-router = APIRouter()
+router = APIRouter(tags=["vendors"])
 
-
-@router.get("/vendors", response_model=List[VendorOut])
-def list_vendors(db: Session = Depends(get_db)) -> List[Vendor]:
-    return db.query(Vendor).order_by(Vendor.id.desc()).all()
-
-
-@router.post("/vendors", response_model=VendorOut)
-def create_vendor(payload: VendorCreate, db: Session = Depends(get_db)) -> Vendor:
-    vendor = Vendor(**payload.dict())
-    db.add(vendor)
+# Local DB dependency (no circular import)
+def get_db() -> Generator[Session, None, None]:
+    db = SessionLocal()
     try:
-        db.commit()
-    except IntegrityError as exc:
-        db.rollback()
-        raise HTTPException(status_code=409, detail="vendor_name_conflict") from exc
-    db.refresh(vendor)
-    return vendor
+        yield db
+    finally:
+        db.close()
+
+# Runtime token check (defers import to avoid circular refs at import time)
+def _require_token_runtime(req: Request):
+    from core.api.http import require_token  # runtime import
+    return require_token(req)
 
 
-@router.put("/vendors/{vendor_id}", response_model=VendorOut)
+def writes_enabled():
+    from core.api.http import require_writes  # runtime import
+    return require_writes()
+
+# ---------------------------
+# EXISTING /app/vendors CRUD
+# ---------------------------
+
+@router.get("/vendors")
+def list_vendors(req: Request, db: Session = Depends(get_db)) -> List[Dict[str, Any]]:
+    _require_token_runtime(req)
+    rows = db.query(Vendor).all()
+    return [{"id": v.id, "name": v.name, "contact": getattr(v, "contact", None)} for v in rows]
+
+
+@router.get("/vendors/list")
+def list_vendors_compat(req: Request, db: Session = Depends(get_db)) -> List[Dict[str, Any]]:
+    return list_vendors(req, db)
+
+
+@router.post("/vendors")
+def create_vendor(req: Request, payload: Dict[str, Any], db: Session = Depends(get_db)) -> Dict[str, Any]:
+    _require_token_runtime(req)
+    require_owner_commit()
+
+    v = Vendor(name=payload["name"], contact=payload.get("contact"))
+    db.add(v)
+    db.commit()
+    db.refresh(v)
+    return {"id": v.id, "name": v.name, "contact": getattr(v, "contact", None)}
+
+
+@router.put("/vendors/{vendor_id}")
 def update_vendor(
-    vendor_id: int, payload: VendorUpdate, db: Session = Depends(get_db)
-) -> Vendor:
-    vendor = db.get(Vendor, vendor_id)
-    if vendor is None:
+    req: Request, vendor_id: int, payload: Dict[str, Any], db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    _require_token_runtime(req)
+    require_owner_commit()
+
+    vendor = db.query(Vendor).get(vendor_id)
+    if not vendor:
         raise HTTPException(status_code=404, detail="vendor_not_found")
-    updates = payload.dict(exclude_unset=True)
-    for field, value in updates.items():
-        setattr(vendor, field, value)
-    try:
-        db.commit()
-    except IntegrityError as exc:
-        db.rollback()
-        raise HTTPException(status_code=409, detail="vendor_name_conflict") from exc
+
+    if "name" in payload:
+        vendor.name = payload["name"]
+    if "contact" in payload:
+        vendor.contact = payload["contact"]
+
+    db.commit()
     db.refresh(vendor)
-    return vendor
+    return {"id": vendor.id, "name": vendor.name, "contact": getattr(vendor, "contact", None)}
 
 
 @router.delete("/vendors/{vendor_id}")
-def delete_vendor(vendor_id: int, db: Session = Depends(get_db)) -> dict:
-    vendor = db.get(Vendor, vendor_id)
-    if vendor is None:
+def delete_vendor(req: Request, vendor_id: int, db: Session = Depends(get_db)) -> Dict[str, Any]:
+    _require_token_runtime(req)
+    require_owner_commit()
+
+    vendor = db.query(Vendor).get(vendor_id)
+    if not vendor:
         raise HTTPException(status_code=404, detail="vendor_not_found")
     db.delete(vendor)
     db.commit()
     return {"ok": True}
 
 
-@router.get("/app/vendors")
-def get_vendors(
+# ---------------------------
+# NEW /app/contacts CRUD (same vendors table)
+# ---------------------------
+
+@router.get("/contacts")
+def list_contacts(db: Session = Depends(get_db)) -> List[Dict[str, Any]]:
+    rows = db.query(Vendor).all()  # default: return everything; UI can filter client-side
+    out: List[Dict[str, Any]] = []
+    for v in rows:
+        meta: Dict[str, Any] = {}
+        if getattr(v, "meta", None):
+            try:
+                meta = json.loads(v.meta) if isinstance(v.meta, str) else (v.meta or {})
+            except Exception:
+                meta = {}
+        out.append({
+            "id": v.id,
+            "name": v.name,
+            "role": getattr(v, "role", None),
+            "kind": getattr(v, "kind", None),
+            "organization_id": getattr(v, "organization_id", None),
+            "meta": meta,
+            "created_at": v.created_at,
+        })
+    return out
+
+
+@router.post("/contacts")
+def create_contact(
+    req: Request,
+    payload: Dict[str, Any],
     db: Session = Depends(get_db),
-    token: str = Depends(require_session),
-):
-    rows = db.query(Vendor).all()
-    return [{"id": r.id, "name": r.name} for r in rows]
+    _w: None = Depends(writes_enabled),
+) -> Dict[str, Any]:
+    _require_token_runtime(req)
 
-
-@router.post("/app/vendors")
-def create_app_vendor(
-    payload: VendorCreate,
-    db: Session = Depends(get_db),
-    token: str = Depends(require_session),
-):
-    vendor = Vendor(name=payload.name, contact=payload.contact)
-    db.add(vendor)
-    try:
-        db.commit()
-    except IntegrityError as exc:
-        db.rollback()
-        raise HTTPException(status_code=409, detail="vendor_name_conflict") from exc
-    db.refresh(vendor)
-    return {"id": vendor.id, "name": vendor.name}
-
-
-ALLOWED_ROLES = {"vendor", "contact", "both"}
-ALLOWED_KINDS = {"org", "person"}
-
-
-def _coerce_meta(meta: Optional[Any]) -> Optional[str]:
-    if meta is None:
-        return None
-    if isinstance(meta, dict):
-        return json.dumps(meta)
-    if isinstance(meta, str):
-        return meta
-    return json.dumps(meta)
-
-
-def _parse_meta(meta: Optional[str]) -> Optional[Dict[str, Any]]:
-    if meta is None or meta == "":
-        return None
-    try:
-        return json.loads(meta)
-    except (TypeError, ValueError):
-        return None
-
-
-@router.get("/contacts", response_model=List[ContactOut])
-def list_contacts(db: Session = Depends(get_db)) -> List[Vendor]:
-    rows = db.query(Vendor).order_by(Vendor.id.desc()).all()
-    for row in rows:
-        row.meta = _parse_meta(row.meta) if hasattr(row, "meta") else None
-    return rows
-
-
-@router.get("/contacts/{contact_id}", response_model=ContactOut)
-def get_contact(contact_id: int, db: Session = Depends(get_db)) -> Vendor:
-    contact = db.get(Vendor, contact_id)
-    if contact is None:
-        raise HTTPException(status_code=404, detail="contact_not_found")
-    if hasattr(contact, "meta"):
-        contact.meta = _parse_meta(contact.meta)
-    return contact
-
-
-class ContactCreate(VendorCreate):
-    role: Optional[str] = None
-    kind: Optional[str] = None
-    organization_id: Optional[int] = None
-    meta: Optional[Any] = None
-
-
-class ContactUpdate(VendorUpdate):
-    role: Optional[str] = None
-    kind: Optional[str] = None
-    organization_id: Optional[int] = None
-    meta: Optional[Any] = None
-
-
-@router.post("/contacts", response_model=ContactOut)
-def create_contact(contact_in: ContactCreate, db: Session = Depends(get_db)):
-    # Coerce defaults if omitted/missing
-    desired_role = getattr(contact_in, "role", None) or "contact"
-    desired_kind = getattr(contact_in, "kind", None) or "person"
-
-    # Normalize meta inbound -> TEXT (JSON-encoded)
-    inbound_meta = getattr(contact_in, "meta", None)
-    if isinstance(inbound_meta, dict):
-        meta_text = json.dumps(inbound_meta)
-    elif isinstance(inbound_meta, str):
-        try:
-            # accept JSON string; if not JSON, store as wrapper
-            json.loads(inbound_meta)
-            meta_text = inbound_meta
-        except Exception:
-            meta_text = json.dumps({"_raw": inbound_meta})
-    else:
-        meta_text = None
+    role = payload.get("role") or "contact"
+    kind = payload.get("kind") or "person"
+    organization_id = payload.get("organization_id")
+    meta = payload.get("meta") or {}
 
     v = Vendor(
-        name=contact_in.name,
-        contact=getattr(contact_in, "contact", None),
-        role=desired_role,
-        kind=desired_kind,
-        organization_id=getattr(contact_in, "organization_id", None),
-        meta=meta_text,
+        name=payload["name"],
+        role=role,
+        kind=kind,
+        organization_id=organization_id,
+        meta=json.dumps(meta) if isinstance(meta, dict) else (meta or "{}"),
     )
-
     db.add(v)
-    try:
-        db.commit()
-        db.refresh(v)
-        row = v
-    except IntegrityError:
-        # UNIQUE(vendors.name) collision -> merge/upgrade existing row
-        db.rollback()
-        existing = db.query(Vendor).filter(Vendor.name == contact_in.name).first()
-        if not existing:
-            # Not a name-collision; bubble up
-            raise
-
-        # Upgrade role if needed
-        current_role = existing.role or "vendor"
-        if {current_role, desired_role} == {"vendor", "contact"}:
-            existing.role = "both"
-
-        # Only override kind if client explicitly sent it
-        if getattr(contact_in, "kind", None):
-            existing.kind = desired_kind
-
-        # Merge meta (incoming wins)
-        if inbound_meta is not None:
-            try:
-                existing_meta_obj = json.loads(existing.meta) if existing.meta else {}
-                if not isinstance(existing_meta_obj, dict):
-                    existing_meta_obj = {}
-            except Exception:
-                existing_meta_obj = {}
-
-            if isinstance(inbound_meta, str):
-                try:
-                    inbound_meta_obj = json.loads(inbound_meta) if inbound_meta else {}
-                except Exception:
-                    inbound_meta_obj = {"_raw": inbound_meta}
-            else:
-                inbound_meta_obj = inbound_meta or {}
-
-            existing_meta_obj.update(inbound_meta_obj)
-            existing.meta = json.dumps(existing_meta_obj)
-
-        db.add(existing)
-        db.commit()
-        db.refresh(existing)
-        row = existing
-
-    # Prepare response as a plain dict (UI expects dict here, not strict Pydantic)
-    try:
-        meta_obj = json.loads(row.meta) if row.meta else None
-    except Exception:
-        meta_obj = {"_raw": row.meta} if row.meta else None
-
+    db.commit()
+    db.refresh(v)
     return {
-        "id": row.id,
-        "name": row.name,
-        "contact": getattr(row, "contact", None),
-        "role": row.role,
-        "kind": row.kind,
-        "organization_id": row.organization_id,
-        "meta": meta_obj,
-        "created_at": row.created_at.isoformat() if getattr(row, "created_at", None) else None,
+        "id": v.id,
+        "name": v.name,
+        "role": v.role,
+        "kind": v.kind,
+        "organization_id": v.organization_id,
+        "meta": json.loads(v.meta) if isinstance(v.meta, str) else (v.meta or {}),
+        "created_at": v.created_at,
     }
 
 
-@router.put("/contacts/{contact_id}", response_model=ContactOut)
+@router.get("/contacts/{contact_id}")
+def get_contact(req: Request, contact_id: int, db: Session = Depends(get_db)) -> Dict[str, Any]:
+    _require_token_runtime(req)
+    v = db.query(Vendor).get(contact_id)
+    if not v:
+        raise HTTPException(status_code=404, detail="contact not found")
+    meta: Dict[str, Any] = {}
+    if getattr(v, "meta", None):
+        try:
+            meta = json.loads(v.meta) if isinstance(v.meta, str) else (v.meta or {})
+        except Exception:
+            meta = {}
+    return {
+        "id": v.id,
+        "name": v.name,
+        "role": v.role,
+        "kind": v.kind,
+        "organization_id": v.organization_id,
+        "meta": meta,
+        "created_at": v.created_at,
+    }
+
+
+@router.put("/contacts/{contact_id}")
 def update_contact(
-    contact_id: int, payload: ContactUpdate, db: Session = Depends(get_db)
-) -> Vendor:
-    contact = db.get(Vendor, contact_id)
-    if contact is None:
-        raise HTTPException(status_code=404, detail="contact_not_found")
-    updates = payload.dict(exclude_unset=True)
-    if "role" in updates:
-        role = updates["role"] or "contact"
-        if role not in ALLOWED_ROLES:
-            raise HTTPException(status_code=400, detail="invalid_role")
-        updates["role"] = role
-    if "kind" in updates:
-        kind = updates["kind"] or "person"
-        if kind not in ALLOWED_KINDS:
-            raise HTTPException(status_code=400, detail="invalid_kind")
-        updates["kind"] = kind
-    if "meta" in updates:
-        updates["meta"] = _coerce_meta(updates.get("meta"))
-    for field, value in updates.items():
-        setattr(contact, field, value)
+    req: Request,
+    contact_id: int,
+    payload: Dict[str, Any],
+    db: Session = Depends(get_db),
+    _w: None = Depends(writes_enabled),
+) -> Dict[str, Any]:
+    _require_token_runtime(req)
+
+    v = db.query(Vendor).get(contact_id)
+    if not v:
+        raise HTTPException(status_code=404, detail="contact not found")
+
+    if "name" in payload: v.name = payload["name"]
+    if "role" in payload: v.role = payload["role"]
+    if "kind" in payload: v.kind = payload["kind"]
+    if "organization_id" in payload: v.organization_id = payload["organization_id"]
+    if "meta" in payload:
+        meta = payload["meta"]
+        v.meta = json.dumps(meta) if isinstance(meta, dict) else (meta or "{}")
+
     db.commit()
-    db.refresh(contact)
-    contact.meta = _parse_meta(contact.meta)
-    return contact
+    db.refresh(v)
+    return {
+        "id": v.id,
+        "name": v.name,
+        "role": v.role,
+        "kind": v.kind,
+        "organization_id": v.organization_id,
+        "meta": json.loads(v.meta) if isinstance(v.meta, str) else (v.meta or {}),
+        "created_at": v.created_at,
+    }
 
 
 @router.delete("/contacts/{contact_id}")
-def delete_contact(contact_id: int, db: Session = Depends(get_db)) -> dict:
-    contact = db.get(Vendor, contact_id)
-    if contact is None:
-        raise HTTPException(status_code=404, detail="contact_not_found")
-    db.delete(contact)
+def delete_contact(
+    req: Request,
+    contact_id: int,
+    db: Session = Depends(get_db),
+    _w: None = Depends(writes_enabled),
+) -> Dict[str, Any]:
+    _require_token_runtime(req)
+
+    v = db.query(Vendor).get(contact_id)
+    if not v:
+        raise HTTPException(status_code=404, detail="contact not found")
+    db.delete(v)
     db.commit()
     return {"ok": True}
-
-
-__all__ = ["router"]
