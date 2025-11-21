@@ -42,7 +42,7 @@ from sqlalchemy.orm import Session, declarative_base, sessionmaker
 Base = declarative_base()
 
 
-# Ensure parent directory exists before engine creation.
+# Ensure AppData-backed DB directory exists before engine creation.
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 ENGINE = create_engine(DB_URL, connect_args={"check_same_thread": False})

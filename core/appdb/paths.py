@@ -45,10 +45,10 @@ def state_dir() -> Path:
 
 def app_db_path() -> Path:
     """
-    Canonical working DB location (Windows-only per SoT for now):
+    Canonical working DB path (Windows-only):
     %LOCALAPPDATA%\\BUSCore\\app\\app.db
     """
 
-    p = Path(os.getenv("LOCALAPPDATA", "")) / "BUSCore" / "app" / "app.db"
-    p.parent.mkdir(parents=True, exist_ok=True)
-    return p
+    root = Path(os.getenv("LOCALAPPDATA", "")) / "BUSCore" / "app"
+    root.mkdir(parents=True, exist_ok=True)
+    return root / "app.db"
