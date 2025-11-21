@@ -1,3 +1,5 @@
+try { chcp 65001 > $null } catch {}
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 $ErrorActionPreference="Stop"
 $BASE = "http://127.0.0.1:8765/session/token"
 for ($i=0; $i -lt 30; $i++) {

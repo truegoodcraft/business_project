@@ -54,10 +54,10 @@ if (!(Test-Path $LicPath)) {
 }
 
 # Start server (reload) minimized and open UI
-$Args = @("-m","uvicorn","core.api.http:create_app","--host","127.0.0.1","--port","8765","--reload")
+$Args = @("-m","uvicorn","--factory","core.api.http:create_app","--host","127.0.0.1","--port","8765","--reload")
 Start-Process -WindowStyle Minimized -FilePath $Py -ArgumentList $Args
 Start-Sleep -Seconds 2
 $BaseUrl = "http://127.0.0.1:8765"
 Start-Process $BaseUrl
 
-Write-Host "BUS Core – Running on $BaseUrl"
+Write-Host "BUS Core - Running on $BaseUrl"

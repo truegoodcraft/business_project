@@ -18,15 +18,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev_bootstrap.ps1
 
 The bootstrap script also guarantees a default community license at `%LOCALAPPDATA%\BUSCore\license.json` if one is missing.
 
+**Tip:** Mint a session token with **GET** (not POST):
 
-> Tip: Mint a session token with **GET**:
->
-> ```powershell
-> $BASE = "http://127.0.0.1:8765"
-> $tok = (Invoke-RestMethod -Uri "$BASE/session/token").token
-> ```
->
-> Using `POST` will return 405 (Method Not Allowed).
+```powershell
+$BASE = "http://127.0.0.1:8765"
+$tok = (Invoke-RestMethod -Uri "$BASE/session/token").token
+```
 
 
 **SoT (developer workflow & licensing) last synced:** 2025-11-18.
