@@ -4,8 +4,8 @@
 - UI served from `/ui/shell.html` (hash routing).
 - Modular `/app/**` domain APIs (vendors, items, contacts, etc.).
 
-**Status:** Not specified in the SoT you’ve given me.  
-**Requirements:** Windows path rules are canonical; Python version not specified in the SoT you’ve given me.
+**Status:** Not specified.  
+**Requirements:** Windows path rules are canonical; Python version not specified in the SoT.
 
 ## Quickstart (dev, Windows PowerShell)
 
