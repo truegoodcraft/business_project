@@ -18,16 +18,14 @@
 # along with TGC BUS Core.  If not, see <https://www.gnu.org/licenses/>.
 
 import json
-import os
-import pathlib
 import sqlite3
 from typing import Optional
 
+from core.appdb.paths import app_data_dir
+
 from .model import Action, Plan, PlanStatus
 
-DB_DIR = pathlib.Path(os.environ.get("LOCALAPPDATA", ".")) / "BUSCore"
-DB_DIR.mkdir(parents=True, exist_ok=True)
-DB_FILE = DB_DIR / "buscore.db"
+DB_FILE = app_data_dir() / "plans.db"
 
 
 def _init():

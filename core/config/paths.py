@@ -18,11 +18,11 @@
 # along with TGC BUS Core.  If not, see <https://www.gnu.org/licenses/>.
 
 from pathlib import Path
-from sqlalchemy.engine import URL
-from core.appdb.paths import (
-    BUS_ROOT, APP_DIR, DATA_DIR, JOURNALS_DIR, IMPORTS_DIR, STATE_DIR,
-    DB_PATH, ui_dir,
-)
 
+from sqlalchemy.engine import URL
+
+from core.appdb.paths import APP_DIR, DATA_DIR, DB_PATH, IMPORTS_DIR, JOURNALS_DIR, STATE_DIR, UI_DIR as _UI_DIR
+
+BUS_ROOT: Path = APP_DIR.parent
 DB_URL = URL.create(drivername="sqlite", database=str(DB_PATH))
-UI_DIR: Path = ui_dir()
+UI_DIR: Path = _UI_DIR
