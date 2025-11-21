@@ -21,7 +21,7 @@
 
 from __future__ import annotations
 
-from core.config.paths import DB_PATH  # canonical %LOCALAPPDATA%\BUSCore\app\app.db
+from core.config.paths import DB_PATH, DB_URL
 from typing import Generator
 
 from sqlalchemy import (
@@ -33,18 +33,20 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
-    create_engine,
     func,
 )
+from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 
-ENGINE = create_engine(
-    f"sqlite:///{DB_PATH.as_posix()}", connect_args={"check_same_thread": False}
-)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=ENGINE)
-
 Base = declarative_base()
+
+
+# Ensure parent directory exists before engine creation.
+DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+ENGINE = create_engine(DB_URL, connect_args={"check_same_thread": False})
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=ENGINE)
 
 
 class Vendor(Base):
@@ -98,7 +100,7 @@ class Attachment(Base):
     created_at = Column(DateTime, nullable=False, server_default=func.now())
 
 
-Base.metadata.create_all(ENGINE)
+Base.metadata.create_all(bind=ENGINE)
 
 
 def get_session() -> Generator[Session, None, None]:
