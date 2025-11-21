@@ -21,10 +21,7 @@
 
 from __future__ import annotations
 
-import os
-import sys
-from pathlib import Path
-from core.appdb.paths import app_db_path
+from core.config.paths import DB_PATH  # canonical AppData path
 from typing import Generator
 
 from sqlalchemy import (
@@ -42,18 +39,6 @@ from sqlalchemy import (
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 
-def _resolve_db_path() -> Path:
-    """Resolve the SQLite database path with launcher-aware defaults."""
-
-    if getattr(sys, "frozen", False):  # running from the packaged launcher
-        base = Path(os.environ.get("LOCALAPPDATA", "./data")) / "BUSCore"
-    else:
-        base = Path("./data")
-    base.mkdir(parents=True, exist_ok=True)
-    return (base / "app.db").resolve()
-
-
-DB_PATH = app_db_path()
 ENGINE = create_engine(
     f"sqlite:///{DB_PATH.as_posix()}", connect_args={"check_same_thread": False}
 )
