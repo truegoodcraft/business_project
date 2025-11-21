@@ -48,9 +48,9 @@ from fastapi import (
     Query,
     Request,
 )
-from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.staticfiles import StaticFiles
-from starlette.responses import FileResponse, Response
+from starlette.responses import FileResponse, RedirectResponse, Response
 
 import requests
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -99,8 +99,8 @@ from core.config.paths import (
     IMPORTS_DIR,
     DB_PATH,
     DB_URL,
-    UI_DIR,
 )
+from core.appdb.paths import ui_dir
 from core.services.models import SessionLocal, get_session
 
 if os.name == "nt":  # pragma: no cover - windows specific
@@ -147,13 +147,15 @@ def _check_state(state_b64: str) -> bool:
 app = FastAPI(title="BUS Core Alpha", version=VERSION)
 
 
+UI_DIR = ui_dir()
+
 # --- BEGIN UI MOUNT ---
-app.mount("/ui", StaticFiles(directory=str(UI_DIR)), name="ui")
+app.mount("/ui", StaticFiles(directory=UI_DIR), name="ui")
 
 
 @app.get("/")
-async def root_redirect():
-    return RedirectResponse("/ui/shell.html")
+def root():
+    return RedirectResponse(url="/ui/shell.html", status_code=307)
 # --- END UI MOUNT ---
 
 EXPORTS_DIR = APP_DIR / "exports"
