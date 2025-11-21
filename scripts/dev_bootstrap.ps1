@@ -10,7 +10,22 @@ Set-Location $RepoRoot
 $VenvDir = Join-Path $RepoRoot ".venv"
 if (!(Test-Path $VenvDir)) {
   Write-Host "[dev] Creating venv at $VenvDir"
-  py -3 -m venv "$VenvDir"
+
+  # Find a Python interpreter: prefer py.exe if present, else python/python3
+  $Launcher = $null
+  foreach ($c in @("py","python","python3")) {
+    $cmd = Get-Command $c -ErrorAction SilentlyContinue
+    if ($cmd) { $Launcher = $cmd.Path; break }
+  }
+  if (-not $Launcher) {
+    throw "Python 3.x not found on PATH. Install Python and re-run."
+  }
+
+  if ($Launcher -like "*\py.exe") {
+    & $Launcher -3 -m venv "$VenvDir"
+  } else {
+    & $Launcher -m venv "$VenvDir"
+  }
 }
 
 # Venv python
