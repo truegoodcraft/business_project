@@ -30,3 +30,20 @@ __all__ = [
     "BUS_ROOT", "APP_DIR", "DATA_DIR", "JOURNALS_DIR", "IMPORTS_DIR", "STATE_DIR",
     "DB_PATH", "state_dir", "app_db_path", "ui_dir",
 ]
+
+# --- Back-compat: some modules still import secrets_dir() ---
+from pathlib import Path as _Path  # no-op if already imported
+
+def secrets_dir() -> _Path:
+    """Return %LOCALAPPDATA%\BUSCore\secrets (sibling of 'app')."""
+    p = APP_DIR.parent / "secrets"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+# expose via __all__ if present
+try:
+    __all__
+except NameError:
+    __all__ = []
+if "secrets_dir" not in __all__:
+    __all__.append("secrets_dir")
