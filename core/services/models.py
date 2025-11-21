@@ -24,6 +24,7 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
+from core.appdb.paths import app_db_path
 from typing import Generator
 
 from sqlalchemy import (
@@ -52,7 +53,7 @@ def _resolve_db_path() -> Path:
     return (base / "app.db").resolve()
 
 
-DB_PATH = _resolve_db_path()
+DB_PATH = app_db_path()
 ENGINE = create_engine(
     f"sqlite:///{DB_PATH.as_posix()}", connect_args={"check_same_thread": False}
 )
