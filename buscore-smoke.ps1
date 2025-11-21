@@ -3,6 +3,8 @@
 # Last updated to SoT: 2025-11-18
 # buscore-smoke.ps1 — SoT-aligned smoke (PowerShell, assumes server is already running)
 $ErrorActionPreference = "Stop"
+try { chcp 65001 > $null } catch {}
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 $BASE = "http://127.0.0.1:8765"
 
 function Note($m){ Write-Host "[smoke] $m" -ForegroundColor Cyan }
