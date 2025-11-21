@@ -19,11 +19,15 @@
 
 import os
 from pathlib import Path
+from sqlalchemy.engine import URL
+from core.appdb.paths import app_db_path
 
 if "LOCALAPPDATA" not in os.environ:
     os.environ["LOCALAPPDATA"] = str(Path.home() / "AppData" / "Local")
 
-BUS_ROOT = Path(os.environ.get("BUS_ROOT") or (Path(os.environ["LOCALAPPDATA"]) / "BUSCore" / "app")).resolve()
+BUS_ROOT = Path(
+    os.environ.get("BUS_ROOT") or (Path(os.environ["LOCALAPPDATA"]) / "BUSCore" / "app")
+).resolve()
 APP_DIR = BUS_ROOT
 DATA_DIR = APP_DIR / "data"
 JOURNALS_DIR = DATA_DIR / "journals"
@@ -31,15 +35,9 @@ IMPORTS_DIR = DATA_DIR / "imports"
 for d in (DATA_DIR, JOURNALS_DIR, IMPORTS_DIR):
     d.mkdir(parents=True, exist_ok=True)
 
-from core.appdb.paths import app_db_path
-from core.appdb.migrate import ensure_appdb_migrated
-
-# One-time, idempotent migration from legacy repo DB -> AppData DB (must run before engine creation).
-ensure_appdb_migrated()
-
-# Canonical DB path (Windows-only change per SoT)
-DB_PATH = app_db_path()
-DB_URL = "sqlite:///" + DB_PATH.as_posix()
+DB_PATH: Path = app_db_path()
+# Build a Windows-safe URL; avoids backslash issues
+DB_URL = URL.create(drivername="sqlite", database=str(DB_PATH))
 
 DEV_UI_DIR = APP_DIR / "core" / "ui"
 DEFAULT_UI_DIR = APP_DIR / "ui"

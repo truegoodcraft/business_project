@@ -7,12 +7,12 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import time
 import urllib.error
 import urllib.request
-from pathlib import Path
 from typing import Any, Dict, Optional
+
+from core.config.paths import DB_PATH
 
 BASE_URL = os.environ.get("BUSCORE_BASE_URL", "http://127.0.0.1:8765")
 
@@ -92,16 +92,7 @@ def _ensure_writes(token: str) -> None:
 
 
 def _sync_launcher_db() -> None:
-    repo_db = Path("./data/app.db")
-    base = os.environ.get("LOCALAPPDATA")
-    if base:
-        target_dir = Path(base) / "BUSCore"
-    else:
-        target_dir = Path.home() / "AppData" / "Local" / "BUSCore"
-    target = target_dir / "app.db"
-    if repo_db.exists():
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(repo_db, target)
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
 def main() -> None:
