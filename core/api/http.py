@@ -917,6 +917,17 @@ def rfq_generate(
     headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
     return StreamingResponse(BytesIO(content), media_type=media_type, headers=headers)
 
+# NEW primary endpoint; keep legacy alias during transition
+@app.post("/app/manufacturing/run")
+def manufacturing_run(
+    body: InventoryRun,
+    token: str = Depends(require_token),
+    Python_writes: None = Depends(require_writes),
+):
+    # Reuse the legacy implementation to avoid duplication and keep gating consistent.
+    # If the legacy function's signature differs, pass parameters positionally.
+    return inventory_run(body, token, Python_writes)
+
 
 @app.post("/app/inventory/run")
 def inventory_run(
