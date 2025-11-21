@@ -21,16 +21,22 @@
 
 from __future__ import annotations
 
-from sqlalchemy import Column, Date, DateTime, Float, ForeignKey, Integer, String, Text, func, create_engine
-from sqlalchemy.orm import declarative_base, sessionmaker, Session
-from core.config.paths import DB_PATH, DB_URL
+from sqlalchemy import Column, Date, DateTime, Float, ForeignKey, Integer, String, Text, create_engine, func
+from sqlalchemy.orm import Session, declarative_base, sessionmaker
+
+from core.appdb.paths import app_db_path
 
 
 Base = declarative_base()
 
-# ---- ENGINE: bind to AppData-only path; do not compute repo paths here
+DB_PATH = app_db_path()
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-ENGINE = create_engine(DB_URL, connect_args={"check_same_thread": False})
+
+ENGINE = create_engine(
+    f"sqlite:///{DB_PATH}",
+    connect_args={"check_same_thread": False},
+)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=ENGINE)
 
 
