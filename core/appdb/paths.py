@@ -18,37 +18,37 @@
 # along with TGC BUS Core.  If not, see <https://www.gnu.org/licenses/>.
 
 import os
-import pathlib
+from pathlib import Path
 
 
-def _buscore_root() -> pathlib.Path:
-    p = pathlib.Path(os.environ.get("LOCALAPPDATA", ".")) / "BUSCore"
+def _buscore_root() -> Path:
+    p = Path(os.environ.get("LOCALAPPDATA", ".")) / "BUSCore"
     p.mkdir(parents=True, exist_ok=True)
     return p
 
 
-def app_data_dir() -> pathlib.Path:
+def app_data_dir() -> Path:
     return _buscore_root()
 
 
-def secrets_dir() -> pathlib.Path:
+def secrets_dir() -> Path:
     p = _buscore_root() / "secrets"
     p.mkdir(parents=True, exist_ok=True)
     return p
 
 
-def state_dir() -> pathlib.Path:
+def state_dir() -> Path:
     p = _buscore_root() / "state"
     p.mkdir(parents=True, exist_ok=True)
     return p
 
 
-def app_db_path() -> pathlib.Path:
+def app_db_path() -> Path:
     """
     Canonical working DB location (Windows-only per SoT for now):
     %LOCALAPPDATA%\\BUSCore\\app\\app.db
     """
-    root = app_data_dir()
-    p = root / "app"
-    p.mkdir(parents=True, exist_ok=True)
-    return p / "app.db"
+
+    p = Path(os.getenv("LOCALAPPDATA", "")) / "BUSCore" / "app" / "app.db"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    return p
