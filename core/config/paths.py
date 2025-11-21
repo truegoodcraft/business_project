@@ -39,7 +39,7 @@ ensure_appdb_migrated()
 
 # Canonical DB path (Windows-only change per SoT)
 DB_PATH = app_db_path()
-DB_URL = f"sqlite:///{DB_PATH.as_posix()}"
+DB_URL = "sqlite:///" + DB_PATH.as_posix()
 
 DEV_UI_DIR = APP_DIR / "core" / "ui"
 DEFAULT_UI_DIR = APP_DIR / "ui"
