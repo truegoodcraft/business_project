@@ -20,7 +20,7 @@
 import json
 from typing import Any, Dict
 
-from core.appdb.paths import app_data_dir
+from core.appdb.paths import app_db_path
 
 
 __all__ = ["load_core_config"]
@@ -28,7 +28,7 @@ __all__ = ["load_core_config"]
 
 def load_core_config() -> Dict[str, Any]:
     """Back-compat shim for test harnesses that import core.config.load_core_config."""
-    path = app_data_dir() / "core_config.json"
+    path = app_db_path().parent / "core_config.json"
     if path.exists():
         try:
             return json.loads(path.read_text(encoding="utf-8"))

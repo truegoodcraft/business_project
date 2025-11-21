@@ -31,6 +31,6 @@ def test_db_url_uses_posix(monkeypatch, tmp_path):
 
     importlib.reload(config_paths)
 
-    assert config_paths.DB_URL.startswith("sqlite:///")
-    assert config_paths.DB_URL.endswith(config_paths.DB_PATH.as_posix())
-    assert "\\" not in config_paths.DB_URL
+    assert config_paths.DB_URL.get_backend_name() == "sqlite"
+    assert config_paths.DB_URL.database == str(config_paths.DB_PATH)
+    assert "\\" not in config_paths.DB_URL.database

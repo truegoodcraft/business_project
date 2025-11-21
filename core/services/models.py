@@ -21,30 +21,15 @@
 
 from __future__ import annotations
 
+from sqlalchemy import Column, Date, DateTime, Float, ForeignKey, Integer, String, Text, func, create_engine
+from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from core.config.paths import DB_PATH, DB_URL
-from typing import Generator
-
-from sqlalchemy import (
-    Column,
-    Date,
-    DateTime,
-    Float,
-    ForeignKey,
-    Integer,
-    String,
-    Text,
-    func,
-)
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 
 Base = declarative_base()
 
-
-# Ensure AppData-backed DB directory exists before engine creation.
+# ---- ENGINE: bind to AppData-only path; do not compute repo paths here
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-
 ENGINE = create_engine(DB_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=ENGINE)
 
@@ -100,12 +85,11 @@ class Attachment(Base):
     created_at = Column(DateTime, nullable=False, server_default=func.now())
 
 
+# Ensure tables exist AFTER all models are defined
 Base.metadata.create_all(bind=ENGINE)
 
 
-def get_session() -> Generator[Session, None, None]:
-    """FastAPI dependency that yields a database session."""
-
+def get_session() -> Session:
     db = SessionLocal()
     try:
         yield db

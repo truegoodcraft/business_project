@@ -33,9 +33,11 @@ from typing import Dict, Tuple
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-BUS_ROOT = Path(os.environ.get("LOCALAPPDATA", ".")) / "BUSCore"
-APP_DB = BUS_ROOT / "app.db"
-APP_DIR = BUS_ROOT / "app"
+from core.config.paths import DB_PATH
+
+APP_DB = DB_PATH
+APP_DIR = DB_PATH.parent
+BUS_ROOT = APP_DIR.parent
 DATA_DIR = APP_DIR / "data"
 JOURNAL_DIR = DATA_DIR / "journals"
 EXPORTS_DIR = BUS_ROOT / "exports"
