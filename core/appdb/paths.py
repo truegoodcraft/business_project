@@ -47,3 +47,30 @@ except NameError:
     __all__ = []
 if "secrets_dir" not in __all__:
     __all__.append("secrets_dir")
+# --- Back-compat shims for legacy callers (tgc/bootstrap_fs.py, etc.) ---
+from pathlib import Path as _Path  # safe if already imported
+
+def app_data_dir() -> _Path:
+    """Returns %LOCALAPPDATA%\BUSCore\app"""
+    return APP_DIR
+
+def secrets_dir() -> _Path:
+    """Returns %LOCALAPPDATA%\BUSCore\secrets (sibling of 'app') and ensures it exists."""
+    p = APP_DIR.parent / "secrets"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+def state_dir() -> _Path:
+    """Returns %LOCALAPPDATA%\BUSCore\app\state and ensures it exists."""
+    p = APP_DIR / "state"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+# expose via __all__ if present
+try:
+    __all__
+except NameError:
+    __all__ = []
+for _n in ("app_data_dir", "secrets_dir", "state_dir"):
+    if _n not in __all__:
+        __all__.append(_n)
