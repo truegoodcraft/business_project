@@ -165,3 +165,22 @@ $inv = Invoke-Api -Method POST -Url "$BASE/app/inventory/run" -Headers $AUTH -Js
 PrintResult "inventory.run (alias)" $inv $false
 $impCommit = Invoke-Api -Method POST -Url "$BASE/app/import/commit" -Headers $AUTH -JsonBody @{ }
 PrintResult "import.commit" $impCommit $false
+
+# --- DB path assertions (SoT)
+$Local = [Environment]::GetFolderPath('LocalApplicationData')
+$AppDb = Join-Path (Join-Path $Local 'BUSCore\app') 'app.db'
+if (Test-Path $AppDb) {
+  Write-Host ("DB path assertion: found {0}" -f $AppDb)
+} else {
+  Write-Host ("DB path assertion FAILED: missing {0}" -f $AppDb) -ForegroundColor Red
+  exit 1
+}
+
+# Optional legacy check (do not fail build; legacy file may exist on non-fresh runs)
+$RepoRoot = (Resolve-Path "$PSScriptRoot").Path
+$RepoDb = Join-Path $RepoRoot 'app.db'
+if (Test-Path $RepoDb) {
+  Write-Host ("[warn] Legacy repo DB present at {0}. New AppData DB is authoritative; legacy file is ignored." -f $RepoDb) -ForegroundColor Yellow
+} else {
+  Write-Host "No DB found under repo working directory (expected on fresh run)."
+}

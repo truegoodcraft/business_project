@@ -1,8 +1,9 @@
 
 # TGC BUS Core — Source of Truth (Final)
 
-> **Authority rule:** The uploaded **codebase is truth**. Where documents conflicted, resolutions below reflect code. Anything not stated = **unknown / not specified**.  
+> **Authority rule:** The uploaded **codebase is truth**. Where documents conflicted, resolutions below reflect code. Anything not stated = **unknown / not specified**.
 > **Change note (2025-11-20):** Promotes `scripts/dev_bootstrap.ps1` to canonical dev launcher and clarifies that DB → AppData migration is **pending** (design target, not yet cut over). Adds explicit canonical launch/smoke commands.
+> **Change note (2025-11-21):** **DB/AppData cutover completed.** The working database now lives **only** under `%LOCALAPPDATA%\BUSCore\app\app.db`. On startup, a one-time, idempotent migration copies any legacy `app.db` from the repo working directory into the AppData location if the AppData DB does not yet exist. The legacy repo DB is never modified or deleted. Implementation Gap “DB/AppData cutover” is **closed**.
 
 ---
 
@@ -397,7 +398,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\buscore-smoke.ps1"
 * **Policy helpers** (`load_policy`, `save_policy`, `require_owner_commit`).
 * **Plan storage** (`save_plan`, `get_plan`, `list_plans`, `preview_plan`, `commit_local`).
 * **DB/session:** `get_session` yields SQLAlchemy sessions with `_resolve_db_path`.
-  *Current code still resolves DB into the repo working directory; design target is `%LOCALAPPDATA%\BUSCore\app` (see §11, §13).*
+  *DB resolves to `%LOCALAPPDATA%\BUSCore\app\app.db`; startup copies a legacy repo `app.db` into this path if the AppData DB is missing (no overwrites/deletes).*
 * **Broker:** `get_broker` initializes plugin broker with Secrets, capability registry, reader settings.
 
 ### Headers, Files, and Config Conventions
@@ -407,8 +408,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\buscore-smoke.ps1"
 * **License file:** `%LOCALAPPDATA%\BUSCore\license.json` (or `BUS_ROOT\license.json`).
 * **Runtime paths:**
 
-  * `BUS_ROOT`, `APP_DIR`, `DATA_DIR`, `JOURNALS_DIR`, `IMPORTS_DIR` derive from `%LOCALAPPDATA%\BUSCore\app` (design target).
-  * **DB path:** design target is for `DB_PATH` to also derive from `%LOCALAPPDATA%\BUSCore\app`; as of this SoT, DB is still stored under the repo working directory (AppData cutover pending; see §11, §13).
+  * `BUS_ROOT`, `APP_DIR`, `DATA_DIR`, `JOURNALS_DIR`, `IMPORTS_DIR` derive from `%LOCALAPPDATA%\BUSCore\app`.
+  * **DB path:** `DB_PATH`/`DB_URL` point to `%LOCALAPPDATA%\BUSCore\app\app.db`; startup performs a one-time, non-destructive migration from a legacy repo `app.db` when the AppData DB does not exist.
 * **Backup artifacts:** `%LOCALAPPDATA%\BUSCore\exports`; journals under `data/journals`; previews under `data/imports`.
 * **Manufacturing journal:** `data/journals/manufacturing.jsonl` *(or `inventory.jsonl` until renamed)*.
 * **Session token persistence:** `data/session_token.txt` (launcher reuse).
