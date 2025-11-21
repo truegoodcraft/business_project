@@ -31,7 +31,14 @@ IMPORTS_DIR = DATA_DIR / "imports"
 for d in (DATA_DIR, JOURNALS_DIR, IMPORTS_DIR):
     d.mkdir(parents=True, exist_ok=True)
 
-DB_PATH = APP_DIR / "app.db"
+from core.appdb.paths import app_db_path
+from core.appdb.migrate import ensure_appdb_migrated
+
+# One-time, idempotent migration from legacy repo DB -> AppData DB (must run before engine creation).
+ensure_appdb_migrated()
+
+# Canonical DB path (Windows-only change per SoT)
+DB_PATH = app_db_path()
 DB_URL = f"sqlite:///{DB_PATH}"
 
 DEV_UI_DIR = APP_DIR / "core" / "ui"

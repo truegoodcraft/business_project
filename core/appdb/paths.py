@@ -44,4 +44,11 @@ def state_dir() -> pathlib.Path:
 
 
 def app_db_path() -> pathlib.Path:
-    return app_data_dir() / "app.db"
+    """
+    Canonical working DB location (Windows-only per SoT for now):
+    %LOCALAPPDATA%\\BUSCore\\app\\app.db
+    """
+    root = app_data_dir()
+    p = root / "app"
+    p.mkdir(parents=True, exist_ok=True)
+    return p / "app.db"

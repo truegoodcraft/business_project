@@ -45,6 +45,7 @@ $BcRoot = Join-Path $env:LOCALAPPDATA 'BUSCore'
 $null = New-Item -ItemType Directory -Force -Path $BcRoot
 $null = New-Item -ItemType Directory -Force -Path (Join-Path $BcRoot 'secrets')
 $null = New-Item -ItemType Directory -Force -Path (Join-Path $BcRoot 'state')
+$null = New-Item -ItemType Directory -Force -Path (Join-Path $BcRoot 'app')
 $LicPath = Join-Path $BcRoot 'license.json'
 if (!(Test-Path $LicPath)) {
   '{"tier":"community","features":{},"plugins":{}}' | Set-Content -Encoding UTF8 -Path $LicPath
