@@ -84,21 +84,26 @@ $null = New-Item -ItemType Directory -Force -Path (Join-Path $bcRoot 'secrets') 
 $null = New-Item -ItemType Directory -Force -Path (Join-Path $bcRoot 'state') -ErrorAction SilentlyContinue
 Write-Host "paths: hard cutover validated"
 
-# --- Protected health
-$hz = Invoke-Api -Method GET -Url "$BASE/health" -Headers $AUTH
-$keysPresent = $false,$false,$false,$false
-if ($hz.Status -eq 200) {
-  try {
-    $j = $hz.Body | ConvertFrom-Json
-    $keysPresent = @(
-      $null -ne $j.version,
-      $null -ne $j.policy,
-      $null -ne $j.license,
-      $null -ne $j.'run-id'
-    )
-  } catch {}
+# --- Protected health (token-aware)
+$hpProt = Invoke-Api -Method GET -Url "$BASE/health" -Headers $AUTH
+if ($hpProt.Status -ne 200) {
+  Write-Host ("❌ health(protected): HTTP {0}" -f $hpProt.Status)
+  exit 1
 }
-Write-Host ("health(protected): status {0}, keys [version, policy, license, run-id]: [{1},{2},{3},{4}]" -f $hz.Status, $keysPresent[0],$keysPresent[1],$keysPresent[2],$keysPresent[3])
+try {
+  $hjson = ConvertFrom-Json $hpProt.Body
+} catch {
+  Write-Host ("❌ health(protected): invalid JSON body={0}" -f ($hpProt.Body.Substring(0, [Math]::Min(256, $hpProt.Body.Length))))
+  exit 1
+}
+
+$expected = @("version","policy","license","run-id")
+$missing = $expected | Where-Object { -not ($hjson.PSObject.Properties.Name -contains $_) }
+if ($missing.Count -gt 0) {
+  Write-Host ("❌ health(protected): missing keys => {0}" -f ($missing -join ", "))
+  exit 1
+}
+Write-Host "✅ health(protected): version, policy, license, run-id present"
 
 # --- UI presence
 $ui = Invoke-Api -Method GET -Url "$BASE/ui/shell.html"
@@ -152,7 +157,9 @@ if ($impPrev.Status -eq 200) {
 # --- Gated endpoints (must be rejected under community license)
 $rfq = Invoke-Api -Method POST -Url "$BASE/app/rfq/generate" -Headers $AUTH -JsonBody @{ }
 PrintResult "rfq.generate" $rfq $false
+$mfg = Invoke-Api -Method POST -Url "$BASE/app/manufacturing/run" -Headers $AUTH -JsonBody @{ }
+PrintResult "manufacturing.run" $mfg $false
 $inv = Invoke-Api -Method POST -Url "$BASE/app/inventory/run" -Headers $AUTH -JsonBody @{ }
-PrintResult "inventory.run" $inv $false
+PrintResult "inventory.run (alias)" $inv $false
 $impCommit = Invoke-Api -Method POST -Url "$BASE/app/import/commit" -Headers $AUTH -JsonBody @{ }
 PrintResult "import.commit" $impCommit $false

@@ -1,8 +1,27 @@
 # TGC BUS Core (Business Utility System Core)
 
+- Local-first FastAPI + SQLite app (single-machine), no telemetry.
+- UI served from `/ui/shell.html` (hash routing).
+- Modular `/app/**` domain APIs (vendors, items, contacts, etc.).
+
+**Status:** Not specified in the SoT you’ve given me.  
+**Requirements:** Windows path rules are canonical; Python version not specified in the SoT you’ve given me.
+
+## Quickstart (dev, Windows PowerShell)
+
+```powershell
+git clone https://github.com/truegoodcraft/TGC-BUS-Core.git
+cd TGC-BUS-Core
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev_bootstrap.ps1
+# then open http://127.0.0.1:8765/ui/shell.html (script auto-opens)
+```
+
+The bootstrap script also guarantees a default community license at `%LOCALAPPDATA%\BUSCore\license.json` if one is missing.
+
+
 **SoT (developer workflow & licensing) last synced:** 2025-11-18.
 
-**Owner:** True Good Craft  
+**Owner:** True Good Craft
 **License:** GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)
 
 ## What is this?
