@@ -1,0 +1,22 @@
+from __future__ import annotations
+from fastapi import APIRouter
+from sqlalchemy import text
+from core.appdb.engine import ENGINE, DB_PATH
+
+router = APIRouter(prefix="/dev", tags=["dev"])
+
+@router.get("/db/where")
+def dev_db_where():
+    pragma = []
+    try:
+        with ENGINE.connect() as conn:
+            rows = conn.execute(text("PRAGMA database_list;")).all()
+            pragma = [[str(c) for c in r] for r in rows]
+    except Exception as e:
+        pragma = [["error", str(e)]]
+    return {
+        "engine_url": str(ENGINE.url),
+        "db_path": str(DB_PATH),
+        "exists": DB_PATH.exists(),
+        "pragma_database_list": pragma,
+    }

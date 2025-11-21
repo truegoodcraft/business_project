@@ -26,15 +26,28 @@ def app_db_path() -> Path:
 
 DB_PATH = app_db_path()
 
-# Back-compat shims (used by older modules)
-def app_data_dir() -> Path: return app_dir()
-def secrets_dir()  -> Path: return APP_DIR.parent / "secrets"
+
 def ui_dir() -> Path:
     # Serve UI from repo (not AppData)
     return Path(__file__).resolve().parents[2] / "core" / "ui"
+
 
 # Additional convenience paths
 DATA_DIR = APP_DIR / "data"
 JOURNALS_DIR = DATA_DIR / "journals"
 IMPORTS_DIR = DATA_DIR / "imports"
 UI_DIR = ui_dir()
+
+
+# Back-compat shims used by older modules
+def app_data_dir() -> Path:
+    return APP_DIR
+
+
+def secrets_dir() -> Path:
+    # %LOCALAPPDATA%\\BUSCore\\secrets (sibling to "app")
+    return APP_DIR.parent / "secrets"
+
+
+def state_dir() -> Path:
+    return STATE_DIR

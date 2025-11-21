@@ -91,6 +91,7 @@ from core.settings.reader_state import (
 )
 from core.reader.api import router as reader_local_router
 from core.organizer.api import router as organizer_router
+from core.dev.db_where import router as dev_db_where_router
 from core.config.paths import (
     APP_DIR,
     BUS_ROOT,
@@ -1961,6 +1962,7 @@ def server_restart() -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail="restart_failed") from exc
 
 
+app.include_router(dev_db_where_router)
 app.include_router(oauth)
 app.include_router(protected)
 
