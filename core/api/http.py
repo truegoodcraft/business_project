@@ -48,10 +48,10 @@ from fastapi import (
     Query,
     Request,
 )
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.applications import Starlette
-from starlette.responses import FileResponse, RedirectResponse, Response
+from starlette.responses import FileResponse, Response
 from starlette.routing import Route, Mount
 
 import requests
@@ -193,9 +193,9 @@ else:
     print("[ui] NO UI MOUNTED")
 
 
-@app.get("/", include_in_schema=False)
-def _root():
-    return RedirectResponse(url="/ui/")
+@app.get("/")
+async def root_redirect():
+    return RedirectResponse("/ui/shell.html")
 # --- END UI MOUNT ---
 
 EXPORTS_DIR = APP_DIR / "exports"
