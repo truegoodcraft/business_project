@@ -11,8 +11,15 @@ STATE_DIR = APP_DIR / "state"
 DATA_DIR = APP_DIR / "data"
 JOURNALS_DIR = DATA_DIR / "journals"
 IMPORTS_DIR = DATA_DIR / "imports"
-UI_DIR = APP_DIR / "ui"
 DB_PATH = APP_DIR / "app.db"
+
+
+def ui_dir() -> Path:
+    """Serve UI from the repo (never AppData)."""
+    return Path(__file__).resolve().parents[2] / "core" / "ui"
+
+
+UI_DIR = ui_dir()
 
 # Ensure folders exist on import (first run)
 for d in (APP_DIR, STATE_DIR, DATA_DIR, JOURNALS_DIR, IMPORTS_DIR, UI_DIR):
@@ -29,6 +36,7 @@ def app_data_dir() -> Path:
     return APP_DIR
 
 def state_dir() -> Path:
+    r"""Returns %LOCALAPPDATA%\BUSCore\app\state and ensures it exists."""
     return STATE_DIR
 
 def secrets_dir() -> Path:
