@@ -17,33 +17,12 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with TGC BUS Core.  If not, see <https://www.gnu.org/licenses/>.
 
-import os
 from pathlib import Path
 from sqlalchemy.engine import URL
-from core.appdb.paths import app_db_path
+from core.appdb.paths import (
+    BUS_ROOT, APP_DIR, DATA_DIR, JOURNALS_DIR, IMPORTS_DIR, STATE_DIR,
+    DB_PATH, ui_dir,
+)
 
-if "LOCALAPPDATA" not in os.environ:
-    os.environ["LOCALAPPDATA"] = str(Path.home() / "AppData" / "Local")
-
-BUS_ROOT = Path(
-    os.environ.get("BUS_ROOT") or (Path(os.environ["LOCALAPPDATA"]) / "BUSCore" / "app")
-).resolve()
-APP_DIR = BUS_ROOT
-DATA_DIR = APP_DIR / "data"
-JOURNALS_DIR = DATA_DIR / "journals"
-IMPORTS_DIR = DATA_DIR / "imports"
-for d in (DATA_DIR, JOURNALS_DIR, IMPORTS_DIR):
-    d.mkdir(parents=True, exist_ok=True)
-
-DB_PATH: Path = app_db_path()
-# Build a Windows-safe URL; avoids backslash issues
 DB_URL = URL.create(drivername="sqlite", database=str(DB_PATH))
-
-DEV_UI_DIR = APP_DIR / "core" / "ui"
-DEFAULT_UI_DIR = APP_DIR / "ui"
-
-IS_DEV = bool(os.environ.get("BUS_ROOT"))
-
-# Force repo UI in dev; keep previous default in prod
-UI_DIR = DEV_UI_DIR if IS_DEV else DEFAULT_UI_DIR
-UI_DIR.mkdir(parents=True, exist_ok=True)
+UI_DIR: Path = ui_dir()

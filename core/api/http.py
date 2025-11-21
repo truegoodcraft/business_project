@@ -49,10 +49,8 @@ from fastapi import (
     Request,
 )
 from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
-from fastapi.staticfiles import StaticFiles
-from starlette.applications import Starlette
+from starlette.staticfiles import StaticFiles
 from starlette.responses import FileResponse, Response
-from starlette.routing import Route, Mount
 
 import requests
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -101,6 +99,7 @@ from core.config.paths import (
     IMPORTS_DIR,
     DB_PATH,
     DB_URL,
+    UI_DIR,
 )
 from core.services.models import SessionLocal, get_session
 
@@ -149,48 +148,7 @@ app = FastAPI(title="BUS Core Alpha", version=VERSION)
 
 
 # --- BEGIN UI MOUNT ---
-UI_DIR = None
-ui_env = os.getenv("BUS_UI_DIR")
-if ui_env:
-    p = Path(ui_env).expanduser().resolve()
-    print(f"[ui] ENV BUS_UI_DIR = {ui_env} -> {p}")
-    if p.exists() and p.is_dir():
-        UI_DIR = p
-    else:
-        print(f"[ui] WARNING: BUS_UI_DIR not found: {p}")
-
-if UI_DIR is None:
-    fallback = Path(__file__).resolve().parent.parent / "ui"
-    if fallback.exists() and fallback.is_dir():
-        UI_DIR = fallback.resolve()
-        print(f"[ui] Fallback to: {UI_DIR}")
-    else:
-        print("[ui] ERROR: No UI directory found")
-
-
-def _ui_index(request):
-    if not UI_DIR:
-        return Response(status_code=404)
-    idx = UI_DIR / "index.html"
-    sh = UI_DIR / "shell.html"
-    if idx.exists():
-        return FileResponse(idx)
-    if sh.exists():
-        return FileResponse(sh)
-    return Response(status_code=404)
-
-
-if UI_DIR:
-    ui_app = Starlette(routes=[
-        # /ui/ => index.html or shell.html
-        Route("/", endpoint=_ui_index, include_in_schema=False),
-        # all other assets under /ui/**
-        Mount("/", app=StaticFiles(directory=str(UI_DIR), html=False), name="ui-assets"),
-    ])
-    app.mount("/ui", ui_app, name="ui")
-    print(f"[ui] MOUNTED /ui -> {UI_DIR}")
-else:
-    print("[ui] NO UI MOUNTED")
+app.mount("/ui", StaticFiles(directory=str(UI_DIR)), name="ui")
 
 
 @app.get("/")
