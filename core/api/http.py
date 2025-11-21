@@ -631,8 +631,6 @@ def require_writes() -> None:
 protected = APIRouter(dependencies=[Depends(require_token_ctx)])
 protected.include_router(reader_local_router)
 protected.include_router(organizer_router)
-
-from . import app_router  # noqa: F401
 from core.api.routes.items import router as items_router
 from core.api.routes.vendors import router as vendors_router
 
