@@ -21,7 +21,7 @@
 
 from __future__ import annotations
 
-from core.config.paths import DB_PATH  # canonical AppData path
+from core.config.paths import DB_PATH  # canonical %LOCALAPPDATA%\BUSCore\app\app.db
 from typing import Generator
 
 from sqlalchemy import (
