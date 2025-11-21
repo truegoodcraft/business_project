@@ -21,23 +21,12 @@
 
 from __future__ import annotations
 
-from sqlalchemy import Column, Date, DateTime, Float, ForeignKey, Integer, String, Text, create_engine, func
-from sqlalchemy.orm import Session, declarative_base, sessionmaker
+from sqlalchemy import Column, Date, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy.orm import Session, declarative_base
 
-from core.appdb.paths import app_db_path
-
+from core.appdb.engine import ENGINE, SessionLocal, DB_PATH as DB_FILE
 
 Base = declarative_base()
-
-DB_PATH = app_db_path()
-DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-
-ENGINE = create_engine(
-    f"sqlite:///{DB_PATH}",
-    connect_args={"check_same_thread": False},
-)
-
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=ENGINE)
 
 
 class Vendor(Base):

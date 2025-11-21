@@ -97,9 +97,9 @@ from core.config.paths import (
     DATA_DIR,
     JOURNALS_DIR,
     IMPORTS_DIR,
-    DB_PATH,
     DB_URL,
 )
+from core.appdb.engine import ENGINE, DB_PATH as DB_FILE
 from core.appdb.paths import ui_dir
 from core.services.models import SessionLocal, get_session
 
@@ -300,16 +300,27 @@ def dev_paths():
     from core.config import paths
 
     return {
-        k: str(getattr(paths, k))
-        for k in [
-            "BUS_ROOT",
-            "APP_DIR",
-            "DATA_DIR",
-            "JOURNALS_DIR",
-            "IMPORTS_DIR",
-            "DB_PATH",
-            "UI_DIR",
-        ]
+        **{
+            k: str(getattr(paths, k))
+            for k in [
+                "BUS_ROOT",
+                "APP_DIR",
+                "DATA_DIR",
+                "JOURNALS_DIR",
+                "IMPORTS_DIR",
+                "UI_DIR",
+            ]
+        },
+        "DB_PATH": str(DB_FILE),
+    }
+
+
+@app.get("/dev/db/where")
+def db_where():
+    return {
+        "engine_url": str(ENGINE.url),
+        "database": ENGINE.url.database,
+        "resolved_fs_path": str(DB_FILE),
     }
 
 
@@ -718,8 +729,8 @@ _TEMPLATE_ROOT = Path(__file__).resolve().parents[2] / "templates"
 
 
 def _db_conn() -> sqlite3.Connection:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(str(DB_PATH), timeout=30)
+    DB_FILE.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(str(DB_FILE), timeout=30)
     con.row_factory = sqlite3.Row
     try:
         con.execute("PRAGMA journal_mode=WAL")
