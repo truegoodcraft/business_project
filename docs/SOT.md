@@ -1,6 +1,10 @@
+
 # TGC BUS Core — Source of Truth (Final)
 
-> **Authority rule:** The uploaded **codebase is truth**. Where documents conflicted, resolutions below reflect code. Anything not stated = **unknown / not specified**.
+> **Authority rule:** The uploaded **codebase is truth**. Where documents conflicted, resolutions below reflect code. Anything not stated = **unknown / not specified**.  
+> **Change note (2025-11-20):** Promotes `scripts/dev_bootstrap.ps1` to canonical dev launcher and clarifies that DB → AppData migration is **pending** (design target, not yet cut over). Adds explicit canonical launch/smoke commands.
+
+---
 
 ## 1) Identity & Naming
 
@@ -10,10 +14,14 @@
 * **Short form (UI):** **BUS Core**
 * **Extended (docs, when needed):** **TGC BUS Core – Business Utility System Core by True Good Craft**
 
+---
+
 ## 2) Baseline & Version
 
 * **Current version:** **v0.5.0** (from `VERSION`).
 * **Project baseline:** **Post-v0.5**.
+
+---
 
 ## 3) Scope & Non-Goals
 
@@ -21,6 +29,8 @@
 * **No telemetry / external network calls:** not implemented; policy is to avoid.
 * **Background automation:** allowed only for a one-shot **index-stale scan at startup**. No periodic schedulers/auto-crawls beyond that.
 * Anything else: **not specified**.
+
+---
 
 ## 4) Architecture & Runtime
 
@@ -30,20 +40,20 @@
 * **Business logic location:** **Core** service (plugins exist; core holds business features).
 * **Default local base URL:** `http://127.0.0.1:8765`.
 * **Routing structure (modular):**
-
   * `core/api/http.py` initializes the app and **includes** modular routers under prefix **`/app`**.
   * Domain routers live in:
-
     * `core/api/routes/vendors.py`
     * `core/api/routes/items.py`
     * (Contacts CRUD is registered under the same `/app` prefix; see §9)
 * **Startup hook:** `_ensure_schema_upgrades` runs **once on boot** to perform idempotent DB migrations (see §8.2).
 
+---
+
 ## 5) UI — Source of Truth (Binding, Zero-Drift)
 
 **Authority:** This section is law for UI. If UI code disagrees, UI code is wrong until this section is updated first or Implementation Gaps call it out explicitly.
 
-> **Note:** RFQ UI is currently **partial/stub** and the **token/401/F5** behavior is **unknown**. Treated as implementation gaps, not contradictions.
+> **Note:** RFQ UI is currently **partial/stub** and the exact token/401/F5 behavior is **unknown**. Treated as implementation gaps, not contradictions.
 
 ### 5.1 Shell & routing invariants
 
@@ -74,7 +84,6 @@
 * **Badge:** `[data-role="license-badge"]` shows `License: <tier>` from the protected health payload.
 * **Gating policy:** backend enforces; UI keeps Pro controls visible but **disabled/marked** on community (RFQ Generate, **Execute Manufacturing Run**, Import Commit).
 * **Button/tooltip copy (Inventory card):**
-
   * Button: **“Execute Manufacturing Run”**
   * Tooltip (community): “Run a single recipe now (free) – save & automate in Pro”
 * **Implementation state:** backend gates not yet enforced; UI not yet tier-aware.
@@ -82,50 +91,50 @@
 ### 5.5 Safe iteration rules
 
 * Update §5.2–§5.4 **before** changing routes/primary screens/Pro surfaces.
-* `ui(sot):` commit prefix when this section changes.
+* Use `ui(sot):` commit prefix when this section changes.
 * New Pro surface ⇒ add a **community negative test** in smoke.
+
+---
 
 ## 6) Features — Current Status
 
 * **RFQ generation:** `POST /app/rfq/generate` (backend implemented); UI **partial/stub**.
 * **Manufacturing run (formerly “Inventory run”):** `POST /app/manufacturing/run` implemented.
-
   * **Free (community):** one-off manual execution of a single recipe.
   * **Pro (future):** saved recipes, scheduling, multi-run queues, triggers, history, rollback.
-* **Encrypted backup & restore:** implemented
+* **Encrypted backup & restore:** implemented  
   `POST /app/export` (AES-GCM; Argon2id/PBKDF2) • `POST /app/import/preview` • `POST /app/import/commit` (audited)
 * **Domain CRUD (modular):**
-
   * **Vendors:** `/app/vendors` CRUD.
   * **Items:** minimal `/app/items` CRUD (GET/POST/PUT/DELETE); supports `item_type` (**default `product`**).
   * **Contacts:** `/app/contacts` CRUD (unified Vendors/Contacts; see §9).
+
+---
 
 ## 7) Licensing (features)
 
 * **Default tier:** `community`.
 * **License file (Windows):** `%LOCALAPPDATA%\BUSCore\license.json`.
 * **Gating policy (v1):** gate **only**:
-
   1. `POST /app/rfq/generate`
-  2. `POST /app/manufacturing/run` — **gates Pro automation surfaces** (saved recipes, scheduling, queues, triggers, history/rollback).
+  2. `POST /app/manufacturing/run` — **gates Pro automation surfaces** (saved recipes, scheduling, queues, triggers, history/rollback).  
      *Note: one-off manual execution remains **free**.*
   3. `POST /app/import/commit`
-
   * `POST /app/import/preview` stays **free** (still respects **writes**).
   * Simple one-off qty `PUT /app/items/{id}` stays **free**.
 * **Implementation state:** license gates **not yet enforced in code** (to be added).
 * **UI awareness:** UI must **read tier/flags** (from protected `/health`) to disable gated controls.
 
+---
+
 ## 8) Security, Health & Schema
 
 ### 8.1 Security & Health
 
-* **Session token** on all app routes; 401 retry in UI.
+* **Session token** on all app routes; 401 retry in UI.  
   **Exception:** `/health` has **no dependency**; header presence only selects payload.
 * **Writes guard** on mutating ops.
-* **Health (single, token-aware route):**
-  `GET /health`
-
+* **Health (single, token-aware route):** `GET /health`
   * **No `X-Session-Token`:** `{"ok": true}` (200).
   * **With `X-Session-Token`:** `_health_details_payload()` (200) with top-level keys: `version`, `policy`, `license`, `run-id`.
   * **No token validation** is required; header presence selects detail payload.
@@ -134,18 +143,17 @@
 ### 8.2 Database schema (idempotent runtime migration)
 
 * **Vendors** (unified Vendors/Contacts) — **additive columns**:
-
   * `role` (`vendor|contact|both`, **default `vendor`**; backfilled)
   * `kind` (`org|person`, **default `org`**; backfilled)
   * `organization_id` (FK to `vendors.id`)
   * `meta` (TEXT storing JSON; API returns parsed object)
 * **Indexes & uniqueness:**
-
   * **Drop** any **unique** index on `vendors(name)`; **replace** with **non-unique** index (to support unified model & merge semantics).
   * Helpful indexes created: `vendors(role)`, `vendors(kind)`, `vendors(organization_id)`, `items(item_type)`, non-unique `vendors(name)`.
 * **Items** — **additive column**:
-
   * `item_type` (TEXT; **default `product`**).
+
+---
 
 ## 9) Contacts API & Semantics (unified with Vendors)
 
@@ -153,11 +161,12 @@
 * **Storage:** persists to **`vendors`** table (unified model).
 * **Defaults (POST):** when omitted → `role='contact'`, `kind='person'`.
 * **Duplicate-name policy (POST):** if an existing row with the **same `name`** exists:
-
   * **Merge** instead of insert; set `role='both'`.
   * Merge `meta` JSON (incoming keys overwrite existing).
   * Optionally update `kind` and `organization_id`.
   * Respond **200** (idempotent create/merge).
+
+---
 
 ## 10) Testing & Smoke Harness (authoritative for dev/test)
 
@@ -168,21 +177,51 @@
 * **Readiness wait:** wait on `/session/token` (≤ ~30s) before assertions.
 * **UI presence:** `/ui/shell.html` returns 200 with non-empty body.
 * **Path enforcement (hard cutover):**
-
   * **Fail** if any `%LOCALAPPDATA%\TGC\*` exists after a run.
   * **Ensure** `%LOCALAPPDATA%\BUSCore\secrets` and `%LOCALAPPDATA%\BUSCore\state` exist (create if needed).
   * On success, print **“paths: hard cutover validated”**.
 * **Health assertions:**
-
   * Public: status 200; `{"ok": true}` seen **True**.
   * Protected: status 200; keys `[version, policy, license, run-id]` present **[True, True, True, True]**.
 
-### Two-window PowerShell dev/test flow (canonical)
+**Canonical smoke command (from repo root):**
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\buscore-smoke.ps1
+````
+
+### 10.1 Canonical dev launcher (law)
+
+* **Canonical dev launcher script:** `scripts/dev_bootstrap.ps1` (repo root).
+
+**Canonical dev launch command (from repo root):**
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev_bootstrap.ps1
+```
+
+* Design intent for `dev_bootstrap.ps1`:
+
+  * Run from a **fresh clone** directory.
+  * Ensure Python deps (`requirements.txt`) are installed.
+  * Export the same key env vars as the manual flow:
+
+    * `PYTHONPATH` pointing at repo root.
+    * `BUS_UI_DIR` pointing at `core/ui`.
+    * Any required `%LOCALAPPDATA%\BUSCore\…` paths created as needed.
+  * Start the FastAPI app via `uvicorn core.api.http:create_app` on `127.0.0.1:8765`.
+  * Print a simple **ASCII-safe** banner (e.g. `BUS Core - Running on $BaseUrl`) to avoid mojibake in Windows terminals.
+* **Law:** For dev/test, `scripts/dev_bootstrap.ps1` is the **primary** way to launch BUS Core.
+  The manual two-window flow below is a readable equivalent, not the preferred path.
+
+### Two-window PowerShell dev/test flow (manual reference)
+
+> **Status:** Still valid as a **manual / explicit** flow. Canonical way to start the app is `scripts/dev_bootstrap.ps1` (see §10.1).
 
 **Window A — Server**
 
 ```powershell
-cd "D:\Vault Overhaul\TGC-BUS-Core-main"
+cd "\TGC-BUS-Core-main"
 python -m pip install -r requirements.txt
 $env:PYTHONPATH = (Get-Location).Path
 # Ensure a default license for dev if missing
@@ -198,7 +237,7 @@ python -m uvicorn core.api.http:create_app --host 127.0.0.1 --port 8765 --reload
 **Window B — Smoke**
 
 ```powershell
-cd "D:\Vault Overhaul\TGC-BUS-Core-main"
+cd "\TGC-BUS-Core-main"
 $u = 'http://127.0.0.1:8765/session/token'
 $max = 30
 for ($i=0; $i -lt $max; $i++) {
@@ -207,6 +246,8 @@ for ($i=0; $i -lt $max; $i++) {
 }
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\buscore-smoke.ps1"
 ```
+
+---
 
 ## 11) Operations & Release Process (authoritative)
 
@@ -217,20 +258,28 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\buscore-smoke.ps1"
      *(Recent work may be squashed to streamline history.)*
   2. Download ZIP from GitHub.
   3. Unzip into a **fresh working directory**.
-  4. Run Window A (server) to bootstrap **community** `license.json`.
-  5. Run Window B (smoke) and record results.
+  4. Start BUS Core for dev/test (preferred: `scripts/dev_bootstrap.ps1`; alternative: manual flow in §10).
+  5. Run `buscore-smoke.ps1` and record results.
   6. **Acceptance = all smoke assertions pass.**
 * **Environment separation:**
 
   * **Local work/testing:** runs from the **fresh working directory** (unzipped tree; ephemeral).
-  * **Production/state paths (Windows):** all runtime data (DB, journals, exports, imports, settings, policy, **secrets**, **state**) live under **`%LOCALAPPDATA%\BUSCore\…`**.
+  * **Production/state paths (Windows):**
+
+    * **Design target:** all runtime data (DB, journals, exports, imports, settings, policy, **secrets**, **state**) live under **`%LOCALAPPDATA%\BUSCore\…`**.
+    * **Current implementation:** DB file(s) are still stored under the **repo working directory**, not yet fully cut over to AppData. The DB/AppData migration is tracked as an Implementation Gap (see §13).
+    * Secrets/config/state paths under `%LOCALAPPDATA%\BUSCore\…` remain authoritative for non-DB runtime data.
   * **Windows-only scope** for these path rules; other OS paths are **unchanged / not specified**.
+
+---
 
 ## 12) Repository Hygiene & Legal
 
 * **Privacy scrub:** removed hard-coded local paths/usernames and debug logs from code/comments/docs.
 * **Top-level `LICENSE`:** present with official **AGPL-3.0** text; **SPDX headers** inserted across source files.
 * **`.gitignore`:** added (Python template + project entries: envs, local DBs, UI `node_modules`, logs).
+
+---
 
 ## 13) Implementation Gaps
 
@@ -239,10 +288,19 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\buscore-smoke.ps1"
 
   * Ensure all server references use **`/app/manufacturing/run`** (keep temporary alias from `/app/inventory/run` only if needed during transition).
   * **Optional:** rename journal file from `data/journals/inventory.jsonl` → `data/journals/manufacturing.jsonl` (adjust diagnostics).
-* **Launcher scope:** add license bootstrap, single-instance focus, updater stub (packaging/ops).
+* **Launcher scope:**
+
+  * `scripts/dev_bootstrap.ps1` is now the **canonical dev launcher** (law) for local development.
+  * Still pending: packaging/updater story and single-instance behavior for non-dev/desktop launch scenarios.
+* **DB/AppData cutover:**
+
+  * Database file(s) are still stored under the repo working directory.
+  * Target design is to host DB under `%LOCALAPPDATA%\BUSCore\app` alongside other runtime state (`DATA_DIR`, `JOURNALS_DIR`, `IMPORTS_DIR`, etc.) without breaking existing installs.
 * **RFQ UI:** complete client workflow (inputs → call → results/attachments).
 * **Items CRUD alignment:** ensure `/app/items` GET/POST/PUT and **simple qty PUT** on `/app/items/{id}` while keeping the **free** one-off qty rule.
 * **(Optional next)** Smoke coverage for **`/app/contacts` merge semantics** (duplicate-name POST → merge).
+
+---
 
 ## 14) Unknowns / Not Specified
 
@@ -252,6 +310,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\buscore-smoke.ps1"
 * Enum validation for `item_type` or stricter dedupe constraints for contacts (e.g., `(name, organization_id)`).
 * `organization_id` FK action (`SET NULL` / cascade / restrict).
 * SPDX variant (`AGPL-3.0-only` vs `AGPL-3.0-or-later`) for headers.
+* Exact current DB filename under the repo working directory (only the location category is specified; see §11, §13).
 
 ---
 
@@ -338,6 +397,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\buscore-smoke.ps1"
 * **Policy helpers** (`load_policy`, `save_policy`, `require_owner_commit`).
 * **Plan storage** (`save_plan`, `get_plan`, `list_plans`, `preview_plan`, `commit_local`).
 * **DB/session:** `get_session` yields SQLAlchemy sessions with `_resolve_db_path`.
+  *Current code still resolves DB into the repo working directory; design target is `%LOCALAPPDATA%\BUSCore\app` (see §11, §13).*
 * **Broker:** `get_broker` initializes plugin broker with Secrets, capability registry, reader settings.
 
 ### Headers, Files, and Config Conventions
@@ -345,7 +405,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\buscore-smoke.ps1"
 * **Custom headers:** `X-Session-Token` on protected requests; middleware may add `X-TGC-License` / `X-TGC-License-URL`; bulk import auditing records `X-Plugin-Name`.
   *Tests rely on the header; cookie may also be set.*
 * **License file:** `%LOCALAPPDATA%\BUSCore\license.json` (or `BUS_ROOT\license.json`).
-* **Runtime paths:** `BUS_ROOT`, `APP_DIR`, `DATA_DIR`, `JOURNALS_DIR`, `IMPORTS_DIR`, `DB_PATH` derive from `%LOCALAPPDATA%\BUSCore\app`.
+* **Runtime paths:**
+
+  * `BUS_ROOT`, `APP_DIR`, `DATA_DIR`, `JOURNALS_DIR`, `IMPORTS_DIR` derive from `%LOCALAPPDATA%\BUSCore\app` (design target).
+  * **DB path:** design target is for `DB_PATH` to also derive from `%LOCALAPPDATA%\BUSCore\app`; as of this SoT, DB is still stored under the repo working directory (AppData cutover pending; see §11, §13).
 * **Backup artifacts:** `%LOCALAPPDATA%\BUSCore\exports`; journals under `data/journals`; previews under `data/imports`.
 * **Manufacturing journal:** `data/journals/manufacturing.jsonl` *(or `inventory.jsonl` until renamed)*.
 * **Session token persistence:** `data/session_token.txt` (launcher reuse).
@@ -359,4 +422,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\buscore-smoke.ps1"
 
 ---
 
-**End of Source of Truth.** 
+**End of Source of Truth.**
+
+```
+
