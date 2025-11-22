@@ -148,11 +148,16 @@ app = FastAPI(title="BUS Core Alpha", version=VERSION)
 
 
 UI_DIR = ui_dir()
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # --- BEGIN UI MOUNT ---
 app.mount("/ui", StaticFiles(directory=UI_DIR), name="ui")
 app.mount("/brand", StaticFiles(directory=str(REPO_ROOT)), name="brand")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    return FileResponse(REPO_ROOT / "Flat-Dark.png", media_type="image/png")
 
 
 @app.get("/")
@@ -249,7 +254,7 @@ app.add_middleware(BaseHTTPMiddleware, dispatch=_nocache_ui)
 
 TOKEN_HEADER = "X-Session-Token"
 PUBLIC_PATHS = {"/", "/session/token", "/favicon.ico", "/health"}
-PUBLIC_PREFIX = "/ui/"
+PUBLIC_PREFIXES = ("/ui/", "/brand/")
 
 
 # Add this function
@@ -433,7 +438,6 @@ def log(msg: str) -> None:
         handle.write(msg.rstrip() + "\n")
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_UI_BASES = [
     REPO_ROOT / "core" / "plugins_builtin",
     REPO_ROOT / "plugins",
@@ -560,7 +564,7 @@ class SessionGuard(BaseHTTPMiddleware):
         path = request.url.path
         if request.method == "OPTIONS":
             return await call_next(request)
-        if path in PUBLIC_PATHS or path.startswith(PUBLIC_PREFIX):
+        if path in PUBLIC_PATHS or any(path.startswith(prefix) for prefix in PUBLIC_PREFIXES):
             return await call_next(request)
         failure = await _require_session(request)
         if failure:
