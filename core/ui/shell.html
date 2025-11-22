@@ -80,6 +80,30 @@
     @media (max-width: 900px){
       #license-badge{ left: 16px; }
     }
+    /* === Sidebar primary nav: centered with safe insets === */
+    #sidebar .nav{ list-style:none; margin:0; padding:0; }
+    #sidebar .nav > li > a{
+      display:block;
+      text-align:center;     /* center the link text */
+      padding:8px 12px;      /* internal buffer */
+      margin:0 10px;         /* inset from left/right panel edges */
+      border-radius:8px;
+      text-decoration:none;
+      color:inherit;
+    }
+    #sidebar .nav > li > a:hover,
+    #sidebar .nav > li > a.active{
+      background:#2a2a2a;
+    }
+    /* Submenu links keep a slight indent but get touch-friendly padding */
+    #sidebar .nav-group a{
+      display:block;
+      padding:6px 10px;
+      border-radius:6px;
+      text-decoration:none;
+      color:inherit;
+    }
+    #sidebar .nav-group a:hover{ background:#2a2a2a; }
   </style>
   <script>
   (function(){
