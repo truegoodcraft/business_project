@@ -48,9 +48,9 @@ from fastapi import (
     Query,
     Request,
 )
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from starlette.staticfiles import StaticFiles
-from starlette.responses import FileResponse, RedirectResponse, Response
+from starlette.responses import RedirectResponse, Response
 
 import requests
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -148,9 +148,17 @@ app = FastAPI(title="BUS Core Alpha", version=VERSION)
 
 
 UI_DIR = ui_dir()
+# Mount brand to the repo root so Flat-Dark.png / Glow-Hero.png are reachable
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # --- BEGIN UI MOUNT ---
 app.mount("/ui", StaticFiles(directory=UI_DIR), name="ui")
+app.mount("/brand", StaticFiles(directory=str(REPO_ROOT)), name="brand")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    return FileResponse(REPO_ROOT / "Flat-Dark.png", media_type="image/png")
 
 
 @app.get("/")
@@ -247,7 +255,13 @@ app.add_middleware(BaseHTTPMiddleware, dispatch=_nocache_ui)
 
 TOKEN_HEADER = "X-Session-Token"
 PUBLIC_PATHS = {"/", "/session/token", "/favicon.ico", "/health"}
-PUBLIC_PREFIX = "/ui/"
+PUBLIC_PREFIXES = (
+    "/ui/",
+    "/session/",
+    "/dev/",
+    "/brand/",
+    "/favicon.ico",
+)
 
 
 # Add this function
@@ -431,7 +445,6 @@ def log(msg: str) -> None:
         handle.write(msg.rstrip() + "\n")
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_UI_BASES = [
     REPO_ROOT / "core" / "plugins_builtin",
     REPO_ROOT / "plugins",
@@ -553,17 +566,18 @@ async def _require_session(req: Request):
     return None
 
 
-class SessionGuard(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
-        path = request.url.path
-        if request.method == "OPTIONS":
-            return await call_next(request)
-        if path in PUBLIC_PATHS or path.startswith(PUBLIC_PREFIX):
-            return await call_next(request)
-        failure = await _require_session(request)
-        if failure:
-            return failure
+@app.middleware("http")
+async def session_guard(request: Request, call_next):
+    p = request.url.path
+    if request.method == "OPTIONS":
         return await call_next(request)
+    # Make static UI, session bootstrap, and brand assets public
+    if p in PUBLIC_PATHS or any(p.startswith(prefix) for prefix in PUBLIC_PREFIXES):
+        return await call_next(request)
+    failure = await _require_session(request)
+    if failure:
+        return failure
+    return await call_next(request)
 
 
 app.add_middleware(
@@ -572,7 +586,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["Accept", "Content-Type", TOKEN_HEADER],
 )
-app.add_middleware(SessionGuard)
 
 
 protected = APIRouter(dependencies=[Depends(require_token_ctx)])

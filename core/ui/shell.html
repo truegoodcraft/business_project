@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <title>BUS Core</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="icon" type="image/svg+xml" href="/ui/favicon.svg" />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg?v=buscore-8">
   <link rel="stylesheet" href="/ui/css/app.css">
   <style>
     :root { --bg:#1a1a1a; --fg:#eee; --accent:#0a84ff; --sidebar:#222; }
@@ -27,7 +27,8 @@
     button:hover{opacity:.9}
     pre{background:#111;padding:12px;border-radius:6px;overflow:auto;font-size:12px}
     .hidden{display:none!important}
-    .top-bar{display:flex;align-items:center;justify-content:flex-end;margin-bottom:16px;gap:12px}
+    .top-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;gap:12px}
+    .brand-inline{display:flex;align-items:center}
     .tabs{display:flex;gap:8px;margin-bottom:16px}
     .tabs button{background:#2b2f36;color:#e6e6e6;border:1px solid #363b44;padding:8px 14px;border-radius:10px;cursor:pointer}
     .tabs button.active{background:var(--accent);border-color:var(--accent);color:#fff}
@@ -51,12 +52,38 @@
     .drawer-body .mt{margin:16px 0 4px;font-size:14px;color:#cbd5f5}
     .drawer-body .list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
     .drawer-body .list li{background:#23262b;padding:8px 12px;border-radius:8px;font-size:13px}
+    .small-dot-icon{display:inline-block;width:6px;height:6px;border-radius:50%;background:#ff7a00;vertical-align:middle;margin:0 6px 0 2px}
+    .app-logo{height:28px;width:auto;vertical-align:middle;margin-right:8px}
+    .brand-nav{
+      height:16px;
+      width:auto;
+      vertical-align:middle;
+      margin:0 8px 0 6px;
+      object-fit:contain;
+      image-rendering:auto;
+    }
+    @media (min-width:1280px){.brand-nav{height:18px}}
+    .hero-logo{max-width:420px;width:100%;height:auto;display:block;margin:16px auto}
+    @media (max-width:480px){.app-logo{height:24px;margin-right:6px}}
   </style>
+  <script>
+  (function(){
+    const href = "favicon.svg?v=buscore-8";
+    let link = document.querySelector('link[rel="icon"]');
+    if(!link){ link=document.createElement('link'); link.rel='icon'; document.head.appendChild(link); }
+    link.type = 'image/svg+xml'; link.href = href;
+    document.querySelectorAll('link[rel="shortcut icon"],link[rel="apple-touch-icon"],link[rel="mask-icon"]').forEach(x=>x.remove());
+  })();
+  </script>
 </head>
 <body>
   <nav id="sidebar">
     <div class="brand">
-      <a href="#/BUSCore" data-link="brand-home">BUS Core</a>
+      <a class="app-home" href="#/home" data-link="brand-home">
+        <span class="small-dot-icon"></span>
+        <img src="/brand/Glow-Hero.png?v=buscore-8" alt="BUS Core" class="brand-nav">
+        <span class="app-title">BUS Core</span>
+      </a>
     </div>
     <ul class="nav">
       <li data-role="nav-tools">
@@ -72,6 +99,10 @@
   <main id="main">
     <div id="app">
       <header class="top-bar">
+        <div class="brand-inline">
+          <img src="/brand/Flat-Dark.png?v=buscore-2" alt="BUS Core" class="app-logo">
+          <span class="app-title">BUS Core</span>
+        </div>
         <span id="license-badge" data-role="license-badge">License: community</span>
       </header>
 

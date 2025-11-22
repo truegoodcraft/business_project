@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="Glow-Hero.png" alt="BUS Core logo" width="96" height="96">
+</p>
+
 # BUS Core
 
 BUS Core is a local-first business core for small and micro shops — free forever, built slowly and deliberately by someone who actually runs a workshop.
