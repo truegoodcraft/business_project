@@ -48,9 +48,9 @@ from fastapi import (
     Query,
     Request,
 )
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from starlette.staticfiles import StaticFiles
-from starlette.responses import FileResponse, RedirectResponse, Response
+from starlette.responses import RedirectResponse, Response
 
 import requests
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -254,7 +254,13 @@ app.add_middleware(BaseHTTPMiddleware, dispatch=_nocache_ui)
 
 TOKEN_HEADER = "X-Session-Token"
 PUBLIC_PATHS = {"/", "/session/token", "/favicon.ico", "/health"}
-PUBLIC_PREFIXES = ("/ui/", "/brand/")
+PUBLIC_PREFIXES = (
+    "/ui/",
+    "/session/token",
+    "/dev/",
+    "/brand/",
+    "/favicon.ico",
+)
 
 
 # Add this function
