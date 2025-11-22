@@ -1,0 +1,3 @@
+# Do NOT LFS-track the official brand PNGs
+Flat-Dark.png -filter -diff -merge -text
+Glow-Hero.png -filter -diff -merge -text
