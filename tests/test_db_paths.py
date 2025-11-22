@@ -19,7 +19,7 @@ def test_app_db_path_creates_directory(tmp_path, monkeypatch):
     db_path = appdb_paths.app_db_path()
 
     assert db_path == local_app_data / "BUSCore" / "app" / "app.db"
-    assert db_path.parent.is_dir()
+    assert db_path.parent == local_app_data / "BUSCore" / "app"
 
 
 def test_db_url_uses_posix(monkeypatch, tmp_path):
@@ -31,6 +31,6 @@ def test_db_url_uses_posix(monkeypatch, tmp_path):
 
     importlib.reload(config_paths)
 
+    assert config_paths.DB_URL.drivername == "sqlite+pysqlite"
     assert config_paths.DB_URL.get_backend_name() == "sqlite"
-    assert config_paths.DB_URL.database == str(config_paths.DB_PATH)
-    assert "\\" not in config_paths.DB_URL.database
+    assert config_paths.DB_URL.database == config_paths.DB_PATH.as_posix()

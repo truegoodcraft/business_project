@@ -7,8 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from core.config.paths import APP_DIR, DATA_DIR
-from core.appdb.paths import app_data_dir, secrets_dir, state_dir  # canonical %LOCALAPPDATA%\BUSCore
+from core.config.paths import APP_DIR, APP_ROOT, DATA_DIR, STATE_DIR  # canonical %LOCALAPPDATA%\BUSCore
 
 
 # DATA points at the canonical data dir used by the app
@@ -29,9 +28,9 @@ def ensure_first_run() -> dict:
     used by CoreAlpha/bootstrap reporting.
     """
     # Ensure canonical dirs exist (idempotent)
-    root = app_data_dir()
-    sec = secrets_dir()
-    st = state_dir()
+    root = APP_DIR
+    sec = APP_ROOT / "secrets"
+    st = STATE_DIR
     LOGS.mkdir(parents=True, exist_ok=True)
     DATA.mkdir(parents=True, exist_ok=True)
 

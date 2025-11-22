@@ -21,8 +21,15 @@ from pathlib import Path
 
 from sqlalchemy.engine import URL
 
-from core.appdb.paths import APP_DIR, DATA_DIR, DB_PATH, IMPORTS_DIR, JOURNALS_DIR, STATE_DIR, UI_DIR as _UI_DIR
+from core.appdb.paths import app_db_path, app_root_dir, ui_dir
 
-BUS_ROOT: Path = APP_DIR.parent
-DB_URL = URL.create(drivername="sqlite", database=str(DB_PATH))
-UI_DIR: Path = _UI_DIR
+APP_ROOT: Path = app_root_dir()
+APP_DIR: Path = APP_ROOT / "app"
+STATE_DIR: Path = APP_DIR / "state"
+DATA_DIR: Path = APP_DIR / "data"
+JOURNALS_DIR: Path = DATA_DIR / "journals"
+IMPORTS_DIR: Path = DATA_DIR / "imports"
+DB_PATH: Path = app_db_path()
+BUS_ROOT: Path = APP_ROOT
+DB_URL = URL.create(drivername="sqlite+pysqlite", database=DB_PATH.as_posix())
+UI_DIR: Path = ui_dir()
