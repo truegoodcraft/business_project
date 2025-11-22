@@ -62,3 +62,6 @@ pnpm-debug.log*
 __snapshots__/
 *.pdf
 *.xlsx
+# --- allowlist: official BUS Core brand assets in repo root ---
+!Flat-Dark.png
+!Glow-Hero.png
