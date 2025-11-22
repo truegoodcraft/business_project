@@ -25,7 +25,7 @@ import stat
 from pathlib import Path
 from typing import Dict, List, Tuple
 
-from core.appdb.paths import app_data_dir
+from core.config.paths import APP_DIR
 
 
 def _root() -> Path:
@@ -42,7 +42,7 @@ def _logs_dir() -> Path:
 
 def _state_dir() -> Path:
     if os.name == "nt":
-        return app_data_dir()
+        return APP_DIR
     return Path.home() / ".tgc"
 
 

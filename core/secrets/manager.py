@@ -26,7 +26,7 @@ from typing import Optional
 
 import getpass  # noqa: F401  # retained for potential future secure input use
 
-from core.appdb.paths import secrets_dir as buscore_secrets_dir
+from core.config.paths import APP_ROOT
 
 try:
     import keyring
@@ -61,7 +61,7 @@ def _namespace(plugin_id: str, key: str) -> str:
 
 def _state_dir() -> Path:
     if os.name == "nt":
-        return buscore_secrets_dir()
+        return APP_ROOT / "secrets"
     return Path.home() / ".tgc" / "secrets"
 
 

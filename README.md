@@ -225,4 +225,16 @@ Optional PRO plugins and commercial add-ons may be offered under a separate lice
 
 
 Anything I didn’t touch is either **Correct according to SoT** or safely **Not specified in SoT**.
-```
+
+### Data location (Windows)
+By default BUS Core stores its SQLite DB at:
+
+
+%LOCALAPPDATA%\BUSCore\app\app.db
+
+You can override the root via:
+
+
+setx BUSCORE_HOME D:\\BUSCoreData
+
+The server logs and `/dev/db/where` return the exact path and the driver-reported file via `PRAGMA database_list`.

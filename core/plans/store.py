@@ -21,11 +21,11 @@ import json
 import sqlite3
 from typing import Optional
 
-from core.appdb.paths import app_data_dir
+from core.config.paths import APP_DIR
 
 from .model import Action, Plan, PlanStatus
 
-DB_FILE = app_data_dir() / "plans.db"
+DB_FILE = APP_DIR / "plans.db"
 
 
 def _init():

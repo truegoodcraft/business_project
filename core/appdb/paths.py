@@ -1,53 +1,29 @@
-from pathlib import Path
+from __future__ import annotations
 import os
-
-APP_DIR   = Path(os.getenv("LOCALAPPDATA", "")) / "BUSCore" / "app"
-STATE_DIR = APP_DIR / "state"
+from pathlib import Path
 
 
-def ensure_dir(p: Path) -> Path:
-    p.mkdir(parents=True, exist_ok=True)
-    return p
+def _local_appdata() -> Path:
+    # Fallback for non-Windows or missing env
+    return Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local")))
 
 
-def app_dir() -> Path:
-    return ensure_dir(APP_DIR)
-
-
-def state_dir() -> Path:
-    r"""Returns %LOCALAPPDATA%\\BUSCore\\app\\state and ensures it exists."""
-    return ensure_dir(STATE_DIR)
+def app_root_dir() -> Path:
+    """
+    Root folder for BUS Core data.
+    Default: %LOCALAPPDATA%/BUSCore
+    Override: set BUSCORE_HOME to an absolute path (e.g., D:\\BUSCoreData).
+    """
+    custom = os.environ.get("BUSCORE_HOME")
+    return Path(custom) if custom else (_local_appdata() / "BUSCore")
 
 
 def app_db_path() -> Path:
-    p = APP_DIR / "app.db"
-    ensure_dir(p.parent)
-    return p
-
-DB_PATH = app_db_path()
+    return app_root_dir() / "app" / "app.db"
 
 
 def ui_dir() -> Path:
-    # Serve UI from repo (not AppData)
+    """
+    Serve UI from the repo (core/ui). Do NOT point to AppData.
+    """
     return Path(__file__).resolve().parents[2] / "core" / "ui"
-
-
-# Additional convenience paths
-DATA_DIR = APP_DIR / "data"
-JOURNALS_DIR = DATA_DIR / "journals"
-IMPORTS_DIR = DATA_DIR / "imports"
-UI_DIR = ui_dir()
-
-
-# Back-compat shims used by older modules
-def app_data_dir() -> Path:
-    return APP_DIR
-
-
-def secrets_dir() -> Path:
-    # %LOCALAPPDATA%\\BUSCore\\secrets (sibling to "app")
-    return APP_DIR.parent / "secrets"
-
-
-def state_dir() -> Path:
-    return STATE_DIR
