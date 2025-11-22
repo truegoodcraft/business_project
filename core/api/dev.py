@@ -1,10 +1,12 @@
 from __future__ import annotations
+
 from fastapi import APIRouter
-from core.appdb.engine import db_debug_info
 
-router = APIRouter()
+from core.appdb.engine import debug_db_where
+
+router = APIRouter(prefix="/dev", tags=["dev"])
 
 
-@router.get("/dev/db/where")
+@router.get("/db/where")
 def dev_db_where():
-    return db_debug_info()
+    return debug_db_where()
