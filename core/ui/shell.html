@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <title>BUS Core</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="icon" type="image/svg+xml" href="/ui/favicon.svg" />
+  <link rel="icon" type="image/png" href="../../Flat-Dark.png">
   <link rel="stylesheet" href="/ui/css/app.css">
   <style>
     :root { --bg:#1a1a1a; --fg:#eee; --accent:#0a84ff; --sidebar:#222; }
@@ -51,12 +51,21 @@
     .drawer-body .mt{margin:16px 0 4px;font-size:14px;color:#cbd5f5}
     .drawer-body .list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
     .drawer-body .list li{background:#23262b;padding:8px 12px;border-radius:8px;font-size:13px}
+    .app-logo { height: 28px; width: auto; vertical-align: middle; margin-right: 8px; }
+    @media (max-width: 480px) {
+      .app-logo { height: 24px; margin-right: 6px; }
+    }
+    .home-hero{display:flex;justify-content:center;margin-bottom:16px}
+    .home-hero img{max-width:200px;height:auto}
   </style>
 </head>
 <body>
   <nav id="sidebar">
     <div class="brand">
-      <a href="#/BUSCore" data-link="brand-home">BUS Core</a>
+      <a href="#/BUSCore" data-link="brand-home">
+        <img src="../../Flat-Dark.png" alt="BUS Core" class="app-logo">
+        <span class="app-title">BUS Core</span>
+      </a>
     </div>
     <ul class="nav">
       <li data-role="nav-tools">
@@ -77,6 +86,10 @@
 
       <!-- Home screen container -->
       <div data-role="home-screen" class="card">
+        <div class="home-hero">
+          <img src="../../Glow-Hero.png" alt="BUS Core">
+        </div>
+
         <!-- 1) Primary actions -->
         <div class="home-actions">
           <button data-action="open-expense-modal" class="btn btn-red btn-large">Add Expense</button>
