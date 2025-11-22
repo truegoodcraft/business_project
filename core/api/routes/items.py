@@ -1,22 +1,15 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # core/api/routes/items.py
-from typing import Any, Dict, Generator, List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
+from core.appdb.engine import get_session
 from core.policy.guard import require_owner_commit
-from core.services.models import SessionLocal, Item, Vendor
+from core.services.models import Item, Vendor
 
 router = APIRouter(tags=["items"])
-
-# Local DB dependency (no circular imports)
-def get_db() -> Generator[Session, None, None]:
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 # Runtime token import to avoid import cycles
 def _require_token_runtime(req: Request):
@@ -41,14 +34,14 @@ def _row(it: Item, vendor_name: Optional[str] = None) -> Dict[str, Any]:
     }
 
 @router.get("/items")
-def list_items(req: Request, db: Session = Depends(get_db)) -> List[Dict[str, Any]]:
+def list_items(req: Request, db: Session = Depends(get_session)) -> List[Dict[str, Any]]:
     _require_token_runtime(req)
     items = db.query(Item).all()
     vmap = {v.id: v.name for v in db.query(Vendor).all()}
     return [_row(it, vmap.get(it.vendor_id)) for it in items]
 
 @router.get("/items/{item_id}")
-def get_item(item_id: int, req: Request, db: Session = Depends(get_db)) -> Dict[str, Any]:
+def get_item(item_id: int, req: Request, db: Session = Depends(get_session)) -> Dict[str, Any]:
     _require_token_runtime(req)
     it = db.query(Item).get(item_id)
     if not it:
@@ -60,7 +53,7 @@ def get_item(item_id: int, req: Request, db: Session = Depends(get_db)) -> Dict[
     return _row(it, vname)
 
 @router.post("/items")
-def create_item(payload: Dict[str, Any], req: Request, db: Session = Depends(get_db)) -> Dict[str, Any]:
+def create_item(payload: Dict[str, Any], req: Request, db: Session = Depends(get_session)) -> Dict[str, Any]:
     _require_token_runtime(req)
     require_owner_commit()
 
@@ -109,7 +102,7 @@ def create_item(payload: Dict[str, Any], req: Request, db: Session = Depends(get
     return _row(it, vname)
 
 @router.put("/items/{item_id}")
-def update_item(item_id: int, payload: Dict[str, Any], req: Request, db: Session = Depends(get_db)) -> Dict[str, Any]:
+def update_item(item_id: int, payload: Dict[str, Any], req: Request, db: Session = Depends(get_session)) -> Dict[str, Any]:
     _require_token_runtime(req)
     require_owner_commit()
 
@@ -133,7 +126,7 @@ def update_item(item_id: int, payload: Dict[str, Any], req: Request, db: Session
     return _row(it, vname)
 
 @router.delete("/items/{item_id}")
-def delete_item(item_id: int, req: Request, db: Session = Depends(get_db)) -> Dict[str, Any]:
+def delete_item(item_id: int, req: Request, db: Session = Depends(get_session)) -> Dict[str, Any]:
     _require_token_runtime(req)
     require_owner_commit()
 

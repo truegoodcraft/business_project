@@ -90,7 +90,7 @@ from core.settings.reader_state import (
 )
 from core.reader.api import router as reader_local_router
 from core.organizer.api import router as organizer_router
-from core.api.dev import router as dev_db_where_router
+from core.api.dev import router as dev_router
 from core.config.paths import (
     APP_DIR,
     BUS_ROOT,
@@ -99,9 +99,8 @@ from core.config.paths import (
     IMPORTS_DIR,
     DB_URL,
 )
-from core.appdb.engine import ENGINE, DB_PATH as DB_FILE
+from core.appdb.engine import ENGINE, DB_PATH as DB_FILE, SessionLocal
 from core.appdb.paths import ui_dir
-from core.services.models import SessionLocal, get_session
 
 if os.name == "nt":  # pragma: no cover - windows specific
     from core.broker.pipes import NamedPipeServer
@@ -312,15 +311,6 @@ def dev_paths():
             ]
         },
         "DB_PATH": str(DB_FILE),
-    }
-
-
-@app.get("/dev/db/where")
-def db_where():
-    return {
-        "engine_url": str(ENGINE.url),
-        "database": ENGINE.url.database,
-        "resolved_fs_path": str(DB_FILE),
     }
 
 
@@ -1961,7 +1951,7 @@ def server_restart() -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail="restart_failed") from exc
 
 
-app.include_router(dev_db_where_router)
+app.include_router(dev_router, dependencies=[Depends(require_token_ctx)])
 app.include_router(oauth)
 app.include_router(protected)
 

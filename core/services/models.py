@@ -22,9 +22,9 @@
 from __future__ import annotations
 
 from sqlalchemy import Column, Date, DateTime, Float, ForeignKey, Integer, String, Text, func
-from sqlalchemy.orm import Session, declarative_base
+from sqlalchemy.orm import declarative_base
 
-from core.appdb.engine import ENGINE, SessionLocal, DB_PATH as DB_FILE
+from core.appdb.engine import ENGINE, SessionLocal, get_session
 
 Base = declarative_base()
 
@@ -82,14 +82,6 @@ class Attachment(Base):
 
 # Ensure tables exist AFTER all models are defined
 Base.metadata.create_all(bind=ENGINE)
-
-
-def get_session() -> Session:
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 __all__ = [
