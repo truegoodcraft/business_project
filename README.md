@@ -6,7 +6,7 @@
 
 [![GitHub Repo stars](https://img.shields.io/github/stars/truegoodcraft/TGC-BUS-Core?style=social)](https://github.com/truegoodcraft/TGC-BUS-Core)
 [![License](https://img.shields.io/github/license/truegoodcraft/TGC-BUS-Core)](LICENSE)
-![Python](https://img.shields.io/badge/python-3.x-blue)
+![Python](https://img.shields.io/badge/python-3.14-blue)
 
 
 
