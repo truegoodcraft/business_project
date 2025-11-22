@@ -4,6 +4,12 @@
 
 # BUS Core
 
+[![GitHub Repo stars](https://img.shields.io/github/stars/truegoodcraft/TGC-BUS-Core?style=social)](https://github.com/truegoodcraft/TGC-BUS-Core)
+[![License](https://img.shields.io/github/license/truegoodcraft/TGC-BUS-Core)](LICENSE)
+![Python](https://img.shields.io/badge/python-3.x-blue)
+
+
+
 BUS Core is a local-first business core for small and micro shops — free forever, built slowly and deliberately by someone who actually runs a workshop.
 
 I’m building it for my own workshop first: inventory, contacts, and simple manufacturing runs that live on my machine, not in someone else’s cloud. The core will always be free to run locally, with no telemetry, no tracking, and no subscription wall for basic day-to-day work.
