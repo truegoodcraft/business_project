@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <title>BUS Core</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="icon" type="image/svg+xml" href="favicon.svg?v=buscore-3">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg?v=buscore-7">
   <link rel="stylesheet" href="/ui/css/app.css">
   <style>
     :root { --bg:#1a1a1a; --fg:#eee; --accent:#0a84ff; --sidebar:#222; }
@@ -53,6 +53,15 @@
     .drawer-body .list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
     .drawer-body .list li{background:#23262b;padding:8px 12px;border-radius:8px;font-size:13px}
     .app-logo{height:28px;width:auto;vertical-align:middle;margin-right:8px}
+    .brand-nav{
+      height:16px;
+      width:auto;
+      vertical-align:middle;
+      margin:0 8px 0 6px;
+      object-fit:contain;
+      image-rendering:auto;
+    }
+    @media (min-width:1280px){.brand-nav{height:18px}}
     .hero-logo{max-width:420px;width:100%;height:auto;display:block;margin:16px auto}
     @media (max-width:480px){.app-logo{height:24px;margin-right:6px}}
   </style>
@@ -62,6 +71,7 @@
     <div class="brand">
       <a href="#/BUSCore" data-link="brand-home">
         <img src="/brand/Flat-Dark.png?v=buscore-2" alt="BUS Core" class="app-logo">
+        <img src="/brand/Glow-Hero.png?v=buscore-2" alt="BUS Core" class="brand-nav">
         <span class="app-title">BUS Core</span>
       </a>
     </div>
@@ -88,8 +98,6 @@
 
       <!-- Home screen container -->
       <div data-role="home-screen" class="card">
-        <img src="/brand/Glow-Hero.png?v=buscore-2" alt="BUS Core" class="hero-logo">
-
         <!-- 1) Primary actions -->
         <div class="home-actions">
           <button data-action="open-expense-modal" class="btn btn-red btn-large">Add Expense</button>
