@@ -1,4 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
-  <rect width="48" height="48" rx="8" fill="#2d2f33"/>
-  <text x="24" y="30" font-size="20" text-anchor="middle" fill="#7aa2ff">BUS</text>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <title>BUS Core favicon</title>
+  <!-- gear outline -->
+  <path d="M32 4l5.6 3.9 6.7 1-1 6.7 3.9 5.6-3.9 5.6 1 6.7-6.7 1-5.6 3.9-5.6-3.9-6.7-1 1-6.7-3.9-5.6 3.9-5.6-1-6.7 6.7-1z"
+        fill="none" stroke="#fff" stroke-width="3.5" stroke-linejoin="round"/>
+  <!-- concentric rings -->
+  <circle cx="32" cy="32" r="11" fill="none" stroke="#fff" stroke-width="3"/>
+  <circle cx="32" cy="32" r="5.5" fill="none" stroke="#fff" stroke-width="3"/>
+  <!-- orange wedge -->
+  <path d="M48 14l4 9-12.5-.7z" fill="#FF7A00"/>
 </svg>
