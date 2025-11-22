@@ -65,6 +65,21 @@
     @media (min-width:1280px){.brand-nav{height:18px}}
     .hero-logo{max-width:420px;width:100%;height:auto;display:block;margin:16px auto}
     @media (max-width:480px){.app-logo{height:24px;margin-right:6px}}
+    /* === License badge: bottom-left, responsive === */
+    #license-badge{
+      position: fixed;           /* detach from header flow */
+      left: calc(200px + 16px);  /* 200px sidebar + 16px buffer */
+      bottom: 16px;              /* nice bottom buffer */
+      z-index: 70;               /* above cards/sidebar */
+    }
+    /* Respect device safe areas (iOS etc.) */
+    @supports (bottom: env(safe-area-inset-bottom)) {
+      #license-badge{ bottom: calc(env(safe-area-inset-bottom) + 16px); }
+    }
+    /* On narrow viewports, don’t offset by sidebar width */
+    @media (max-width: 900px){
+      #license-badge{ left: 16px; }
+    }
   </style>
   <script>
   (function(){
