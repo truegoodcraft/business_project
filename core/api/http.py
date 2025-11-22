@@ -148,9 +148,11 @@ app = FastAPI(title="BUS Core Alpha", version=VERSION)
 
 
 UI_DIR = ui_dir()
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # --- BEGIN UI MOUNT ---
 app.mount("/ui", StaticFiles(directory=UI_DIR), name="ui")
+app.mount("/brand", StaticFiles(directory=str(REPO_ROOT)), name="brand")
 
 
 @app.get("/")
