@@ -14,7 +14,7 @@ This is a long-term side project, not a weekend toy. I expect it to grow slowly,
 
 - **Real, but early.** The core works for me; expect rough edges and breaking changes.
 - **Side project.** I have a day job and a family. Progress will be steady but not frantic.
-- **Free forever.** You can run BUS Core locally, indefinitely, with no license key and no tracking.
+- **Free forever.** You can run BUS Core locally, indefinitely, with no license key and no tracking. # If you run it at any point know this. I will do my best to maintain backwards compatibility over all else. No db nukes or wipes, I run this too :p 
 - **Pro later, only if you actually need it.** Paid features will be for heavy automation and people who live in this every day. If you don’t need that, you shouldn’t feel any pressure to pay.
 
 ### Current surface
