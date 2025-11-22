@@ -23,13 +23,12 @@ import mountVendors, { mountContacts } from "./js/cards/vendors.js";
 import { mountHome } from "./js/cards/home.js";
 import "./js/cards/home_donuts.js";
 import { mountInventory, unmountInventory } from "./js/cards/inventory.js";
+import { settingsCard } from "./js/cards/settings.js";
 
 const getRoute = () => {
   let route = location.hash.replace('#/', '');
   if (route === '' || route === 'home' || route === 'BUSCore') route = 'home';
-  let base = route.split(/[\/?]/)[0] || 'home';
-  if (base === 'settings') base = 'dev';
-  return base;
+  return route.split(/[\/?]/)[0] || 'home';
 };
 
 const setActiveNav = (route) => {
@@ -47,6 +46,7 @@ function showScreen(name) {
 }
 
 let contactsMounted = false;
+let settingsMounted = false;
 
 const ensureContactsMounted = async () => {
   if (contactsMounted) return;
@@ -59,6 +59,8 @@ const ensureContactsMounted = async () => {
 const onRouteChange = async () => {
   const route = getRoute();
   setActiveNav(route);
+
+  document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
 
   if (route === 'contacts') {
     // Close Tools drawer if open
@@ -77,6 +79,22 @@ const onRouteChange = async () => {
     // Show Inventory only
     document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
     mountInventory();
+    return;
+  }
+
+  if (route === 'settings') {
+    unmountInventory();
+    document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
+    showScreen(null);
+    const settingsScreen = document.querySelector('[data-role="settings-screen"]');
+    settingsScreen?.classList.remove('hidden');
+    if (!settingsMounted) {
+      const host = document.querySelector('[data-role="settings-root"]');
+      if (host) {
+        settingsCard(host);
+        settingsMounted = true;
+      }
+    }
     return;
   }
 

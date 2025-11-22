@@ -17,21 +17,30 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with TGC BUS Core.  If not, see <https://www.gnu.org/licenses/>.
 
-import os
+from typing import Any, Dict
 
-from fastapi import HTTPException
+from fastapi import HTTPException, status
 
-from core.config.writes import require_writes
+from core.config.paths import _load_config_dict, _save_config_dict
 
-from .model import Role
-from .store import load_policy
+WRITE_BLOCK_MSG = "Local writes disabled. Enable in Settings."
 
 
-def require_owner_commit() -> None:
-    # Allow if env override or UI toggle is on; otherwise block
-    require_writes()
-    # Optional strict policy (OFF unless BUS_POLICY_ENFORCE=1)
-    if os.environ.get("BUS_POLICY_ENFORCE") == "1":
-        p = load_policy()
-        if not (p.role == Role.OWNER and p.plan_only is False):
-            raise HTTPException(status_code=403, detail="Commits disabled by policy (not OWNER or plan-only).")
+def get_writes_enabled() -> bool:
+    cfg = _load_config_dict()
+    return bool(cfg.get("writes_enabled", False))
+
+
+def set_writes_enabled(enabled: bool) -> Dict[str, Any]:
+    cfg = _load_config_dict()
+    cfg["writes_enabled"] = bool(enabled)
+    _save_config_dict(cfg)
+    return {"enabled": cfg["writes_enabled"]}
+
+
+def require_writes():
+    if not get_writes_enabled():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=WRITE_BLOCK_MSG,
+        )

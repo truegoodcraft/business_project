@@ -17,17 +17,23 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with TGC BUS Core.  If not, see <https://www.gnu.org/licenses/>.
 
-import { apiJson, apiGetJson, apiJsonJson } from '../token.js';
-export async function mountSettings(el){
-  el.innerHTML = `
-    <h2>Settings</h2>
-    <div style="margin-bottom:16px;">
-      <label>Writes:</label>
-      <button class="btn" id="writesBtn">toggle</button>
-      <span id="writesLabel"></span>
+import { apiGet, apiPost, ensureToken } from '../api.js';
+
+export function settingsCard(el) {
+  el.innerHTML = '';
+
+  const root = document.createElement('div');
+  root.innerHTML = `
+    <div class="card">
+      <div class="card-title" style="margin-bottom:8px;">Settings</div>
+      <label style="display:flex;align-items:center;gap:.5rem;">
+        <input id="writesToggle" type="checkbox" />
+        <span>Enable local writes</span>
+      </label>
+      <div id="writesStatus" class="muted"></div>
     </div>
-    <div class="card" style="padding:12px;">
-      <h3>Business Profile</h3>
+    <div class="card" style="margin-top:12px;">
+      <h3 style="margin-top:0;">Business Profile</h3>
       <div class="grid" style="display:grid;grid-template-columns:repeat(2,minmax(180px,1fr));gap:8px;">
         <input name="business_name" placeholder="Business name">
         <input name="logo_path" placeholder="C:\\Users\\You\\Pictures\\logo.png">
@@ -40,38 +46,80 @@ export async function mountSettings(el){
         <input name="phone" placeholder="Phone">
         <input name="email" placeholder="Email">
       </div>
-      <div style="margin-top:10px;">
+      <div style="margin-top:10px;display:flex;align-items:center;gap:8px;">
         <button class="btn" id="bpSave">Save Business Profile</button>
-        <span id="bpStatus" style="margin-left:8px;color:var(--text-muted);"></span>
+        <span id="bpStatus" style="color:var(--text-muted);"></span>
       </div>
     </div>
   `;
-  const btn = el.querySelector('#writesBtn');
-  const lab = el.querySelector('#writesLabel');
-  async function sync(){
-    const s = await apiGetJson('/dev/writes');
-    lab.textContent = s.enabled ? 'enabled' : 'disabled';
+  el.appendChild(root);
+
+  const toggle = root.querySelector('#writesToggle');
+  const status = root.querySelector('#writesStatus');
+
+  async function refresh() {
+    try {
+      toggle.disabled = true;
+      await ensureToken();
+      const j = await apiGet('/dev/writes');
+      toggle.checked = !!j.enabled;
+      status.textContent = j.enabled ? 'Writes are enabled' : 'Writes are disabled';
+    } catch (err) {
+      status.textContent = 'Failed to load writes setting';
+      console.error(err);
+    } finally {
+      toggle.disabled = false;
+    }
   }
-  btn.onclick = async ()=>{
-    const s = await apiGetJson('/dev/writes');
-    await apiJson('/dev/writes', { enabled: !s.enabled });
-    await sync();
-  };
-  await sync();
+
+  toggle.addEventListener('change', async () => {
+    toggle.disabled = true;
+    try {
+      await ensureToken();
+      await apiPost('/dev/writes', { enabled: toggle.checked });
+      await refresh();
+    } catch (e) {
+      toggle.checked = !toggle.checked;
+      status.textContent = 'Failed to update writes setting';
+      console.error(e);
+      alert('Could not change writes setting. Check permissions and try again.');
+    } finally {
+      toggle.disabled = false;
+    }
+  });
+
+  refresh();
 
   // ---- Business Profile wiring ----
-  const inputs = el.querySelectorAll('[name]');
-  const statusEl = el.querySelector('#bpStatus');
-  const saveBtn = el.querySelector('#bpSave');
-  try {
-    const current = await apiGetJson('/app/business_profile');
-    inputs.forEach(i => { if (current[i.name] != null) i.value = current[i.name]; });
-  } catch (_) { /* ignore */ }
+  const inputs = root.querySelectorAll('[name]');
+  const statusEl = root.querySelector('#bpStatus');
+  const saveBtn = root.querySelector('#bpSave');
+
+  (async () => {
+    try {
+      await ensureToken();
+      const current = await apiGet('/app/business_profile');
+      inputs.forEach((i) => {
+        if (current[i.name] != null) i.value = current[i.name];
+      });
+    } catch (err) {
+      console.warn('Could not load business profile', err);
+    }
+  })();
+
   saveBtn.onclick = async () => {
-    const payload = {};
-    inputs.forEach(i => payload[i.name] = i.value || null);
-    await apiJson('/app/business_profile', payload);
-    statusEl.textContent = 'saved';
-    setTimeout(() => statusEl.textContent = '', 1200);
+    try {
+      await ensureToken();
+      const payload = {};
+      inputs.forEach((i) => {
+        payload[i.name] = i.value || null;
+      });
+      await apiPost('/app/business_profile', payload);
+      statusEl.textContent = 'saved';
+      setTimeout(() => (statusEl.textContent = ''), 1200);
+    } catch (err) {
+      console.error('Failed to save business profile', err);
+      statusEl.textContent = 'save failed';
+    }
   };
 }

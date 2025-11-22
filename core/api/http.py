@@ -65,7 +65,8 @@ from core.services.capabilities import registry
 from core.services.capabilities.registry import MANIFEST_PATH
 from core.policy.guard import require_owner_commit
 from core.policy.model import Policy
-from core.policy.store import load_policy, save_policy, get_writes_enabled, set_writes_enabled
+from core.policy.store import load_policy, save_policy
+from core.config.writes import get_writes_enabled, set_writes_enabled, require_writes
 from core.plans.commit import commit_local
 from core.plans.model import Plan, PlanStatus
 from core.plans.preview import preview_plan
@@ -275,23 +276,14 @@ def dev_license(request: Request):
 
 
 @app.get("/dev/writes")
-async def dev_writes_get(req: Request):
-    require_token(req)
-    return {"enabled": bool(WRITES_ENABLED)}
+def dev_writes_get(token: str = Depends(require_token)):
+    return {"enabled": get_writes_enabled()}
 
 
 @app.post("/dev/writes")
-async def dev_writes_set(req: Request, body: dict):
-    require_token(req)
-    enabled = bool(body.get("enabled", False))
-    global WRITES_ENABLED
-    WRITES_ENABLED = enabled
-    try:
-        set_writes_enabled(enabled)
-    except Exception:
-        # setter may not be available in some contexts; ignore in local dev
-        pass
-    return {"enabled": enabled}
+def dev_writes_set(payload: dict = Body(...), token: str = Depends(require_token)):
+    enabled = bool(payload.get("enabled", False))
+    return set_writes_enabled(enabled)
 
 
 @app.get("/dev/paths")
@@ -423,7 +415,6 @@ def _require_license(feature_label: str) -> None:
         )
 if not isinstance(LICENSE.get("plugins"), dict):
     LICENSE["plugins"] = {}
-WRITES_ENABLED = get_writes_enabled()
 
 CORE: CoreAlpha | None = None
 RUN_ID: str = ""
@@ -584,11 +575,6 @@ app.add_middleware(
 app.add_middleware(SessionGuard)
 
 
-def require_writes() -> None:
-    if not get_writes_enabled():
-        raise HTTPException(status_code=403, detail={"error": "writes_disabled"})
-
-
 protected = APIRouter(dependencies=[Depends(require_token_ctx)])
 protected.include_router(reader_local_router)
 protected.include_router(organizer_router)
@@ -625,24 +611,8 @@ def dev_license(req: Request):
     return LICENSE
 
 
-@app.get("/dev/writes")
-def dev_writes_get(req: Request):
-    global WRITES_ENABLED
-    WRITES_ENABLED = get_writes_enabled()
-    return {"enabled": WRITES_ENABLED}
-
-
-@app.post("/dev/writes")
-def dev_writes_set(req: Request, body: dict):
-    enabled = bool(body.get("enabled", False))
-    set_writes_enabled(enabled)
-    global WRITES_ENABLED
-    WRITES_ENABLED = enabled
-    return {"enabled": enabled}
-
-
 @protected.post("/app/export")
-def app_export(req: ExportReq):
+def app_export(req: ExportReq, _writes: None = Depends(require_writes)):
     if not req.password:
         raise HTTPException(status_code=400, detail={"error": "password_required"})
     res = export_db(req.password)
@@ -1383,6 +1353,7 @@ def settings_google_get(response: Response) -> GoogleSettingsOut:
 def settings_google_post(
     payload: GoogleSettingsIn,
     response: Response,
+    _writes: None = Depends(require_writes),
 ) -> Dict[str, Any]:
     response.headers["Cache-Control"] = "no-store"
 
@@ -1404,7 +1375,9 @@ def settings_google_post(
 
 
 @protected.delete("/settings/google")
-def settings_google_delete(response: Response) -> Dict[str, Any]:
+def settings_google_delete(
+    response: Response, _writes: None = Depends(require_writes)
+) -> Dict[str, Any]:
     response.headers["Cache-Control"] = "no-store"
 
     for key in ("client_id", "client_secret", "oauth_refresh"):
@@ -1423,7 +1396,10 @@ def get_reader_settings() -> Dict[str, Any]:
 
 
 @protected.post("/settings/reader", response_model=None)
-def post_reader_settings(payload: Dict[str, Any] = Body(default={})) -> Dict[str, Any]:  # type: ignore[assignment]
+def post_reader_settings(
+    payload: Dict[str, Any] = Body(default={}),
+    _writes: None = Depends(require_writes),
+) -> Dict[str, Any]:  # type: ignore[assignment]
     payload = payload if isinstance(payload, dict) else {}
 
     if "local_roots" in payload:
@@ -1436,7 +1412,7 @@ def post_reader_settings(payload: Dict[str, Any] = Body(default={})) -> Dict[str
 
 
 @protected.post("/catalog/open", response_model=None)
-def catalog_open(body: Dict[str, Any]):
+def catalog_open(body: Dict[str, Any], _writes: None = Depends(require_writes)):
     src = body.get("source") if isinstance(body, dict) else None
     scope = body.get("scope") if isinstance(body, dict) else None
     opts = body.get("options") if isinstance(body, dict) else None
@@ -1447,7 +1423,7 @@ def catalog_open(body: Dict[str, Any]):
 
 
 @protected.post("/catalog/next", response_model=None)
-def catalog_next(body: Dict[str, Any]):
+def catalog_next(body: Dict[str, Any], _writes: None = Depends(require_writes)):
     payload = body if isinstance(body, dict) else {}
     sid = payload.get("stream_id")
     max_items = int(payload.get("max_items", 500) or 500)
@@ -1458,7 +1434,7 @@ def catalog_next(body: Dict[str, Any]):
 
 
 @protected.post("/catalog/close", response_model=None)
-def catalog_close(body: Dict[str, Any]):
+def catalog_close(body: Dict[str, Any], _writes: None = Depends(require_writes)):
     payload = body if isinstance(body, dict) else {}
     sid = payload.get("stream_id")
     if not sid:
@@ -1472,7 +1448,10 @@ def index_state_get():
 
 
 @protected.post("/index/state", response_model=None)
-def index_state_set(body: Dict[str, Any] = Body(default={})):  # type: ignore[assignment]
+def index_state_set(
+    body: Dict[str, Any] = Body(default={}),
+    _writes: None = Depends(require_writes),
+):  # type: ignore[assignment]
     state = _load_index_state()
     payload = body if isinstance(body, dict) else {}
     for key in ("drive", "local"):
@@ -1646,13 +1625,17 @@ def get_policy() -> Dict[str, Any]:
 
 
 @protected.post("/policy")
-def set_policy(policy: Policy = Body(...)) -> Dict[str, Any]:
+def set_policy(
+    policy: Policy = Body(...), _writes: None = Depends(require_writes)
+) -> Dict[str, Any]:
     save_policy(policy)
     return policy.model_dump()
 
 
 @protected.post("/plans")
-def create_plan(plan: Plan = Body(...)) -> Dict[str, Any]:
+def create_plan(
+    plan: Plan = Body(...), _writes: None = Depends(require_writes)
+) -> Dict[str, Any]:
     normalized = plan.model_copy(update={"status": PlanStatus.DRAFT, "stats": {}})
     save_plan(normalized)
     return normalized.model_dump()
@@ -1672,7 +1655,7 @@ def plans_get(plan_id: str) -> Dict[str, Any]:
 
 
 @protected.post("/plans/{plan_id}/preview")
-def plans_preview(plan_id: str) -> Dict[str, Any]:
+def plans_preview(plan_id: str, _writes: None = Depends(require_writes)) -> Dict[str, Any]:
     plan = get_plan(plan_id)
     if not plan:
         raise HTTPException(status_code=404, detail="plan_not_found")
@@ -1683,7 +1666,7 @@ def plans_preview(plan_id: str) -> Dict[str, Any]:
 
 
 @protected.post("/plans/{plan_id}/commit")
-def plans_commit(plan_id: str) -> Dict[str, Any]:
+def plans_commit(plan_id: str, _writes: None = Depends(require_writes)) -> Dict[str, Any]:
     plan = get_plan(plan_id)
     if not plan:
         raise HTTPException(status_code=404, detail="plan_not_found")
@@ -1698,7 +1681,7 @@ def plans_commit(plan_id: str) -> Dict[str, Any]:
 
 
 @protected.post("/plans/{plan_id}/export")
-def plans_export(plan_id: str) -> Response:
+def plans_export(plan_id: str, _writes: None = Depends(require_writes)) -> Response:
     plan = get_plan(plan_id)
     if not plan:
         raise HTTPException(status_code=404, detail="plan_not_found")
@@ -1721,7 +1704,11 @@ def _get_plugin_by_id(service_id: str):
 
 
 @protected.post("/plugins/{service_id}/read", response_model=None)
-def plugin_read(service_id: str, body: Dict[str, Any] = Body(default={})):  # type: ignore[assignment]
+def plugin_read(
+    service_id: str,
+    body: Dict[str, Any] = Body(default={}),
+    _writes: None = Depends(require_writes),
+):  # type: ignore[assignment]
     plugin = _get_plugin_by_id(service_id)
     if not plugin or not hasattr(plugin, "read"):
         raise HTTPException(status_code=404, detail="plugin or op not found")
@@ -1744,7 +1731,11 @@ def plugin_read(service_id: str, body: Dict[str, Any] = Body(default={})):  # ty
 
 
 @protected.post("/plugins/{pid}/enable", response_model=None)
-def plugin_enable(pid: str, body: Dict[str, Any] = Body(default={})):  # type: ignore[assignment]
+def plugin_enable(
+    pid: str,
+    body: Dict[str, Any] = Body(default={}),
+    _writes: None = Depends(require_writes),
+):  # type: ignore[assignment]
     try:
         from core.plugins.loader import (  # type: ignore
             get_plugin,
@@ -1770,7 +1761,7 @@ def plugin_enable(pid: str, body: Dict[str, Any] = Body(default={})):  # type: i
 
 @protected.post("/probe")
 def probe(
-    body: Any = Body(default=None),
+    body: Any = Body(default=None), _writes: None = Depends(require_writes)
 ) -> Dict[str, Any]:
     core = _require_core()
     services: List[str]
@@ -1821,6 +1812,7 @@ def get_capabilities() -> Dict[str, Any]:
 @protected.post("/execTransform")
 def exec_transform(
     body: Dict[str, Any] = Body(...),
+    _writes: None = Depends(require_writes),
 ) -> Dict[str, Any]:
     core = _require_core()
     plugin = str(body.get("plugin") or "").strip()
@@ -1854,6 +1846,7 @@ def exec_transform(
 @protected.post("/policy.simulate")
 def policy_simulate(
     body: Dict[str, Any] = Body(...),
+    _writes: None = Depends(require_writes),
 ) -> Dict[str, Any]:
     core = _require_core()
     intent = str(body.get("intent") or "").strip()
@@ -1869,6 +1862,7 @@ def policy_simulate(
 @protected.post("/nodes.manifest.sync")
 def manifest_sync(
     body: Dict[str, Any] = Body(...),
+    _writes: None = Depends(require_writes),
 ) -> Dict[str, Any]:
     manifest = body.get("manifest")
     if not isinstance(manifest, dict):
@@ -1913,7 +1907,9 @@ def local_validate_path(path: str = Query(..., min_length=1)) -> Dict[str, Any]:
 
 
 @protected.post("/open/local", response_model=None)
-def open_local(payload: Dict[str, Any]) -> Dict[str, Any]:
+def open_local(
+    payload: Dict[str, Any], _writes: None = Depends(require_writes)
+) -> Dict[str, Any]:
     """Open a local file or folder in the system file explorer."""
 
     item_id = payload.get("id") if isinstance(payload, dict) else None
@@ -1939,7 +1935,7 @@ def open_local(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @protected.post("/server/restart", response_model=None)
-def server_restart() -> Dict[str, Any]:
+def server_restart(_writes: None = Depends(require_writes)) -> Dict[str, Any]:
     """Exit the running process so it can be restarted manually."""
 
     try:

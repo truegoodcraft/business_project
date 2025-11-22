@@ -18,6 +18,12 @@ def app_root_dir() -> Path:
     return Path(custom) if custom else (_local_appdata() / "BUSCore")
 
 
+def app_dir() -> Path:
+    """Return the canonical application data directory."""
+
+    return app_root_dir() / "app"
+
+
 def app_db_path() -> Path:
     return app_root_dir() / "app" / "app.db"
 
