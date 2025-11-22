@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from core.appdb.engine import get_session
+from core.config.writes import require_writes
 from core.policy.guard import require_owner_commit
 from core.services.models import Item, Vendor
 
@@ -53,7 +54,12 @@ def get_item(item_id: int, req: Request, db: Session = Depends(get_session)) -> 
     return _row(it, vname)
 
 @router.post("/items")
-def create_item(payload: Dict[str, Any], req: Request, db: Session = Depends(get_session)) -> Dict[str, Any]:
+def create_item(
+    payload: Dict[str, Any],
+    req: Request,
+    db: Session = Depends(get_session),
+    _writes: None = Depends(require_writes),
+) -> Dict[str, Any]:
     _require_token_runtime(req)
     require_owner_commit()
 
@@ -102,7 +108,13 @@ def create_item(payload: Dict[str, Any], req: Request, db: Session = Depends(get
     return _row(it, vname)
 
 @router.put("/items/{item_id}")
-def update_item(item_id: int, payload: Dict[str, Any], req: Request, db: Session = Depends(get_session)) -> Dict[str, Any]:
+def update_item(
+    item_id: int,
+    payload: Dict[str, Any],
+    req: Request,
+    db: Session = Depends(get_session),
+    _writes: None = Depends(require_writes),
+) -> Dict[str, Any]:
     _require_token_runtime(req)
     require_owner_commit()
 
@@ -126,7 +138,12 @@ def update_item(item_id: int, payload: Dict[str, Any], req: Request, db: Session
     return _row(it, vname)
 
 @router.delete("/items/{item_id}")
-def delete_item(item_id: int, req: Request, db: Session = Depends(get_session)) -> Dict[str, Any]:
+def delete_item(
+    item_id: int,
+    req: Request,
+    db: Session = Depends(get_session),
+    _writes: None = Depends(require_writes),
+) -> Dict[str, Any]:
     _require_token_runtime(req)
     require_owner_commit()
 

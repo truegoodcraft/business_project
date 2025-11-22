@@ -17,14 +17,15 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with TGC BUS Core.  If not, see <https://www.gnu.org/licenses/>.
 
+import json
 from pathlib import Path
 
 from sqlalchemy.engine import URL
 
-from core.appdb.paths import app_db_path, app_root_dir, ui_dir
+from core.appdb.paths import app_db_path, app_root_dir, ui_dir, app_dir
 
 APP_ROOT: Path = app_root_dir()
-APP_DIR: Path = APP_ROOT / "app"
+APP_DIR: Path = app_dir()
 STATE_DIR: Path = APP_DIR / "state"
 DATA_DIR: Path = APP_DIR / "data"
 JOURNALS_DIR: Path = DATA_DIR / "journals"
@@ -33,3 +34,21 @@ DB_PATH: Path = app_db_path()
 BUS_ROOT: Path = APP_ROOT
 DB_URL = URL.create(drivername="sqlite+pysqlite", database=DB_PATH.as_posix())
 UI_DIR: Path = ui_dir()
+
+CONFIG_PATH = app_dir() / "config.json"
+
+
+def _load_config_dict() -> dict:
+    if CONFIG_PATH.exists():
+        try:
+            return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+    return {}
+
+
+def _save_config_dict(d: dict) -> None:
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = CONFIG_PATH.with_suffix(CONFIG_PATH.suffix + ".tmp")
+    tmp_path.write_text(json.dumps(d, indent=2), encoding="utf-8")
+    tmp_path.replace(CONFIG_PATH)

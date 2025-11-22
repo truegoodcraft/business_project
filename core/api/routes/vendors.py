@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from core.appdb.engine import get_session
+from core.config.writes import require_writes
 from core.policy.guard import require_owner_commit
 from core.services.models import Vendor
 
@@ -16,12 +17,6 @@ router = APIRouter(tags=["vendors"])
 def _require_token_runtime(req: Request):
     from core.api.http import require_token  # runtime import
     return require_token(req)
-
-
-def writes_enabled():
-    from core.api.http import require_writes  # runtime import
-    return require_writes()
-
 # ---------------------------
 # EXISTING /app/vendors CRUD
 # ---------------------------
@@ -39,7 +34,12 @@ def list_vendors_compat(req: Request, db: Session = Depends(get_session)) -> Lis
 
 
 @router.post("/vendors")
-def create_vendor(req: Request, payload: Dict[str, Any], db: Session = Depends(get_session)) -> Dict[str, Any]:
+def create_vendor(
+    req: Request,
+    payload: Dict[str, Any],
+    db: Session = Depends(get_session),
+    _writes: None = Depends(require_writes),
+) -> Dict[str, Any]:
     _require_token_runtime(req)
     require_owner_commit()
 
@@ -52,7 +52,11 @@ def create_vendor(req: Request, payload: Dict[str, Any], db: Session = Depends(g
 
 @router.put("/vendors/{vendor_id}")
 def update_vendor(
-    req: Request, vendor_id: int, payload: Dict[str, Any], db: Session = Depends(get_session)
+    req: Request,
+    vendor_id: int,
+    payload: Dict[str, Any],
+    db: Session = Depends(get_session),
+    _writes: None = Depends(require_writes),
 ) -> Dict[str, Any]:
     _require_token_runtime(req)
     require_owner_commit()
@@ -72,7 +76,12 @@ def update_vendor(
 
 
 @router.delete("/vendors/{vendor_id}")
-def delete_vendor(req: Request, vendor_id: int, db: Session = Depends(get_session)) -> Dict[str, Any]:
+def delete_vendor(
+    req: Request,
+    vendor_id: int,
+    db: Session = Depends(get_session),
+    _writes: None = Depends(require_writes),
+) -> Dict[str, Any]:
     _require_token_runtime(req)
     require_owner_commit()
 
@@ -112,7 +121,12 @@ def list_contacts(db: Session = Depends(get_session)) -> List[Dict[str, Any]]:
 
 
 @router.post("/contacts")
-def create_contact(req: Request, payload: Dict[str, Any], db: Session = Depends(get_session)) -> Dict[str, Any]:
+def create_contact(
+    req: Request,
+    payload: Dict[str, Any],
+    db: Session = Depends(get_session),
+    _writes: None = Depends(require_writes),
+) -> Dict[str, Any]:
     _require_token_runtime(req)
     require_owner_commit()
 
@@ -265,7 +279,7 @@ def update_contact(
     contact_id: int,
     payload: Dict[str, Any],
     db: Session = Depends(get_session),
-    _w: None = Depends(writes_enabled),
+    _w: None = Depends(require_writes),
 ) -> Dict[str, Any]:
     _require_token_runtime(req)
 
@@ -299,7 +313,7 @@ def delete_contact(
     req: Request,
     contact_id: int,
     db: Session = Depends(get_session),
-    _w: None = Depends(writes_enabled),
+    _w: None = Depends(require_writes),
 ) -> Dict[str, Any]:
     _require_token_runtime(req)
 
