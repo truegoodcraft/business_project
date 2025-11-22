@@ -148,6 +148,7 @@ app = FastAPI(title="BUS Core Alpha", version=VERSION)
 
 
 UI_DIR = ui_dir()
+# Mount brand to the repo root so Flat-Dark.png / Glow-Hero.png are reachable
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # --- BEGIN UI MOUNT ---
@@ -256,7 +257,7 @@ TOKEN_HEADER = "X-Session-Token"
 PUBLIC_PATHS = {"/", "/session/token", "/favicon.ico", "/health"}
 PUBLIC_PREFIXES = (
     "/ui/",
-    "/session/token",
+    "/session/",
     "/dev/",
     "/brand/",
     "/favicon.ico",
@@ -565,17 +566,18 @@ async def _require_session(req: Request):
     return None
 
 
-class SessionGuard(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
-        path = request.url.path
-        if request.method == "OPTIONS":
-            return await call_next(request)
-        if path in PUBLIC_PATHS or any(path.startswith(prefix) for prefix in PUBLIC_PREFIXES):
-            return await call_next(request)
-        failure = await _require_session(request)
-        if failure:
-            return failure
+@app.middleware("http")
+async def session_guard(request: Request, call_next):
+    p = request.url.path
+    if request.method == "OPTIONS":
         return await call_next(request)
+    # Make static UI, session bootstrap, and brand assets public
+    if p in PUBLIC_PATHS or any(p.startswith(prefix) for prefix in PUBLIC_PREFIXES):
+        return await call_next(request)
+    failure = await _require_session(request)
+    if failure:
+        return failure
+    return await call_next(request)
 
 
 app.add_middleware(
@@ -584,7 +586,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["Accept", "Content-Type", TOKEN_HEADER],
 )
-app.add_middleware(SessionGuard)
 
 
 protected = APIRouter(dependencies=[Depends(require_token_ctx)])
