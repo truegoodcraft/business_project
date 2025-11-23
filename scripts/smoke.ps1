@@ -5,6 +5,13 @@ $ErrorActionPreference = "Stop"
 try { chcp 65001 > $null } catch {}
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 
+function Resolve-CommandPath {
+    param([Parameter(Mandatory=$true)][string]$Name)
+    $cmd = Get-Command $Name -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Path }
+    return $null
+}
+
 function Write-Stage {
     param([string]$Stage)
     Write-Host ("[smoke] === {0} ===" -f $Stage) -ForegroundColor Cyan
@@ -62,7 +69,7 @@ function Import-SqliteAssembly {
             return
         } catch {}
     }
-    $dotnet = (Get-Command dotnet -ErrorAction SilentlyContinue)?.Path
+    $dotnet = Resolve-CommandPath 'dotnet'
     if ($dotnet) {
         $dnRoot = Split-Path (Split-Path $dotnet)
         $dll = Get-ChildItem -Path $dnRoot -Filter "Microsoft.Data.Sqlite.dll" -Recurse -ErrorAction SilentlyContinue -Depth 4 | Select-Object -First 1
@@ -184,8 +191,8 @@ Write-Stage "Stage A: server readiness"
 $serverStartedBySmoke = $false
 if (-not (Wait-ForServer -TimeoutSec 5)) {
     Write-Info "Server not detected; starting dev server"
-    $python = (Get-Command python -ErrorAction SilentlyContinue)?.Path
-    if (-not $python) { $python = (Get-Command py -ErrorAction SilentlyContinue)?.Path }
+    $python = Resolve-CommandPath 'python'
+    if (-not $python) { $python = Resolve-CommandPath 'py' }
     if (-not $python) { Emit-Failure -Stage 'Stage A' -Reason 'Python not found' -ArtifactsDir $artifacts }
 
     $proc = Start-Process $python -ArgumentList @('-m','uvicorn','core.api.http:create_app','--factory','--host',$baseUri.Host,'--port',$baseUri.Port) -WorkingDirectory $repoRoot -PassThru -WindowStyle Hidden
@@ -455,8 +462,8 @@ if ($serverStartedBySmoke) {
         foreach ($p in $procList) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue }
     } catch {}
     if (-not (Wait-ForServer -TimeoutSec 5)) {
-        $python = (Get-Command python -ErrorAction SilentlyContinue)?.Path
-        if (-not $python) { $python = (Get-Command py -ErrorAction SilentlyContinue)?.Path }
+        $python = Resolve-CommandPath 'python'
+        if (-not $python) { $python = Resolve-CommandPath 'py' }
         if ($python) {
             Start-Process $python -ArgumentList @('-m','uvicorn','core.api.http:create_app','--factory','--host',$baseUri.Host,'--port',$baseUri.Port) -WorkingDirectory $repoRoot -WindowStyle Hidden | Out-Null
             if (-not (Wait-ForServer -TimeoutSec 30)) { Emit-Failure -Stage 'Stage F' -Reason 'Server failed to restart' -ArtifactsDir $artifacts }
