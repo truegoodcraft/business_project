@@ -54,6 +54,7 @@ class Item(Base):
     price = Column(Float, nullable=True)
     notes = Column(Text, nullable=True)
     item_type = Column(String, nullable=False, server_default="product")
+    location = Column(String, nullable=True)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
 
 
