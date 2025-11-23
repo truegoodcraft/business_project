@@ -130,6 +130,9 @@ export async function _mountInventory(container) {
             <button id="add-item-btn">+ Add Item</button>
             <button id="refresh-btn">Refresh</button>
             <button id="bulk-import-btn" class="pro-btn" style="background:#1e1f22;color:#e6e6e6;border:1px solid #2a2c30;border-radius:10px;padding:6px 14px;">Bulk Import (Pro)</button>
+            <select id="location-filter" style="background:#2a2c30;color:#e6e6e6;border:1px solid #3a3c40;border-radius:10px;padding:6px 10px;">
+                <option value="">All locations</option>
+            </select>
         </div>
         <table id="items-table">
             <thead>
@@ -196,7 +199,10 @@ export async function _mountInventory(container) {
                         </div>
                     </label><br>
 
-                    <label>Location: <input name="location"></label><br>
+                    <label>Location:
+                        <input name="location" list="location-options" autocomplete="off" spellcheck="false" placeholder="(optional)">
+                    </label>
+                    <datalist id="location-options"></datalist><br>
 
                     <input type="hidden" name="id">
                     <button type="submit" id="save-btn">Save</button>
@@ -256,6 +262,11 @@ export async function _mountInventory(container) {
     const tbody = container.querySelector('#items-table tbody');
     let currentEditId = null;
     let itemsCache = [];
+
+    const locFilter = document.getElementById('location-filter');
+    if (locFilter) {
+        locFilter.onchange = () => renderTable(itemsCache);
+    }
 
     const BULK_FIELDS = [
         { key: 'name', label: 'Name', required: true },
@@ -615,11 +626,30 @@ export async function _mountInventory(container) {
 
     initBulkImport();
 
+    function currentLocationFilter() {
+        const el = document.getElementById('location-filter');
+        return el ? el.value : '';
+    }
+
+    function refreshLocationOptions(items) {
+        const dl = document.getElementById('location-options');
+        if (!dl) return;
+        const uniq = [...new Set(items.map(i => (i.location || '').trim()).filter(Boolean))].sort();
+        dl.innerHTML = uniq.map(v => `<option value="${escapeHtml(v)}">`).join('');
+
+        const lf = document.getElementById('location-filter');
+        if (lf) {
+            lf.innerHTML = `<option value="">All locations</option>` +
+                uniq.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
+        }
+    }
+
     async function loadItems() {
         try {
             const items = await apiGet('/app/items');
             const list = Array.isArray(items) ? items : [];
             itemsCache = list;
+            refreshLocationOptions(list);
             renderTable(list);
         } catch (err) {
             alert('Failed to load items: ' + (err?.error || err?.message || 'unknown'));
@@ -628,7 +658,9 @@ export async function _mountInventory(container) {
 
     function renderTable(items) {
         const sym = currencySymbol();
-        tbody.innerHTML = items.map(item => {
+        const sel = currentLocationFilter();
+        const filtered = sel ? items.filter(i => (i.location || '') === sel) : items;
+        tbody.innerHTML = filtered.map(item => {
             const qty = item.qty ?? 0;
             const unit = safeUnit(item.unit);
             const qtyUnit = `${qty} ${unit ? unit.toUpperCase() : ''}`.trim();
@@ -638,7 +670,7 @@ export async function _mountInventory(container) {
                 const priceNum = Number(item.price);
                 if (!Number.isNaN(priceNum)) price = `${sym}${priceNum}`;
             }
-            const loc = item.location ? escapeHtml(item.location) : 'Shop';
+            const loc = item.location ? escapeHtml(item.location) : '';
             const typeAttr = escapeHtml((item.type || '').toString().toLowerCase());
             return `
       <tr data-id="${item.id}" data-type="${typeAttr}">
@@ -787,7 +819,7 @@ export async function _mountInventory(container) {
             unit: f.querySelector('input[name="unit"]').value || null,
             vendor_id: vendorVal ? parseInt(vendorVal, 10) : undefined,
             price: f.price.value ? parseFloat(f.price.value) : undefined,
-            location: f.location.value.trim() || null,
+            location: f.location ? (f.location.value.trim() || null) : null,
             ...(typeValue ? { type: typeValue } : {}),
         };
         data = compactPayload(data);

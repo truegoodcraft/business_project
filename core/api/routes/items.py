@@ -29,7 +29,7 @@ def _row(it: Item, vendor_name: Optional[str] = None) -> Dict[str, Any]:
         "notes": it.notes,
         # UI reads these (optional):
         "vendor": vendor_name,          # derived from vendor_id
-        "location": None,               # not modeled; UI falls back to 'Shop'
+        "location": getattr(it, "location", None),
         "type": getattr(it, "item_type", None),  # present if column exists
         "created_at": it.created_at,
     }
@@ -63,6 +63,9 @@ def create_item(
     _require_token_runtime(req)
     require_owner_commit()
 
+    location = (payload.get("location") or "").strip() or None
+    item_type = payload.get("item_type") or payload.get("type")
+
     # Fallback upsert path used by the UI when adjusting non-existing items:
     item_id = payload.get("id")
     if item_id:
@@ -74,10 +77,12 @@ def create_item(
         for f in ("name", "sku", "qty", "unit", "price", "notes", "vendor_id"):
             if f in payload:
                 setattr(it, f, payload[f])
+        if "location" in payload:
+            it.location = location
         # Optional item_type if model/column exists
-        if "item_type" in payload:
+        if item_type is not None:
             try:
-                setattr(it, "item_type", payload["item_type"])
+                setattr(it, "item_type", item_type)
             except Exception:
                 pass
         if not getattr(it, "name", None):
@@ -91,10 +96,11 @@ def create_item(
             price=payload.get("price"),
             notes=payload.get("notes"),
             vendor_id=payload.get("vendor_id"),
+            location=location,
         )
-        if "item_type" in payload:
+        if item_type is not None:
             try:
-                setattr(it, "item_type", payload["item_type"])
+                setattr(it, "item_type", item_type)
             except Exception:
                 pass
         db.add(it)
@@ -122,12 +128,22 @@ def update_item(
     if not it:
         raise HTTPException(status_code=404, detail="item not found")
 
-    for f in ("name", "sku", "qty", "unit", "price", "notes", "vendor_id", "item_type"):
+    location = (payload.get("location") or "").strip() or None
+    item_type = payload.get("item_type") or payload.get("type")
+
+    for f in ("name", "sku", "qty", "unit", "price", "notes", "vendor_id"):
         if f in payload:
             try:
                 setattr(it, f, payload[f])
             except Exception:
                 pass
+    if "location" in payload:
+        it.location = location
+    if item_type is not None:
+        try:
+            setattr(it, "item_type", item_type)
+        except Exception:
+            pass
 
     db.commit()
     db.refresh(it)

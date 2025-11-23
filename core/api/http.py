@@ -177,6 +177,10 @@ def _ensure_schema_upgrades(db: Session) -> None:
         rows = db.execute(text(f"PRAGMA table_info('{table}')")).fetchall()
         return any(r[1] == col for r in rows)  # r[1] = column name
 
+    def _ensure_column(table: str, column: str, ddl: str) -> None:
+        if not _col_exists(table, column):
+            db.execute(text(f"ALTER TABLE {table} ADD COLUMN {ddl}"))
+
     # vendors: additive columns
     if not _col_exists("vendors", "role"):
         db.execute(text("ALTER TABLE vendors ADD COLUMN role TEXT DEFAULT 'vendor'"))
@@ -188,8 +192,8 @@ def _ensure_schema_upgrades(db: Session) -> None:
         db.execute(text("ALTER TABLE vendors ADD COLUMN meta TEXT"))
 
     # items: additive column
-    if not _col_exists("items", "item_type"):
-        db.execute(text("ALTER TABLE items ADD COLUMN item_type TEXT DEFAULT 'product'"))
+    _ensure_column("items", "item_type", "item_type TEXT DEFAULT 'product'")
+    _ensure_column("items", "location", "location TEXT")
 
     # Backfill (idempotent)
     db.execute(text("UPDATE vendors SET role='vendor' WHERE role IS NULL"))
