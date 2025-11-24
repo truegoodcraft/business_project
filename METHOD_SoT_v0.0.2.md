@@ -1,11 +1,11 @@
 # BUS Core – Method / Process SoT (Offshoot v0.2.2)  
-**The Real Story: How a Guy With Zero Training Built a Local-First ERP Using Only LLMs and Refusal to Stop**
+(The Real Story: How a Guy With Zero Training Built a Local-First ERP Using Only LLMs and Refusal to Stop)
 
 This document is the **single source of truth for the method**.  
 The technical product SoT remains canonical for what the code actually does.  
-This one is canonical for **how** it got built — and **how** you can do it again.
+This one is canonical for **how** it got built and **how** you can do it again.
 
-This version is my personal method “bible”: part workflow, part portfolio, part journal of how it actually felt and what I learned.
+This version expands the method SoT from a mostly technical process log into my **personal method “bible”**: part workflow, part portfolio, part journal of how this actually felt and what I learned.
 
 ---
 
@@ -17,47 +17,98 @@ This version is my personal method “bible”: part workflow, part portfolio, p
 
 ### 0.1 Version number format (X.Y.Z)
 
-- **X** – Release track  
-  - `0` = pre-public, internal method (in flux)  
-  - `1` = first formal public/teaching release  
-  - `2+` = major new eras (stack changes, etc.)
+All method documents (and, ideally, all SoTs and specs going forward) use:
 
-- **Y** – Document/product major version  
-  - Bump on structural or meaning changes that could confuse old readers
+- **X – Release track**  
+  - 0 = pre-“official teaching release” (internal method, in flux)  
+  - 1 = first formal, public/teaching release of the method  
+  - 2+ = later major eras (e.g., big rewrites, new stacks, etc.)
 
-- **Z** – Patch/iteration  
-  - Bump on **every** change (typos, wording, reordering, TODOs…)
+- **Y – Document / product major version**  
+  - Increment when structure or meaning changes in a way that could confuse someone on an old version  
+  - Example triggers:
+    - New major sections added or removed  
+    - Rules rewritten or reversed  
+    - Core definitions changed
 
-**Current version: `v0.2.2`**
+- **Z – Iteration / patch**  
+  - Increment for **every change**, no matter how small:
+    - Typos
+    - Wording tweaks
+    - Reordering
+    - Added TODOs
+  - Z is effectively unbounded (0, 1, 2, …).
+
+This file is currently **v0.2.2**:
+
+- `0` = pre-public, internal method track  
+- `2` = second major structure of the method (includes orchestration, generalization, and personal/teaching intent)  
+- `2` = second patch on that structure (documented how the first SoT was forged from the repo itself)
 
 ### 0.2 Versioning rules (non-optional)
 
-- Any edit → bump **Z** at minimum + add dated changelog entry (§22)  
-- Structural/conceptual change → bump **Y**, reset Z to 0  
-- Never edit old versions in place — copy forward + bump  
-- Highest X.Y.Z is always canonical
+- **Any modification to this document** – including typo fixes, formatting, word changes, reordering, or added TODOs – **MUST**:
+  - bump the **Z** component at minimum (e.g., `0.2.2 → 0.2.3`), and  
+  - append a new, dated entry in the **Changelog** (§22) describing what changed.
+- If you make a structural or conceptual change that would confuse someone reading an older version:
+  - bump **Y** and reset Z to 0 (e.g., `0.2.9 → 0.3.0`), and log it.
+- Only change **X** when you intentionally declare a new release track:
+  - e.g., “internal method” → “public teaching method” → “method v2 on new architecture”.
+- **Never edit an old version in place.**  
+  - When updating, copy forward the latest version, bump `X.Y.Z` as needed, and log changes.
+- If multiple copies of this file exist:
+  - The **highest version number** (by X, then Y, then Z) is the current canonical Method SoT.  
+  - Older versions are **archives only** and must not be edited.
+
+This is not polished marketing.  
+This is the working record of *how the thing really got built*.
 
 ### 0.3 Why This Document Exists (Author’s Intent)
 
-1. **Future Me** – my memory backup and personal wiki  
-2. **Future Builders** – scars + patterns so others don’t pay the same stupidity tax  
-3. **Future Teaching / Portfolio** – the exact, unpolished receipts of what actually happened
+This Method SoT is not here to impress anyone. It exists for three reasons:
 
-If any part feels like ego, rewrite it until it’s just:  
-> **What I did. What happened. What I learned. What someone else can reuse.**
+1. **Future Me**  
+   This is my **personal bible** for the method — how I think, how I build, and what actually worked when BUS Core went from nothing to a real, running system.  
+   It’s my memory backup: a logbook, a proto-wiki, and the place I can come back to when I forget how I pulled this off the first time.
+
+2. **Future Builders**  
+   If someone who doesn’t know how to code wants to build something real using LLMs without getting lost in hype, gatekeeping, and “AI prompt bundles”, this document should give them enough **facts, patterns, and scars** to stand on my shoulders instead of starting from zero.  
+   Not because I think I’m special — just because I’ve already paid the cost in time, frustration, and late nights.
+
+3. **Future Teaching / Portfolio**  
+   If I ever use this work to teach, consult, or get a job or funding, this is the **canonical record** of what actually happened.  
+   Not a polished narrative after the fact.  
+   Not a fake hero story.  
+   Just the receipts: the loop, the controls, the failures, the thinking, the emotional reality, and the method that made it repeatable.
+
+I often feel silly writing this, like it might read as pompous or self-important.  
+But it feels right to document it anyway.
+
+If a section ever feels like ego or fluff, it should be rewritten until it is just:
+
+> **What I did. What happened. What I learned. What someone else could reuse.**
 
 ---
 
 ## 1) The Core Loop (the only thing that actually matters)
 
 1. Ask an LLM for the next chunk of code / design / refactor  
-2. Force it to update the living Source of Truth **before** it gives code  
+2. Force it to update the living Source of Truth **before** it is allowed to give code  
 3. Apply the change (PR, patch, or direct)  
-4. Run smoke tests → must stay green (launch, hit endpoints, validate persistence)  
+4. Run smoke → must stay green (launch, hit endpoints, validate persistence)  
 5. Commit / merge  
-6. Repeat until the product exists
+6. Repeat, over and over
 
-Everything else in this doc is just commentary on how to protect and scale that loop.
+Key facts (public side):
+
+- Public repo: https://github.com/truegoodcraft/TGC-BUS-Core
+
+The exact day count and commit velocity for the *pre-GitHub* phase are not yet fully reconstructed.  
+For now, the method treats it as:
+
+> “Run that loop as many times per day as life allows, for weeks, without breaking it.”
+
+Everything else in this document is a side effect of never letting that loop die.
 
 ---
 
@@ -708,15 +759,3 @@ Practical takeaway for future projects:
     - Roadblocks and “non-problems”  
     - Initial public receipts, cost, and real quotes about how I talk to the models.
 
-
----
-
-**Repo**: https://github.com/truegoodcraft/TGC-BUS-Core  
-**Live product** → onboarding first beta shops this week
-
-This method is now public. Use it, break it, improve it, ship with it.
-
-If a non-coder can build real production software in six weeks of part-time work in 2025… imagine what you can do.
-
-– truegoodcraft  
-Nov 23, 2025
