@@ -21,6 +21,7 @@ $ItemsUrl  = Join-Url $BaseUrl '/app/items'
 $TokenUrl  = Join-Url $BaseUrl '/session/token'
 $DbPath    = Join-Path $env:LOCALAPPDATA 'BUSCore\app\app.db'
 
+Write-Host "[smoke] Base URL: $BaseUrl"
 Write-Host "[smoke] App DB path: $DbPath"
 
 # ------------------------ Stage A: server readiness ------------------------
