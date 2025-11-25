@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, Generator, Optional
 
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -22,12 +23,13 @@ from core.services.capabilities import registry
 from core.services.capabilities.registry import MANIFEST_PATH
 from core.utils.license_loader import get_license
 from core.version import VERSION
-from tgc.security import attach_session_cookie, require_token_ctx
+from tgc.security import set_session_cookie as attach_session_cookie, require_token_ctx
 from tgc.settings import Settings
 from tgc.state import AppState, get_state, init_state
 
-from core.api.routes import items as items_router
-from core.api.routes import vendors as vendors_router
+# Strict imports - Fail fast if routers have syntax errors
+from core.api.routes.items import router as items_router
+from core.api.routes.vendors import router as vendors_router
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -49,6 +51,14 @@ app = FastAPI(title="BUS Core Alpha", version=VERSION, lifespan=lifespan)
 
 app.mount("/ui", StaticFiles(directory=UI_DIR), name="ui")
 app.mount("/brand", StaticFiles(directory=str(REPO_ROOT)), name="brand")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://127.0.0.1", "http://localhost"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*", "Content-Type", "X-Session-Token"],
+)
 
 
 @app.get("/favicon.ico", include_in_schema=False)
@@ -72,10 +82,18 @@ def ui_index():
 
 
 @app.get("/session/token")
-async def session_token(state: AppState = Depends(get_state)):
-    token = state.tokens.issue()
-    resp = JSONResponse({"token": token})
-    attach_session_cookie(resp, state)
+def mint_token(state=Depends(get_state)):
+    tok = state.tokens.current()
+    resp = JSONResponse({"token": tok})
+    attach_session_cookie(resp, tok, state.settings)
+    return resp
+
+
+@app.post("/session/rotate")
+def rotate_token(state=Depends(get_state), _=Depends(require_token_ctx)):
+    tok = state.tokens.rotate()
+    resp = JSONResponse({"token": tok})
+    attach_session_cookie(resp, tok, state.settings)
     return resp
 
 
@@ -167,10 +185,10 @@ def _db_conn() -> sqlite3.Connection:
     return con
 
 
-manufacturing_router = APIRouter(prefix="/app")
+mfg_router = APIRouter(prefix="/app")
 
 
-@manufacturing_router.post("/inventory/run")
+@mfg_router.post("/inventory/run")
 async def inventory_run(
     body: Dict[str, Any],
     _token: str = Depends(require_token_ctx),
@@ -229,7 +247,7 @@ async def inventory_run(
     return {"ok": True, "deltas": deltas, "snapshot_version": snapshot_version}
 
 
-@manufacturing_router.post("/manufacturing/run")
+@mfg_router.post("/manufacturing/run")
 async def manufacturing_run(
     body: Dict[str, Any],
     token: str = Depends(require_token_ctx),
@@ -270,16 +288,16 @@ async def dev_capabilities(_token: str = Depends(require_token_ctx)):
     return manifest
 
 
-items_router.router.dependencies = [Depends(require_token_ctx)]
-vendors_router.router.dependencies = [Depends(require_token_ctx)]
+items_router.dependencies = [Depends(require_token_ctx)]
+vendors_router.dependencies = [Depends(require_token_ctx)]
 
-app.include_router(items_router.router, prefix="/app")
-app.include_router(vendors_router.router, prefix="/app")
-app.include_router(manufacturing_router)
+app.include_router(items_router, prefix="/app")
+app.include_router(vendors_router, prefix="/app")
+app.include_router(mfg_router)
 
 
-if __name__ == "__main__":  # pragma: no cover
+if __name__ == "__main__":
     import uvicorn
 
     settings = Settings()
-    uvicorn.run("tgc.http:app", host=settings.host, port=settings.port, reload=False)
+    uvicorn.run("tgc.http:app", host=settings.host, port=settings.port, log_level="info")

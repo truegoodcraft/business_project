@@ -1,30 +1,25 @@
 from __future__ import annotations
 
-from typing import Optional
+from fastapi import HTTPException, Request, Response, status
 
-from fastapi import Depends, Header, HTTPException, Request, Response, status
-
-from tgc.tokens import TokenManager  # may be used for typing or future helpers
-from tgc.state import AppState, get_state
+from tgc.tokens import TokenManager  # reserved for typing/future helpers
+from tgc.state import get_state
 
 
-async def require_token_ctx(
-    request: Request,
-    state: AppState = Depends(get_state),
-    header_token: Optional[str] = Header(None, alias="X-Session-Token"),
-) -> str:
-    cookie_name = getattr(state.settings, "session_cookie_name", "bus_session")
-    token = request.cookies.get(cookie_name) or header_token
-    if state.tokens.check(token):
-        return token or state.tokens.current()
-    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="missing_or_invalid_token")
+async def require_token_ctx(request: Request):
+    state = get_state(request)
+    s = state.settings
+    tok = request.cookies.get(s.session_cookie_name) or request.headers.get("X-Session-Token")
+    if not state.tokens.check(tok):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid session")
+    return None  # context placeholder
 
 
 def set_session_cookie(resp: Response, token: str, s) -> None:
     # starlette expects lowercase for samesite
     same_site = (getattr(s, "same_site", "lax") or "lax").lower()
     resp.set_cookie(
-        key=getattr(s, "session_cookie_name", "bus_session"),
+        key=s.session_cookie_name,
         value=token,
         httponly=True,
         samesite=same_site,
@@ -34,6 +29,5 @@ def set_session_cookie(resp: Response, token: str, s) -> None:
     )
 
 
-def attach_session_cookie(response: Response, state: AppState) -> None:
-    token = state.tokens.current()
-    set_session_cookie(response, token, state.settings)
+# Back-compat alias for older imports
+attach_session_cookie = set_session_cookie
