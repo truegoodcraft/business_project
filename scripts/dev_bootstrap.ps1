@@ -59,7 +59,7 @@ if (!(Test-Path $LicPath)) {
 }
 
 # Start server (reload) minimized and open UI
-$Args = @("-m","uvicorn","--factory","core.api.http:create_app","--host","127.0.0.1","--port","$port","--reload")
+$Args = @("-m","uvicorn","tgc.http:app","--host","127.0.0.1","--port","$port","--reload")
 Start-Process -WindowStyle Minimized -FilePath $Py -ArgumentList $Args
 Start-Sleep -Seconds 2
 $BaseUrl = "http://127.0.0.1:$port"

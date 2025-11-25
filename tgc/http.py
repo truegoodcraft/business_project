@@ -1,0 +1,285 @@
+from __future__ import annotations
+
+import json
+import sqlite3
+import time
+from collections import deque
+from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import Any, Dict, Generator, Optional
+
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+from starlette.staticfiles import StaticFiles
+
+from core.appdb.engine import DB_PATH as DB_FILE, SessionLocal
+from core.appdb.paths import ui_dir
+from core.config.paths import APP_DIR, BUS_ROOT, DATA_DIR, JOURNALS_DIR
+from core.config.writes import require_writes
+from core.services.capabilities import registry
+from core.services.capabilities.registry import MANIFEST_PATH
+from core.utils.license_loader import get_license
+from core.version import VERSION
+from tgc.security import attach_session_cookie, require_token_ctx
+from tgc.settings import Settings
+from tgc.state import AppState, get_state, init_state
+
+from core.api.routes import items as items_router
+from core.api.routes import vendors as vendors_router
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+UI_DIR = ui_dir()
+EXPORTS_DIR = APP_DIR / "exports"
+EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+@asynccontextmanager
+def lifespan(app: FastAPI):
+    settings = Settings()
+    state = init_state(settings)
+    app.state.app_state = state
+    _run_startup_migrations()
+    yield
+
+
+app = FastAPI(title="BUS Core Alpha", version=VERSION, lifespan=lifespan)
+
+app.mount("/ui", StaticFiles(directory=UI_DIR), name="ui")
+app.mount("/brand", StaticFiles(directory=str(REPO_ROOT)), name="brand")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    return FileResponse(REPO_ROOT / "Flat-Dark.png", media_type="image/png")
+
+
+@app.get("/")
+def root():
+    return RedirectResponse(url="/ui/shell.html", status_code=307)
+
+
+@app.get("/ui", include_in_schema=False)
+def ui_root():
+    return RedirectResponse(url="/ui/shell.html", status_code=307)
+
+
+@app.get("/ui/index.html", include_in_schema=False)
+def ui_index():
+    return RedirectResponse(url="/ui/shell.html", status_code=307)
+
+
+@app.get("/session/token")
+async def session_token(state: AppState = Depends(get_state)):
+    token = state.tokens.issue()
+    resp = JSONResponse({"token": token})
+    attach_session_cookie(resp, state)
+    return resp
+
+
+@app.get("/health")
+async def health(x_session_token: Optional[str] = Header(None, alias="X-Session-Token")) -> Dict[str, Any]:
+    if x_session_token:
+        lic = get_license() or {}
+        return {"ok": True, "version": VERSION, "license": lic}
+    return {"ok": True}
+
+
+# ---- DB helpers ----
+
+def _ensure_schema_upgrades(db: Session) -> None:
+    def _col_exists(table: str, col: str) -> bool:
+        rows = db.execute(text(f"PRAGMA table_info('{table}')")).fetchall()
+        return any(r[1] == col for r in rows)
+
+    def _ensure_column(table: str, column: str, ddl: str) -> None:
+        if not _col_exists(table, column):
+            db.execute(text(f"ALTER TABLE {table} ADD COLUMN {ddl}"))
+
+    if not _col_exists("vendors", "role"):
+        db.execute(text("ALTER TABLE vendors ADD COLUMN role TEXT DEFAULT 'vendor'"))
+    if not _col_exists("vendors", "kind"):
+        db.execute(text("ALTER TABLE vendors ADD COLUMN kind TEXT DEFAULT 'org'"))
+    if not _col_exists("vendors", "organization_id"):
+        db.execute(text("ALTER TABLE vendors ADD COLUMN organization_id INTEGER"))
+    if not _col_exists("vendors", "meta"):
+        db.execute(text("ALTER TABLE vendors ADD COLUMN meta TEXT"))
+
+    _ensure_column("items", "item_type", "item_type TEXT DEFAULT 'product'")
+    _ensure_column("items", "location", "location TEXT")
+
+    db.execute(text("UPDATE vendors SET role='vendor' WHERE role IS NULL"))
+    db.execute(text("UPDATE vendors SET kind='org' WHERE kind IS NULL"))
+    db.execute(text("UPDATE vendors SET meta='{}' WHERE meta IS NULL OR trim(meta)=''"))
+    db.execute(text("UPDATE items SET item_type='product' WHERE item_type IS NULL OR trim(item_type)=''"))
+
+    db.execute(text("CREATE INDEX IF NOT EXISTS vendors_role_idx ON vendors(role)"))
+    db.execute(text("CREATE INDEX IF NOT EXISTS vendors_kind_idx ON vendors(kind)"))
+    db.execute(text("CREATE INDEX IF NOT EXISTS vendors_org_idx  ON vendors(organization_id)"))
+    db.execute(text("CREATE INDEX IF NOT EXISTS items_item_type_idx ON items(item_type)"))
+
+    try:
+        idx_list = db.execute(text("PRAGMA index_list('vendors')")).fetchall()
+        for row in idx_list:
+            idx_name = row[1]
+            is_unique = bool(row[2])
+            if not is_unique:
+                continue
+            cols = db.execute(text(f"PRAGMA index_info('{idx_name}')")).fetchall()
+            col_names = [c[2] for c in cols]
+            if len(col_names) == 1 and col_names[0] == "name":
+                db.execute(text(f'DROP INDEX IF EXISTS "{idx_name}"'))
+        db.execute(text("CREATE INDEX IF NOT EXISTS ix_vendors_name ON vendors(name)"))
+    except Exception:
+        db.execute(text("DROP INDEX IF EXISTS ix_vendors_name"))
+        db.execute(text("CREATE INDEX IF NOT EXISTS ix_vendors_name ON vendors(name)"))
+
+    db.commit()
+
+
+def _run_startup_migrations() -> None:
+    db = SessionLocal()
+    try:
+        _ensure_schema_upgrades(db)
+    finally:
+        db.close()
+
+
+def get_db() -> Generator[Session, None, None]:
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def _db_conn() -> sqlite3.Connection:
+    DB_FILE.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(str(DB_FILE), timeout=30)
+    con.row_factory = sqlite3.Row
+    try:
+        con.execute("PRAGMA journal_mode=WAL")
+    except sqlite3.DatabaseError:
+        pass
+    con.execute("PRAGMA foreign_keys=ON")
+    return con
+
+
+manufacturing_router = APIRouter(prefix="/app")
+
+
+@manufacturing_router.post("/inventory/run")
+async def inventory_run(
+    body: Dict[str, Any],
+    _token: str = Depends(require_token_ctx),
+    _writes: None = Depends(require_writes),
+    _state: AppState = Depends(get_state),
+):
+    inputs = {int(k): float(v) for k, v in (body.get("inputs") or {}).items()}
+    outputs = {int(k): float(v) for k, v in (body.get("outputs") or {}).items()}
+    ids = set(inputs) | set(outputs)
+
+    deltas: Dict[int, float] = {}
+    for iid in ids:
+        deltas[iid] = outputs.get(iid, 0.0) - inputs.get(iid, 0.0)
+
+    with _db_conn() as con:
+        existing: set[int] = set()
+        if ids:
+            placeholders = ",".join("?" * len(ids))
+            query = f"SELECT id FROM items WHERE id IN ({placeholders})"
+            rows = con.execute(query, list(ids)).fetchall()
+            existing = {int(row["id"]) for row in rows}
+        missing = sorted(iid for iid in ids if iid not in existing)
+        if missing:
+            raise HTTPException(status_code=400, detail={"error": "Invalid IDs", "missing_items": missing})
+
+        cur = con.cursor()
+        try:
+            cur.execute("BEGIN")
+            for iid, delta in deltas.items():
+                cur.execute("UPDATE items SET qty = COALESCE(qty, 0) + ? WHERE id = ?", (delta, iid))
+            con.commit()
+        except Exception:
+            con.rollback()
+            raise
+
+    snapshot_version = int(time.time())
+    journal_path = JOURNALS_DIR / "inventory.jsonl"
+    record = {
+        "ts": snapshot_version,
+        "inputs": inputs,
+        "outputs": outputs,
+        "deltas": deltas,
+        "note": body.get("note"),
+        "snapshot_version": snapshot_version,
+    }
+    try:
+        journal_path.parent.mkdir(parents=True, exist_ok=True)
+        with journal_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except Exception as exc:  # pragma: no cover - best effort logging
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "journal_write_failed", "path": str(journal_path), "message": str(exc)},
+        )
+
+    return {"ok": True, "deltas": deltas, "snapshot_version": snapshot_version}
+
+
+@manufacturing_router.post("/manufacturing/run")
+async def manufacturing_run(
+    body: Dict[str, Any],
+    token: str = Depends(require_token_ctx),
+    _writes: None = Depends(require_writes),
+    state: AppState = Depends(get_state),
+):
+    return await inventory_run(body=body, _token=token, _writes=_writes, _state=state)
+
+
+@app.get("/app/inventory/ledger")
+async def inventory_ledger(
+    _token: str = Depends(require_token_ctx),
+    _state: AppState = Depends(get_state),
+):
+    journal_path = JOURNALS_DIR / "inventory.jsonl"
+    exists = journal_path.exists()
+    lines = []
+    if exists:
+        try:
+            with journal_path.open("r", encoding="utf-8") as handle:
+                lines = list(deque(handle, maxlen=200))
+        except Exception as exc:
+            lines = [f"__read_error__: {exc}"]
+    return {
+        "BUS_ROOT": str(BUS_ROOT),
+        "APP_DIR": str(APP_DIR),
+        "DATA_DIR": str(DATA_DIR),
+        "JOURNAL_DIR": str(JOURNALS_DIR),
+        "inventory_path": str(journal_path),
+        "exists": exists,
+        "tail": lines,
+    }
+
+
+@app.get("/dev/capabilities")
+async def dev_capabilities(_token: str = Depends(require_token_ctx)):
+    manifest = registry.load_manifest(MANIFEST_PATH)
+    return manifest
+
+
+items_router.router.dependencies = [Depends(require_token_ctx)]
+vendors_router.router.dependencies = [Depends(require_token_ctx)]
+
+app.include_router(items_router.router, prefix="/app")
+app.include_router(vendors_router.router, prefix="/app")
+app.include_router(manufacturing_router)
+
+
+if __name__ == "__main__":  # pragma: no cover
+    import uvicorn
+
+    settings = Settings()
+    uvicorn.run("tgc.http:app", host=settings.host, port=settings.port, reload=False)

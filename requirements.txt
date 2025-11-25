@@ -15,6 +15,8 @@ cryptography>=43.0.0  # AES-GCM + PBKDF2 fallback
 fastapi
 uvicorn[standard]
 pydantic>=2
+pydantic-settings
+platformdirs
 python-multipart
 openpyxl>=3.1.0
 sqlalchemy
