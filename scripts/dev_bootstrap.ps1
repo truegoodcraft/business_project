@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 $ErrorActionPreference = "Stop"
 
-# Resolve repo root
+# Resolve repo root and ensure CWD regardless of invocation location
 $RepoRoot = (Resolve-Path "$PSScriptRoot\..").Path
 Set-Location $RepoRoot
 
@@ -62,8 +62,8 @@ if (!(Test-Path $LicPath)) {
   Write-Host "[dev] Found existing license at $LicPath"
 }
 
-# Start server (reload) minimized and open UI
-$Args = @("-m","uvicorn","tgc.http:app","--host","127.0.0.1","--port","$port","--reload")
+# Start server minimized and open UI
+$Args = @("-c", "import uvicorn; uvicorn.run('tgc.http:app', host='127.0.0.1', port=$port, log_level='info')")
 Start-Process -WindowStyle Minimized -FilePath $Py -ArgumentList $Args
 Start-Sleep -Seconds 2
 $BaseUrl = "http://127.0.0.1:$port"

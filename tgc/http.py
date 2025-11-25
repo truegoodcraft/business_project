@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import sys
 import time
 from collections import deque
 from contextlib import asynccontextmanager
@@ -27,6 +28,13 @@ from tgc.security import set_session_cookie as attach_session_cookie, require_to
 from tgc.settings import Settings
 from tgc.state import AppState, get_state, init_state
 
+# ---- Runtime guard: supported Python versions (FastAPI/Starlette not ready for 3.14 yet)
+if not ((3, 11) <= sys.version_info[:2] <= (3, 13)):
+    raise SystemExit(
+        f"BUS Core requires Python 3.11–3.13. Detected {sys.version_info.major}.{sys.version_info.minor}. "
+        "Please install a supported version and recreate your virtualenv."
+    )
+
 # Strict imports - Fail fast if routers have syntax errors
 from core.api.routes.items import router as items_router
 from core.api.routes.vendors import router as vendors_router
@@ -49,7 +57,8 @@ def lifespan(app: FastAPI):
 
 app = FastAPI(title="BUS Core Alpha", version=VERSION, lifespan=lifespan)
 
-app.mount("/ui", StaticFiles(directory=UI_DIR), name="ui")
+if UI_DIR.exists():
+    app.mount("/ui", StaticFiles(directory=str(UI_DIR), html=True), name="ui")
 app.mount("/brand", StaticFiles(directory=str(REPO_ROOT)), name="brand")
 
 app.add_middleware(
@@ -63,12 +72,18 @@ app.add_middleware(
 
 @app.get("/favicon.ico", include_in_schema=False)
 def favicon():
-    return FileResponse(REPO_ROOT / "Flat-Dark.png", media_type="image/png")
+    ico = UI_DIR / "favicon.ico"
+    if ico.exists():
+        return FileResponse(str(ico))
+    return JSONResponse(status_code=204, content=None)
 
 
 @app.get("/")
 def root():
-    return RedirectResponse(url="/ui/shell.html", status_code=307)
+    shell = UI_DIR / "shell.html"
+    if shell.exists():
+        return RedirectResponse(url="/ui/shell.html", status_code=307)
+    return {"ok": True, "message": "BUS Core server running"}
 
 
 @app.get("/ui", include_in_schema=False)

@@ -248,3 +248,5 @@ You can override the root via:
 setx BUSCORE_HOME D:\\BUSCoreData
 
 The server logs and `/dev/db/where` return the exact path and the driver-reported file via `PRAGMA database_list`.
+### Python version
+BUS Core currently supports **Python 3.11–3.13**. Python 3.14 is not yet supported due to upstream framework changes in async lifespan handling. Use 3.11 or 3.12 for best stability.
