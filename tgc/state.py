@@ -6,7 +6,7 @@ from typing import Optional
 from fastapi import Request
 
 from tgc.logging_setup import setup_logging
-from tgc.security import TokenManager
+from tgc.tokens import TokenManager
 from tgc.settings import DATA_DIR, Settings
 
 
@@ -19,7 +19,7 @@ class AppState:
 
 
 def init_state(settings: Settings) -> AppState:
-    tokens = TokenManager()
+    tokens = TokenManager(settings)
     logger = setup_logging(DATA_DIR / "buscore.log")
     return AppState(settings=settings, core=None, tokens=tokens, logger=logger)
 
