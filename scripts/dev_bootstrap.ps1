@@ -6,6 +6,10 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = (Resolve-Path "$PSScriptRoot\..").Path
 Set-Location $RepoRoot
 
+# --- BUSCore: allow custom port from env for parallel runs (smoke) ---
+$port = [int]($env:BUSCORE_PORT) 
+if (-not $port -or $port -lt 1) { $port = 8765 }
+
 # Ensure venv
 $VenvDir = Join-Path $RepoRoot ".venv"
 if (!(Test-Path $VenvDir)) {
@@ -55,10 +59,10 @@ if (!(Test-Path $LicPath)) {
 }
 
 # Start server (reload) minimized and open UI
-$Args = @("-m","uvicorn","--factory","core.api.http:create_app","--host","127.0.0.1","--port","8765","--reload")
+$Args = @("-m","uvicorn","--factory","core.api.http:create_app","--host","127.0.0.1","--port","$port","--reload")
 Start-Process -WindowStyle Minimized -FilePath $Py -ArgumentList $Args
 Start-Sleep -Seconds 2
-$BaseUrl = "http://127.0.0.1:8765"
+$BaseUrl = "http://127.0.0.1:$port"
 Start-Process $BaseUrl
 
 Write-Host "BUS Core - Running on $BaseUrl"
