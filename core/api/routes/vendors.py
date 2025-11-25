@@ -10,20 +10,22 @@ from core.appdb.engine import get_session
 from core.config.writes import require_writes
 from core.policy.guard import require_owner_commit
 from core.services.models import Vendor
+from tgc.security import require_token_ctx
+from tgc.state import AppState, get_state
 
 router = APIRouter(tags=["vendors"])
 
-# Runtime token check (defers import to avoid circular refs at import time)
-def _require_token_runtime(req: Request):
-    from core.api.http import require_token  # runtime import
-    return require_token(req)
 # ---------------------------
 # EXISTING /app/vendors CRUD
 # ---------------------------
 
 @router.get("/vendors")
-def list_vendors(req: Request, db: Session = Depends(get_session)) -> List[Dict[str, Any]]:
-    _require_token_runtime(req)
+def list_vendors(
+    req: Request,
+    db: Session = Depends(get_session),
+    _token: str = Depends(require_token_ctx),
+    _state: AppState = Depends(get_state),
+) -> List[Dict[str, Any]]:
     rows = db.query(Vendor).all()
     return [{"id": v.id, "name": v.name, "contact": getattr(v, "contact", None)} for v in rows]
 
@@ -39,8 +41,9 @@ def create_vendor(
     payload: Dict[str, Any],
     db: Session = Depends(get_session),
     _writes: None = Depends(require_writes),
+    _token: str = Depends(require_token_ctx),
+    _state: AppState = Depends(get_state),
 ) -> Dict[str, Any]:
-    _require_token_runtime(req)
     require_owner_commit()
 
     v = Vendor(name=payload["name"], contact=payload.get("contact"))
@@ -57,8 +60,9 @@ def update_vendor(
     payload: Dict[str, Any],
     db: Session = Depends(get_session),
     _writes: None = Depends(require_writes),
+    _token: str = Depends(require_token_ctx),
+    _state: AppState = Depends(get_state),
 ) -> Dict[str, Any]:
-    _require_token_runtime(req)
     require_owner_commit()
 
     vendor = db.query(Vendor).get(vendor_id)
@@ -81,8 +85,9 @@ def delete_vendor(
     vendor_id: int,
     db: Session = Depends(get_session),
     _writes: None = Depends(require_writes),
+    _token: str = Depends(require_token_ctx),
+    _state: AppState = Depends(get_state),
 ) -> Dict[str, Any]:
-    _require_token_runtime(req)
     require_owner_commit()
 
     vendor = db.query(Vendor).get(vendor_id)

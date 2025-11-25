@@ -9,13 +9,10 @@ from core.appdb.engine import get_session
 from core.config.writes import require_writes
 from core.policy.guard import require_owner_commit
 from core.services.models import Item, Vendor
+from tgc.security import require_token_ctx
+from tgc.state import AppState, get_state
 
 router = APIRouter(tags=["items"])
-
-# Runtime token import to avoid import cycles
-def _require_token_runtime(req: Request):
-    from core.api.http import require_token  # runtime import
-    return require_token(req)
 
 def _row(it: Item, vendor_name: Optional[str] = None) -> Dict[str, Any]:
     """Shape rows the way the UI expects (fields are additive/forgiving)."""
@@ -35,15 +32,24 @@ def _row(it: Item, vendor_name: Optional[str] = None) -> Dict[str, Any]:
     }
 
 @router.get("/items")
-def list_items(req: Request, db: Session = Depends(get_session)) -> List[Dict[str, Any]]:
-    _require_token_runtime(req)
+def list_items(
+    req: Request,
+    db: Session = Depends(get_session),
+    _token: str = Depends(require_token_ctx),
+    _state: AppState = Depends(get_state),
+) -> List[Dict[str, Any]]:
     items = db.query(Item).all()
     vmap = {v.id: v.name for v in db.query(Vendor).all()}
     return [_row(it, vmap.get(it.vendor_id)) for it in items]
 
 @router.get("/items/{item_id}")
-def get_item(item_id: int, req: Request, db: Session = Depends(get_session)) -> Dict[str, Any]:
-    _require_token_runtime(req)
+def get_item(
+    item_id: int,
+    req: Request,
+    db: Session = Depends(get_session),
+    _token: str = Depends(require_token_ctx),
+    _state: AppState = Depends(get_state),
+) -> Dict[str, Any]:
     it = db.query(Item).get(item_id)
     if not it:
         raise HTTPException(status_code=404, detail="item not found")
@@ -59,8 +65,9 @@ def create_item(
     req: Request,
     db: Session = Depends(get_session),
     _writes: None = Depends(require_writes),
+    _token: str = Depends(require_token_ctx),
+    _state: AppState = Depends(get_state),
 ) -> Dict[str, Any]:
-    _require_token_runtime(req)
     require_owner_commit()
 
     location = (payload.get("location") or "").strip() or None
@@ -120,8 +127,9 @@ def update_item(
     req: Request,
     db: Session = Depends(get_session),
     _writes: None = Depends(require_writes),
+    _token: str = Depends(require_token_ctx),
+    _state: AppState = Depends(get_state),
 ) -> Dict[str, Any]:
-    _require_token_runtime(req)
     require_owner_commit()
 
     it = db.query(Item).get(item_id)
@@ -159,8 +167,9 @@ def delete_item(
     req: Request,
     db: Session = Depends(get_session),
     _writes: None = Depends(require_writes),
+    _token: str = Depends(require_token_ctx),
+    _state: AppState = Depends(get_state),
 ) -> Dict[str, Any]:
-    _require_token_runtime(req)
     require_owner_commit()
 
     it = db.query(Item).get(item_id)
