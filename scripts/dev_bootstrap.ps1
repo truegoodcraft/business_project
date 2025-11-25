@@ -38,7 +38,11 @@ if (!(Test-Path $Py)) { throw "Missing venv python at $Py" }
 
 # Upgrade pip + install deps
 & $Py -m pip install --upgrade pip
-& $Py -m pip install -r "$RepoRoot\requirements.txt"
+if (Test-Path -Path "$RepoRoot\requirements.txt") {
+  & $Py -m pip install -r "$RepoRoot\requirements.txt"
+} else {
+  & $Py -m pip install fastapi "uvicorn[standard]" pydantic pydantic-settings platformdirs
+}
 
 # Env for in-place dev
 $env:PYTHONPATH = $RepoRoot

@@ -1,27 +1,35 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 
 from fastapi import Request
 
+from core.runtime import CoreAlpha
 from tgc.logging_setup import setup_logging
+from tgc.platform_adapters import PlatformAdapter
 from tgc.tokens import TokenManager
-from tgc.settings import DATA_DIR, Settings
+from tgc.settings import Settings
 
 
 @dataclass
 class AppState:
     settings: Settings
-    core: Optional[object]
+    core: Optional[CoreAlpha]
     tokens: TokenManager
-    logger: object
+    logger: logging.Logger
+    platform: PlatformAdapter
 
 
 def init_state(settings: Settings) -> AppState:
+    # Ensure data dir exists BEFORE CoreAlpha touches DB/files
+    data_dir: Path = settings.resolve_data_dir()
     tokens = TokenManager(settings)
-    logger = setup_logging(DATA_DIR / "buscore.log")
-    return AppState(settings=settings, core=None, tokens=tokens, logger=logger)
+    logger = setup_logging(data_dir / "buscore.log")
+    platform = PlatformAdapter()
+    return AppState(settings=settings, core=None, tokens=tokens, logger=logger, platform=platform)
 
 
 def get_state(request: Request) -> AppState:

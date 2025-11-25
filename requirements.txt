@@ -12,11 +12,11 @@ cryptography>=43.0.0  # AES-GCM + PBKDF2 fallback
 # Optional for plugin signature verification
 # pynacl>=1.5,<2
 # The Notion module otherwise relies on the Python standard library.
-fastapi
-uvicorn[standard]
+fastapi>=0.110
+uvicorn[standard]>=0.24
 pydantic>=2
-pydantic-settings
-platformdirs
+pydantic-settings>=2
+platformdirs>=4
 python-multipart
 openpyxl>=3.1.0
 sqlalchemy
