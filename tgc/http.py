@@ -7,7 +7,9 @@ import time
 from collections import deque
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Dict, Generator, Optional
+from typing import Any, AsyncIterator, Dict, Generator, Optional
+
+import asyncio
 
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -47,12 +49,32 @@ EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @asynccontextmanager
-def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """
+    FastAPI/Starlette requires an *async* contextmanager for lifespan.
+    Initialize AppState on startup; attempt graceful teardown on shutdown.
+    """
+
     settings = Settings()
     state = init_state(settings)
     app.state.app_state = state
     _run_startup_migrations()
-    yield
+    try:
+        yield
+    finally:
+        # best-effort cleanup if core exposes close() or async close()
+        core = getattr(state, "core", None)
+        if core is not None:
+            close = getattr(core, "close", None)
+            if callable(close):
+                try:
+                    rv = close()
+                    # If close() returned a coroutine, await it
+                    if asyncio.iscoroutine(rv):
+                        await rv
+                except Exception:
+                    # never block shutdown on cleanup errors
+                    pass
 
 
 app = FastAPI(title="BUS Core Alpha", version=VERSION, lifespan=lifespan)
