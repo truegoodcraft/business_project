@@ -75,6 +75,23 @@ $tok = (Invoke-RestMethod -Uri "$BASE/session/token").token
 
 (Replace `.token` with the actual property name returned by your `/session/token` endpoint if it differs.)
 
+### Fast installs vs. optional integrations
+The default `requirements.txt` installs only the **minimal server runtime** (FastAPI, uvicorn, Pydantic, SQLAlchemy, etc.).  
+Heavy/optional integrations (Google APIs, Notion, reportlab/openpyxl, uvicorn reloader stack) are in `requirements-extras.txt`.
+
+- Core only (fast):
+  ```bash
+  pip install -r requirements.txt
+  ```
+- Core + extras (dev/integrations):
+  ```bash
+  # Bash
+  BUSCORE_EXTRAS=1 scripts/dev_bootstrap.sh
+  # PowerShell
+  setx BUSCORE_EXTRAS 1
+  scripts\dev_bootstrap.ps1
+  ```
+
 ---
 
 ## Who this is for

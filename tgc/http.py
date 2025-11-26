@@ -11,7 +11,7 @@ from typing import Any, Dict, Generator, Optional
 
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from starlette.staticfiles import StaticFiles
@@ -99,7 +99,8 @@ def ui_index():
 @app.get("/session/token")
 def mint_token(state=Depends(get_state)):
     tok = state.tokens.current()
-    resp = JSONResponse({"token": tok})
+    # JSONResponse ensures proper headers + body handling in Starlette
+    resp = JSONResponse({"ok": True})
     attach_session_cookie(resp, tok, state.settings)
     return resp
 
