@@ -39,9 +39,13 @@ if (!(Test-Path $Py)) { throw "Missing venv python at $Py" }
 # Upgrade pip + install deps
 & $Py -m pip install --upgrade pip
 if (Test-Path -Path "$RepoRoot\requirements.txt") {
+  # Always core; extras only if requested via BUSCORE_EXTRAS=1
   & $Py -m pip install -r "$RepoRoot\requirements.txt"
+  if ($env:BUSCORE_EXTRAS -eq "1" -and (Test-Path .\requirements-extras.txt)) {
+    & $Py -m pip install -r .\requirements-extras.txt
+  }
 } else {
-  & $Py -m pip install fastapi "uvicorn[standard]" pydantic pydantic-settings platformdirs
+  & $Py -m pip install fastapi uvicorn pydantic pydantic-settings platformdirs sqlalchemy python-multipart
 }
 
 # Env for in-place dev
