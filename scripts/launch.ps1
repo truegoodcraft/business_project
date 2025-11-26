@@ -1,5 +1,5 @@
 param(
-  [string]$Host = "127.0.0.1",
+  [string]$BindHost = "127.0.0.1",
   [int]$Port = 8765
 )
 $ErrorActionPreference = "Stop"
@@ -18,5 +18,5 @@ if ($env:BUSCORE_EXTRAS -eq "1" -and (Test-Path .\requirements-extras.txt)) {
   pip install -r .\requirements-extras.txt
 }
 
-Write-Host "[launch] Starting BUS Core at http://$Host`:$Port"
-python -c "import uvicorn; uvicorn.run('tgc.http:app', host='$Host', port=$Port, log_level='info')"
+Write-Host "[launch] Starting BUS Core at http://$BindHost`:$Port"
+python -c "import uvicorn; uvicorn.run('tgc.http:app', host='$BindHost', port=$Port, log_level='info')"
