@@ -51,15 +51,29 @@ function Get-SessionCookie {
     } catch { }
     throw "No session cookie obtained from /session/token"
   }
-  return $cookie
+  # Extract the token value for header fallback (X-Session-Token)
+  $token = $cookie -replace '^[^=]+=','' -replace ';.*$',''
+  $token = $token.Trim()
+  # Return a small object with both
+  [pscustomobject]@{
+    Cookie = $cookie
+    Token  = $token
+    Session = $session
+  }
 }
 
-$cookie = Get-SessionCookie -Base $Base
-Write-Host "Cookie: $cookie"
+$auth = Get-SessionCookie -Base $Base
+Write-Host "Cookie: $($auth.Cookie)"
+Write-Host "Token:  $($auth.Token)"
 
 Write-Host "== Smoke: /app/ping with cookie"
-$headers = @{ "Cookie" = $cookie }
-$ping = Invoke-WebRequest -Uri "$Base/app/ping" -Headers $headers -UseBasicParsing -MaximumRedirection 0
+# Send both Cookie and X-Session-Token to avoid client cookie quirks
+$headers = @{
+  "Cookie"          = $auth.Cookie
+  "X-Session-Token" = $auth.Token
+}
+# Prefer using the same WebSession to carry jar state too
+$ping = Invoke-WebRequest -Uri "$Base/app/ping" -Headers $headers -UseBasicParsing -MaximumRedirection 0 -WebSession $auth.Session
 if ($ping.StatusCode -ne 200) {
   throw "/app/ping expected 200, got $($ping.StatusCode)"
 }
