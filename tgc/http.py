@@ -85,10 +85,10 @@ if UI_DIR.exists():
 app.mount("/brand", StaticFiles(directory=str(REPO_ROOT)), name="brand")
 
 # ---- Protected health endpoint for smoke tests
-health = APIRouter(prefix="/app", tags=["health"])
+health_router = APIRouter(prefix="/app", tags=["health"])
 
 
-@health.get("/ping")
+@health_router.get("/ping")
 def app_ping(state=Depends(get_state), _=Depends(require_token_ctx)):
     return {
         "ok": True,
@@ -353,7 +353,7 @@ vendors_router.dependencies = [Depends(require_token_ctx)]
 app.include_router(items_router, prefix="/app")
 app.include_router(vendors_router, prefix="/app")
 app.include_router(mfg_router)
-app.include_router(health)
+app.include_router(health_router)
 
 
 if __name__ == "__main__":
