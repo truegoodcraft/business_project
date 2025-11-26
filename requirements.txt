@@ -1,7 +1,9 @@
+# Microkernel Core Runtime (no clouds by default)
 fastapi>=0.122.0
-uvicorn>=0.38.0
+uvicorn>=0.38.0            # plain uvicorn; no [standard] extras by default
 pydantic>=2.12.0
 pydantic-settings>=2.12.0
 platformdirs>=4.5.0
 sqlalchemy>=2.0.0
 python-multipart>=0.0.6
+# External integrations (Google, Notion, PDF/Excel, etc.) must be added by plugins/extras.
