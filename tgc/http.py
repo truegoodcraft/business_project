@@ -104,6 +104,14 @@ def mint_token(state=Depends(get_state)):
     attach_session_cookie(resp, tok, state.settings)
     return resp
 
+# Debug-friendly variant that returns plain text; useful if some clients behave oddly with JSONResponse.
+@app.get("/session/token/plain")
+def mint_token_plain(state=Depends(get_state)):
+    tok = state.tokens.current()
+    resp = Response(content="ok", media_type="text/plain; charset=utf-8")
+    attach_session_cookie(resp, tok, state.settings)
+    return resp
+
 
 @app.post("/session/rotate")
 def rotate_token(state=Depends(get_state), _=Depends(require_token_ctx)):
