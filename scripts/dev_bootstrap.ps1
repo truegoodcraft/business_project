@@ -66,9 +66,8 @@ if (!(Test-Path $LicPath)) {
   Write-Host "[dev] Found existing license at $LicPath"
 }
 
-# Start server minimized and open UI
-$Args = @("-c", "import uvicorn; uvicorn.run('tgc.http:app', host='127.0.0.1', port=$port, log_level='info')")
-Start-Process -WindowStyle Minimized -FilePath $Py -ArgumentList $Args
+# Delegate to the unified launcher (honors BUSCORE_EXTRAS)
+& "$PSScriptRoot\launch.ps1" -Host "127.0.0.1" -Port $port
 Start-Sleep -Seconds 2
 $BaseUrl = "http://127.0.0.1:$port"
 Start-Process $BaseUrl
