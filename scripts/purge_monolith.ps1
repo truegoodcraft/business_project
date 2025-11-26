@@ -1,6 +1,7 @@
 <#
   THE PURGE: Removes monolithic adapters & extras to enforce Microkernel.
-  Run from repo root:  powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\purge_monolith.ps1
+  Run from repo root:
+    powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\purge_monolith.ps1
 #>
 $ErrorActionPreference = "Continue"
 Write-Host "[purge] Removing adapter folders (if present)..."
