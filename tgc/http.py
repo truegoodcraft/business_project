@@ -29,6 +29,7 @@ from core.version import VERSION
 from tgc.security import set_session_cookie as attach_session_cookie, require_token_ctx
 from tgc.settings import Settings
 from tgc.state import AppState, get_state, init_state
+from datetime import datetime, timezone
 
 # ---- Runtime guard: supported Python versions (FastAPI/Starlette not ready for 3.14 yet)
 if not ((3, 11) <= sys.version_info[:2] <= (3, 13)):
@@ -82,6 +83,18 @@ app = FastAPI(title="BUS Core Alpha", version=VERSION, lifespan=lifespan)
 if UI_DIR.exists():
     app.mount("/ui", StaticFiles(directory=str(UI_DIR), html=True), name="ui")
 app.mount("/brand", StaticFiles(directory=str(REPO_ROOT)), name="brand")
+
+# ---- Protected health endpoint for smoke tests
+health = APIRouter(prefix="/app", tags=["health"])
+
+
+@health.get("/ping")
+def app_ping(state=Depends(get_state), _=Depends(require_token_ctx)):
+    return {
+        "ok": True,
+        "server": "bus-core",
+        "ts": datetime.now(timezone.utc).isoformat()
+    }
 
 app.add_middleware(
     CORSMiddleware,
@@ -340,6 +353,7 @@ vendors_router.dependencies = [Depends(require_token_ctx)]
 app.include_router(items_router, prefix="/app")
 app.include_router(vendors_router, prefix="/app")
 app.include_router(mfg_router)
+app.include_router(health)
 
 
 if __name__ == "__main__":
