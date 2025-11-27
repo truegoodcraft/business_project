@@ -134,8 +134,8 @@ def ui_index():
 @app.get("/session/token")
 def mint_token(state=Depends(get_state)):
     tok = state.tokens.current()
-    # JSONResponse ensures proper headers + body handling in Starlette
-    resp = JSONResponse({"ok": True})
+    # Return token in JSON (client reads j.token)
+    resp = JSONResponse({"ok": True, "token": tok})
     attach_session_cookie(resp, tok, state.settings)
     return resp
 
@@ -143,7 +143,8 @@ def mint_token(state=Depends(get_state)):
 @app.get("/session/token/plain")
 def mint_token_plain(state=Depends(get_state)):
     tok = state.tokens.current()
-    resp = Response(content="ok", media_type="text/plain; charset=utf-8")
+    # Plain-text variant should return the token itself
+    resp = Response(content=tok, media_type="text/plain; charset=utf-8")
     attach_session_cookie(resp, tok, state.settings)
     return resp
 
