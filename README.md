@@ -1,7 +1,22 @@
 
 <p align="center">
-  <img src="Glow-Hero.png" alt="BUS Core logo" width="96" height="96">
+  <img src="https://github.com/truegoodcraft/TGC-BUS-Core/raw/main/Glow-Hero.png" 
+       alt="BUS Core logo" 
+       width="96" height="96">
+
+<p align="center">
+  <img src="https://github.com/truegoodcraft/TGC-BUS-Core/raw/main/docs/demo-boot-fast-new-pc.gif" 
+       alt="TGC-BUS-Core lightning-fast boot on a fresh PC" 
+       width="800">
+  <br>
+  <em>Boot → ready on a clean Windows machine</em>
 </p>
+
+
+</p>
+
+
+
 
 <p align="center">
   What’s new in v0.6.0
