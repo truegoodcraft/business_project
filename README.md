@@ -3,7 +3,7 @@
   <img src="Glow-Hero.png" alt="BUS Core logo" width="96" height="96">
 </p>
 
-# BUS Core (v0.3.0 "Iron Core")
+# BUS Core (v0.6.0 "Iron Core")
 
 [![GitHub Repo stars](https://img.shields.io/github/stars/truegoodcraft/TGC-BUS-Core?style=social)](https://github.com/truegoodcraft/TGC-BUS-Core)
 [![License](https://img.shields.io/github/license/truegoodcraft/TGC-BUS-Core)](LICENSE)
