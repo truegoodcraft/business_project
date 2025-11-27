@@ -4,6 +4,17 @@
 import { apiGetJson, apiPost, apiPut, apiDelete, ensureToken } from '../api.js';
 import { parseSmartInput } from '../utils/parser.js';
 
+// Keep delegated handler binding stable across route changes
+let _rootEl = null;
+let _clickBound = false;
+function _onRootClick(e) {
+  const btn = e.target.closest('[data-role="btn-add-item"]');
+  if (btn) {
+    e.preventDefault();
+    openItemModal(); // create mode
+  }
+}
+
 function el(tag, attrs = {}, children = []) {
   const node = document.createElement(tag);
   Object.entries(attrs).forEach(([k, v]) => {
@@ -23,15 +34,24 @@ let reloadInventory = null;
 export function mountInventory() {
   const container = document.querySelector('[data-role="inventory-root"]');
   if (!container) return;
+  _rootEl = container;
   _mountInventory(container);
-  // Wire the "Add Item" launcher (toolbar button rendered by _mountInventory)
-  container.addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-role="btn-add-item"]');
-    if (btn) {
-      e.preventDefault();
-      openItemModal(); // create mode
-    }
-  });
+  // Bind once for delegated toolbar events
+  if (!_clickBound) {
+    _rootEl.addEventListener('click', _onRootClick);
+    _clickBound = true;
+  }
+}
+
+// Needed by app.js router; ensures route changes don’t leak handlers/modals
+export function unmountInventory() {
+  // Close any open modals from this card
+  document.querySelectorAll('.modal-overlay').forEach(el => el.remove());
+  // Remove delegated click binding
+  if (_rootEl && _clickBound) {
+    _rootEl.removeEventListener('click', _onRootClick);
+    _clickBound = false;
+  }
 }
 
 async function fetchItems(state) {
