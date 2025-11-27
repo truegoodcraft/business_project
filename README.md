@@ -45,7 +45,13 @@ As of **v0.6.0**, BUS Core uses a **Microkernel Architecture** ("Iron Core").
 
 The system now uses a single unified launcher that handles environment setup, dependencies, and startup.
 
-[Boot Demo](docs/demo-boot-fast-new-pc.gif)
+<p align="center">
+  <img src="https://github.com/truegoodcraft/TGC-BUS-Core/raw/main/docs/demo-boot-fast-new-pc.gif" 
+       alt="TGC-BUS-Core lightning-fast boot on a fresh PC" 
+       width="800">
+  <br>
+  <em>Boot → ready in seconds on a clean Windows machine</em>
+</p>
 
 ```powershell
 git clone [https://github.com/truegoodcraft/TGC-BUS-Core.git](https://github.com/truegoodcraft/TGC-BUS-Core.git)
