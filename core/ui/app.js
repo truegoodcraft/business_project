@@ -64,7 +64,7 @@ const onRouteChange = async () => {
 
   if (route === 'contacts') {
     // Close Tools drawer if open
-    document.querySelector('[data-role="tools-subnav"]')?.classList.add('hidden');
+    document.querySelector('[data-role="tools-subnav"]')?.classList.remove('open');
 
     // Hide legacy Tools screens if any
     document.querySelector('[data-role="tools-screen"]')?.classList.add('hidden');
@@ -132,33 +132,40 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 });
 
-// Tools drawer toggle + selection handling
+// Tools drawer: open on hover, click locks/unlocks
 (function initToolsDrawer() {
-  const toolsToggle = document.querySelector('[data-action="toggle-tools"]');
-  const drawer = document.querySelector('[data-role="tools-subnav"]');
-  const inventoryLink = document.querySelector('[data-link="tools-inventory"]');
+  const navTools     = document.querySelector('[data-role="nav-tools"]');
+  const toolsToggle  = document.querySelector('[data-action="toggle-tools"]');
+  const drawer       = document.querySelector('[data-role="tools-subnav"]');
+  const inventoryLink= document.querySelector('[data-link="tools-inventory"]');
   const contactsLink = document.querySelector('[data-link="tools-contacts"], a[href="#/contacts"]');
 
-  if (toolsToggle && drawer) {
+  if (!navTools || !drawer) return;
+
+  let locked = false;
+
+  // Hover behavior
+  navTools.addEventListener('mouseenter', () => {
+    drawer.classList.add('open');
+  });
+  navTools.addEventListener('mouseleave', () => {
+    if (!locked) drawer.classList.remove('open');
+  });
+
+  // Click to lock/unlock (SoT-compatible)
+  if (toolsToggle) {
     toolsToggle.addEventListener('click', (e) => {
       e.preventDefault();
-      drawer.classList.toggle('hidden');
+      locked = !locked;
+      drawer.classList.toggle('open', locked);
     });
   }
 
-  if (inventoryLink && drawer) {
-    inventoryLink.addEventListener('click', () => {
-      drawer.classList.add('hidden');
-    });
-  }
-
-  if (contactsLink && drawer) {
-    contactsLink.addEventListener('click', () => drawer?.classList.add('hidden'));
-  }
-
-  window.addEventListener('hashchange', () => {
-    if (drawer) drawer.classList.add('hidden');
-  });
+  // Navigating away always closes + unlocks
+  const closeAndUnlock = () => { locked = false; drawer.classList.remove('open'); };
+  if (inventoryLink) inventoryLink.addEventListener('click', closeAndUnlock);
+  if (contactsLink)  contactsLink.addEventListener('click', closeAndUnlock);
+  window.addEventListener('hashchange', closeAndUnlock);
 })();
 
 function initManufacturing() {

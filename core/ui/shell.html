@@ -65,6 +65,58 @@
     @media (min-width:1280px){.brand-nav{height:18px}}
     .hero-logo{max-width:420px;width:100%;height:auto;display:block;margin:16px auto}
     @media (max-width:480px){.app-logo{height:24px;margin-right:6px}}
+    /* === License badge: bottom-left, responsive === */
+    #license-badge{
+      position: fixed;           /* detach from header flow */
+      left: calc(200px + 16px);  /* 200px sidebar + 16px buffer */
+      bottom: 16px;              /* nice bottom buffer */
+      z-index: 70;               /* above cards/sidebar */
+    }
+    /* Respect device safe areas (iOS etc.) */
+    @supports (bottom: env(safe-area-inset-bottom)) {
+      #license-badge{ bottom: calc(env(safe-area-inset-bottom) + 16px); }
+    }
+    /* On narrow viewports, don’t offset by sidebar width */
+    @media (max-width: 900px){
+      #license-badge{ left: 16px; }
+    }
+    /* === Sidebar primary nav: centered with safe insets === */
+    #sidebar .nav{ list-style:none; margin:0; padding:0; }
+    #sidebar .nav > li > a{
+      display:block;
+      text-align:center;     /* center the link text */
+      padding:8px 12px;      /* internal buffer */
+      margin:0 10px;         /* inset from left/right panel edges */
+      border-radius:8px;
+      text-decoration:none;
+      color:inherit;
+    }
+    #sidebar .nav > li > a:hover,
+    #sidebar .nav > li > a.active{
+      background:#2a2a2a;
+    }
+    /* Submenu links keep a slight indent but get touch-friendly padding */
+    #sidebar .nav-group a{
+      display:block;
+      padding:6px 10px;
+      border-radius:6px;
+      text-decoration:none;
+      color:inherit;
+    }
+    #sidebar .nav-group a:hover{ background:#2a2a2a; }
+    /* === Sidebar submenu items centered === */
+    #sidebar .nav-group { padding-left: 0; }
+    #sidebar .nav-group li { list-style: none; }
+    #sidebar .nav-group a {
+      display: block;
+      text-align: center;
+      padding: 6px 10px;
+      margin: 0 10px;
+      border-radius: 6px;
+      text-decoration: none;
+      color: inherit;
+    }
+    #sidebar .nav-group a:hover { background: #2a2a2a; }
   </style>
   <script>
   (function(){
@@ -80,15 +132,14 @@
   <nav id="sidebar">
     <div class="brand">
       <a class="app-home" href="#/home" data-link="brand-home">
-        <span class="small-dot-icon"></span>
-        <img src="/brand/Glow-Hero.png?v=buscore-8" alt="BUS Core" class="brand-nav">
+        <img src="/brand/Flat-Dark.png?v=buscore-2" alt="BUS Core" class="app-logo">
         <span class="app-title">BUS Core</span>
       </a>
     </div>
     <ul class="nav">
       <li data-role="nav-tools">
         <a href="#" data-link="tools" data-action="toggle-tools">Tools</a>
-        <ul data-role="tools-subnav" class="hidden drawer">
+        <ul data-role="tools-subnav" class="nav-group">
           <li><a href="#/inventory" data-link="tools-inventory">Inventory</a></li>
           <li><a href="#/contacts" data-link="tools-contacts">Contacts</a></li>
         </ul>
@@ -99,10 +150,6 @@
   <main id="main">
     <div id="app">
       <header class="top-bar">
-        <div class="brand-inline">
-          <img src="/brand/Flat-Dark.png?v=buscore-2" alt="BUS Core" class="app-logo">
-          <span class="app-title">BUS Core</span>
-        </div>
         <span id="license-badge" data-role="license-badge">License: community</span>
       </header>
 

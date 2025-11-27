@@ -9,13 +9,10 @@ from core.appdb.engine import get_session
 from core.config.writes import require_writes
 from core.policy.guard import require_owner_commit
 from core.services.models import Item, Vendor
+from tgc.security import require_token_ctx
+from tgc.state import AppState, get_state
 
 router = APIRouter(tags=["items"])
-
-# Runtime token import to avoid import cycles
-def _require_token_runtime(req: Request):
-    from core.api.http import require_token  # runtime import
-    return require_token(req)
 
 def _row(it: Item, vendor_name: Optional[str] = None) -> Dict[str, Any]:
     """Shape rows the way the UI expects (fields are additive/forgiving)."""
@@ -29,21 +26,30 @@ def _row(it: Item, vendor_name: Optional[str] = None) -> Dict[str, Any]:
         "notes": it.notes,
         # UI reads these (optional):
         "vendor": vendor_name,          # derived from vendor_id
-        "location": None,               # not modeled; UI falls back to 'Shop'
+        "location": getattr(it, "location", None),
         "type": getattr(it, "item_type", None),  # present if column exists
         "created_at": it.created_at,
     }
 
 @router.get("/items")
-def list_items(req: Request, db: Session = Depends(get_session)) -> List[Dict[str, Any]]:
-    _require_token_runtime(req)
+def list_items(
+    req: Request,
+    db: Session = Depends(get_session),
+    _token: str = Depends(require_token_ctx),
+    _state: AppState = Depends(get_state),
+) -> List[Dict[str, Any]]:
     items = db.query(Item).all()
     vmap = {v.id: v.name for v in db.query(Vendor).all()}
     return [_row(it, vmap.get(it.vendor_id)) for it in items]
 
 @router.get("/items/{item_id}")
-def get_item(item_id: int, req: Request, db: Session = Depends(get_session)) -> Dict[str, Any]:
-    _require_token_runtime(req)
+def get_item(
+    item_id: int,
+    req: Request,
+    db: Session = Depends(get_session),
+    _token: str = Depends(require_token_ctx),
+    _state: AppState = Depends(get_state),
+) -> Dict[str, Any]:
     it = db.query(Item).get(item_id)
     if not it:
         raise HTTPException(status_code=404, detail="item not found")
@@ -59,9 +65,13 @@ def create_item(
     req: Request,
     db: Session = Depends(get_session),
     _writes: None = Depends(require_writes),
+    _token: str = Depends(require_token_ctx),
+    _state: AppState = Depends(get_state),
 ) -> Dict[str, Any]:
-    _require_token_runtime(req)
     require_owner_commit()
+
+    location = (payload.get("location") or "").strip() or None
+    item_type = payload.get("item_type") or payload.get("type")
 
     # Fallback upsert path used by the UI when adjusting non-existing items:
     item_id = payload.get("id")
@@ -74,10 +84,12 @@ def create_item(
         for f in ("name", "sku", "qty", "unit", "price", "notes", "vendor_id"):
             if f in payload:
                 setattr(it, f, payload[f])
+        if "location" in payload:
+            it.location = location
         # Optional item_type if model/column exists
-        if "item_type" in payload:
+        if item_type is not None:
             try:
-                setattr(it, "item_type", payload["item_type"])
+                setattr(it, "item_type", item_type)
             except Exception:
                 pass
         if not getattr(it, "name", None):
@@ -91,10 +103,11 @@ def create_item(
             price=payload.get("price"),
             notes=payload.get("notes"),
             vendor_id=payload.get("vendor_id"),
+            location=location,
         )
-        if "item_type" in payload:
+        if item_type is not None:
             try:
-                setattr(it, "item_type", payload["item_type"])
+                setattr(it, "item_type", item_type)
             except Exception:
                 pass
         db.add(it)
@@ -114,20 +127,31 @@ def update_item(
     req: Request,
     db: Session = Depends(get_session),
     _writes: None = Depends(require_writes),
+    _token: str = Depends(require_token_ctx),
+    _state: AppState = Depends(get_state),
 ) -> Dict[str, Any]:
-    _require_token_runtime(req)
     require_owner_commit()
 
     it = db.query(Item).get(item_id)
     if not it:
         raise HTTPException(status_code=404, detail="item not found")
 
-    for f in ("name", "sku", "qty", "unit", "price", "notes", "vendor_id", "item_type"):
+    location = (payload.get("location") or "").strip() or None
+    item_type = payload.get("item_type") or payload.get("type")
+
+    for f in ("name", "sku", "qty", "unit", "price", "notes", "vendor_id"):
         if f in payload:
             try:
                 setattr(it, f, payload[f])
             except Exception:
                 pass
+    if "location" in payload:
+        it.location = location
+    if item_type is not None:
+        try:
+            setattr(it, "item_type", item_type)
+        except Exception:
+            pass
 
     db.commit()
     db.refresh(it)
@@ -143,8 +167,9 @@ def delete_item(
     req: Request,
     db: Session = Depends(get_session),
     _writes: None = Depends(require_writes),
+    _token: str = Depends(require_token_ctx),
+    _state: AppState = Depends(get_state),
 ) -> Dict[str, Any]:
-    _require_token_runtime(req)
     require_owner_commit()
 
     it = db.query(Item).get(item_id)

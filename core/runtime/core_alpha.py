@@ -30,15 +30,13 @@ from typing import Any, Dict, List, Optional
 
 from core.services.capabilities import registry
 from core.services.capabilities.registry import MANIFEST_PATH
-from core.domain.bootstrap import set_broker
-from core.domain.broker import Broker
+from core.domain.bootstrap import get_broker, set_broker
 from core.contracts.plugin_v2 import PluginV2
 from core.runtime.crypto import decrypt, encrypt
 from core.runtime.journal import JournalManager
 from core.runtime.policy import PolicyEngine
 from core.runtime.sandbox import SandboxError, run_transform
 from core.secrets import Secrets
-from core.settings.reader import load_reader_settings
 from core.version import VERSION
 from tgc.bootstrap_fs import DATA, LOGS, ensure_first_run
 
@@ -61,13 +59,9 @@ class CoreAlpha:
         self.bootstrap = ensure_first_run()
         self.policy = PolicyEngine(policy_path)
         self.journal = JournalManager(DATA)
-        self.broker = Broker(
-            Secrets,
-            lambda name: logging.getLogger(f"core.{name}" if name else "core"),
-            registry,
-            load_reader_settings,
-        )
-        set_broker(self.broker)
+        set_broker()
+        self.broker = get_broker()
+        self.ready = True
         self._lock = threading.Lock()
         self._plugins: List[PluginRecord] = []
         self.session_token: Optional[str] = None
