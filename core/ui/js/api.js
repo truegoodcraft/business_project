@@ -60,6 +60,10 @@ export async function apiGet(url, init) {
   return handleResponse(response);
 }
 
+export async function apiGetJson(url, init) {
+  return apiGet(url, init);
+}
+
 function createJsonInit(method, data, init) {
   const headers = new Headers(init?.headers || {});
   headers.set('Content-Type', 'application/json');
