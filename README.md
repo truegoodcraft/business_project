@@ -3,6 +3,17 @@
   <img src="Glow-Hero.png" alt="BUS Core logo" width="96" height="96">
 </p>
 
+<p align="center">
+  What’s new in v0.6.0
+<p align="center">  
+  Monolith fully purged → microkernel.
+<p align="center">  
+  External integrations are plugins.
+<p align="center">  
+  Fresh-machine boot path proven.
+</p>
+
+
 # BUS Core (v0.6.0 "Iron Core")
 
 [![GitHub Repo stars](https://img.shields.io/github/stars/truegoodcraft/TGC-BUS-Core?style=social)](https://github.com/truegoodcraft/TGC-BUS-Core)
@@ -15,7 +26,7 @@ I’m building it for my own workshop first: inventory, contacts, and simple man
 
 ## 🏗 Architecture: The "Iron Core"
 
-As of **v0.3.0**, BUS Core uses a **Microkernel Architecture** ("Iron Core").
+As of **v0.6.0**, BUS Core uses a **Microkernel Architecture** ("Iron Core").
 * **Lightweight Coordinator:** The Core is minimal. It handles auth, policy, journaling, and the database.
 * **Plugins for Everything:** External integrations (Google Drive, Notion, etc.) are removed from the core and must be loaded as plugins.
 * **Local-First Analytics:** All dashboard stats and insights are calculated from **local events** stored in your database. We do not send your data to the cloud to generate charts.
