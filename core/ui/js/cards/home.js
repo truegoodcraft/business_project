@@ -41,7 +41,7 @@ export function mountHome() {
   const tools = document.createElement('div');
   tools.className = 'metric-grid';
   tools.append(
-    toolTile('Items', 'Manage stock levels and pricing.', '#'),
+    toolTile('Inventory', 'Manage stock levels and pricing.', '#/inventory'),
     toolTile('Vendors', 'Track supplier contacts and roles.', '#'),
     toolTile('Runs', 'Review recent manufacturing activity.', '#'),
   );

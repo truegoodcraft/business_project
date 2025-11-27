@@ -200,7 +200,7 @@ export async function _mountInventory(container) {
 }
 
 export function mountInventory() {
-  const container = document.querySelector('[data-role="inventory-table"]');
+  const container = document.querySelector('[data-role="inventory-root"]');
   if (!container) return;
   _mountInventory(container);
 }
