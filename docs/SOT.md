@@ -1,7 +1,8 @@
-**TGC BUS Core — Source of Truth (Updated 2025-11-24)** 
+**TGC BUS Core — Source of Truth (Updated 2025-11-24)**
 
 > **Authority rule:** The uploaded **codebase is truth**. Where this document and the code disagree, the SoT **must be updated to reflect code**. Anything not stated = **unknown / not specified**.
-
+>
+> **Change note (2025-11-26, v0.3.0 "Iron Core"):** Roll-up version bump to v0.3.0 “Iron Core” reflecting integrated Home/dashboard layout and sidebar structure, single-operator design ethos, local-only analytics event store and “analytics from local events only” principle, optional anonymous license hash and push-only telemetry model, and clarified manufacturing run cost/capacity view and Core vs Pro philosophical split from the 2025-11-24 session.
 > **Change note (2025-11-24, v0.1.1):** Documents canonical Home/dashboard layout and sidebar structure; adds single-operator design ethos; defines local-only analytics event store and “analytics from local events only” principle; documents optional anonymous license hash and push-only telemetry model; clarifies manufacturing run cost/capacity view and Core vs Pro philosophical split.
 > **Change note (2025-11-23, v0.1.0):** Documents canonical Codex/GitHub patch-branch development workflow and `D:\BUSCore-Test` local test clone; clarifies that local clones are test-only and all code edits happen via Codex on GitHub.
 > **Change note (2025-11-20):** Promotes `scripts/dev_bootstrap.ps1` to canonical dev launcher; preserves manual dev/smoke flow for clarity; documents Pro gating surfaces and current gaps (DB still under repo; AppData not yet cut over). Adds explicit canonical launch/smoke commands.
@@ -12,7 +13,7 @@
 
 ## Versioning & Changelog
 
-* **Current SoT document version:** `v0.1.1`.
+* **Current SoT document version:** `v0.3.0 "Iron Core"`.
 * All BUS Core SoTs and adjacent TGC method/process docs use a three-part version string: `vX.Y.Z`.
 
   * **X – Release track.** `0` = pre–official-release track; `1` = first formal release of the method/product; higher values represent later lifecycle stages.
@@ -651,7 +652,6 @@ Columns:
 
 There are no additional tables in `plans.db` as of 2025-11-22.
 
-
 ## 9) Vendors & Contacts (Unified Model)
 
 * **Single table:** `vendors` holds both organizations and people.
@@ -796,7 +796,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\buscore-smoke.ps1"
 
 **Patch workflow (per change):**
 
-1. Ensure `main` is green/stable on GitHub.
+1. Ensure `main` is green/stable on GitHub`.
 
 2. Create a new patch branch from `main`, e.g. `patch/UI-CRUD-Piping-Pass`.
 
@@ -832,9 +832,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\buscore-smoke.ps1"
 
 ## 12) Repository Hygiene & Legal (updated 2025-11-21)
 
-* **Privacy scrub:** removed hard-coded local paths/usernames and debug logs from code/comments/docs.
+* **Privacy scrub:** removed hard-coded local paths/usernames and debug logs from code/comments/docs`.
 
-* **Top-level `LICENSE`:** present with official **AGPL-3.0** text; **SPDX headers** inserted across source files.
+* **Top-level `LICENSE`:** present with official **AGPL-3.0** text; **SPDX headers** inserted across source files`.
 
 * **`.gitignore`:**
 
@@ -993,13 +993,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\buscore-smoke.ps1"
 
 * **Plan storage** (`save_plan`, `get_plan`, `list_plans`, `preview_plan`, `commit_local`).
 
-* **DB/session (updated 2025-11-22):** `core.appdb.engine` constructs the single SQLAlchemy engine for the core database.
+* **DB/session (updated 2025-11-22):** `core.appdb.engine` constructs the single SQLAlchemy engine for the core database`.
 
   * It exposes `ENGINE`, `SessionLocal`, and `get_session()` as the only supported entry points for DB access.
   * On Windows, the SQLite URL is built as `sqlite+pysqlite:///<posix_path>` (exactly three slashes) pointing to `%LOCALAPPDATA%\BUSCore\app\app.db`.
   * No other module may call `create_engine()` for the core DB; all sessions must come from `SessionLocal` / `get_session()`.
 
-* **Broker:** `get_broker` initializes plugin broker with Secrets, capability registry, reader settings.
+* **Broker:** `get_broker` initializes plugin broker with Secrets, capability registry, reader settings`.
 
 ### Headers, Files, and Config Conventions
 
@@ -1027,8 +1027,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\buscore-smoke.ps1"
 ### API/Status Conventions (Tests)
 
 * **CRUD success:** `200 OK` only (smoke policy).
-* **Auth:** header token required on protected routes; cookie not relied on in tests.
+* **Auth:** header token required on protected routes; cookie not relied on in tests`.
 
 ---
 
 **End of Source of Truth.**
+
