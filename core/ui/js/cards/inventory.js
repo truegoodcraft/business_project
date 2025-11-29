@@ -13,29 +13,6 @@ function _onRootClick(e) {
     e.preventDefault();
     openItemModal(); // create mode
   }
-  // Intercept Delete with confirmation
-  const delBtn = e.target.closest('button, a');
-  if (delBtn && (delBtn.matches('[data-role="btn-delete"]') || /delete/i.test(delBtn.textContent || ''))) {
-    e.preventDefault();
-    const row = delBtn.closest('[data-item-id], tr, li, .row');
-    const itemId =
-      delBtn.getAttribute('data-item-id') ||
-      delBtn.getAttribute('data-id') ||
-      row?.getAttribute?.('data-item-id') ||
-      row?.getAttribute?.('data-id');
-    if (!itemId) return;
-    confirmDialog({
-      title: 'Delete Item',
-      body: 'This action cannot be undone. Are you sure you want to delete this item?',
-      confirmText: 'Delete',
-      danger: true,
-    }).then(async (ok) => {
-      if (!ok) return;
-      await ensureToken();
-      const r = await apiDelete(`/app/items/${itemId}`);
-      if (r.ok) reloadInventory?.();
-    });
-  }
 }
 
 function el(tag, attrs = {}, children = []) {
@@ -86,19 +63,14 @@ function renderTable(state) {
   const tbody = state.tableBody;
   tbody.innerHTML = '';
   state.items.forEach((item) => {
-    const row = el('tr');
+    const row = el('tr', { 'data-role': 'item-row', 'data-id': item.id });
     row.append(
       el('td', { text: item.name || 'Item' }),
       el('td', { text: item.sku || '—' }),
       el('td', { text: `${item.qty ?? 0} ${item.unit || ''}`.trim() }),
       el('td', { text: item.vendor || '—' }),
       el('td', { text: item.price != null ? `$${Number(item.price).toFixed(2)}` : '—' }),
-      el('td', { text: item.location || '—' }),
-      el('td', {}, [
-        el('button', { type: 'button', 'data-action': 'edit', 'data-id': item.id }, 'Edit'),
-        el('button', { type: 'button', 'data-action': 'adjust', 'data-id': item.id }, 'Adjust'),
-        el('button', { type: 'button', 'data-action': 'delete', 'data-id': item.id, class: 'danger' }, 'Delete'),
-      ]),
+      el('td', { text: item.location || '—' })
     );
     tbody.append(row);
   });
@@ -121,7 +93,7 @@ export async function _mountInventory(container) {
   const controls = el('div', { class: 'inventory-controls toolbar' }, [
     el('button', { id: 'add-item-btn', class: 'btn', 'data-role': 'btn-add-item' }, '+ Add Item'),
   ]);
-  const table = el('table', { id: 'items-table' }, [
+  const table = el('table', { id: 'items-table', class: 'table-clickable' }, [
     el('thead', {}, [
       el('tr', {}, [
         el('th', { text: 'Name' }),
@@ -129,8 +101,7 @@ export async function _mountInventory(container) {
         el('th', { text: 'Qty' }),
         el('th', { text: 'Vendor' }),
         el('th', { text: 'Price' }),
-        el('th', { text: 'Location' }),
-        el('th', { text: 'Actions' }),
+        el('th', { text: 'Location' })
       ]),
     ]),
     el('tbody'),
@@ -145,22 +116,70 @@ export async function _mountInventory(container) {
 
   table.addEventListener('click', async (e) => {
     const btn = e.target.closest('button');
+    const row = e.target.closest('tr[data-role="item-row"]');
+    // Toggle details when clicking a row (but not on buttons)
+    if (row && !btn) {
+      const id = Number(row.getAttribute('data-id'));
+      const item = state.items.find((it) => it.id === id);
+      if (!item) return;
+      toggleDetailsRow(table, row, item);
+      return;
+    }
     if (!btn) return;
-    const id = Number(btn.getAttribute('data-id'));
+    const id = Number(btn.getAttribute('data-id')) || Number(btn.closest('[data-id]')?.getAttribute('data-id'));
     const action = btn.getAttribute('data-action');
     const item = state.items.find((it) => it.id === id);
     if (!item) return;
     if (action === 'edit') {
       openItemModal(item);
     }
-    if (action === 'adjust') {
-      await adjustQuantity(id);
-      await reloadInventory();
-    }
     if (action === 'delete') {
-      return; // handled via delegated confirm dialog
+      if (!(await confirmDelete())) return;
+      await ensureToken();
+      await apiDelete(`/app/items/${id}`);
+      state.items = state.items.filter((it) => it.id !== id);
+      renderTable(state);
     }
   });
+
+  function kv(label, value) {
+    return el('div', { class: 'kv' }, [ el('div', { class: 'k', text: label }), el('div', { class: 'v', text: value }) ]);
+  }
+
+  function toggleDetailsRow(tableEl, rowEl, item) {
+    // Collapse if already open
+    if (rowEl.nextElementSibling && rowEl.nextElementSibling.classList.contains('row-details')) {
+      rowEl.nextElementSibling.remove();
+      return;
+    }
+    // Close any other open details
+    tableEl.querySelectorAll('.row-details').forEach((r) => r.remove());
+    const colCount = tableEl.querySelector('thead tr').children.length || rowEl.children.length;
+    const details = el('tr', { class: 'row-details' }, [
+      el('td', { colspan: String(colCount) }, [
+        el('div', { class: 'details' }, [
+          el('div', { class: 'grid' }, [
+            kv('SKU', item.sku || '—'),
+            kv('Quantity', `${item.qty ?? 0} ${item.unit || ''}`.trim()),
+            kv('Vendor', item.vendor || '—'),
+            kv('Price', item.price != null ? `$${Number(item.price).toFixed(2)}` : '—'),
+            kv('Location', item.location || '—'),
+          ]),
+          item.notes ? el('div', { class: 'notes', text: item.notes }) : null,
+          el('div', { class: 'row-actions' }, [
+            el('button', { type: 'button', 'data-action': 'edit', 'data-id': item.id }, 'Edit'),
+            el('button', { type: 'button', 'data-action': 'delete', 'data-id': item.id, class: 'danger' }, 'Delete'),
+          ]),
+        ]),
+      ]),
+    ]);
+    rowEl.after(details);
+  }
+
+  function confirmDelete() {
+    // Keep UI simple; replace with nicer modal if desired
+    return Promise.resolve(window.confirm('Delete this item? This cannot be undone.'));
+  }
 
   await reloadInventory();
 }
@@ -422,34 +441,3 @@ export function openItemModal(item = null) {
   });
 }
 
-// Reusable confirm dialog (Promise<boolean>)
-function confirmDialog({ title = 'Confirm', body = 'Are you sure?', confirmText = 'OK', cancelText = 'Cancel', danger = false } = {}) {
-  return new Promise((resolve) => {
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
-    const card = document.createElement('div');
-    card.className = 'modal-card';
-    card.style.maxWidth = '420px';
-    const header = document.createElement('div');
-    header.className = 'modal-title';
-    header.textContent = title;
-    const content = document.createElement('div');
-    content.className = 'modal-body';
-    content.textContent = body;
-    const actions = document.createElement('div');
-    actions.className = 'modal-actions';
-    const ok = document.createElement('button');
-    ok.className = 'btn ' + (danger ? 'danger' : 'primary');
-    ok.textContent = confirmText;
-    const cancel = document.createElement('button');
-    cancel.className = 'btn';
-    cancel.textContent = cancelText;
-    actions.append(ok, cancel);
-    card.append(header, content, actions);
-    overlay.appendChild(card);
-    document.body.appendChild(overlay);
-    ok.addEventListener('click', () => { overlay.remove(); resolve(true); });
-    cancel.addEventListener('click', () => { overlay.remove(); resolve(false); });
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) { overlay.remove(); resolve(false); } });
-  });
-}
