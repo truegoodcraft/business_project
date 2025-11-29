@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
+from datetime import datetime
 from typing import Optional
 
 from pydantic import BaseModel, Field
@@ -23,7 +24,7 @@ class VendorUpdate(VendorBase):
 
 class VendorOut(VendorBase):
     id: int
-    created_at: str
+    created_at: datetime
 
     class Config:
         from_attributes = True
