@@ -76,8 +76,11 @@ const onRouteChange = async () => {
   }
 
   if (route === 'inventory') {
-    // Show Inventory only
+    // Show only Inventory screen
+    document.querySelector('[data-role="home-screen"]')?.classList.add('hidden');
     document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
+    document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
+    document.querySelector('[data-role="inventory-screen"]')?.classList.remove('hidden');
     mountInventory();
     return;
   }
@@ -102,11 +105,13 @@ const onRouteChange = async () => {
     showScreen('home');   // show only Home
     mountHome();          // keep existing Home logic
     unmountInventory();   // ensure Inventory hides when returning Home
+    document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
     document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
     return;
   }
 
   unmountInventory();
+  document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
   showScreen(null);
   return;
