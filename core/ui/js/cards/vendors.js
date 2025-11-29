@@ -460,7 +460,7 @@ export function mountContacts(host) {
       const res = await apiGet(`/app/vendors?${params.toString()}`);
       state.orgs = Array.isArray(res) ? res : [];
     } catch (err) {
-      if (err && err.status === 404) {
+      if (err && (err.status === 404 || err.status === 500)) {
         state.orgs = [];
       } else {
         throw err;
@@ -479,7 +479,7 @@ export function mountContacts(host) {
         ? res.map((r) => ({ ...r, facade: r.role === 'vendor' ? 'vendors' : 'contacts' }))
         : [];
     } catch (err) {
-      if (err && err.status === 404) {
+      if (err && (err.status === 404 || err.status === 500)) {
         state.list = [];
       } else {
         throw err;
