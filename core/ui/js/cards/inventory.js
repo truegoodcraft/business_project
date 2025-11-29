@@ -189,11 +189,11 @@ async function fetchVendors() {
   // Not specified in the SoT you've given me: exact vendor endpoint/shape.
   // Try /app/vendors first; fall back to /app/contacts.
   try {
-    const v = await apiGetJson('/app/vendors');
+    const v = await apiGetJson('/app/vendors?is_vendor=true');
     if (Array.isArray(v)) return v;
   } catch (_) {/* ignore */}
   try {
-    const c = await apiGetJson('/app/contacts');
+    const c = await apiGetJson('/app/contacts?is_vendor=true');
     if (Array.isArray(c)) {
       // Map into minimal { id, name } expected by dropdown
       return c.map(x => ({ id: x.id ?? x.contact_id ?? x.uuid ?? null, name: x.name ?? x.display ?? '—' }))
@@ -324,6 +324,44 @@ export function openItemModal(item = null) {
   }
   updateBadge();
 
+  const populateVendors = (vendorsList, selectedId = null) => {
+    vendorSelect.innerHTML = '<option value="">—</option>';
+    vendorsList.forEach(v => {
+      const opt = document.createElement('option');
+      opt.value = v.id;
+      opt.textContent = v.name ?? `#${v.id}`;
+      vendorSelect.appendChild(opt);
+    });
+    const createOpt = document.createElement('option');
+    createOpt.value = '__create__';
+    createOpt.textContent = 'Create new vendor…';
+    vendorSelect.appendChild(createOpt);
+    if (selectedId) {
+      vendorSelect.value = String(selectedId);
+    } else if (item?.vendor_id) {
+      vendorSelect.value = String(item.vendor_id);
+    }
+  };
+
+  const onContactSaved = async (ev) => {
+    const saved = ev.detail;
+    if (!saved?.id || !saved.is_vendor) return;
+    const refreshed = await fetchVendors();
+    if (!Array.isArray(refreshed) || !refreshed.length) return;
+    populateVendors(refreshed, saved.id);
+  };
+
+  const cleanup = () => {
+    window.removeEventListener('contacts:saved', onContactSaved);
+  };
+
+  vendorSelect.addEventListener('change', () => {
+    if (vendorSelect.value === '__create__') {
+      window.dispatchEvent(new CustomEvent('open-contacts-modal', { detail: { prefill: { is_vendor: true, is_org: true } } }));
+      vendorSelect.value = '';
+    }
+  });
+
   // Load vendors (async)
   (async () => {
     const vs = await fetchVendors();
@@ -331,13 +369,8 @@ export function openItemModal(item = null) {
       vendorSelect.replaceWith(helpLinkToVendors());
       return;
     }
-    vs.forEach(v => {
-      const opt = document.createElement('option');
-      opt.value = v.id;
-      opt.textContent = v.name ?? `#${v.id}`;
-      vendorSelect.appendChild(opt);
-    });
-    if (item?.vendor_id) vendorSelect.value = String(item.vendor_id);
+    populateVendors(vs);
+    window.addEventListener('contacts:saved', onContactSaved);
   })();
 
   // Hinge toggle
@@ -348,9 +381,12 @@ export function openItemModal(item = null) {
   });
 
   // Cancel
-  cancelBtn.addEventListener('click', () => overlay.remove());
+  cancelBtn.addEventListener('click', () => { cleanup(); overlay.remove(); });
   overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) overlay.remove();
+    if (e.target === overlay) {
+      cleanup();
+      overlay.remove();
+    }
   });
 
   // Live parser feedback
@@ -433,6 +469,7 @@ export function openItemModal(item = null) {
     try {
       await ensureToken();
       await method(url, payload, { headers: { 'Content-Type': 'application/json' } });
+      cleanup();
       overlay.remove();
       reloadInventory?.(); // existing function in this module to refresh table
     } catch (_) {

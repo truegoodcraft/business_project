@@ -8,8 +8,9 @@ from pydantic import BaseModel, Field
 class VendorBase(BaseModel):
     name: Optional[str] = None
     contact: Optional[str] = None
-    role: Optional[str] = Field(None, description="vendor|contact|both")
-    kind: Optional[str] = Field(None, description="org|person")
+    role: Optional[str] = Field(None, description="vendor|contact")
+    is_vendor: Optional[bool] = Field(None, description="If true, appears in vendor dropdowns")
+    is_org: Optional[bool] = Field(None, description="If true, treat as company/organization")
     organization_id: Optional[int] = None
     meta: Optional[str] = None
 
