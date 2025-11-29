@@ -1971,7 +1971,7 @@ app.include_router(protected)
 def create_app():
     if not getattr(app.state, "_domain_routes_registered", False):
         app.include_router(items_router, prefix="/app")
-        app.include_router(vendors_router)
+        app.include_router(vendors_router, prefix="/app")
         app.state._domain_routes_registered = True
     return app
 
