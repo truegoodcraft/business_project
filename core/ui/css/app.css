@@ -164,3 +164,38 @@ table tr:hover { background: #1e2530; }
   border: 1px solid var(--border);
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.04), transparent);
 }
+/* Modal overlay + card: darken background and center the card */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.modal-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 15px 40px rgba(0,0,0,0.5);
+  width: 100%;
+  max-width: 520px; /* inventory.js narrows to 460px for add/edit */
+}
+.modal-title { font-weight: 700; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+.modal-body { padding: 12px 16px; }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; padding: 12px 16px 16px; }
+.btn.primary { background: #1d4ed8; color: #fff; }
+.btn.danger { background: #dc2626; color: #fff; }
+
+/* Inventory table column alignment */
+[data-role="inventory-root"] table { width: 100%; table-layout: fixed; }
+[data-role="inventory-root"] th, 
+[data-role="inventory-root"] td { vertical-align: middle; }
+[data-role="inventory-root"] th:nth-child(1), [data-role="inventory-root"] td:nth-child(1) { text-align: left;  width: 28%; } /* Name */
+[data-role="inventory-root"] th:nth-child(2), [data-role="inventory-root"] td:nth-child(2) { text-align: left;  width: 14%; } /* SKU */
+[data-role="inventory-root"] th:nth-child(3), [data-role="inventory-root"] td:nth-child(3) { text-align: center; width: 10%; } /* Qty */
+[data-role="inventory-root"] th:nth-child(4), [data-role="inventory-root"] td:nth-child(4) { text-align: left;  width: 16%; } /* Vendor */
+[data-role="inventory-root"] th:nth-child(5), [data-role="inventory-root"] td:nth-child(5) { text-align: right; width: 12%; } /* Price */
+[data-role="inventory-root"] th:nth-child(6), [data-role="inventory-root"] td:nth-child(6) { text-align: left;  width: 14%; } /* Location */
+[data-role="inventory-root"] th:nth-child(7), [data-role="inventory-root"] td:nth-child(7) { text-align: right; width: 6%;  white-space: nowrap; } /* Actions */
