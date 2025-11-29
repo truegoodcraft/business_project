@@ -8,10 +8,33 @@ import { parseSmartInput } from '../utils/parser.js';
 let _rootEl = null;
 let _clickBound = false;
 function _onRootClick(e) {
-  const btn = e.target.closest('[data-role="btn-add-item"]');
-  if (btn) {
+  const addBtn = e.target.closest('[data-role="btn-add-item"]');
+  if (addBtn) {
     e.preventDefault();
     openItemModal(); // create mode
+  }
+  // Intercept Delete with confirmation
+  const delBtn = e.target.closest('button, a');
+  if (delBtn && (delBtn.matches('[data-role="btn-delete"]') || /delete/i.test(delBtn.textContent || ''))) {
+    e.preventDefault();
+    const row = delBtn.closest('[data-item-id], tr, li, .row');
+    const itemId =
+      delBtn.getAttribute('data-item-id') ||
+      delBtn.getAttribute('data-id') ||
+      row?.getAttribute?.('data-item-id') ||
+      row?.getAttribute?.('data-id');
+    if (!itemId) return;
+    confirmDialog({
+      title: 'Delete Item',
+      body: 'This action cannot be undone. Are you sure you want to delete this item?',
+      confirmText: 'Delete',
+      danger: true,
+    }).then(async (ok) => {
+      if (!ok) return;
+      await ensureToken();
+      const r = await apiDelete(`/app/items/${itemId}`);
+      if (r.ok) reloadInventory?.();
+    });
   }
 }
 
@@ -97,7 +120,6 @@ export async function _mountInventory(container) {
   container.innerHTML = '';
   const controls = el('div', { class: 'inventory-controls toolbar' }, [
     el('button', { id: 'add-item-btn', class: 'btn', 'data-role': 'btn-add-item' }, '+ Add Item'),
-    el('button', { id: 'refresh-btn', class: 'btn' }, 'Refresh'),
   ]);
   const table = el('table', { id: 'items-table' }, [
     el('thead', {}, [
@@ -121,10 +143,6 @@ export async function _mountInventory(container) {
     renderTable(state);
   };
 
-  controls.querySelector('#refresh-btn').addEventListener('click', async () => {
-    await reloadInventory();
-  });
-
   table.addEventListener('click', async (e) => {
     const btn = e.target.closest('button');
     if (!btn) return;
@@ -140,9 +158,7 @@ export async function _mountInventory(container) {
       await reloadInventory();
     }
     if (action === 'delete') {
-      await ensureToken();
-      await apiDelete(`/app/items/${id}`);
-      await reloadInventory();
+      return; // handled via delegated confirm dialog
     }
   });
 
@@ -176,7 +192,7 @@ export function openItemModal(item = null) {
   overlay.className = 'modal-overlay';
   const card = document.createElement('div');
   card.className = 'modal-card';
-  card.style.maxWidth = '460px';
+  card.style.maxWidth = '460px';           // spec width
   card.style.background = 'var(--surface)';
   card.style.border = '1px solid var(--border)';
   card.style.borderRadius = '10px';
@@ -403,5 +419,37 @@ export function openItemModal(item = null) {
     } catch (_) {
       markInvalid(saveBtn);
     }
+  });
+}
+
+// Reusable confirm dialog (Promise<boolean>)
+function confirmDialog({ title = 'Confirm', body = 'Are you sure?', confirmText = 'OK', cancelText = 'Cancel', danger = false } = {}) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    const card = document.createElement('div');
+    card.className = 'modal-card';
+    card.style.maxWidth = '420px';
+    const header = document.createElement('div');
+    header.className = 'modal-title';
+    header.textContent = title;
+    const content = document.createElement('div');
+    content.className = 'modal-body';
+    content.textContent = body;
+    const actions = document.createElement('div');
+    actions.className = 'modal-actions';
+    const ok = document.createElement('button');
+    ok.className = 'btn ' + (danger ? 'danger' : 'primary');
+    ok.textContent = confirmText;
+    const cancel = document.createElement('button');
+    cancel.className = 'btn';
+    cancel.textContent = cancelText;
+    actions.append(ok, cancel);
+    card.append(header, content, actions);
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+    ok.addEventListener('click', () => { overlay.remove(); resolve(true); });
+    cancel.addEventListener('click', () => { overlay.remove(); resolve(false); });
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) { overlay.remove(); resolve(false); } });
   });
 }
