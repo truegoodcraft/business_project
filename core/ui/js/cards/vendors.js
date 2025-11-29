@@ -1,566 +1,913 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// TGC BUS Core (Business Utility System Core)
-// Copyright (C) 2025 True Good Craft
-//
-// This file is part of TGC BUS Core.
-//
-// TGC BUS Core is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
-//
-// TGC BUS Core is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with TGC BUS Core.  If not, see <https://www.gnu.org/licenses/>.
+// Contacts & Vendors card (unified shallow/deep flows)
 
-import { apiGet, apiPost, ensureToken } from '../api.js';
+import { apiDelete, apiGet, apiPost, apiPut, ensureToken } from '../api.js';
 
-const LS_KEY = 'contacts.customers.v1';
+const BG = '#1e1f22';
+const FG = '#e6e6e6';
+const PANEL = '#23262b';
+const INPUT_BG = '#2a2c30';
+const BORDER = '#2f3239';
 
-async function vendorExistsByName(name) {
-  const target = (name || '').trim().toLowerCase();
-  if (!target) return false;
-  const normalize = (value) => String(value || '').trim().toLowerCase();
+const ROLE_FILTERS = [
+  { key: 'all', label: 'All', role: 'any' },
+  { key: 'vendors', label: 'Vendors', role: 'vendor' },
+  { key: 'contacts', label: 'Contacts', role: 'contact' },
+  { key: 'both', label: 'Both', role: 'both' },
+];
+
+function formatDate(val) {
+  if (!val) return '';
   try {
-    const list = await apiGet('/app/vendors');
-    const arr = Array.isArray(list) ? list : Array.isArray(list?.items) ? list.items : [];
-    return arr.some((vendor) => normalize(vendor?.name) === target);
+    const d = new Date(val);
+    if (Number.isNaN(d.getTime())) return String(val);
+    return d.toLocaleString();
   } catch {
-    try {
-      const fallback = await apiGet('/app/vendors/list');
-      const arr = Array.isArray(fallback) ? fallback : [];
-      return arr.some((vendor) => normalize(vendor?.name) === target);
-    } catch {
-      return false;
-    }
+    return String(val);
   }
 }
 
-export async function mountVendors(container) {
-  // --- BEGIN SPEC-1 BODY ---
-  container.innerHTML = '';
-  container.style.background = '#0f1115';
-  container.style.color = '#e5e7eb';
-  container.style.padding = '16px';
-  container.style.borderRadius = '12px';
+function chip(text, tone = 'default') {
+  const span = document.createElement('span');
+  span.textContent = text;
+  span.style.display = 'inline-flex';
+  span.style.alignItems = 'center';
+  span.style.gap = '6px';
+  span.style.padding = '4px 10px';
+  span.style.borderRadius = '999px';
+  span.style.fontSize = '12px';
+  span.style.border = `1px solid ${BORDER}`;
+  span.style.background = tone === 'accent' ? '#2f3542' : '#1f2227';
+  span.style.color = FG;
+  return span;
+}
+
+function button(label) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.textContent = label;
+  btn.style.background = '#2a3040';
+  btn.style.color = FG;
+  btn.style.border = `1px solid ${BORDER}`;
+  btn.style.padding = '10px 14px';
+  btn.style.borderRadius = '10px';
+  btn.style.cursor = 'pointer';
+  btn.style.transition = 'background 0.15s ease, transform 0.15s ease';
+  btn.onmouseenter = () => (btn.style.background = '#32384a');
+  btn.onmouseleave = () => (btn.style.background = '#2a3040');
+  btn.onfocus = () => (btn.style.outline = '2px solid #4b6bfb');
+  btn.onblur = () => (btn.style.outline = 'none');
+  return btn;
+}
+
+function input(label, type = 'text') {
+  const wrap = document.createElement('label');
+  wrap.style.display = 'flex';
+  wrap.style.flexDirection = 'column';
+  wrap.style.gap = '6px';
+  wrap.style.color = FG;
+  wrap.style.fontSize = '13px';
+
+  const span = document.createElement('span');
+  span.textContent = label;
+  const field = document.createElement('input');
+  field.type = type;
+  field.style.background = INPUT_BG;
+  field.style.color = FG;
+  field.style.border = `1px solid ${BORDER}`;
+  field.style.borderRadius = '10px';
+  field.style.padding = '10px 12px';
+  field.style.fontSize = '14px';
+  field.style.outline = 'none';
+  field.onfocus = () => (field.style.borderColor = '#4b6bfb');
+  field.onblur = () => (field.style.borderColor = BORDER);
+
+  wrap.append(span, field);
+  return { wrap, field };
+}
+
+function select(label) {
+  const wrap = document.createElement('label');
+  wrap.style.display = 'flex';
+  wrap.style.flexDirection = 'column';
+  wrap.style.gap = '6px';
+  wrap.style.color = FG;
+  wrap.style.fontSize = '13px';
+
+  const span = document.createElement('span');
+  span.textContent = label;
+  const field = document.createElement('select');
+  field.style.background = INPUT_BG;
+  field.style.color = FG;
+  field.style.border = `1px solid ${BORDER}`;
+  field.style.borderRadius = '10px';
+  field.style.padding = '10px 12px';
+  field.style.fontSize = '14px';
+  field.style.outline = 'none';
+  field.onfocus = () => (field.style.borderColor = '#4b6bfb');
+  field.onblur = () => (field.style.borderColor = BORDER);
+
+  wrap.append(span, field);
+  return { wrap, field };
+}
+
+function toast(message, tone = 'ok') {
+  const el = document.createElement('div');
+  el.textContent = message;
+  el.style.position = 'fixed';
+  el.style.bottom = '20px';
+  el.style.right = '20px';
+  el.style.padding = '12px 14px';
+  el.style.borderRadius = '10px';
+  el.style.background = tone === 'error' ? '#5b1f1f' : '#1f3b2f';
+  el.style.color = FG;
+  el.style.boxShadow = '0 8px 20px rgba(0,0,0,0.4)';
+  el.style.zIndex = '9999';
+  document.body.appendChild(el);
+  setTimeout(() => {
+    el.style.opacity = '0';
+    el.style.transition = 'opacity 0.3s ease';
+    setTimeout(() => el.remove(), 300);
+  }, 2000);
+}
+
+function roleLabel(role) {
+  const r = (role || '').toLowerCase();
+  if (r === 'both') return 'Both';
+  if (r === 'contact') return 'Contact';
+  return 'Vendor';
+}
+
+function kindLabel(kind) {
+  const k = (kind || '').toLowerCase();
+  return k === 'person' ? 'Person' : 'Organization';
+}
+
+function kindIcon(kind) {
+  const k = (kind || '').toLowerCase();
+  return k === 'person' ? '👤' : '🏢';
+}
+
+function buildModal() {
+  const overlay = document.createElement('div');
+  overlay.className = 'contacts-modal';
+  overlay.style.position = 'fixed';
+  overlay.style.inset = '0';
+  overlay.style.background = 'rgba(0,0,0,0.55)';
+  overlay.style.display = 'flex';
+  overlay.style.alignItems = 'center';
+  overlay.style.justifyContent = 'center';
+  overlay.style.zIndex = '5000';
+
+  const box = document.createElement('div');
+  box.style.background = PANEL;
+  box.style.borderRadius = '12px';
+  box.style.width = '520px';
+  box.style.padding = '20px';
+  box.style.boxShadow = '0 18px 36px rgba(0,0,0,0.5)';
+  box.style.display = 'flex';
+  box.style.flexDirection = 'column';
+  box.style.gap = '14px';
+  box.style.maxHeight = '85vh';
+  box.style.overflow = 'auto';
+
+  overlay.appendChild(box);
+  return { overlay, box };
+}
+
+export function mountContacts(host) {
+  if (!host) return;
+  host.innerHTML = '';
+  host.style.background = BG;
+  host.style.color = FG;
+  host.style.padding = '16px';
+  host.style.borderRadius = '12px';
+  host.style.boxSizing = 'border-box';
+
+  const state = {
+    list: [],
+    orgs: [],
+    expandedId: null,
+    filterRole: 'all',
+    search: '',
+  };
 
   const header = document.createElement('div');
   header.style.display = 'flex';
-  header.style.alignItems = 'center';
   header.style.justifyContent = 'space-between';
+  header.style.alignItems = 'center';
   header.style.gap = '12px';
-  header.style.marginBottom = '12px';
+  header.style.marginBottom = '10px';
+
+  const headLeft = document.createElement('div');
+  headLeft.style.display = 'flex';
+  headLeft.style.flexDirection = 'column';
+  headLeft.style.gap = '4px';
 
   const title = document.createElement('h2');
   title.textContent = 'Contacts';
   title.style.margin = '0';
+  title.style.color = FG;
 
-  const addContactBtn = document.createElement('button');
-  addContactBtn.type = 'button';
-  addContactBtn.textContent = 'Add Contact';
-  addContactBtn.dataset.action = 'open-contacts-modal';
-  styleBtn(addContactBtn);
+  const subtitle = document.createElement('div');
+  subtitle.textContent = 'Vendors & people you deal with';
+  subtitle.style.color = '#b9bcc5';
+  subtitle.style.fontSize = '13px';
 
-  header.append(title, addContactBtn);
+  headLeft.append(title, subtitle);
 
-  const table = document.createElement('table');
-  table.dataset.role = 'contacts-table';
-  table.className = 'table';
-  table.style.width = '100%';
-  table.style.borderCollapse = 'separate';
-  table.style.borderSpacing = '0';
-  table.style.background = '#111318';
-  table.style.borderRadius = '10px';
-  table.style.overflow = 'hidden';
-  const thead = document.createElement('thead');
-  thead.innerHTML = `
-    <tr>
-      <th style="text-align:left;padding:10px;background:#1a1f2b">Type</th>
-      <th style="text-align:left;padding:10px;background:#1a1f2b">Contact</th>
-      <th style="text-align:left;padding:10px;background:#1a1f2b">Actions</th>
-    </tr>`;
-  const tbody = document.createElement('tbody');
-  table.append(thead, tbody);
+  const newBtn = button('+ New contact/vendor');
 
-  container.append(header, table);
+  header.append(headLeft, newBtn);
 
-  const tbl = document.querySelector('[data-role="contacts-table"]');
-  const tbodyEl = tbl?.querySelector('tbody');
-  const drawer = document.querySelector('[data-role="contacts-drawer"]');
-  const drawerBackdrop = drawer?.querySelector('.drawer-backdrop');
-  const drawerCloseBtn = drawer?.querySelector('.drawer-header [data-action="close-contacts-drawer"]');
-  const linkedList = drawer?.querySelector('[data-role="linked-items"]');
-  const field = (name) => drawer?.querySelector(`[data-field="${name}"]`);
+  const filtersRow = document.createElement('div');
+  filtersRow.style.display = 'flex';
+  filtersRow.style.alignItems = 'center';
+  filtersRow.style.gap = '10px';
+  filtersRow.style.flexWrap = 'wrap';
+  filtersRow.style.marginBottom = '12px';
 
-  function openDrawer() {
-    if (!drawer) return;
-    drawer.classList.remove('hidden');
-    drawer.setAttribute('aria-hidden', 'false');
-  }
-  function closeDrawer() {
-    if (!drawer) return;
-    drawer.classList.add('hidden');
-    drawer.setAttribute('aria-hidden', 'true');
-    if (linkedList) linkedList.innerHTML = '';
-  }
-
-  if (drawer && !drawer.dataset.contactsDrawerBound) {
-    drawerBackdrop?.addEventListener('click', closeDrawer);
-    drawerCloseBtn?.addEventListener('click', closeDrawer);
-    drawer.dataset.contactsDrawerBound = '1';
-  }
-  const bodyEl = document.body;
-  if (drawer && bodyEl && !bodyEl.dataset.contactsDrawerEscBound) {
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && !drawer.classList.contains('hidden')) {
-        closeDrawer();
-      }
-    });
-    bodyEl.dataset.contactsDrawerEscBound = '1';
-  }
-
-  async function loadContactsList() {
-    try {
-      const list = await apiGet('/app/contacts');
-      if (Array.isArray(list)) return list;
-    } catch (e) {
-      const s = e?.status || e?.response?.status;
-      if (s !== 404 && s !== 405) console.warn('GET /app/contacts failed', e);
-    }
-
-    let vendors = [];
-    try {
-      vendors = await apiGet('/app/vendors');
-    } catch (err) {
-      console.warn('GET /app/vendors fallback failed', err);
-      vendors = [];
-    }
-    vendors = Array.isArray(vendors)
-      ? vendors.map((v) => ({
-          id: v.id,
-          type: 'vendor',
-          name: v.name,
-          email: v.email,
-          material: v.material,
-          lead_time_days: v.lead_time_days,
-          notes: v.notes,
-        }))
-      : [];
-
-    let customers = [];
-    try {
-      customers = JSON.parse(localStorage.getItem(LS_KEY) || '[]');
-    } catch {
-      customers = [];
-    }
-    customers = Array.isArray(customers)
-      ? customers.map((c, i) => ({
-          id: c.id || `local:${i}`,
-          type: 'customer',
-          name: c.name,
-          email: c.email,
-          notes: c.notes,
-        }))
-      : [];
-
-    return [...vendors, ...customers];
-  }
-
-  async function openContactDrawer(contact) {
-    if (!drawer) return;
-    const set = (k, v) => {
-      const el = field(k);
-      if (el) el.textContent = v ?? '';
+  ROLE_FILTERS.forEach((f) => {
+    const b = button(f.label);
+    b.style.padding = '8px 12px';
+    const setActive = () => {
+      b.style.background = state.filterRole === f.key ? '#34405c' : '#2a3040';
+      b.style.borderColor = state.filterRole === f.key ? '#4b6bfb' : BORDER;
     };
-
-    const typeLabel = (contact.type || '').toString();
-    set('type', typeLabel ? typeLabel.replace(/^./, (m) => m.toUpperCase()) : '');
-    set('name', contact.name || '');
-    set('email', contact.email || '');
-    set('material', contact.type === 'vendor' ? contact.material || '' : '');
-    set('lead_time_days', contact.lead_time_days != null ? String(contact.lead_time_days) : '');
-    set('notes', contact.notes || '');
-
-    drawer.querySelectorAll('.vendor-only').forEach((el) => {
-      el.style.display = contact.type === 'vendor' ? '' : 'none';
+    setActive();
+    b.addEventListener('click', () => {
+      state.filterRole = f.key;
+      setActive();
+      loadData();
     });
+    filtersRow.appendChild(b);
+  });
 
-    if (linkedList) {
-      linkedList.innerHTML = '';
-      if (contact.type === 'vendor' && contact.id != null && String(contact.id)) {
-        const loading = document.createElement('li');
-        loading.textContent = 'Loading linked items…';
-        linkedList.appendChild(loading);
-        try {
-          const items = await apiGet(`/app/items?vendor_id=${encodeURIComponent(contact.id)}`);
-          linkedList.innerHTML = '';
-          const arr = Array.isArray(items) ? items : [];
-          arr.forEach((item) => {
-            const li = document.createElement('li');
-            const name = item.name || '(unnamed)';
-            const qty = item.qty != null ? item.qty : 0;
-            li.textContent = `${name} — qty: ${qty}`;
-            linkedList.appendChild(li);
-          });
-          if (!linkedList.children.length) {
-            const li = document.createElement('li');
-            li.textContent = 'No linked items.';
-            linkedList.appendChild(li);
-          }
-        } catch (err) {
-          linkedList.innerHTML = '';
-          const li = document.createElement('li');
-          li.textContent = 'Could not load linked items.';
-          linkedList.appendChild(li);
-          console.warn('GET /app/items vendor linked items failed', err);
-        }
-      } else {
-        const li = document.createElement('li');
-        li.textContent = 'Linked items available for vendors only.';
-        linkedList.appendChild(li);
-      }
-    }
+  const searchWrap = document.createElement('div');
+  searchWrap.style.display = 'flex';
+  searchWrap.style.flex = '1';
+  searchWrap.style.justifyContent = 'flex-end';
 
-    openDrawer();
+  const searchField = document.createElement('input');
+  searchField.type = 'search';
+  searchField.placeholder = 'Search name or contact…';
+  searchField.style.background = INPUT_BG;
+  searchField.style.color = FG;
+  searchField.style.border = `1px solid ${BORDER}`;
+  searchField.style.borderRadius = '10px';
+  searchField.style.padding = '10px 12px';
+  searchField.style.flex = '1';
+  searchField.style.maxWidth = '280px';
+  searchField.addEventListener('input', () => {
+    state.search = searchField.value.trim();
+    loadData();
+  });
+
+  searchWrap.appendChild(searchField);
+  filtersRow.appendChild(searchWrap);
+
+  const table = document.createElement('div');
+  table.style.background = PANEL;
+  table.style.border = `1px solid ${BORDER}`;
+  table.style.borderRadius = '12px';
+  table.style.overflow = 'hidden';
+
+  const headerRow = document.createElement('div');
+  headerRow.style.display = 'grid';
+  headerRow.style.gridTemplateColumns = '2fr 2fr 1fr 1fr 80px';
+  headerRow.style.padding = '10px 14px';
+  headerRow.style.background = '#2b2d31';
+  headerRow.style.color = '#cdd1dc';
+  headerRow.style.fontSize = '13px';
+  headerRow.style.fontWeight = '600';
+  ['Name', 'Contact', 'Role', 'Kind', ''].forEach((col) => {
+    const c = document.createElement('div');
+    c.textContent = col;
+    headerRow.appendChild(c);
+  });
+
+  const body = document.createElement('div');
+  body.style.display = 'flex';
+  body.style.flexDirection = 'column';
+
+  table.append(headerRow, body);
+
+  host.append(header, filtersRow, table);
+
+  function orgName(id) {
+    if (id == null) return null;
+    const found = state.orgs.find((o) => o.id === id) || state.list.find((o) => o.id === id);
+    return found?.name || null;
   }
 
-  async function renderContactsTable() {
-    if (!tbodyEl) return;
-    const list = await loadContactsList();
-    tbodyEl.innerHTML = '';
+  function renderRow(entry) {
+    const row = document.createElement('div');
+    row.style.display = 'grid';
+    row.style.gridTemplateColumns = '2fr 2fr 1fr 1fr 80px';
+    row.style.padding = '10px 14px';
+    row.style.borderTop = `1px solid ${BORDER}`;
+    row.style.cursor = 'pointer';
+    row.style.alignItems = 'center';
+    row.onmouseenter = () => (row.style.background = '#262a31');
+    row.onmouseleave = () => (row.style.background = 'transparent');
 
-    if (!list.length) {
-      const emptyRow = document.createElement('tr');
-      const emptyCell = document.createElement('td');
-      emptyCell.colSpan = 3;
-      emptyCell.textContent = 'No contacts yet.';
-      emptyCell.style.padding = '12px 16px';
-      emptyCell.style.color = '#9ca3af';
-      emptyRow.appendChild(emptyCell);
-      tbodyEl.appendChild(emptyRow);
+    const nameCol = document.createElement('div');
+    nameCol.style.display = 'flex';
+    nameCol.style.flexDirection = 'column';
+    nameCol.style.gap = '4px';
+
+    const nameLine = document.createElement('div');
+    nameLine.style.display = 'flex';
+    nameLine.style.alignItems = 'center';
+    nameLine.style.gap = '8px';
+    const nm = document.createElement('div');
+    nm.textContent = entry.name || '(unnamed)';
+    nm.style.fontWeight = '600';
+    const roleChip = chip(roleLabel(entry.role), 'accent');
+    const kindChip = chip(kindLabel(entry.kind));
+    nameLine.append(nm, roleChip, kindChip);
+
+    const metaLine = document.createElement('div');
+    metaLine.style.fontSize = '12px';
+    metaLine.style.color = '#b5b8c2';
+    const org = orgName(entry.organization_id);
+    metaLine.textContent = [entry.contact || '', org ? `Org: ${org}` : '']
+      .filter(Boolean)
+      .join(' • ');
+
+    nameCol.append(nameLine, metaLine);
+
+    const contactCol = document.createElement('div');
+    contactCol.textContent = entry.contact || '—';
+    contactCol.style.color = '#cdd1dc';
+
+    const roleCol = document.createElement('div');
+    roleCol.appendChild(chip(roleLabel(entry.role)));
+
+    const kindCol = document.createElement('div');
+    const kindBadge = chip(`${kindIcon(entry.kind)} ${kindLabel(entry.kind)}`);
+    kindCol.appendChild(kindBadge);
+
+    const actions = document.createElement('div');
+    actions.style.display = 'flex';
+    actions.style.justifyContent = 'flex-end';
+    actions.style.gap = '6px';
+
+    const edit = button('Edit');
+    edit.style.padding = '6px 10px';
+    edit.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      openEditor(entry);
+    });
+    const del = button('Delete');
+    del.style.padding = '6px 10px';
+    del.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      openDelete(entry);
+    });
+    actions.append(edit, del);
+
+    row.append(nameCol, contactCol, roleCol, kindCol, actions);
+
+    const expanded = document.createElement('div');
+    expanded.style.gridColumn = '1 / -1';
+    expanded.style.background = '#1e2025';
+    expanded.style.borderRadius = '10px';
+    expanded.style.marginTop = '10px';
+    expanded.style.padding = '12px 12px 10px';
+    expanded.style.display = state.expandedId === entry.id ? 'grid' : 'none';
+    expanded.style.gridTemplateColumns = '1fr 1fr';
+    expanded.style.gap = '12px';
+
+    const left = document.createElement('div');
+    left.style.display = 'flex';
+    left.style.flexDirection = 'column';
+    left.style.gap = '8px';
+    const nameLabel = document.createElement('div');
+    nameLabel.textContent = entry.name || '(unnamed)';
+    nameLabel.style.fontWeight = '600';
+    const chipsRow = document.createElement('div');
+    chipsRow.style.display = 'flex';
+    chipsRow.style.gap = '8px';
+    chipsRow.append(chip(roleLabel(entry.role)), chip(kindLabel(entry.kind)));
+    const orgLine = document.createElement('div');
+    orgLine.style.fontSize = '12px';
+    orgLine.style.color = '#b5b8c2';
+    const orgLabel = orgName(entry.organization_id);
+    orgLine.textContent = orgLabel ? `Organization: ${orgLabel}` : 'No organization linked';
+    left.append(nameLabel, chipsRow, orgLine);
+
+    const right = document.createElement('div');
+    right.style.display = 'flex';
+    right.style.flexDirection = 'column';
+    right.style.gap = '6px';
+    const contactLine = document.createElement('div');
+    contactLine.textContent = `Contact: ${entry.contact || '—'}`;
+    const createdLine = document.createElement('div');
+    createdLine.textContent = `Created at: ${formatDate(entry.created_at) || '—'}`;
+    right.append(contactLine, createdLine);
+
+    const footer = document.createElement('div');
+    footer.style.gridColumn = '1 / -1';
+    footer.style.display = 'flex';
+    footer.style.justifyContent = 'flex-end';
+    footer.style.gap = '8px';
+    const edit2 = button('Edit');
+    edit2.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      openEditor(entry);
+    });
+    const del2 = button('Delete');
+    del2.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      openDelete(entry);
+    });
+    footer.append(edit2, del2);
+
+    expanded.append(left, right, footer);
+
+    row.addEventListener('click', () => {
+      state.expandedId = state.expandedId === entry.id ? null : entry.id;
+      render();
+    });
+
+    const wrapper = document.createElement('div');
+    wrapper.append(row, expanded);
+    return wrapper;
+  }
+
+  function renderEmpty() {
+    const empty = document.createElement('div');
+    empty.textContent = 'No contacts yet.';
+    empty.style.padding = '18px';
+    empty.style.color = '#b5b8c2';
+    empty.style.textAlign = 'center';
+    return empty;
+  }
+
+  function render() {
+    body.innerHTML = '';
+    if (!state.list.length) {
+      body.appendChild(renderEmpty());
       return;
     }
+    state.list.forEach((entry) => body.appendChild(renderRow(entry)));
+  }
 
-    for (const c of list) {
-      const tr = document.createElement('tr');
-      tr.dataset.contactId = String(c.id ?? '');
-      tr.dataset.contactType = String(c.type ?? '');
+  async function loadOrgs() {
+    try {
+      const params = new URLSearchParams({ kind: 'org' });
+      const res = await apiGet(`/app/vendors?${params.toString()}`);
+      state.orgs = Array.isArray(res) ? res : [];
+    } catch (err) {
+      console.warn('Load organizations failed', err);
+      state.orgs = [];
+    }
+  }
 
-      const typeCell = document.createElement('td');
-      typeCell.style.padding = '10px';
-      typeCell.style.borderTop = '1px solid #222733';
-      typeCell.textContent = (c.type || '').toString().replace(/^./, (m) => m.toUpperCase());
+  async function loadData() {
+    const params = new URLSearchParams();
+    const selected = ROLE_FILTERS.find((f) => f.key === state.filterRole);
+    if (selected && selected.role) params.set('role', selected.role);
+    if (state.search) params.set('q', state.search);
+    try {
+      const res = await apiGet(`/app/contacts?${params.toString()}`);
+      state.list = Array.isArray(res)
+        ? res.map((r) => ({ ...r, facade: r.role === 'vendor' ? 'vendors' : 'contacts' }))
+        : [];
+    } catch (err) {
+      console.warn('Contacts load failed', err);
+      state.list = [];
+    }
+    await loadOrgs();
+    render();
+  }
 
-      const nameCell = document.createElement('td');
-      nameCell.style.padding = '10px';
-      nameCell.style.borderTop = '1px solid #222733';
-      nameCell.textContent = (c.name || '').toString();
+  function buildRoleKindControls(initialRole = 'contact', initialKind = 'person') {
+    const roleWrap = document.createElement('div');
+    roleWrap.style.display = 'flex';
+    roleWrap.style.gap = '8px';
 
-      const actionsCell = document.createElement('td');
-      actionsCell.style.padding = '10px';
-      actionsCell.style.borderTop = '1px solid #222733';
+    let roleValue = (initialRole || 'contact').toLowerCase();
+    const roleButtons = ['vendor', 'contact', 'both'].map((r) => {
+      const b = button(r.replace(/^./, (m) => m.toUpperCase()));
+      b.style.padding = '8px 10px';
+      b.addEventListener('click', () => {
+        roleValue = r;
+        roleButtons.forEach((btn) => {
+          btn.style.background = btn.textContent?.toLowerCase() === roleValue ? '#34405c' : '#2a3040';
+        });
+      });
+      if (r === roleValue) b.style.background = '#34405c';
+      return b;
+    });
+    roleButtons.forEach((b) => roleWrap.appendChild(b));
 
-      const actionsWrap = document.createElement('div');
-      actionsWrap.style.display = 'flex';
-      actionsWrap.style.gap = '8px';
+    const kindWrap = document.createElement('div');
+    kindWrap.style.display = 'flex';
+    kindWrap.style.gap = '8px';
+    let kindValue = (initialKind || 'person').toLowerCase();
+    const kindButtons = [
+      { key: 'person', label: 'Person' },
+      { key: 'org', label: 'Organization' },
+    ].map((k) => {
+      const b = button(k.label);
+      b.style.padding = '8px 10px';
+      b.addEventListener('click', () => {
+        kindValue = k.key;
+        kindButtons.forEach((btn) => {
+          btn.style.background = btn.textContent?.toLowerCase().startsWith(kindValue.slice(0, 3)) ? '#34405c' : '#2a3040';
+        });
+      });
+      if (k.key === kindValue) b.style.background = '#34405c';
+      return b;
+    });
+    kindButtons.forEach((b) => kindWrap.appendChild(b));
 
-      const editBtn = document.createElement('button');
-      editBtn.type = 'button';
-      editBtn.dataset.action = 'contact-edit';
-      editBtn.textContent = 'Edit';
-      styleBtn(editBtn);
+    return {
+      roleWrap,
+      kindWrap,
+      getRole: () => roleValue,
+      getKind: () => kindValue,
+      setRole: (val) => {
+        roleValue = (val || 'contact').toLowerCase();
+        roleButtons.forEach((btn) => {
+          btn.style.background = btn.textContent?.toLowerCase() === roleValue ? '#34405c' : '#2a3040';
+        });
+      },
+      setKind: (val) => {
+        kindValue = (val || 'person').toLowerCase();
+        kindButtons.forEach((btn) => {
+          btn.style.background = btn.textContent?.toLowerCase().startsWith(kindValue.slice(0, 3)) ? '#34405c' : '#2a3040';
+        });
+      },
+    };
+  }
 
-      const delBtn = document.createElement('button');
-      delBtn.type = 'button';
-      delBtn.dataset.action = 'contact-delete';
-      delBtn.textContent = 'Delete';
-      delBtn.disabled = true;
-      styleBtn(delBtn);
-      delBtn.style.cursor = 'not-allowed';
-      delBtn.style.opacity = '0.5';
-      delBtn.onmouseenter = null;
-      delBtn.onmouseleave = null;
+  function openEditor(entry) {
+    const isEdit = Boolean(entry?.id);
+    const { overlay, box } = buildModal();
 
-      actionsWrap.append(editBtn, delBtn);
-      actionsCell.append(actionsWrap);
+    const titleRow = document.createElement('div');
+    titleRow.style.display = 'flex';
+    titleRow.style.justifyContent = 'space-between';
+    titleRow.style.alignItems = 'center';
 
-      tr.append(typeCell, nameCell, actionsCell);
+    const heading = document.createElement('div');
+    heading.textContent = isEdit ? 'Edit contact/vendor' : 'New contact/vendor';
+    heading.style.fontSize = '18px';
+    heading.style.fontWeight = '700';
 
-      tr.addEventListener('click', (event) => {
-        if (event.target instanceof HTMLElement && event.target.closest('button')) {
-          return;
+    const closeBtn = button('Cancel');
+
+    titleRow.append(heading, closeBtn);
+
+    const shallowTab = button('Shallow');
+    const deepTab = button('Deep');
+    shallowTab.style.padding = deepTab.style.padding = '6px 10px';
+    shallowTab.style.background = '#34405c';
+    deepTab.style.background = '#2a3040';
+
+    const tabs = document.createElement('div');
+    tabs.style.display = 'flex';
+    tabs.style.gap = '8px';
+    tabs.append(shallowTab, deepTab);
+
+    const shallow = document.createElement('div');
+    shallow.style.display = 'flex';
+    shallow.style.flexDirection = 'column';
+    shallow.style.gap = '12px';
+
+    const { wrap: nameWrap, field: nameField } = input('Name *');
+    nameField.required = true;
+    nameField.value = entry?.name || '';
+
+    const { wrap: contactWrap, field: contactField } = input('Contact');
+    contactField.value = entry?.contact || '';
+
+    const roleKind = buildRoleKindControls(entry?.role || 'contact', entry?.kind || 'person');
+
+    const shallowGrid = document.createElement('div');
+    shallowGrid.style.display = 'grid';
+    shallowGrid.style.gridTemplateColumns = '1fr';
+    shallowGrid.style.gap = '10px';
+
+    shallowGrid.append(nameWrap, contactWrap);
+
+    const roleSection = document.createElement('div');
+    roleSection.style.display = 'flex';
+    roleSection.style.flexDirection = 'column';
+    roleSection.style.gap = '6px';
+    const roleLabelEl = document.createElement('div');
+    roleLabelEl.textContent = 'Role';
+    roleLabelEl.style.fontSize = '13px';
+    roleSection.append(roleLabelEl, roleKind.roleWrap);
+
+    const kindSection = document.createElement('div');
+    kindSection.style.display = 'flex';
+    kindSection.style.flexDirection = 'column';
+    kindSection.style.gap = '6px';
+    const kindLabelEl = document.createElement('div');
+    kindLabelEl.textContent = 'Kind';
+    kindLabelEl.style.fontSize = '13px';
+    kindSection.append(kindLabelEl, roleKind.kindWrap);
+
+    shallow.append(shallowGrid, roleSection, kindSection);
+
+    const deep = document.createElement('div');
+    deep.style.display = 'none';
+    deep.style.flexDirection = 'column';
+    deep.style.gap = '12px';
+
+    const { wrap: orgWrap, field: orgField } = select('Organization');
+    const blankOpt = document.createElement('option');
+    blankOpt.value = '';
+    blankOpt.textContent = 'None';
+    orgField.append(blankOpt);
+    state.orgs
+      .slice()
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+      .forEach((org) => {
+        const opt = document.createElement('option');
+        opt.value = String(org.id);
+        opt.textContent = org.name;
+        orgField.append(opt);
+      });
+    orgField.value = entry?.organization_id ? String(entry.organization_id) : '';
+
+    const createdAt = document.createElement('div');
+    createdAt.textContent = `Created at: ${isEdit ? formatDate(entry.created_at) : 'Will be set on save'}`;
+    createdAt.style.fontSize = '13px';
+    createdAt.style.color = '#cdd1dc';
+
+    const metaPlaceholder = document.createElement('div');
+    metaPlaceholder.textContent = 'Advanced metadata will live here later';
+    metaPlaceholder.style.fontSize = '12px';
+    metaPlaceholder.style.color = '#b5b8c2';
+
+    deep.append(orgWrap, createdAt, metaPlaceholder);
+
+    const actions = document.createElement('div');
+    actions.style.display = 'flex';
+    actions.style.justifyContent = 'flex-end';
+    actions.style.gap = '10px';
+
+    const saveBtn = button('Save');
+    saveBtn.disabled = !nameField.value.trim();
+
+    const togglePanels = (showDeep) => {
+      shallow.style.display = showDeep ? 'none' : 'flex';
+      deep.style.display = showDeep ? 'flex' : 'none';
+      shallowTab.style.background = showDeep ? '#2a3040' : '#34405c';
+      deepTab.style.background = showDeep ? '#34405c' : '#2a3040';
+    };
+    shallowTab.addEventListener('click', () => togglePanels(false));
+    deepTab.addEventListener('click', () => togglePanels(true));
+
+    nameField.addEventListener('input', () => {
+      saveBtn.disabled = !nameField.value.trim();
+    });
+
+    function buildPayload() {
+      const payload = {
+        name: nameField.value.trim(),
+        contact: contactField.value.trim() || null,
+        role: roleKind.getRole(),
+        kind: roleKind.getKind(),
+        organization_id: orgField.value ? Number(orgField.value) : null,
+      };
+      return payload;
+    }
+
+    function diffPayload() {
+      if (!isEdit) return buildPayload();
+      const current = buildPayload();
+      const base = {
+        name: entry.name,
+        contact: entry.contact || null,
+        role: entry.role,
+        kind: entry.kind,
+        organization_id: entry.organization_id || null,
+      };
+      const diff = {};
+      Object.entries(current).forEach(([k, v]) => {
+        if ((v ?? null) !== (base[k] ?? null)) diff[k] = v;
+      });
+      return diff;
+    }
+
+    async function save() {
+      if (saveBtn.disabled) return;
+      const payload = diffPayload();
+      if (!payload.name) {
+        toast('Name is required', 'error');
+        return;
+      }
+      try {
+        saveBtn.textContent = 'Saving…';
+        saveBtn.disabled = true;
+        await ensureToken();
+        if (isEdit) {
+          const facade = entry.facade || 'vendors';
+          await apiPut(`/app/${facade}/${entry.id}`, payload);
+          toast('Saved');
+        } else {
+          await apiPost('/app/contacts', payload);
+          toast('Created');
         }
-        openContactDrawer(c);
-      });
-
-      editBtn.addEventListener('click', (event) => {
-        event.stopPropagation();
-        openContactDrawer(c);
-      });
-
-      tbodyEl.appendChild(tr);
+        document.body.removeChild(overlay);
+        await loadData();
+      } catch (err) {
+        console.error('save contact failed', err);
+        toast('Save failed', 'error');
+        saveBtn.textContent = 'Save';
+        saveBtn.disabled = false;
+      }
     }
-  }
 
-  const contactsModal = document.querySelector('[data-role="contacts-modal"]');
-  const contactsForm = contactsModal?.querySelector('[data-role="contacts-form"]');
-  const contactsSaveBtn = contactsModal?.querySelector('[data-role="contacts-save"]');
-  const contactsOpenBtn = document.querySelector('[data-action="open-contacts-modal"]');
-  const contactsCloseButtons = contactsModal ? Array.from(contactsModal.querySelectorAll('[data-action="close-contacts-modal"]')) : [];
-  const vendorOnlyWrap = contactsModal?.querySelector('[data-visible-when="vendor"]');
+    saveBtn.addEventListener('click', save);
 
-  function updateVendorOnly() {
-    if (!vendorOnlyWrap || !contactsForm) return;
-    const t = String(contactsForm.elements.type.value || '').toLowerCase();
-    vendorOnlyWrap.style.display = t === 'vendor' ? '' : 'none';
-  }
-
-  function setContactsBusy(busy) {
-    if (!contactsSaveBtn) return;
-    if (!contactsSaveBtn.dataset._orig) {
-      contactsSaveBtn.dataset._orig = contactsSaveBtn.textContent || 'Save';
-    }
-    contactsSaveBtn.disabled = !!busy;
-    contactsSaveBtn.textContent = busy ? 'Saving…' : contactsSaveBtn.dataset._orig;
-  }
-
-  function openContactsModal(preset = {}) {
-    if (!contactsModal || !contactsForm) return;
-    contactsForm.reset();
-    if (preset.name) contactsForm.elements.name.value = preset.name;
-    const typeField = contactsForm.elements.type;
-    const presetType = (preset.type || '').toLowerCase();
-    if (typeField) {
-      typeField.value = presetType || '';
-    }
-    if (preset.email) contactsForm.elements.email.value = preset.email;
-    if (preset.material) contactsForm.elements.material.value = preset.material;
-    if (preset.lead_time_days != null) contactsForm.elements.lead_time_days.value = preset.lead_time_days;
-    if (preset.notes) contactsForm.elements.notes.value = preset.notes;
-    updateVendorOnly();
-    contactsModal.classList.remove('hidden');
-    contactsModal.classList.add('open');
-    contactsForm.elements.name?.focus();
-  }
-
-  function closeContactsModal() {
-    if (!contactsModal) return;
-    contactsModal.classList.add('hidden');
-    contactsModal.classList.remove('open');
-  }
-
-  contactsOpenBtn?.addEventListener('click', () => openContactsModal());
-
-  if (contactsModal && !contactsModal.dataset.contactsOverlayBound) {
-    contactsModal.addEventListener('click', (event) => {
-      if (event.target === contactsModal || event.target.classList.contains('modal-backdrop')) {
-        closeContactsModal();
+    overlay.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        save();
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        document.body.removeChild(overlay);
       }
     });
-    contactsModal.dataset.contactsOverlayBound = '1';
+
+    closeBtn.addEventListener('click', () => {
+      document.body.removeChild(overlay);
+    });
+
+    const cancelBtn = button('Cancel');
+    cancelBtn.addEventListener('click', () => document.body.removeChild(overlay));
+    actions.append(cancelBtn, saveBtn);
+
+    box.append(titleRow, tabs, shallow, deep, actions);
+    document.body.appendChild(overlay);
+    nameField.focus();
   }
 
-  contactsCloseButtons.forEach((btn) => {
-    if (!btn.dataset.contactsCloseBound) {
-      btn.addEventListener('click', () => closeContactsModal());
-      btn.dataset.contactsCloseBound = '1';
+  async function openDelete(entry) {
+    const { overlay, box } = buildModal();
+    const heading = document.createElement('div');
+    heading.textContent = 'Delete contact/vendor';
+    heading.style.fontSize = '18px';
+    heading.style.fontWeight = '700';
+
+    const bodyText = document.createElement('div');
+    bodyText.style.color = '#cdd1dc';
+    bodyText.style.fontSize = '14px';
+    bodyText.textContent = `What should happen to ${entry.name || 'this record'}?`;
+
+    const actions = document.createElement('div');
+    actions.style.display = 'flex';
+    actions.style.flexDirection = 'column';
+    actions.style.gap = '10px';
+
+    const buttonsRow = document.createElement('div');
+    buttonsRow.style.display = 'flex';
+    buttonsRow.style.justifyContent = 'flex-end';
+    buttonsRow.style.gap = '8px';
+
+    const cancel = button('Cancel');
+    cancel.addEventListener('click', () => document.body.removeChild(overlay));
+
+    const confirm = button('Confirm');
+
+    if ((entry.role || '').toLowerCase() === 'both') {
+      const options = document.createElement('div');
+      options.style.display = 'flex';
+      options.style.flexDirection = 'column';
+      options.style.gap = '6px';
+
+      const radio = (value, label) => {
+        const wrap = document.createElement('label');
+        wrap.style.display = 'flex';
+        wrap.style.alignItems = 'center';
+        wrap.style.gap = '8px';
+        const inputEl = document.createElement('input');
+        inputEl.type = 'radio';
+        inputEl.name = 'facet-delete';
+        inputEl.value = value;
+        wrap.append(inputEl, document.createTextNode(label));
+        return { wrap, inputEl };
+      };
+
+      const deleteBoth = radio('delete', 'Delete both');
+      deleteBoth.inputEl.checked = true;
+      const keepVendor = radio('vendor', 'Keep as Vendor');
+      const keepContact = radio('contact', 'Keep as Contact');
+
+      options.append(deleteBoth.wrap, keepVendor.wrap, keepContact.wrap);
+      actions.append(options);
+
+      confirm.addEventListener('click', async () => {
+        const selected = [deleteBoth, keepVendor, keepContact].find((o) => o.inputEl.checked)?.inputEl.value;
+        try {
+          confirm.textContent = 'Working…';
+          confirm.disabled = true;
+          await ensureToken();
+          if (selected === 'delete') {
+            await apiDelete(`/app/contacts/${entry.id}`);
+          } else {
+            await apiPut(`/app/contacts/${entry.id}`, { role: selected });
+          }
+          toast('Deleted');
+          document.body.removeChild(overlay);
+          await loadData();
+        } catch (err) {
+          console.error('delete facet failed', err);
+          toast('Delete failed', 'error');
+          confirm.textContent = 'Confirm';
+          confirm.disabled = false;
+        }
+      });
+    } else if ((entry.kind || '').toLowerCase() === 'org') {
+      const notice = document.createElement('div');
+      notice.style.fontSize = '13px';
+      notice.style.color = '#cdd1dc';
+      notice.textContent = 'Delete this organization. Optionally cascade to linked contacts.';
+
+      const cascadeWrap = document.createElement('label');
+      cascadeWrap.style.display = 'flex';
+      cascadeWrap.style.alignItems = 'center';
+      cascadeWrap.style.gap = '8px';
+      cascadeWrap.style.marginTop = '6px';
+      const cascadeBox = document.createElement('input');
+      cascadeBox.type = 'checkbox';
+      const cascadeLabel = document.createElement('span');
+      cascadeLabel.textContent = 'Also delete linked contacts (counting…)';
+      cascadeWrap.append(cascadeBox, cascadeLabel);
+
+      actions.append(notice, cascadeWrap);
+
+      try {
+        const res = await apiGet(`/app/contacts?organization_id=${entry.id}`);
+        const count = Array.isArray(res) ? res.length : 0;
+        cascadeLabel.textContent = `Also delete ${count} linked contact${count === 1 ? '' : 's'}`;
+      } catch (err) {
+        console.warn('child count failed', err);
+      }
+
+      confirm.addEventListener('click', async () => {
+        try {
+          confirm.textContent = 'Deleting…';
+          confirm.disabled = true;
+          await ensureToken();
+          const qs = cascadeBox.checked ? '?cascade_children=true' : '';
+          await apiDelete(`/app/vendors/${entry.id}${qs}`);
+          toast('Deleted');
+          document.body.removeChild(overlay);
+          await loadData();
+        } catch (err) {
+          console.error('delete org failed', err);
+          toast('Delete failed', 'error');
+          confirm.textContent = 'Confirm';
+          confirm.disabled = false;
+        }
+      });
+    } else {
+      confirm.addEventListener('click', async () => {
+        try {
+          confirm.textContent = 'Deleting…';
+          confirm.disabled = true;
+          await ensureToken();
+          await apiDelete(`/app/contacts/${entry.id}`);
+          toast('Deleted');
+          document.body.removeChild(overlay);
+          await loadData();
+        } catch (err) {
+          console.error('delete failed', err);
+          toast('Delete failed', 'error');
+          confirm.textContent = 'Confirm';
+          confirm.disabled = false;
+        }
+      });
+    }
+
+    buttonsRow.append(cancel, confirm);
+
+    box.append(heading, bodyText, actions, buttonsRow);
+    document.body.appendChild(overlay);
+    overlay.focus();
+  }
+
+  newBtn.addEventListener('click', () => openEditor({ role: 'contact', kind: 'person', facade: 'contacts' }));
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'n' || e.key === 'N') {
+      const focusedInModal = document.querySelector('.contacts-modal');
+      if (!focusedInModal) {
+        e.preventDefault();
+        openEditor({ role: 'contact', kind: 'person', facade: 'contacts' });
+      }
     }
   });
 
-  if (contactsModal && !contactsModal.dataset.contactsEscBound) {
-    const escHandler = (event) => {
-      if (event.key === 'Escape' && !contactsModal.classList.contains('hidden')) {
-        closeContactsModal();
-      }
-    };
-    document.addEventListener('keydown', escHandler);
-    contactsModal.dataset.contactsEscBound = '1';
-  }
-
-  if (contactsForm && !contactsForm.dataset.contactsTypeBound) {
-    contactsForm.elements.type?.addEventListener('change', updateVendorOnly);
-    contactsForm.dataset.contactsTypeBound = '1';
-  }
-
-  if (contactsForm) {
-    updateVendorOnly();
-  }
-
-  if (contactsForm && !contactsForm.dataset.contactsSubmitBound) {
-    contactsForm.addEventListener('submit', async (event) => {
-      event.preventDefault();
-      if (contactsSaveBtn?.disabled) return;
-
-      const fd = new FormData(contactsForm);
-      const name = String(fd.get('name') || '').trim();
-      let type = String(fd.get('type') || '').trim().toLowerCase();
-      const email = String(fd.get('email') || '').trim();
-      const material = String(fd.get('material') || '').trim();
-      const leadRaw = String(fd.get('lead_time_days') || '').trim();
-      const notes = String(fd.get('notes') || '').trim();
-
-      if (!name) { alert('Name required'); return; }
-      if (type !== 'vendor' && type !== 'customer') { alert('Type required'); return; }
-
-      let lead_time_days = null;
-      if (leadRaw) {
-        const n = parseInt(leadRaw, 10);
-        if (Number.isNaN(n)) { alert('Lead time must be a number'); return; }
-        lead_time_days = n;
-      }
-
-      const payload = {
-        name,
-        type,
-        ...(email ? { email } : {}),
-        ...(type === 'vendor' && material ? { material } : {}),
-        ...(lead_time_days != null ? { lead_time_days } : {}),
-        ...(notes ? { notes } : {}),
-      };
-
-      let vendorCreated = false;
-
-      try {
-        setContactsBusy(true);
-        await ensureToken();
-
-        if (type === 'vendor') {
-          if (await vendorExistsByName(name)) {
-            alert('Vendor already exists');
-            return;
-          }
-          const vendorPayload = {
-            name,
-            ...(email ? { email } : {}),
-            ...(material ? { material } : {}),
-            ...(lead_time_days != null ? { lead_time_days } : {}),
-            ...(notes ? { notes } : {}),
-          };
-          try {
-            await apiPost('/app/vendors', vendorPayload);
-            vendorCreated = true;
-            document.dispatchEvent(new CustomEvent('vendors:changed', { bubbles: true }));
-          } catch (vendorErr) {
-            const vs = vendorErr?.status || vendorErr?.response?.status;
-            if (vs !== 404 && vs !== 405) {
-              throw vendorErr;
-            }
-          }
-        }
-
-        try {
-          await apiPost('/app/contacts', payload);
-          closeContactsModal();
-          await renderContactsTable();
-          document.dispatchEvent(new CustomEvent('contacts:changed', { bubbles: true }));
-        } catch (err) {
-          const status = err?.status || err?.response?.status;
-          if ((status === 404 || status === 405) && vendorCreated) {
-            closeContactsModal();
-            await renderContactsTable();
-            document.dispatchEvent(new CustomEvent('contacts:changed', { bubbles: true }));
-            return;
-          }
-          throw err;
-        }
-      } catch (err) {
-        const status = err?.status || err?.response?.status;
-        if (status === 404 || status === 405) {
-          alert('Contacts endpoint is not available yet (HTTP ' + status + '). Please add /app/contacts on the backend.');
-        } else {
-          alert('Could not save contact.');
-        }
-        console.error('POST /app/contacts failed', err);
-      } finally {
-        setContactsBusy(false);
-      }
-    });
-    contactsForm.dataset.contactsSubmitBound = '1';
-  }
-
-  if (container.__contactsRefreshHandler) {
-    document.removeEventListener('contacts:changed', container.__contactsRefreshHandler);
-    document.removeEventListener('vendors:changed', container.__contactsRefreshHandler);
-    document.removeEventListener('customers:changed', container.__contactsRefreshHandler);
-  }
-
-  const refreshContactsTable = () => {
-    renderContactsTable().catch((err) => console.error('renderContactsTable failed', err));
-  };
-
-  container.__contactsRefreshHandler = refreshContactsTable;
-
-  document.addEventListener('contacts:changed', refreshContactsTable);
-  document.addEventListener('vendors:changed', refreshContactsTable);
-  document.addEventListener('customers:changed', refreshContactsTable);
-
-  closeDrawer();
-
-  await renderContactsTable();
-
-  // Defensive: neutralize any legacy openers still in DOM
-  document
-    .querySelectorAll(
-      '[data-action="contact-edit-legacy"], [data-action="open-contact"], [data-action="new-contact"], [data-action="new"]'
-    )
-    .forEach((el) => {
-      const clone = el.cloneNode(true);
-      clone.disabled = true;
-      clone.title = 'Replaced by new Contacts UI';
-      el.replaceWith(clone);
-    });
-  // --- END SPEC-1 BODY ---
-}
-function styleBtn(btn){
-  btn.style.background = '#23293a';
-  btn.style.color = '#e5e7eb';
-  btn.style.border = '1px solid #2b3246';
-  btn.style.padding = '6px 10px';
-  btn.style.borderRadius = '10px';
-  btn.style.cursor = 'pointer';
-  btn.onmouseenter = () => btn.style.background = '#2a3146';
-  btn.onmouseleave = () => btn.style.background = '#23293a';
-}
-export default mountVendors;
-
-// ===== Contacts Page Glue (non-invasive) =====
-export function mountContacts() {
-  // Hide non-contacts screens (if present)
-  document.querySelector('[data-role="home-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
-
-  // Show Contacts screen
-  const contactsScreen = document.querySelector('[data-role="contacts-screen"]');
-  if (contactsScreen) contactsScreen.classList.remove('hidden');
-
-  // Ensure the Contacts card is visible
-  const contactsCard = contactsScreen?.querySelector('[data-view="contacts"]');
-  if (contactsCard) contactsCard.classList.remove('hidden');
-
-  // If this module has an existing initializer, call it idempotently.
-  // Try common names; ignore errors if not defined.
-  try {
-    if (typeof ensureContactsMounted === 'function') ensureContactsMounted();
-    else if (typeof mountVendors === 'function') mountVendors(); // some repos co-locate
-  } catch {}
+  loadData();
 }
 
-// Use Vendors API for all contact CRUD (SOT: /app/vendors exists; /app/contacts does not)
-const VENDORS_API = '/app/vendors';
-
-// If list/load uses a base URL, ensure it resolves to VENDORS_API on the contacts page.
-if (typeof loadContactsList === 'function' && !loadContactsList.__patched) {
-  const _origLoad = loadContactsList;
-  loadContactsList = async function(...args) {
-    const route = (location.hash || '').replace('#/','');
-    // If original code inspects a base URL, ensure it points to VENDORS_API under contacts.
-    // Otherwise, let original handle it (no breaking change).
-    try { window.CONTACTS_BASE = (route === 'contacts') ? VENDORS_API : VENDORS_API; } catch {}
-    return _origLoad.apply(this, args);
-  };
-  loadContactsList.__patched = true;
-}
+export default mountContacts;

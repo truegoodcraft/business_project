@@ -1,5 +1,3 @@
-# SPDX-License-Identifier: AGPL-3.0-or-later
-# TGC BUS Core (Business Utility System Core)
 # Copyright (C) 2025 True Good Craft
 #
 # This file is part of TGC BUS Core.
@@ -22,24 +20,9 @@
 from __future__ import annotations
 
 from sqlalchemy import Column, Date, DateTime, Float, ForeignKey, Integer, String, Text, func
-from sqlalchemy.orm import declarative_base
 
 from core.appdb.engine import ENGINE, SessionLocal, get_session
-
-Base = declarative_base()
-
-
-class Vendor(Base):
-    __tablename__ = "vendors"
-
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, unique=True, nullable=False)
-    contact = Column(String, nullable=True)
-    role = Column(String, nullable=False, server_default="vendor")
-    kind = Column(String, nullable=False, server_default="org")
-    organization_id = Column(Integer, ForeignKey("vendors.id"), nullable=True)
-    meta = Column(Text, nullable=True)
-    created_at = Column(DateTime, nullable=False, server_default=func.now())
+from core.appdb.models import Base, Vendor
 
 
 class Item(Base):

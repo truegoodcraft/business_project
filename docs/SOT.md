@@ -1,7 +1,8 @@
-**TGC BUS Core — Source of Truth (Updated 2025-11-24)**
+**TGC BUS Core — Source of Truth (Updated 2025-12-02)**
 
 > **Authority rule:** The uploaded **codebase is truth**. Where this document and the code disagree, the SoT **must be updated to reflect code**. Anything not stated = **unknown / not specified**.
 >
+> **Change note (2025-12-02, v0.3.1 "Iron Core"):** Documents unified Contacts/Vendors shallow+deep UI, façade defaults and delete semantics (cascade/null + facet-only removes via PUT), and extends smoke coverage for the dual façades.
 > **Change note (2025-11-26, v0.3.0 "Iron Core"):** Roll-up version bump to v0.3.0 “Iron Core” reflecting integrated Home/dashboard layout and sidebar structure, single-operator design ethos, local-only analytics event store and “analytics from local events only” principle, optional anonymous license hash and push-only telemetry model, and clarified manufacturing run cost/capacity view and Core vs Pro philosophical split from the 2025-11-24 session.
 > **Change note (2025-11-24, v0.1.1):** Documents canonical Home/dashboard layout and sidebar structure; adds single-operator design ethos; defines local-only analytics event store and “analytics from local events only” principle; documents optional anonymous license hash and push-only telemetry model; clarifies manufacturing run cost/capacity view and Core vs Pro philosophical split.
 > **Change note (2025-11-23, v0.1.0):** Documents canonical Codex/GitHub patch-branch development workflow and `D:\BUSCore-Test` local test clone; clarifies that local clones are test-only and all code edits happen via Codex on GitHub.
@@ -13,7 +14,7 @@
 
 ## Versioning & Changelog
 
-* **Current SoT document version:** `v0.3.0 "Iron Core"`.
+* **Current SoT document version:** `v0.3.1 "Iron Core"`.
 * All BUS Core SoTs and adjacent TGC method/process docs use a three-part version string: `vX.Y.Z`.
 
   * **X – Release track.** `0` = pre–official-release track; `1` = first formal release of the method/product; higher values represent later lifecycle stages.
@@ -75,6 +76,9 @@
 
   * Vendors table unified for **organizations** and **people**.
   * Contacts behave as vendor rows with appropriate `role` / `kind`.
+  * Façade defaults: `POST /app/vendors` assumes `role=vendor, kind=org`; `POST /app/contacts` assumes `role=contact, kind=person` when omitted.
+  * Deletes: `DELETE /app/vendors/{id}` auto-nulls child `organization_id`; `DELETE ...?cascade_children=true` removes dependents. If `role=both`, drop a single facet via `PUT ... {role: vendor|contact}` instead of DELETE.
+  * Filters: `role`, `kind`, `q` (name/contact substring), and `organization_id` are supported on GET.
   * Dedupe and merge semantics defined in §9.
 
 * **Items:**
@@ -146,6 +150,12 @@
 | `#/settings`         | Settings / Dev            | `settings-screen`  | `core/ui/js/cards/settings.js`  | `settingsCard()`   | None                                      |
 
 **Deliberate omissions:** no canonical `#/items`, `#/vendors`, `#/rfq` routes yet; RFQ UI remains a card within legacy Tools surface.
+
+#### Contacts card (shallow/deep parity with Inventory)
+
+* The Contacts card mirrors Inventory’s **Shallow/Deep** modal: Shallow (default) = Name (required), Contact, Role chips (Vendor/Contact/Both), Kind toggle (Person/Organization); Deep = Organization selector (`GET /app/vendors?kind=org`), read-only Created At, and reserved metadata area.
+* Collapsed rows show **Name + chips** and a second line with **Contact** and optional **Org: …**. List columns: Name, Contact, Role chip, Kind chip/icon. Filters: **All | Vendors | Contacts | Both** chips plus search on name/contact.
+* Expanded rows present Name (read-only), Role chip, Kind chip, Organization label/link (if set) on the left; Contact + Created At on the right; footer buttons **Edit** + **Delete**. Delete flow supports facet-only (role=`both`) via PUT role change and org cascade/null decisions.
 
 ### 5.3 Tools drawer (sidebar) — structure & behavior
 
@@ -658,21 +668,16 @@ There are no additional tables in `plans.db` as of 2025-11-22.
 
 * **Columns (high level):**
 
-  * `id`, `name`, `kind`, `role`, `organization_id`, `meta`, timestamps.
-  * `kind`: e.g. `org`, `person`; **not strictly enumerated** yet.
-  * `role`: e.g. `vendor`, `contact`, `both`.
+  * `id`, `name` (unique), `kind`, `role`, `contact`, `organization_id`, `meta`, timestamps.
+  * `kind`: `org` or `person` (soft enum).
+  * `role`: `vendor`, `contact`, or `both`.
 
-* **Contacts API (current behavior):**
+* **API façades:** `/app/vendors` and `/app/contacts` operate on the same table.
 
-  * **Endpoint:** `/app/contacts` (CRUD).
-  * **Storage:** persists to **`vendors`** table (unified model).
-  * **Defaults (POST):** when omitted → `role='contact'`, `kind='person'`.
-  * **Duplicate-name policy (POST):** if an existing row with the **same `name`** exists:
-
-    * **Merge** instead of insert; set `role='both'`.
-    * Merge `meta` JSON (incoming keys overwrite existing).
-    * Optionally update `kind` and `organization_id`.
-    * Respond **200** (idempotent create/merge).
+  * **POST defaults:** vendors → `role=vendor, kind=org`; contacts → `role=contact, kind=person` (when omitted).
+  * **GET filters:** `role`, `kind`, `q` (substring match on `name`/`contact`), and `organization_id`.
+  * **PUT:** partial update; only provided fields are patched.
+  * **DELETE:** org rows null child `organization_id` by default; `?cascade_children=true` deletes dependents. `role='both'` facet removal occurs via `PUT ... {role: vendor|contact}` instead of DELETE.
 
 ---
 
@@ -680,12 +685,17 @@ There are no additional tables in `plans.db` as of 2025-11-22.
 
 * **Canonical harness:** `buscore-smoke.ps1` at repo root. Must pass **100%** for acceptance.
 * **Auth pattern:** mint via `GET /session/token`; send **`X-Session-Token`** on protected calls (tests don’t rely on cookies).
-* **Success policy (smoke):** treat **`200 OK`** as CRUD success; other **2xx = fail** (smoke rule).
-* **Diagnostics:** for any non-200 response, print first **200 bytes** of body with status.
-* **Health assertions:**
+* **Expected steps (contacts/vendors coverage):**
 
-  * Public: status 200; `{"ok": true}` seen **True**.
-  * Protected: status 200; keys `[version, policy, license, run-id]` present **[True, True, True, True]**.
+  1. `POST /app/vendors {name:"ACME"}` → `201` with `role=vendor`, `kind=org`.
+  2. `POST /app/contacts {name:"Sam"}` → `201` with `role=contact`, `kind=person`.
+  3. `PUT /app/contacts/{samId} {role:"both"}` → `200` with `role=both`.
+  4. Facet delete path: `PUT /app/contacts/{samId} {role:"vendor"}` → `200`; `DELETE /app/contacts/{samId}` → `204`.
+  5. `POST /app/contacts {name:"Ava", kind:"person", organization_id: acmeId}` → `201`.
+  6. `DELETE /app/vendors/{acmeId}` (no cascade) → `204`; `GET /app/contacts/{avaId}` shows `organization_id=null`.
+  7. Recreate `ACME` + `Ava2`; `DELETE /app/vendors/{acmeId}?cascade_children=true` → `204`; `GET /app/contacts?q=Ava2` returns empty.
+
+* **Status handling:** 201 for creates, 200 for fetch/updates, 204 for deletes. Print first **200 bytes** of body and status on failure.
 
 **Canonical smoke command (from repo root):**
 
