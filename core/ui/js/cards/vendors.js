@@ -10,10 +10,9 @@ const INPUT_BG = '#2a2c30';
 const BORDER = '#2f3239';
 
 const ROLE_FILTERS = [
-  { key: 'all', label: 'All', role: 'any' },
-  { key: 'vendors', label: 'Vendors', role: 'vendor' },
-  { key: 'contacts', label: 'Contacts', role: 'contact' },
-  { key: 'both', label: 'Both', role: 'both' },
+  { key: 'all', label: 'All', is_vendor: null },
+  { key: 'vendors', label: 'Vendors', is_vendor: true },
+  { key: 'contacts', label: 'Contacts', is_vendor: false },
 ];
 
 function formatDate(val) {
@@ -131,21 +130,8 @@ function toast(message, tone = 'ok') {
   }, 2000);
 }
 
-function roleLabel(role) {
-  const r = (role || '').toLowerCase();
-  if (r === 'both') return 'Both';
-  if (r === 'contact') return 'Contact';
-  return 'Vendor';
-}
-
-function kindLabel(kind) {
-  const k = (kind || '').toLowerCase();
-  return k === 'person' ? 'Person' : 'Organization';
-}
-
-function kindIcon(kind) {
-  const k = (kind || '').toLowerCase();
-  return k === 'person' ? '👤' : '🏢';
+function vendorLabel(isVendor) {
+  return isVendor ? 'Vendor' : 'Contact';
 }
 
 function buildModal() {
@@ -274,17 +260,17 @@ export function mountContacts(host) {
 
   const headerRow = document.createElement('div');
   headerRow.style.display = 'grid';
-  headerRow.style.gridTemplateColumns = '2fr 2fr 1fr 1fr 80px';
+    headerRow.style.gridTemplateColumns = '2fr 2fr 1fr 80px';
   headerRow.style.padding = '10px 14px';
   headerRow.style.background = '#2b2d31';
   headerRow.style.color = '#cdd1dc';
   headerRow.style.fontSize = '13px';
   headerRow.style.fontWeight = '600';
-  ['Name', 'Contact', 'Role', 'Kind', ''].forEach((col) => {
-    const c = document.createElement('div');
-    c.textContent = col;
-    headerRow.appendChild(c);
-  });
+    ['Name', 'Contact', 'Flags', ''].forEach((col) => {
+      const c = document.createElement('div');
+      c.textContent = col;
+      headerRow.appendChild(c);
+    });
 
   const body = document.createElement('div');
   body.style.display = 'flex';
@@ -303,7 +289,7 @@ export function mountContacts(host) {
   function renderRow(entry) {
     const row = document.createElement('div');
     row.style.display = 'grid';
-    row.style.gridTemplateColumns = '2fr 2fr 1fr 1fr 80px';
+    row.style.gridTemplateColumns = '2fr 2fr 1fr 80px';
     row.style.padding = '10px 14px';
     row.style.borderTop = `1px solid ${BORDER}`;
     row.style.cursor = 'pointer';
@@ -323,9 +309,13 @@ export function mountContacts(host) {
     const nm = document.createElement('div');
     nm.textContent = entry.name || '(unnamed)';
     nm.style.fontWeight = '600';
-    const roleChip = chip(roleLabel(entry.role), 'accent');
-    const kindChip = chip(kindLabel(entry.kind));
-    nameLine.append(nm, roleChip, kindChip);
+    const vendorBadge = chip(vendorLabel(Boolean(entry.is_vendor)), entry.is_vendor ? 'accent' : 'default');
+    vendorBadge.style.opacity = entry.is_vendor ? '1' : '0.8';
+    nameLine.append(nm, vendorBadge);
+    if (entry.is_org) {
+      const orgBadge = chip('Organization');
+      nameLine.append(orgBadge);
+    }
 
     const metaLine = document.createElement('div');
     metaLine.style.fontSize = '12px';
@@ -341,12 +331,14 @@ export function mountContacts(host) {
     contactCol.textContent = entry.contact || '—';
     contactCol.style.color = '#cdd1dc';
 
-    const roleCol = document.createElement('div');
-    roleCol.appendChild(chip(roleLabel(entry.role)));
-
-    const kindCol = document.createElement('div');
-    const kindBadge = chip(`${kindIcon(entry.kind)} ${kindLabel(entry.kind)}`);
-    kindCol.appendChild(kindBadge);
+    const flagsCol = document.createElement('div');
+    flagsCol.style.display = 'flex';
+    flagsCol.style.gap = '6px';
+    flagsCol.style.flexWrap = 'wrap';
+    flagsCol.append(chip(vendorLabel(Boolean(entry.is_vendor)), entry.is_vendor ? 'accent' : 'default'));
+    if (entry.is_org) {
+      flagsCol.append(chip('Organization'));
+    }
 
     const actions = document.createElement('div');
     actions.style.display = 'flex';
@@ -367,7 +359,7 @@ export function mountContacts(host) {
     });
     actions.append(edit, del);
 
-    row.append(nameCol, contactCol, roleCol, kindCol, actions);
+    row.append(nameCol, contactCol, flagsCol, actions);
 
     const expanded = document.createElement('div');
     expanded.style.gridColumn = '1 / -1';
@@ -389,7 +381,8 @@ export function mountContacts(host) {
     const chipsRow = document.createElement('div');
     chipsRow.style.display = 'flex';
     chipsRow.style.gap = '8px';
-    chipsRow.append(chip(roleLabel(entry.role)), chip(kindLabel(entry.kind)));
+    chipsRow.append(chip(vendorLabel(Boolean(entry.is_vendor)), entry.is_vendor ? 'accent' : 'default'));
+    if (entry.is_org) chipsRow.append(chip('Organization'));
     const orgLine = document.createElement('div');
     orgLine.style.fontSize = '12px';
     orgLine.style.color = '#b5b8c2';
@@ -456,8 +449,10 @@ export function mountContacts(host) {
 
   async function loadOrgs() {
     try {
-      const params = new URLSearchParams({ kind: 'org' });
-      const res = await apiGet(`/app/vendors?${params.toString()}`);
+      let res = await apiGet('/app/vendors?is_org=true');
+      if (!Array.isArray(res) || !res.length) {
+        res = await apiGet('/app/vendors?is_vendor=true');
+      }
       state.orgs = Array.isArray(res) ? res : [];
     } catch (err) {
       if (err && (err.status === 404 || err.status === 500)) {
@@ -471,12 +466,12 @@ export function mountContacts(host) {
   async function loadData() {
     const params = new URLSearchParams();
     const selected = ROLE_FILTERS.find((f) => f.key === state.filterRole);
-    if (selected && selected.role) params.set('role', selected.role);
+    if (selected && selected.is_vendor !== null && selected.is_vendor !== undefined) params.set('is_vendor', selected.is_vendor);
     if (state.search) params.set('q', state.search);
     try {
       const res = await apiGet(`/app/contacts?${params.toString()}`);
       state.list = Array.isArray(res)
-        ? res.map((r) => ({ ...r, facade: r.role === 'vendor' ? 'vendors' : 'contacts' }))
+        ? res.map((r) => ({ ...r, facade: r.is_vendor ? 'vendors' : 'contacts' }))
         : [];
     } catch (err) {
       if (err && (err.status === 404 || err.status === 500)) {
@@ -489,63 +484,24 @@ export function mountContacts(host) {
     render();
   }
 
-  function buildRoleKindControls(initialRole = 'contact', initialKind = 'person') {
-    const roleWrap = document.createElement('div');
-    roleWrap.style.display = 'flex';
-    roleWrap.style.gap = '8px';
-
-    let roleValue = (initialRole || 'contact').toLowerCase();
-    const roleButtons = ['vendor', 'contact', 'both'].map((r) => {
-      const b = button(r.replace(/^./, (m) => m.toUpperCase()));
-      b.style.padding = '8px 10px';
-      b.addEventListener('click', () => {
-        roleValue = r;
-        roleButtons.forEach((btn) => {
-          btn.style.background = btn.textContent?.toLowerCase() === roleValue ? '#34405c' : '#2a3040';
-        });
-      });
-      if (r === roleValue) b.style.background = '#34405c';
-      return b;
-    });
-    roleButtons.forEach((b) => roleWrap.appendChild(b));
-
-    const kindWrap = document.createElement('div');
-    kindWrap.style.display = 'flex';
-    kindWrap.style.gap = '8px';
-    let kindValue = (initialKind || 'person').toLowerCase();
-    const kindButtons = [
-      { key: 'person', label: 'Person' },
-      { key: 'org', label: 'Organization' },
-    ].map((k) => {
-      const b = button(k.label);
-      b.style.padding = '8px 10px';
-      b.addEventListener('click', () => {
-        kindValue = k.key;
-        kindButtons.forEach((btn) => {
-          btn.style.background = btn.textContent?.toLowerCase().startsWith(kindValue.slice(0, 3)) ? '#34405c' : '#2a3040';
-        });
-      });
-      if (k.key === kindValue) b.style.background = '#34405c';
-      return b;
-    });
-    kindButtons.forEach((b) => kindWrap.appendChild(b));
-
+  function buildToggle(label, initial = false) {
+    const wrap = document.createElement('label');
+    wrap.style.display = 'flex';
+    wrap.style.alignItems = 'center';
+    wrap.style.gap = '8px';
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = !!initial;
+    const text = document.createElement('span');
+    text.textContent = label;
+    text.style.fontSize = '13px';
+    wrap.append(box, text);
     return {
-      roleWrap,
-      kindWrap,
-      getRole: () => roleValue,
-      getKind: () => kindValue,
-      setRole: (val) => {
-        roleValue = (val || 'contact').toLowerCase();
-        roleButtons.forEach((btn) => {
-          btn.style.background = btn.textContent?.toLowerCase() === roleValue ? '#34405c' : '#2a3040';
-        });
-      },
-      setKind: (val) => {
-        kindValue = (val || 'person').toLowerCase();
-        kindButtons.forEach((btn) => {
-          btn.style.background = btn.textContent?.toLowerCase().startsWith(kindValue.slice(0, 3)) ? '#34405c' : '#2a3040';
-        });
+      wrap,
+      input: box,
+      getValue: () => box.checked,
+      setValue: (val) => {
+        box.checked = !!val;
       },
     };
   }
@@ -591,8 +547,6 @@ export function mountContacts(host) {
     const { wrap: contactWrap, field: contactField } = input('Contact');
     contactField.value = entry?.contact || '';
 
-    const roleKind = buildRoleKindControls(entry?.role || 'contact', entry?.kind || 'person');
-
     const shallowGrid = document.createElement('div');
     shallowGrid.style.display = 'grid';
     shallowGrid.style.gridTemplateColumns = '1fr';
@@ -600,25 +554,17 @@ export function mountContacts(host) {
 
     shallowGrid.append(nameWrap, contactWrap);
 
-    const roleSection = document.createElement('div');
-    roleSection.style.display = 'flex';
-    roleSection.style.flexDirection = 'column';
-    roleSection.style.gap = '6px';
-    const roleLabelEl = document.createElement('div');
-    roleLabelEl.textContent = 'Role';
-    roleLabelEl.style.fontSize = '13px';
-    roleSection.append(roleLabelEl, roleKind.roleWrap);
+    const toggleWrap = document.createElement('div');
+    toggleWrap.style.display = 'grid';
+    toggleWrap.style.gridTemplateColumns = '1fr';
+    toggleWrap.style.gap = '8px';
 
-    const kindSection = document.createElement('div');
-    kindSection.style.display = 'flex';
-    kindSection.style.flexDirection = 'column';
-    kindSection.style.gap = '6px';
-    const kindLabelEl = document.createElement('div');
-    kindLabelEl.textContent = 'Kind';
-    kindLabelEl.style.fontSize = '13px';
-    kindSection.append(kindLabelEl, roleKind.kindWrap);
+    const orgToggle = buildToggle('Company / Organization', Boolean(entry?.is_org));
+    const vendorToggle = buildToggle('Treat as Vendor', entry?.is_vendor ?? entry?.facade === 'vendors');
 
-    shallow.append(shallowGrid, roleSection, kindSection);
+    toggleWrap.append(orgToggle.wrap, vendorToggle.wrap);
+
+    shallow.append(shallowGrid, toggleWrap);
 
     const deep = document.createElement('div');
     deep.style.display = 'none';
@@ -678,8 +624,8 @@ export function mountContacts(host) {
       const payload = {
         name: nameField.value.trim(),
         contact: contactField.value.trim() || null,
-        role: roleKind.getRole(),
-        kind: roleKind.getKind(),
+        is_org: orgToggle.getValue(),
+        is_vendor: vendorToggle.getValue(),
         organization_id: orgField.value ? Number(orgField.value) : null,
       };
       return payload;
@@ -691,8 +637,8 @@ export function mountContacts(host) {
       const base = {
         name: entry.name,
         contact: entry.contact || null,
-        role: entry.role,
-        kind: entry.kind,
+        is_org: Boolean(entry.is_org),
+        is_vendor: Boolean(entry.is_vendor),
         organization_id: entry.organization_id || null,
       };
       const diff = {};
@@ -713,15 +659,19 @@ export function mountContacts(host) {
         saveBtn.textContent = 'Saving…';
         saveBtn.disabled = true;
         await ensureToken();
+        let saved;
         if (isEdit) {
           const facade = entry.facade || 'vendors';
-          await apiPut(`/app/${facade}/${entry.id}`, payload);
+          saved = await apiPut(`/app/${facade}/${entry.id}`, payload);
           toast('Saved');
         } else {
-          await apiPost('/app/contacts', payload);
+          saved = await apiPost('/app/contacts', payload);
           toast('Created');
         }
-        document.body.removeChild(overlay);
+        if (saved) {
+          window.dispatchEvent(new CustomEvent('contacts:saved', { detail: saved }));
+        }
+        overlay.remove();
         await loadData();
       } catch (err) {
         console.error('save contact failed', err);
@@ -783,56 +733,9 @@ export function mountContacts(host) {
     cancel.addEventListener('click', () => document.body.removeChild(overlay));
 
     const confirm = button('Confirm');
+    const facade = entry.facade || (entry.is_vendor ? 'vendors' : 'contacts');
 
-    if ((entry.role || '').toLowerCase() === 'both') {
-      const options = document.createElement('div');
-      options.style.display = 'flex';
-      options.style.flexDirection = 'column';
-      options.style.gap = '6px';
-
-      const radio = (value, label) => {
-        const wrap = document.createElement('label');
-        wrap.style.display = 'flex';
-        wrap.style.alignItems = 'center';
-        wrap.style.gap = '8px';
-        const inputEl = document.createElement('input');
-        inputEl.type = 'radio';
-        inputEl.name = 'facet-delete';
-        inputEl.value = value;
-        wrap.append(inputEl, document.createTextNode(label));
-        return { wrap, inputEl };
-      };
-
-      const deleteBoth = radio('delete', 'Delete both');
-      deleteBoth.inputEl.checked = true;
-      const keepVendor = radio('vendor', 'Keep as Vendor');
-      const keepContact = radio('contact', 'Keep as Contact');
-
-      options.append(deleteBoth.wrap, keepVendor.wrap, keepContact.wrap);
-      actions.append(options);
-
-      confirm.addEventListener('click', async () => {
-        const selected = [deleteBoth, keepVendor, keepContact].find((o) => o.inputEl.checked)?.inputEl.value;
-        try {
-          confirm.textContent = 'Working…';
-          confirm.disabled = true;
-          await ensureToken();
-          if (selected === 'delete') {
-            await apiDelete(`/app/contacts/${entry.id}`);
-          } else {
-            await apiPut(`/app/contacts/${entry.id}`, { role: selected });
-          }
-          toast('Deleted');
-          document.body.removeChild(overlay);
-          await loadData();
-        } catch (err) {
-          console.error('delete facet failed', err);
-          toast('Delete failed', 'error');
-          confirm.textContent = 'Confirm';
-          confirm.disabled = false;
-        }
-      });
-    } else if ((entry.kind || '').toLowerCase() === 'org') {
+    if (entry.is_org) {
       const notice = document.createElement('div');
       notice.style.fontSize = '13px';
       notice.style.color = '#cdd1dc';
@@ -882,7 +785,7 @@ export function mountContacts(host) {
           confirm.textContent = 'Deleting…';
           confirm.disabled = true;
           await ensureToken();
-          await apiDelete(`/app/contacts/${entry.id}`);
+          await apiDelete(`/app/${facade}/${entry.id}`);
           toast('Deleted');
           document.body.removeChild(overlay);
           await loadData();
@@ -902,16 +805,24 @@ export function mountContacts(host) {
     overlay.focus();
   }
 
-  newBtn.addEventListener('click', () => openEditor({ role: 'contact', kind: 'person', facade: 'contacts' }));
+  newBtn.addEventListener('click', () => openEditor({ is_vendor: false, is_org: false, facade: 'contacts' }));
   document.addEventListener('keydown', (e) => {
     if (e.key === 'n' || e.key === 'N') {
       const focusedInModal = document.querySelector('.contacts-modal');
       if (!focusedInModal) {
         e.preventDefault();
-        openEditor({ role: 'contact', kind: 'person', facade: 'contacts' });
+        openEditor({ is_vendor: false, is_org: false, facade: 'contacts' });
       }
     }
   });
+
+  if (!window.__contactsModalListener) {
+    window.addEventListener('open-contacts-modal', (ev) => {
+      const prefill = ev.detail?.prefill || {};
+      openEditor({ ...prefill, facade: 'contacts' });
+    });
+    window.__contactsModalListener = true;
+  }
 
   loadData();
 }

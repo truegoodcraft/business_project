@@ -66,31 +66,29 @@ $samId = $null
 $avaId = $null
 
 Step "POST /app/vendors defaults" {
-  $res = Invoke-AppJson -Method Post -Path '/app/vendors' -Body @{ name = 'ACME' }
-  if ($res.role -ne 'vendor' -or $res.kind -ne 'org') { throw "Unexpected defaults" }
+  $res = Invoke-AppJson -Method Post -Path '/app/vendors' -Body @{ name = 'ACME'; is_org = $true; is_vendor = $true }
+  if (-not $res.is_vendor -or $res.role -ne 'vendor') { throw "Unexpected defaults" }
   $script:acmeId = $res.id
 }
 
 Step "POST /app/contacts defaults" {
   $res = Invoke-AppJson -Method Post -Path '/app/contacts' -Body @{ name = 'Sam' }
-  if ($res.role -ne 'contact' -or $res.kind -ne 'person') { throw "Unexpected contact defaults" }
+  if ($res.role -ne 'contact' -or $res.is_vendor) { throw "Unexpected contact defaults" }
   $script:samId = $res.id
 }
 
-Step "PUT /app/contacts make both" {
-  $res = Invoke-AppJson -Method Put -Path "/app/contacts/$samId" -Body @{ role = 'both' }
-  if ($res.role -ne 'both') { throw "Role not both" }
+Step "PUT /app/contacts make vendor" {
+  $res = Invoke-AppJson -Method Put -Path "/app/contacts/$samId" -Body @{ is_vendor = $true }
+  if (-not $res.is_vendor -or $res.role -ne 'vendor') { throw "Role not vendor" }
 }
 
-Step "Facet delete keep vendor" {
-  $res = Invoke-AppJson -Method Put -Path "/app/contacts/$samId" -Body @{ role = 'vendor' }
-  if ($res.role -ne 'vendor') { throw "Role not vendor" }
-  $code = Invoke-AppDelete -Path "/app/contacts/$samId"
-  if ($code -ne 204) { throw "Delete expected 204, got $code" }
+Step "Filter vendors includes Sam" {
+  $res = Invoke-AppJson -Method Get -Path '/app/contacts?is_vendor=true'
+  if (-not ($res | Where-Object { $_.id -eq $samId })) { throw "Sam missing from vendor filter" }
 }
 
 Step "Create dependent Ava" {
-  $res = Invoke-AppJson -Method Post -Path '/app/contacts' -Body @{ name = 'Ava'; kind = 'person'; organization_id = $acmeId }
+  $res = Invoke-AppJson -Method Post -Path '/app/contacts' -Body @{ name = 'Ava'; organization_id = $acmeId }
   if (-not $res.id) { throw "No Ava id" }
   $script:avaId = $res.id
 }
@@ -103,9 +101,9 @@ Step "Delete org without cascade" {
 }
 
 Step "Cascade delete Ava2" {
-  $resOrg = Invoke-AppJson -Method Post -Path '/app/vendors' -Body @{ name = 'ACME'; role = 'vendor'; kind = 'org' }
+  $resOrg = Invoke-AppJson -Method Post -Path '/app/vendors' -Body @{ name = 'ACME'; is_vendor = $true; is_org = $true }
   $newOrgId = $resOrg.id
-  $resAva = Invoke-AppJson -Method Post -Path '/app/contacts' -Body @{ name = 'Ava2'; kind = 'person'; organization_id = $newOrgId }
+  $resAva = Invoke-AppJson -Method Post -Path '/app/contacts' -Body @{ name = 'Ava2'; organization_id = $newOrgId }
   $code = Invoke-AppDelete -Path "/app/vendors/$newOrgId?cascade_children=true"
   if ($code -ne 204) { throw "Cascade delete expected 204" }
   $search = Invoke-AppJson -Method Get -Path '/app/contacts?q=Ava2'
