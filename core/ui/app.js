@@ -19,17 +19,28 @@
 
 import { ensureToken } from "./js/token.js";
 import { mountBackupExport } from "./js/cards/backup.js";
-import mountVendors, { mountContacts } from "./js/cards/vendors.js";
+import mountVendors from "./js/cards/vendors.js";
 import { mountHome } from "./js/cards/home.js";
 import "./js/cards/home_donuts.js";
 import { mountInventory, unmountInventory } from "./js/cards/inventory.js";
 import { settingsCard } from "./js/cards/settings.js";
 
-const getRoute = () => {
-  let route = location.hash.replace('#/', '');
-  if (route === '' || route === 'home' || route === 'BUSCore') route = 'home';
-  return route.split(/[\/?]/)[0] || 'home';
+const ROUTES = {
+  '#/inventory': showInventory,
+  '#/contacts': showContacts,
+  '#/settings': showSettings,
+  '#/home': showHome,
+  '#/': showInventory,
+  '': showInventory,
 };
+
+function getHash() {
+  return (window.location.hash || '#/inventory').replace(/\/+$/, '');
+}
+
+function normalizeRoute(hash) {
+  return (hash.replace('#/', '') || 'inventory').split(/[\/?]/)[0];
+}
 
 const setActiveNav = (route) => {
   document.querySelectorAll('[data-role="nav-link"]').forEach(a => {
@@ -45,97 +56,99 @@ function showScreen(name) {
   if (tools) tools.classList.toggle('hidden', name !== 'tools');
 }
 
-let contactsMounted = false;
 let settingsMounted = false;
 
 const ensureContactsMounted = async () => {
-  if (contactsMounted) return;
   const host = document.querySelector('[data-view="contacts"]');
   if (!host) return;
   await mountVendors(host);
-  contactsMounted = true;
 };
 
-const onRouteChange = async () => {
-  const route = getRoute();
+function clearCardHost() {
+  const root = document.getElementById('card-root')
+    || document.getElementById('tools-root')
+    || document.getElementById('main-root');
+  const inventoryHost = document.querySelector('[data-role="inventory-root"]');
+  const contactsHost = document.querySelector('[data-view="contacts"]');
+  const settingsHost = document.querySelector('[data-role="settings-root"]');
+  [root, inventoryHost, contactsHost, settingsHost].forEach((node) => {
+    if (node) node.innerHTML = '';
+  });
+}
+
+async function onRouteChange() {
+  await ensureToken();
+  const hash = getHash();
+  const route = normalizeRoute(hash);
   setActiveNav(route);
 
   document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
+  clearCardHost();
 
-  if (route === 'contacts') {
-    // Close Tools drawer if open
-    document.querySelector('[data-role="tools-subnav"]')?.classList.remove('open');
+  const fn = ROUTES[hash] || ROUTES['#/inventory'];
+  await fn();
+}
 
-    // Hide legacy Tools screens if any
-    document.querySelector('[data-role="tools-screen"]')?.classList.add('hidden');
-
-    // Show Contacts page
-    mountContacts();
-    await ensureContactsMounted();
-    return;
-  }
-
-  if (route === 'inventory') {
-    // Show only Inventory screen
-    document.querySelector('[data-role="home-screen"]')?.classList.add('hidden');
-    document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
-    document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
-    document.querySelector('[data-role="inventory-screen"]')?.classList.remove('hidden');
-    mountInventory();
-    return;
-  }
-
-  if (route === 'settings') {
-    unmountInventory();
-    document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
-    showScreen(null);
-    const settingsScreen = document.querySelector('[data-role="settings-screen"]');
-    settingsScreen?.classList.remove('hidden');
-    if (!settingsMounted) {
-      const host = document.querySelector('[data-role="settings-root"]');
-      if (host) {
-        settingsCard(host);
-        settingsMounted = true;
-      }
-    }
-    return;
-  }
-
-  if (route === 'home' || route === '') {
-    showScreen('home');   // show only Home
-    mountHome();          // keep existing Home logic
-    unmountInventory();   // ensure Inventory hides when returning Home
-    document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
-    document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
-    return;
-  }
-
-  unmountInventory();
-  document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
-  showScreen(null);
-  return;
-};
-
-const safeRouteChange = () => {
+window.addEventListener('hashchange', () => {
   onRouteChange().catch(err => console.error('route change failed', err));
-};
+});
+window.addEventListener('load', () => {
+  onRouteChange().catch(err => console.error('route change failed', err));
+});
 
-window.addEventListener('hashchange', safeRouteChange);
-window.addEventListener('load', safeRouteChange);
-
-if (!location.hash) location.hash = '#/home';
+if (!location.hash) location.hash = '#/inventory';
 
 document.addEventListener('DOMContentLoaded', async () => {
   try {
     await ensureToken();
     await initLicenseBadge();
-    await onRouteChange();
     console.log('BOOT OK');
   } catch (e) {
     console.error('BOOT FAIL', e);
   }
 });
+
+async function showContacts() {
+  // Close Tools drawer if open
+  document.querySelector('[data-role="tools-subnav"]')?.classList.remove('open');
+  unmountInventory();
+  document.querySelector('[data-role="home-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
+  const contactsScreen = document.querySelector('[data-role="contacts-screen"]');
+  contactsScreen?.classList.remove('hidden');
+  await ensureContactsMounted();
+}
+
+async function showInventory() {
+  document.querySelector('[data-role="home-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="inventory-screen"]')?.classList.remove('hidden');
+  mountInventory();
+}
+
+async function showSettings() {
+  unmountInventory();
+  document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
+  showScreen(null);
+  const settingsScreen = document.querySelector('[data-role="settings-screen"]');
+  settingsScreen?.classList.remove('hidden');
+  if (!settingsMounted) {
+    const host = document.querySelector('[data-role="settings-root"]');
+    if (host) {
+      settingsCard(host);
+      settingsMounted = true;
+    }
+  }
+}
+
+async function showHome() {
+  showScreen('home');   // show only Home
+  mountHome();          // keep existing Home logic
+  unmountInventory();   // ensure Inventory hides when returning Home
+  document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
+}
 
 // Tools drawer: open on hover, click locks/unlocks
 (function initToolsDrawer() {
