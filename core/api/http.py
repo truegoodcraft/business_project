@@ -101,6 +101,7 @@ from core.config.paths import (
     DB_URL,
 )
 from core.appdb.engine import ENGINE, DB_PATH as DB_FILE, SessionLocal
+from core.appdb.migrate import ensure_vendors_flags
 from core.appdb.paths import ui_dir
 
 if os.name == "nt":  # pragma: no cover - windows specific
@@ -233,6 +234,7 @@ def _ensure_schema_upgrades(db: Session) -> None:
 
 @app.on_event("startup")
 def startup_migrations():
+    ensure_vendors_flags(ENGINE)
     db = SessionLocal()
     try:
         _ensure_schema_upgrades(db)
