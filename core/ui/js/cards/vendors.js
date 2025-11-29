@@ -460,8 +460,11 @@ export function mountContacts(host) {
       const res = await apiGet(`/app/vendors?${params.toString()}`);
       state.orgs = Array.isArray(res) ? res : [];
     } catch (err) {
-      console.warn('Load organizations failed', err);
-      state.orgs = [];
+      if (err && err.status === 404) {
+        state.orgs = [];
+      } else {
+        throw err;
+      }
     }
   }
 
@@ -476,8 +479,11 @@ export function mountContacts(host) {
         ? res.map((r) => ({ ...r, facade: r.role === 'vendor' ? 'vendors' : 'contacts' }))
         : [];
     } catch (err) {
-      console.warn('Contacts load failed', err);
-      state.list = [];
+      if (err && err.status === 404) {
+        state.list = [];
+      } else {
+        throw err;
+      }
     }
     await loadOrgs();
     render();

@@ -134,5 +134,5 @@ def _crud_routes(prefix: str, facade: str):
 
 
 # Mount façade routes
-_crud_routes("/app/vendors", "vendors")
-_crud_routes("/app/contacts", "contacts")
+_crud_routes("/vendors", "vendors")
+_crud_routes("/contacts", "contacts")
