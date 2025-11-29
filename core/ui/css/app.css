@@ -183,13 +183,14 @@ table tr:hover { background: #1e2530; }
   max-width: 520px; /* inventory.js narrows to 460px for add/edit */
 }
 .modal-title { font-weight: 700; padding: 12px 16px; border-bottom: 1px solid var(--border); }
-.modal-body { padding: 12px 16px; }
+.modal-body { padding: 12px 16px; max-height: calc(100vh - 220px); overflow-y: auto; }
 .modal-actions { display: flex; gap: 8px; justify-content: flex-end; padding: 12px 16px 16px; }
 .btn.primary { background: #1d4ed8; color: #fff; }
 .btn.danger { background: #dc2626; color: #fff; }
 
 /* Inventory table column alignment */
-[data-role="inventory-root"] table { width: 100%; table-layout: fixed; }
+[data-role="inventory-root"] { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+[data-role="inventory-root"] table { width: 100%; table-layout: fixed; min-width: 900px; }
 [data-role="inventory-root"] th, 
 [data-role="inventory-root"] td { vertical-align: middle; }
 [data-role="inventory-root"] th:nth-child(1), [data-role="inventory-root"] td:nth-child(1) { text-align: left;  width: 28%; } /* Name */
@@ -199,3 +200,33 @@ table tr:hover { background: #1e2530; }
 [data-role="inventory-root"] th:nth-child(5), [data-role="inventory-root"] td:nth-child(5) { text-align: right; width: 12%; } /* Price */
 [data-role="inventory-root"] th:nth-child(6), [data-role="inventory-root"] td:nth-child(6) { text-align: left;  width: 14%; } /* Location */
 [data-role="inventory-root"] th:nth-child(7), [data-role="inventory-root"] td:nth-child(7) { text-align: right; width: 6%;  white-space: nowrap; } /* Actions */
+
+/* Toolbar wraps neatly on smaller widths */
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.toolbar .btn { margin-bottom: 4px; }
+
+/* Make long cell content wrap instead of overflowing on narrow viewports */
+[data-role="inventory-root"] td { word-break: break-word; }
+
+/* Breakpoints: relax fixed layout and hide low-priority columns on very small screens */
+@media (max-width: 1100px) {
+  [data-role="inventory-root"] table { min-width: 800px; }
+}
+@media (max-width: 900px) {
+  [data-role="inventory-root"] table { min-width: 740px; }
+}
+/* On very narrow screens let users scroll horizontally; hide Vendor & Location to reduce width */
+@media (max-width: 700px) {
+  [data-role="inventory-root"] th:nth-child(4),
+  [data-role="inventory-root"] td:nth-child(4), /* Vendor */
+  [data-role="inventory-root"] th:nth-child(6),
+  [data-role="inventory-root"] td:nth-child(6)  /* Location */
+  { display: none; }
+  [data-role="inventory-root"] table { min-width: 560px; }
+}
+
+/* Compact buttons on extra-narrow screens so Actions column stays usable */
+@media (max-width: 500px) {
+  .btn { padding: 6px 8px; font-size: 12px; }
+  .modal-card { max-width: 94vw; }
+}
