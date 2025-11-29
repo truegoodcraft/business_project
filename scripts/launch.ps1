@@ -5,13 +5,15 @@ param(
 $ErrorActionPreference = "Stop"
 Set-Location (Split-Path -Parent $PSScriptRoot)
 
-if (-not (Test-Path ".\.venv")) {
+if (!(Test-Path ".\.venv\Scripts\Activate.ps1")) {
   Write-Host "[launch] Creating venv..."
   python -m venv .venv
+} else {
+  Write-Host "[launch] Using existing venv"
 }
 . .\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -r .\requirements.txt
+# respect existing pip; do not force upgrade each launch
+pip install --upgrade -r .\requirements.txt
 
 if ($env:BUSCORE_EXTRAS -eq "1" -and (Test-Path .\requirements-extras.txt)) {
   Write-Host "[launch] Installing extras..."
