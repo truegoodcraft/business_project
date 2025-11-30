@@ -141,34 +141,51 @@ function buildContactPayload(modalEl) {
   const extend = modalEl.querySelector('[data-field="extend"]')?.checked || false;
   const isVendor = modalEl.querySelector('[data-field="is_vendor"]')?.checked || false;
 
-  const contact = [email, phone].filter(Boolean).join(' | ') || null;
+  const addr1 = modalEl.querySelector('[data-field="addr1"]')?.value?.trim() || '';
+  const addr2 = modalEl.querySelector('[data-field="addr2"]')?.value?.trim() || '';
+  const city = modalEl.querySelector('[data-field="city"]')?.value?.trim() || '';
+  const state = modalEl.querySelector('[data-field="state"]')?.value?.trim() || '';
+  const zip = modalEl.querySelector('[data-field="zip"]')?.value?.trim() || '';
+  const notes = modalEl.querySelector('[data-field="notes"]')?.value?.trim() || '';
+
+  const address = {
+    line1: addr1 || null,
+    line2: addr2 || null,
+    city: city || null,
+    state: state || null,
+    zip: zip || null,
+  };
+  const hasAddress = Object.values(address).some(Boolean);
+
+  const meta = {
+    email: email || null,
+    phone: phone || null,
+  };
+
+  if (extend || hasAddress) {
+    meta.address = address;
+  }
+
+  if (extend || notes) {
+    meta.notes = notes || null;
+  }
+
+  if (!meta.email) delete meta.email;
+  if (!meta.phone) delete meta.phone;
+  if (meta.address && !hasAddress) delete meta.address;
+  if (meta.notes == null) delete meta.notes;
 
   const payload = {
     name,
     role: 'contact',
-    contact,
+    contact: email || phone || null,
     is_vendor: !!isVendor,
     // allow future org nesting without breaking today
     is_org: null,
   };
 
-  if (extend) {
-    const addr1 = modalEl.querySelector('[data-field="addr1"]')?.value?.trim() || '';
-    const addr2 = modalEl.querySelector('[data-field="addr2"]')?.value?.trim() || '';
-    const city = modalEl.querySelector('[data-field="city"]')?.value?.trim() || '';
-    const state = modalEl.querySelector('[data-field="state"]')?.value?.trim() || '';
-    const zip = modalEl.querySelector('[data-field="zip"]')?.value?.trim() || '';
-    const notes = modalEl.querySelector('[data-field="notes"]')?.value?.trim() || '';
-    payload.meta = {
-      address: {
-        line1: addr1 || null,
-        line2: addr2 || null,
-        city: city || null,
-        state: state || null,
-        zip: zip || null,
-      },
-      notes: notes || null,
-    };
+  if (Object.keys(meta).length) {
+    payload.meta = meta;
   }
 
   return payload;
@@ -300,13 +317,13 @@ export function mountContacts(host) {
 
   const headerRow = document.createElement('div');
   headerRow.style.display = 'grid';
-    headerRow.style.gridTemplateColumns = '2fr 2fr 1fr 80px';
+    headerRow.style.gridTemplateColumns = '2fr 2fr 1fr';
   headerRow.style.padding = '10px 14px';
   headerRow.style.background = '#2b2d31';
   headerRow.style.color = '#cdd1dc';
   headerRow.style.fontSize = '13px';
   headerRow.style.fontWeight = '600';
-    ['Name', 'Contact', 'Flags', ''].forEach((col) => {
+    ['Name', 'Contact', 'Flags'].forEach((col) => {
       const c = document.createElement('div');
       c.textContent = col;
       headerRow.appendChild(c);
@@ -326,10 +343,15 @@ export function mountContacts(host) {
     return found?.name || null;
   }
 
+  function contactSummary(entry) {
+    const meta = entry?.meta || {};
+    return [meta.email, meta.phone].filter(Boolean).join(' | ');
+  }
+
   function renderRow(entry) {
     const row = document.createElement('div');
     row.style.display = 'grid';
-    row.style.gridTemplateColumns = '2fr 2fr 1fr 80px';
+    row.style.gridTemplateColumns = '2fr 2fr 1fr';
     row.style.padding = '10px 14px';
     row.style.borderTop = `1px solid ${BORDER}`;
     row.style.cursor = 'pointer';
@@ -361,14 +383,14 @@ export function mountContacts(host) {
     metaLine.style.fontSize = '12px';
     metaLine.style.color = '#b5b8c2';
     const org = orgName(entry.organization_id);
-    metaLine.textContent = [entry.contact || '', org ? `Org: ${org}` : '']
+    metaLine.textContent = [contactSummary(entry), org ? `Org: ${org}` : '']
       .filter(Boolean)
       .join(' • ');
 
     nameCol.append(nameLine, metaLine);
 
     const contactCol = document.createElement('div');
-    contactCol.textContent = entry.contact || '—';
+    contactCol.textContent = contactSummary(entry) || '—';
     contactCol.style.color = '#cdd1dc';
 
     const flagsCol = document.createElement('div');
@@ -380,26 +402,8 @@ export function mountContacts(host) {
       flagsCol.append(chip('Organization'));
     }
 
-    const actions = document.createElement('div');
-    actions.style.display = 'flex';
-    actions.style.justifyContent = 'flex-end';
-    actions.style.gap = '6px';
-
-    const edit = button('Edit');
-    edit.style.padding = '6px 10px';
-    edit.addEventListener('click', (ev) => {
-      ev.stopPropagation();
-      openEditor(entry);
-    });
-    const del = button('Delete');
-    del.style.padding = '6px 10px';
-    del.addEventListener('click', (ev) => {
-      ev.stopPropagation();
-      openDelete(entry);
-    });
-    actions.append(edit, del);
-
-    row.append(nameCol, contactCol, flagsCol, actions);
+    // Do not render actions in the collapsed row; they appear in the drawer only.
+    row.append(nameCol, contactCol, flagsCol);
 
     const expanded = document.createElement('div');
     expanded.style.gridColumn = '1 / -1';
@@ -435,7 +439,7 @@ export function mountContacts(host) {
     right.style.flexDirection = 'column';
     right.style.gap = '6px';
     const contactLine = document.createElement('div');
-    contactLine.textContent = `Contact: ${entry.contact || '—'}`;
+    contactLine.textContent = `Contact: ${contactSummary(entry) || '—'}`;
     const createdLine = document.createElement('div');
     createdLine.textContent = `Created at: ${formatDate(entry.created_at) || '—'}`;
     right.append(contactLine, createdLine);
@@ -552,8 +556,14 @@ export function mountContacts(host) {
 
     const meta = entry.meta || {};
     const addressMeta = meta.address || {};
-    const inferredEmail = meta.email || (entry.contact?.includes('@') ? entry.contact : '');
-    const inferredPhone = meta.phone || (!meta.email && !entry.contact?.includes('@') ? entry.contact || '' : '');
+    let inferredEmail = meta.email || entry.email || '';
+    let inferredPhone = meta.phone || entry.phone || '';
+
+    if (!inferredEmail && typeof entry.contact === 'string') {
+      const [maybeEmail, maybePhone] = entry.contact.split('|').map((s) => s.trim());
+      if (maybeEmail) inferredEmail = maybeEmail;
+      if (maybePhone && !inferredPhone) inferredPhone = maybePhone;
+    }
     const initialNotes = meta.notes || '';
     const initialExtended = Boolean(
       addressMeta.line1 ||
@@ -879,15 +889,24 @@ export function mountContacts(host) {
   }
 
   newBtn.addEventListener('click', () => openEditor({ is_vendor: false, is_org: false, facade: 'contacts' }));
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'n' || e.key === 'N') {
-      const focusedInModal = document.querySelector('.contacts-modal');
-      if (!focusedInModal) {
-        e.preventDefault();
-        openEditor({ is_vendor: false, is_org: false, facade: 'contacts' });
-      }
-    }
-  });
+
+  if (!window.__contactsHotkeyBlocker) {
+    // Kill any plain "n" shortcut on the Contacts screen
+    document.addEventListener(
+      'keydown',
+      (e) => {
+        const target = e.target;
+        const typing = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+        if (typing) return;
+        if ((e.key === 'n' || e.key === 'N') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+          e.stopImmediatePropagation();
+          // do NOT open a new contact here
+        }
+      },
+      true,
+    );
+    window.__contactsHotkeyBlocker = true;
+  }
 
   if (!window.__contactsModalListener) {
     window.addEventListener('open-contacts-modal', (ev) => {
