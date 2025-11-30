@@ -3,14 +3,14 @@ from __future__ import annotations
 
 from typing import Any, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from core.appdb.models import Vendor as VendorModel
 from core.appdb.session import get_db
 from core.api.schemas.vendors import VendorCreate, VendorOut, VendorUpdate
-from core.config.writes import require_writes
+from core.api.security import require_write_access
 from core.policy.guard import require_owner_commit
 from tgc.security import require_token_ctx
 
@@ -102,11 +102,12 @@ def _crud_routes(prefix: str, facade: str):
     @router.post(prefix, response_model=VendorOut, status_code=201)
     def create_vendor(
         payload: VendorCreate,
+        request: Request,
         db: Session = Depends(get_db),
-        _writes: None = Depends(require_writes),
+        _writes: None = Depends(require_write_access),
         _token: str = Depends(require_token_ctx),
     ):
-        require_owner_commit()
+        require_owner_commit(request)
         data = _apply_defaults(payload.model_dump(exclude_unset=True), facade)
         v = VendorModel(**data)
         db.add(v)
@@ -118,11 +119,12 @@ def _crud_routes(prefix: str, facade: str):
     def update_vendor(
         id: int,
         payload: VendorUpdate,
+        request: Request,
         db: Session = Depends(get_db),
-        _writes: None = Depends(require_writes),
+        _writes: None = Depends(require_write_access),
         _token: str = Depends(require_token_ctx),
     ):
-        require_owner_commit()
+        require_owner_commit(request)
         v = db.query(VendorModel).get(id)
         if not v:
             raise HTTPException(status_code=404, detail="Not found")
@@ -137,12 +139,13 @@ def _crud_routes(prefix: str, facade: str):
     @router.delete(f"{prefix}" + "/{id}", status_code=204)
     def delete_vendor(
         id: int,
+        request: Request,
         cascade_children: bool = Query(False),
         db: Session = Depends(get_db),
-        _writes: None = Depends(require_writes),
+        _writes: None = Depends(require_write_access),
         _token: str = Depends(require_token_ctx),
     ):
-        require_owner_commit()
+        require_owner_commit(request)
         v = db.query(VendorModel).get(id)
         if not v:
             raise HTTPException(status_code=404, detail="Not found")

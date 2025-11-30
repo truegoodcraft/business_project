@@ -19,17 +19,24 @@
 
 import os
 
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 
+from core.api.security import _calc_default_allow_writes
 from core.config.writes import require_writes
 
 from .model import Role
 from .store import load_policy
 
 
-def require_owner_commit() -> None:
+def require_owner_commit(request: Request | None = None) -> None:
     # Allow if env override or UI toggle is on; otherwise block
-    require_writes()
+    if request is not None:
+        require_writes(request)
+    elif not _calc_default_allow_writes():
+        raise HTTPException(
+            status_code=403,
+            detail="Writes are disabled (toggle via /dev/writes).",
+        )
     # Optional strict policy (OFF unless BUS_POLICY_ENFORCE=1)
     if os.environ.get("BUS_POLICY_ENFORCE") == "1":
         p = load_policy()
