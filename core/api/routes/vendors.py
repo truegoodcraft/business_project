@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 from __future__ import annotations
 
+import json
 from typing import Any, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -52,6 +53,16 @@ def _apply_defaults(payload: dict, facade: str, existing: Optional[VendorModel] 
             data["is_org"] = None
         else:
             data["is_org"] = 1 if is_org_flag else 0
+    elif existing is None:
+        data["is_org"] = 0
+
+    if "meta" in data and data.get("meta") is not None and not isinstance(
+        data.get("meta"), str
+    ):
+        try:
+            data["meta"] = json.dumps(data.get("meta"))
+        except Exception:
+            data["meta"] = None
     return data
 
 
@@ -132,7 +143,9 @@ def _crud_routes(prefix: str, facade: str):
         v = db.query(VendorModel).get(id)
         if not v:
             raise HTTPException(status_code=404, detail="Not found")
-        updates = _apply_defaults(payload.model_dump(exclude_unset=True), facade, existing=v)
+        updates = _apply_defaults(
+            payload.model_dump(exclude_unset=True, exclude_none=True), facade, existing=v
+        )
         for k, val in updates.items():
             setattr(v, k, val)
         db.add(v)

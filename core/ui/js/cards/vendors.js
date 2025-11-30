@@ -134,6 +134,46 @@ function vendorLabel(isVendor) {
   return isVendor ? 'Vendor' : 'Contact';
 }
 
+function buildContactPayload(modalEl) {
+  const name = modalEl.querySelector('[data-field="name"]')?.value?.trim() || '';
+  const email = modalEl.querySelector('[data-field="email"]')?.value?.trim() || '';
+  const phone = modalEl.querySelector('[data-field="phone"]')?.value?.trim() || '';
+  const extend = modalEl.querySelector('[data-field="extend"]')?.checked || false;
+  const isVendor = modalEl.querySelector('[data-field="is_vendor"]')?.checked || false;
+
+  const contact = [email, phone].filter(Boolean).join(' | ') || null;
+
+  const payload = {
+    name,
+    role: 'contact',
+    contact,
+    is_vendor: !!isVendor,
+    // allow future org nesting without breaking today
+    is_org: null,
+  };
+
+  if (extend) {
+    const addr1 = modalEl.querySelector('[data-field="addr1"]')?.value?.trim() || '';
+    const addr2 = modalEl.querySelector('[data-field="addr2"]')?.value?.trim() || '';
+    const city = modalEl.querySelector('[data-field="city"]')?.value?.trim() || '';
+    const state = modalEl.querySelector('[data-field="state"]')?.value?.trim() || '';
+    const zip = modalEl.querySelector('[data-field="zip"]')?.value?.trim() || '';
+    const notes = modalEl.querySelector('[data-field="notes"]')?.value?.trim() || '';
+    payload.meta = {
+      address: {
+        line1: addr1 || null,
+        line2: addr2 || null,
+        city: city || null,
+        state: state || null,
+        zip: zip || null,
+      },
+      notes: notes || null,
+    };
+  }
+
+  return payload;
+}
+
 function buildModal() {
   const overlay = document.createElement('div');
   overlay.className = 'contacts-modal';
@@ -547,14 +587,17 @@ export function mountContacts(host) {
     nameField.required = true;
     nameField.placeholder = 'Full name or company';
     nameField.value = entry?.name || '';
+    nameField.dataset.field = 'name';
 
     const { wrap: emailWrap, field: emailField } = input('Email', 'email');
     emailField.placeholder = 'name@domain.com';
     emailField.value = inferredEmail || '';
+    emailField.dataset.field = 'email';
 
     const { wrap: phoneWrap, field: phoneField } = input('Phone', 'tel');
     phoneField.placeholder = '555-0123';
     phoneField.value = inferredPhone || '';
+    phoneField.dataset.field = 'phone';
 
     const togglesRow = document.createElement('div');
     togglesRow.style.display = 'grid';
@@ -562,6 +605,9 @@ export function mountContacts(host) {
 
     const extendToggle = buildToggle('Add Address & Notes', initialExtended);
     const vendorToggle = buildToggle('Treat as Vendor', entry?.is_vendor ?? entry?.facade === 'vendors');
+
+    extendToggle.input.dataset.field = 'extend';
+    vendorToggle.input.dataset.field = 'is_vendor';
 
     togglesRow.append(extendToggle.wrap, vendorToggle.wrap);
 
@@ -574,10 +620,12 @@ export function mountContacts(host) {
     const { wrap: addr1Wrap, field: addr1Field } = input('Address Line 1');
     addr1Field.placeholder = '123 Main St';
     addr1Field.value = addressMeta.line1 || '';
+    addr1Field.dataset.field = 'addr1';
 
     const { wrap: addr2Wrap, field: addr2Field } = input('Address Line 2');
     addr2Field.placeholder = 'Unit, Suite, etc.';
     addr2Field.value = addressMeta.line2 || '';
+    addr2Field.dataset.field = 'addr2';
 
     const cityStateZip = document.createElement('div');
     cityStateZip.style.display = 'grid';
@@ -587,14 +635,17 @@ export function mountContacts(host) {
     const { wrap: cityWrap, field: cityField } = input('City');
     cityField.placeholder = 'City';
     cityWrap.style.marginBottom = '0';
+    cityField.dataset.field = 'city';
 
     const { wrap: stateWrap, field: stateField } = input('State');
     stateField.placeholder = 'State';
     stateWrap.style.marginBottom = '0';
+    stateField.dataset.field = 'state';
 
     const { wrap: zipWrap, field: zipField } = input('Zip');
     zipField.placeholder = 'Zip';
     zipWrap.style.marginBottom = '0';
+    zipField.dataset.field = 'zip';
 
     cityStateZip.append(cityWrap, stateWrap, zipWrap);
 
@@ -619,6 +670,7 @@ export function mountContacts(host) {
     notesField.onfocus = () => (notesField.style.borderColor = '#4b6bfb');
     notesField.onblur = () => (notesField.style.borderColor = BORDER);
     notesField.value = initialNotes;
+    notesField.dataset.field = 'notes';
     notesWrap.append(notesLabel, notesField);
 
     extendedSection.append(addr1Wrap, addr2Wrap, cityStateZip, notesWrap);
@@ -646,53 +698,19 @@ export function mountContacts(host) {
     });
 
     async function save() {
-      const nameVal = nameField.value.trim();
-      const emailVal = emailField.value.trim();
-      const phoneVal = phoneField.value.trim();
-      const useExtended = extendToggle.getValue();
-      const contactParts = [emailVal, phoneVal].map((val) => val.trim()).filter(Boolean);
-      const legacyContact = contactParts.join(' | ');
+      const nameVal = box.querySelector('[data-field="name"]')?.value?.trim() || '';
+      const emailVal = box.querySelector('[data-field="email"]')?.value?.trim() || '';
+      const phoneVal = box.querySelector('[data-field="phone"]')?.value?.trim() || '';
+      const payload = buildContactPayload(box);
 
       const errors = [];
       if (!nameVal) errors.push('Name is required.');
       if (!emailVal && !phoneVal) errors.push('Provide at least Email or Phone.');
-      if (!legacyContact) errors.push('Contact (email or phone) is required.');
+      if (!payload.contact) errors.push('Contact (email or phone) is required.');
       if (errors.length) {
         toast(errors.join(' '), 'error');
         return;
       }
-
-      const payload = {
-        name: nameVal,
-        contact: legacyContact,
-        role: 'contact',
-      };
-
-      if (vendorToggle.getValue()) payload.is_vendor = true;
-
-      const meta = {};
-      if (emailVal) meta.email = emailVal;
-      if (phoneVal) meta.phone = phoneVal;
-      if (useExtended) {
-        const addr1Val = addr1Field.value.trim();
-        const addr2Val = addr2Field.value.trim();
-        const cityVal = cityField.value.trim();
-        const stateVal = stateField.value.trim();
-        const zipVal = zipField.value.trim();
-        const hasAddress = addr1Val || addr2Val || cityVal || stateVal || zipVal;
-        if (hasAddress) {
-          meta.address = {
-            line1: addr1Val || undefined,
-            line2: addr2Val || undefined,
-            city: cityVal || undefined,
-            state: stateVal || undefined,
-            zip: zipVal || undefined,
-          };
-        }
-        const notesVal = notesField.value.trim();
-        if (notesVal) meta.notes = notesVal;
-      }
-      if (Object.keys(meta).length) payload.meta = meta;
 
       try {
         saveBtn.textContent = 'Saving…';
