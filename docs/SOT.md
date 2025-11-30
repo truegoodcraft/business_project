@@ -1,8 +1,8 @@
-**TGC BUS Core — Source of Truth (Updated 2025-12-02)**
+TGC BUS Core — Source of Truth (Updated 2025-11-30) 
 
 > **Authority rule:** The uploaded **codebase is truth**. Where this document and the code disagree, the SoT **must be updated to reflect code**. Anything not stated = **unknown / not specified**.
 >
-> **Change note (2025-12-02, v0.3.1 "Iron Core"):** Documents unified Contacts/Vendors shallow+deep UI, façade defaults and delete semantics (cascade/null + facet-only removes via PUT), and extends smoke coverage for the dual façades.
+> **Change note (2025-11-30, v0.3.1 "Iron Core"):** Captures first pass of canonical **Inventory** and **Contacts** UI behavior (Shallow/Deep inputs, expanded-only mutating actions, structured contact meta), clarifies **session token** response shapes and the requirement that all `/app/**` calls send an authoritative `X-Session-Token` header, and defines launcher dependency rules (pinned `pip`, `requirements.lock` priority, offline/cached install planned) plus the **Python 3.12** Windows runtime target.
 > **Change note (2025-11-26, v0.3.0 "Iron Core"):** Roll-up version bump to v0.3.0 “Iron Core” reflecting integrated Home/dashboard layout and sidebar structure, single-operator design ethos, local-only analytics event store and “analytics from local events only” principle, optional anonymous license hash and push-only telemetry model, and clarified manufacturing run cost/capacity view and Core vs Pro philosophical split from the 2025-11-24 session.
 > **Change note (2025-11-24, v0.1.1):** Documents canonical Home/dashboard layout and sidebar structure; adds single-operator design ethos; defines local-only analytics event store and “analytics from local events only” principle; documents optional anonymous license hash and push-only telemetry model; clarifies manufacturing run cost/capacity view and Core vs Pro philosophical split.
 > **Change note (2025-11-23, v0.1.0):** Documents canonical Codex/GitHub patch-branch development workflow and `D:\BUSCore-Test` local test clone; clarifies that local clones are test-only and all code edits happen via Codex on GitHub.
@@ -76,9 +76,6 @@
 
   * Vendors table unified for **organizations** and **people**.
   * Contacts behave as vendor rows with appropriate `role` / `kind`.
-  * Façade defaults: `POST /app/vendors` assumes `role=vendor, kind=org`; `POST /app/contacts` assumes `role=contact, kind=person` when omitted.
-  * Deletes: `DELETE /app/vendors/{id}` auto-nulls child `organization_id`; `DELETE ...?cascade_children=true` removes dependents. If `role=both`, drop a single facet via `PUT ... {role: vendor|contact}` instead of DELETE.
-  * Filters: `role`, `kind`, `q` (name/contact substring), and `organization_id` are supported on GET.
   * Dedupe and merge semantics defined in §9.
 
 * **Items:**
@@ -150,12 +147,6 @@
 | `#/settings`         | Settings / Dev            | `settings-screen`  | `core/ui/js/cards/settings.js`  | `settingsCard()`   | None                                      |
 
 **Deliberate omissions:** no canonical `#/items`, `#/vendors`, `#/rfq` routes yet; RFQ UI remains a card within legacy Tools surface.
-
-#### Contacts card (shallow/deep parity with Inventory)
-
-* The Contacts card mirrors Inventory’s **Shallow/Deep** modal: Shallow (default) = Name (required), Contact, Role chips (Vendor/Contact/Both), Kind toggle (Person/Organization); Deep = Organization selector (`GET /app/vendors?kind=org`), read-only Created At, and reserved metadata area.
-* Collapsed rows show **Name + chips** and a second line with **Contact** and optional **Org: …**. List columns: Name, Contact, Role chip, Kind chip/icon. Filters: **All | Vendors | Contacts | Both** chips plus search on name/contact.
-* Expanded rows present Name (read-only), Role chip, Kind chip, Organization label/link (if set) on the left; Contact + Created At on the right; footer buttons **Edit** + **Delete**. Delete flow supports facet-only (role=`both`) via PUT role change and org cascade/null decisions.
 
 ### 5.3 Tools drawer (sidebar) — structure & behavior
 
@@ -315,12 +306,12 @@ A horizontal strip under the stats row shows core system status:
 
 * A row of **large clickable cards** in the main content area provides primary navigation into core flows. Initial canonical slots:
 
-  * `Items` – “View & edit all items”
+  * `Inventory` – “View & edit all items”
   * `Vendors` – “Manage sources & contacts”
   * `Runs` – “Execute manufacturing runs”
   * `Insights` – “Shop stats & analytics”
 
-* Card labels (`Items`, `Vendors`, `Runs`, `Insights`) are canonical; subtitles and supporting copy may evolve, but any new cards or renames must update this section.
+* Card labels (`Inventory`, `Vendors`, `Runs`, `Insights`) are canonical; subtitles and supporting copy may evolve, but any new cards or renames must update this section.
 
 **Home Quick Action button (user-mappable):**
 
@@ -342,14 +333,14 @@ A horizontal strip under the stats row shows core system status:
 
 * The mapping is stored locally and must be respected on subsequent launches.
 
-### 5.8 Sidebar navigation structure (canonical 2025-11-24)
+### 5.8 Sidebar navigation structure (canonical 2025-11-24, label updated 2025-11-30)
 
 This section defines the **visible labels** and semantics of the primary left navigation (distinct from the Tools drawer).
 
 * The left navigation must contain the following **top-level entries**:
 
   1. `Home`
-  2. `Items`
+  2. `Inventory`
   3. `Vendors`
   4. `Runs`
   5. `Files / Docs`
@@ -359,7 +350,7 @@ This section defines the **visible labels** and semantics of the primary left na
 * Label-to-route mapping (current state):
 
   * `Home` → `#/home` (or `#/BUSCore` alias).
-  * `Items` → `#/inventory` (Inventory screen; UI label is `Items` even though route is `#/inventory`).
+  * `Inventory` → `#/inventory` (Inventory screen; UI label is **Inventory**).
   * `Vendors` → currently points to `#/contacts` (unified vendors/contacts screen) until a dedicated `#/vendors` is introduced.
   * `Runs` → implementation-defined route or filtered view within inventory/manufacturing; until a dedicated `#/runs` route exists, this entry may deep-link into the appropriate section.
   * `Files / Docs` → reserved for file/SOP/receipt handling screens (implementation-defined until fully specified).
@@ -369,6 +360,200 @@ This section defines the **visible labels** and semantics of the primary left na
 * The Tools drawer (§5.3) remains a secondary access pattern; the left nav defined here is **primary** for normal users.
 
 * Any addition/removal/rename of a top-level nav label must update this section and, where applicable, the canonical route table in §5.2.
+
+### 5.9 Inventory screen – layout & behavior (canonical 2025-11-30)
+
+This section defines the behavior of the **Inventory** screen and its primary CRUD UI.
+
+* **Route:** `#/inventory`.
+* **Primary screen:** `[data-role="inventory-screen"]` containing `[data-role="inventory-root"]`.
+
+  * The router must **unhide** `inventory-screen` when the hash is `#/inventory`.
+* **UI label:** canonical label for this screen is **“Inventory”** (Home card, sidebar entry, and any tiles/buttons pointing at this screen).
+
+#### 5.9.1 Shallow/Deep input pattern (items)
+
+* Inventory input uses a **Shallow/Deep** pattern for Add/Edit:
+
+  * **Shallow (default) fields:**
+
+    * `Name`
+    * **Smart Qty** (parsed quantity input)
+    * `Price`
+    * `Location` (UI-level field; storage details are implementation-defined until DB/meta mapping is finalized)
+  * **Deep (expanded) fields:**
+
+    * `SKU`
+    * `Vendor`
+    * `Type`
+    * `Notes`
+
+* **Smart Qty:**
+
+  * Uses a canonical parser (e.g. `parseSmartInput`) to interpret user input into a numeric `qty`.
+  * The UI shows a **live parse badge** while typing, indicating the interpreted value (e.g., `+5`, `-2`, or final numeric).
+
+* **Type field:**
+
+  * Maps onto `items.item_type`.
+  * **Default value:** `Product`.
+  * Allowed options (UI-level): `Product | Material | Component`.
+  * These values are a **soft enum**; DB still treats `item_type` as a free string field per §8.1.2.
+
+* **Null/optional fields (Inventory UI contract):**
+
+  * `sku`, `vendor_id`, and `notes` are **explicitly allowed to be `null`** on create/update.
+  * Saving from Shallow state (without opening Deep) is valid; these fields may remain unset.
+  * `qty` and `item_type` must satisfy DB constraints (§8.1.2) but may be provided via defaults when the user leaves them blank.
+
+#### 5.9.2 Table layout & interactions
+
+* **Inventory table:**
+
+  * No dedicated **Actions** column.
+  * Clicking a row **expands an inline details panel** beneath that row.
+  * The expanded panel shows the full item fields plus **Edit** / **Delete** buttons.
+
+* **Vendor field behavior:**
+
+  * The Vendor field is a **dropdown** populated from `GET /app/vendors`.
+  * If there are **no vendors** available:
+
+    * Do **not** show an empty dropdown.
+    * Instead render an inline **help link** pointing to the **Contacts** screen (`#/contacts`) to manage vendors/contacts.
+
+* **Delete behavior:**
+
+  * Deleting an item **always requires an explicit confirmation** before issuing `DELETE /app/items/{id}`.
+  * No single-click or unconfirmed deletes from the table.
+
+* **Expanded vs row view:**
+
+  * Row view focuses on the high-signal fields (e.g. `Name`, Smart Qty/Qty, Price, Vendor, Location) depending on layout.
+  * Expanded view shows the full item, including Deep fields and mutating actions.
+
+* **Refresh behavior:**
+
+  * The explicit “Refresh” button is removed from the Inventory table.
+  * The table **automatically refreshes** after **create**, **edit**, or **delete** operations.
+
+#### 5.9.3 Add/Edit modal behavior
+
+* Add/Edit Item uses a **centered modal** with a dark backdrop.
+
+* Modal close rules:
+
+  * The modal **does not close on click-outside**.
+  * It must be closed explicitly via **Save** or **Cancel**.
+  * This is to prevent accidental loss of partially entered input.
+
+* Shallow vs Deep in the modal:
+
+  * The modal opens in **Shallow** mode by default (Name, Smart Qty, Price, Location visible).
+  * Deep fields (SKU, Vendor, Type, Notes) are shown behind an explicit expand/“More details” interaction.
+  * Saving is allowed from Shallow alone; Deep is optional.
+
+#### 5.9.4 Responsiveness
+
+* The Inventory table allows **horizontal scroll** on narrow screens.
+
+* Below approximately **700px** viewport width:
+
+  * The **Vendor** and **Location** columns may be **hidden** to preserve readability.
+  * Column widths are otherwise treated as fixed for consistency.
+
+* The exact breakpoint and CSS behavior can evolve, but:
+
+  * Vendor/Location are considered **secondary columns** for small screens.
+  * Primary fields (`Name`, Smart Qty/Qty, Price) remain visible.
+
+### 5.10 Contacts screen – layout & behavior (canonical 2025-11-30)
+
+This section defines the behavior of the **Contacts** screen, which presents the unified `vendors` model as contacts/vendors.
+
+* **Route:** `#/contacts`.
+* **Primary screen:** `[data-role="contacts-screen"]` containing `[data-role="contacts-root"]` (mounted by `mountContacts()` from `core/ui/js/cards/vendors.js`).
+* **Scope:** shows people and organizations from the `vendors` table, filtered and decorated by `role` / `kind`.
+
+#### 5.10.1 Keyboard policies
+
+* There are **no plain-letter global shortcuts** on the Contacts screen unless explicitly approved in this SoT.
+* Specifically, the legacy **`N` / `n` = “New Contact”** behavior is **removed**:
+
+  * Pressing `N` or `n` on the Contacts screen does **nothing**.
+  * “New Contact” is available via an explicit UI button only.
+
+#### 5.10.2 Row vs expanded behavior
+
+* **Row view is read-only:**
+
+  * Table rows **do not** expose **Edit** or **Delete** buttons.
+  * Rows are for selection/inspection only.
+
+* **Expanded contact panel:**
+
+  * Clicking a row expands an inline panel directly beneath it.
+  * The expanded panel:
+
+    * Shows badges indicating roles (e.g. **Contact**, **Vendor**, **Both**).
+
+    * Shows `kind` (person vs organization) in a compact, labeled way.
+
+    * Displays contact details (Email/Phone; see §9 for meta shape).
+
+    * Displays organization status:
+
+      * If no organization is linked, shows the literal status line: **“No organization linked”**.
+      * If an organization is linked, shows its name (display rules are still evolving; see §13).
+
+    * Provides the **mutating actions**:
+
+      * **Edit** button → opens Edit Contact dialog.
+      * **Delete** button → confirms and issues `DELETE /app/contacts/{id}` (or `/app/vendors/{vendor_id}` depending on façade).
+
+* **Mutating actions rule:**
+
+  * **All mutating actions** (Edit/Delete) for contacts **live inside the expanded detail**.
+  * Row view must remain **non-mutating**.
+
+#### 5.10.3 Edit Contact dialog – structured contact fields
+
+* The Edit Contact dialog reads/writes **structured fields** from `vendors.meta`:
+
+  * `meta.email` → **Email** input.
+  * `meta.phone` → **Phone** input.
+
+* The Contacts table **“Contact” column** is **display-only** and computed as:
+
+  * `[meta.email, meta.phone].filter(Boolean).join(' | ')`
+
+* **Backwards compatibility guard:**
+
+  * If legacy combined strings of the form `"email | phone"` were previously stored, they must be treated as **input only**, not as the new canonical shape.
+
+  * On load/edit:
+
+    * Detect such combined strings.
+    * **Split on `|`** and trim parts into `meta.email` and `meta.phone`.
+    * Treat `meta.email` / `meta.phone` as the canonical source of truth going forward.
+
+  * The combined `"email | phone"` format must **not be re-stored** as the long-term representation.
+
+* Other Edit Contact fields:
+
+  * **Name** — required (maps to `vendors.name`).
+  * **Role** — UI control for `vendors.role` (e.g. Vendor / Contact / Both).
+  * **Kind** — UI control for `vendors.kind` (e.g. Person / Organization).
+  * **Organization** — optional link to a parent org (`organization_id`); exact behavior is currently an implementation gap (see §13).
+  * **Advanced metadata** — reserved area for future `meta` keys beyond `email` / `phone`.
+
+* Modal behavior:
+
+  * Dialog is centered with dark backdrop, matching Inventory modal style.
+  * Close behavior follows the same rules as Inventory:
+
+    * No click-outside close.
+    * Explicit **Save** or **Cancel** is required.
 
 ---
 
@@ -540,7 +725,7 @@ Columns:
 
 * `id` — `Integer`, primary key, indexed, not null.
 * `name` — `String`, unique, not null.
-* `contact` — `String`, nullable. Freeform contact line (email/phone/label).
+* `contact` — `String`, nullable. Freeform contact line (email/phone/label); treated as legacy for newly structured contact data.
 * `role` — `String`, not null, server default `"vendor"`.
   Used to distinguish vendor/contact/both (exact values are not yet hard-constrained).
 * `kind` — `String`, not null, server default `"org"`.
@@ -548,6 +733,8 @@ Columns:
 * `organization_id` — `Integer`, nullable, foreign key → `vendors.id`.
   Optional parent organization; self-referential hierarchy.
 * `meta` — `Text`, nullable. JSON blob for extra structured data.
+
+  * For contacts, **structured fields** `meta.email` and `meta.phone` are the **source of truth** for email/phone, and may be surfaced separately in the UI.
 * `created_at` — `DateTime`, not null, server default `now()`.
 
 Relationships:
@@ -563,15 +750,15 @@ Columns:
 
 * `id` — `Integer`, primary key, indexed, not null.
 * `vendor_id` — `Integer`, nullable, foreign key → `vendors.id`.
-  Optional “preferred vendor” / primary source for the item.
-* `sku` — `String`, nullable. External or internal SKU; uniqueness not enforced in DB today.
+  Optional “preferred vendor” / primary source for the item. May be `null` on create/update.
+* `sku` — `String`, nullable. External or internal SKU; uniqueness not enforced in DB today; may be `null` when not used.
 * `name` — `String`, not null. Human-readable item name.
 * `qty` — `Float`, not null, server default `"0"`.
   Current on-hand quantity; units defined by `unit`.
 * `unit` — `String`, nullable. Unit of measure label (e.g. `each`, `m`, `kg`).
 * `price` — `Float`, nullable.
   Current unit price / cost used by the UI (exact accounting semantics not yet formalized).
-* `notes` — `Text`, nullable. Freeform notes.
+* `notes` — `Text`, nullable. Freeform notes; may remain `null` for items with no notes.
 * `item_type` — `String`, not null, server default `"product"`.
   Soft classification field (e.g. product/material/etc.); values not yet enforced by constraint.
 * `created_at` — `DateTime`, not null, server default `now()`.
@@ -662,22 +849,46 @@ Columns:
 
 There are no additional tables in `plans.db` as of 2025-11-22.
 
+---
+
 ## 9) Vendors & Contacts (Unified Model)
 
 * **Single table:** `vendors` holds both organizations and people.
 
 * **Columns (high level):**
 
-  * `id`, `name` (unique), `kind`, `role`, `contact`, `organization_id`, `meta`, timestamps.
-  * `kind`: `org` or `person` (soft enum).
-  * `role`: `vendor`, `contact`, or `both`.
+  * `id`, `name`, `kind`, `role`, `organization_id`, `meta`, timestamps, plus legacy `contact` string.
+  * `kind`: e.g. `org`, `person`; **not strictly enumerated** yet.
+  * `role`: e.g. `vendor`, `contact`, `both`.
 
-* **API façades:** `/app/vendors` and `/app/contacts` operate on the same table.
+* **Structured contact fields (canonical):**
 
-  * **POST defaults:** vendors → `role=vendor, kind=org`; contacts → `role=contact, kind=person` (when omitted).
-  * **GET filters:** `role`, `kind`, `q` (substring match on `name`/`contact`), and `organization_id`.
-  * **PUT:** partial update; only provided fields are patched.
-  * **DELETE:** org rows null child `organization_id` by default; `?cascade_children=true` deletes dependents. `role='both'` facet removal occurs via `PUT ... {role: vendor|contact}` instead of DELETE.
+  * The canonical structured email/phone fields for contacts are:
+
+    * `meta.email`
+    * `meta.phone`
+
+  * The legacy `contact` string column is treated as **freeform/legacy** for new data.
+
+  * Any previously stored combined `"email | phone"` strings must be **parsed** into `meta.email` / `meta.phone` on load/edit and not re-stored in that combined form.
+
+* **Contacts API (current behavior):**
+
+  * **Endpoint:** `/app/contacts` (CRUD).
+  * **Storage:** persists to **`vendors`** table (unified model).
+  * **Defaults (POST):** when omitted → `role='contact'`, `kind='person'`.
+  * **Duplicate-name policy (POST):** if an existing row with the **same `name`** exists:
+
+    * **Merge** instead of insert; set `role='both'`.
+    * Merge `meta` JSON (incoming keys overwrite existing).
+    * Optionally update `kind` and `organization_id`.
+    * Respond **200** (idempotent create/merge).
+
+* **Contacts UI behavior (summary; full detail in §5.10):**
+
+  * Table “Contact” column displays `[meta.email, meta.phone].filter(Boolean).join(' | ')` as **display-only**.
+  * Row view is non-mutating; Edit/Delete live in the expanded panel only.
+  * Keyboard: no plain-letter shortcuts by default; specifically, `N` does nothing.
 
 ---
 
@@ -685,17 +896,12 @@ There are no additional tables in `plans.db` as of 2025-11-22.
 
 * **Canonical harness:** `buscore-smoke.ps1` at repo root. Must pass **100%** for acceptance.
 * **Auth pattern:** mint via `GET /session/token`; send **`X-Session-Token`** on protected calls (tests don’t rely on cookies).
-* **Expected steps (contacts/vendors coverage):**
+* **Success policy (smoke):** treat **`200 OK`** as CRUD success; other **2xx = fail** (smoke rule).
+* **Diagnostics:** for any non-200 response, print first **200 bytes** of body with status.
+* **Health assertions:**
 
-  1. `POST /app/vendors {name:"ACME"}` → `201` with `role=vendor`, `kind=org`.
-  2. `POST /app/contacts {name:"Sam"}` → `201` with `role=contact`, `kind=person`.
-  3. `PUT /app/contacts/{samId} {role:"both"}` → `200` with `role=both`.
-  4. Facet delete path: `PUT /app/contacts/{samId} {role:"vendor"}` → `200`; `DELETE /app/contacts/{samId}` → `204`.
-  5. `POST /app/contacts {name:"Ava", kind:"person", organization_id: acmeId}` → `201`.
-  6. `DELETE /app/vendors/{acmeId}` (no cascade) → `204`; `GET /app/contacts/{avaId}` shows `organization_id=null`.
-  7. Recreate `ACME` + `Ava2`; `DELETE /app/vendors/{acmeId}?cascade_children=true` → `204`; `GET /app/contacts?q=Ava2` returns empty.
-
-* **Status handling:** 201 for creates, 200 for fetch/updates, 204 for deletes. Print first **200 bytes** of body and status on failure.
+  * Public: status 200; `{"ok": true}` seen **True**.
+  * Protected: status 200; keys `[version, policy, license, run-id]` present **[True, True, True, True]**.
 
 **Canonical smoke command (from repo root):**
 
@@ -716,8 +922,35 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev_bootstrap.ps1
 * Design intent for `dev_bootstrap.ps1`:
 
   * Run from a **fresh clone** directory.
-  * Ensure Python deps (`requirements.txt`) are installed.
+
+  * Ensure Python deps are installed using the **lockfile-first** policy:
+
+    * When `requirements.lock` is present, install from that file.
+    * When `requirements.lock` is absent, install from `requirements.txt` (or equivalent source file) and then regenerate the lockfile via the chosen tool (see §13/§14 for open questions).
+
+  * **`pip` version pin:**
+
+    * `pip` must be pinned to a **single stable version** (exact version TBD).
+    * The launcher is responsible for enforcing this pin:
+
+      * It checks the current `pip` version in the venv.
+      * It performs an **upgrade/downgrade** **only** when the version does **not** match the pin.
+      * It never performs unconditional `pip install --upgrade pip` on every run.
+
   * Export the same key env vars as the manual flow:
+
+    * `PYTHONPATH`
+    * `BUS_UI_DIR`
+    * Paths for license/config as needed.
+
+* **Offline/cached install mode (design):**
+
+  * An explicit **“offline/cached install” mode** is planned for air-gapped or flaky networks.
+  * Target behavior:
+
+    * Prefer a local wheelhouse/cache directory.
+    * Use flags such as `--no-index --find-links` to install from cache.
+  * This mode is **not yet implemented**; see §13/§14.
 
 **Manual dev flow (Windows, still valid for clarity):**
 
@@ -737,6 +970,8 @@ $env:BUS_UI_DIR = (Join-Path (Get-Location) 'core\ui')
 python -m uvicorn core.api.http:create_app --host 127.0.0.1 --port 8765 --reload
 ```
 
+> **Note:** The manual flow above is a legacy baseline; the lockfile-first and pinned-`pip` rules described for the dev launcher are the canonical target behavior and should eventually be reflected here as well (e.g., prefer `requirements.lock` when present).
+
 **Window B — Smoke**
 
 ```powershell
@@ -750,14 +985,14 @@ for ($i=0; $i -lt $max; $i++) {
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\buscore-smoke.ps1"
 ```
 
-### 10.2 Windows Python requirement (updated 2025-11-22)
+### 10.2 Windows Python requirement (updated 2025-11-30)
 
 * **Supported Windows runtime:** BUS Core must run on the official **CPython** installer from python.org.
 * **Microsoft Store / MSIX Python builds are explicitly unsupported** (they break `%LOCALAPPDATA%` path expectations and DB binding).
-* **Reference build for public alpha:** `Python 3.14.0` (64-bit installer).
+* **Reference build for public alpha:** the **Python 3.12.x** line (64-bit installer from python.org). The 3.12 series is the **primary supported target**; other versions may work but are not guaranteed or required by SoT.
 * Any Windows bug report must confirm:
 
-  * `python --version` reports `3.14.0`.
+  * `python --version` reports `3.12.x`.
   * `Get-Command python` resolves to the CPython installer under the user profile (not the `PythonSoftwareFoundation` MSIX path).
 
 ---
@@ -889,6 +1124,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\buscore-smoke.ps1"
 
   * `scripts/dev_bootstrap.ps1` is now the **canonical dev launcher** (law) for local development.
   * Still pending: packaging/updater story and single-instance behavior for non-dev/desktop launch scenarios.
+  * **Dependency enforcement:** ensure the launcher actually enforces the **pinned `pip` version** and **lockfile-first install behavior** described in §10.1, and update the manual dev flow to match once stabilized.
+  * **Offline mode:** implement the planned offline/cached install mode (wheelhouse/cached wheels + appropriate `pip` flags).
 
 * **RFQ UI:** complete client workflow (inputs → call → results/attachments).
 
@@ -899,6 +1136,24 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\buscore-smoke.ps1"
 * **Analytics implementation:** formalize the app DB table name for the local analytics event store, ensure it matches §6, and wire Home/Insights to use it.
 
 * **Nav/route alignment:** introduce dedicated routes (e.g. `#/vendors`, `#/runs`, `#/insights`) to align with the sidebar labels in §5.8, or update SoT once a final routing scheme is chosen.
+
+* **Adjust quantity concept:** any dedicated server-side “adjust quantity” logic or endpoints are **deprecated**; item quantity changes should flow through standard **Edit Item** operations. Code should be revised to remove redundant adjust paths.
+
+* **Contacts org linkage & scope parity:**
+
+  * Decide whether the **Organization** field is editable in the Edit Contact dialog (including how “Treat as Vendor” should behave: auto-create vs require linking to an existing org).
+  * Define how linked organizations should display in the **table vs expanded panel**.
+  * Clarify whether “expanded-only actions” and keyboard rules apply uniformly to **Vendors** and any future **All** tab, or remain Contacts-only.
+
+* **Contacts data hygiene:**
+
+  * Decide on phone-number **formatting/normalization** policy (raw vs normalized formats like E.164) for display and storage.
+  * Decide whether legacy `"email | phone"` combined values should be **migrated** to structured `meta.email` / `meta.phone` in a one-time migration, vs relying solely on lazy parsing at read time.
+
+* **Server incident follow-up:**
+
+  * Investigate the observed `h11 LocalProtocolError: Too much data for declared Content-Length` during manual runs and determine which endpoint(s) need attention.
+  * Clarify whether any 404s on `/app/transactions/summary`, `/dev/license`, `/dev/writes`, `/app/business_profile` are **expected stubs** or indicate missing endpoints that must be implemented and documented.
 
 ---
 
@@ -911,6 +1166,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\buscore-smoke.ps1"
 * `organization_id` FK action (`SET NULL` / cascade / restrict).
 * SPDX variant (`AGPL-3.0-only` vs `AGPL-3.0-or-later`) for headers.
 * Exact table name for the local analytics event store; SoT currently describes schema/usage only.
+* **Pinned `pip` version** and final **Python version support matrix** across platforms; SoT requires “pinned to a single stable version” but the concrete version(s) remain TBA.
+* Exact tool/process for generating `requirements.lock` (e.g. `pip-tools` / `pip-compile` vs `pip freeze`) and whether to record hashes/markers.
+* Detailed design and flags for the **offline/cached install mode**, including cache directory layout and when it is triggered.
 
 ---
 
@@ -918,9 +1176,21 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\buscore-smoke.ps1"
 
 ### Auth / Session / UI
 
-* **GET `/session/token`** — returns current token as JSON; writes token to `data/session_token.txt`. Public; callers pass header later.
+* **GET `/session/token`**
+
+  * Returns the current session token as JSON: `{"ok": <bool>, "token": "<token>"}`.
+  * Writes the token to `data/session_token.txt` for launcher reuse.
+  * Public; callers must then send the token via `X-Session-Token` on subsequent protected calls.
+
+* **GET `/session/token/plain`**
+
+  * Returns the current session token as a raw `text/plain` string (no JSON wrapper).
+  * Also writes the token to `data/session_token.txt`.
+
 * **GET `/`**, **GET `/ui`**, **GET `/ui/index.html`** — redirect to **`/ui/shell.html`**.
+
 * **GET `/ui/plugins/{plugin_id}[/{resource_path}]`** — serve plugin UI assets; 404 when missing.
+
 * **GET `/health`** — **single token-aware route**:
 
   * Without `X-Session-Token` → `{"ok": true}` (200).
@@ -939,13 +1209,20 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\buscore-smoke.ps1"
 
 ### App Domain (`/app/**`) — *legacy monolith removed; modular routers active*
 
-* All `/app/**` inherit `Depends(require_token_ctx)`.
+* All `/app/**` inherit `Depends(require_token_ctx)` and therefore **require a valid `X-Session-Token` header**; cookies may be set for convenience but the header is authoritative.
+
 * **Vendors:** `GET/POST/PUT/DELETE /app/vendors[/{vendor_id}]`.
+
 * **Contacts (unified with vendors):** `GET/POST/PUT/DELETE /app/contacts[/{id}]` (see §9).
+
 * **Items:** `GET/POST/PUT/DELETE /app/items[/{item_id}]` (vendor validation; null-safe qty; supports `item_type`).
+
 * **Transactions:** `POST /app/transactions`, `GET /app/transactions`, `GET /app/transactions/summary`.
+
 * **Bulk import:** `POST /app/items/bulk_preview`, `POST /app/items/bulk_commit` (CSV/XLSX; journals `bulk_import.jsonl`; uses `X-Plugin-Name`).
+
 * **Manufacturing:** `POST /app/manufacturing/run` (manual manufacturing run; Pro features gate automation/scheduling).
+
 * **RFQ:** `POST /app/rfq/generate` (gated by license; UI partial).
 
 ### Plugin / Broker / Drive
@@ -1013,9 +1290,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\buscore-smoke.ps1"
 
 ### Headers, Files, and Config Conventions
 
-* **Custom headers:** `X-Session-Token` on protected requests; plugin API uses `X-TGC-Plugin-Name`, `X-TGC-License-URL`; bulk import auditing records `X-Plugin-Name`.
+* **Custom headers:**
 
-  * *Tests rely on the header; cookie may also be set.*
+  * `X-Session-Token` on protected requests (all `/app/**`); this header is **authoritative** for auth decisions.
+  * A session cookie may also be set for convenience, but tests and SoT assume the header is present.
+  * Plugin API uses `X-TGC-Plugin-Name`, `X-TGC-License-URL`; bulk import auditing records `X-Plugin-Name`.
 
 * **License file:** `%LOCALAPPDATA%\BUSCore\license.json` (or `BUS_ROOT\license.json`).
 
@@ -1042,4 +1321,3 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\buscore-smoke.ps1"
 ---
 
 **End of Source of Truth.**
-
