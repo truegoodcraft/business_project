@@ -650,7 +650,8 @@ export function mountContacts(host) {
       const emailVal = emailField.value.trim();
       const phoneVal = phoneField.value.trim();
       const useExtended = extendToggle.getValue();
-      const legacyContact = emailVal || phoneVal || '';
+      const contactParts = [emailVal, phoneVal].map((val) => val.trim()).filter(Boolean);
+      const legacyContact = contactParts.join(' | ');
 
       const errors = [];
       if (!nameVal) errors.push('Name is required.');

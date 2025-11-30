@@ -10,7 +10,7 @@ class VendorBase(BaseModel):
     contact: Optional[str] = None
     role: Optional[str] = Field(None, description="vendor|contact")
     is_vendor: Optional[bool] = Field(False, description="If true, appears in vendor dropdowns")
-    is_org: Optional[bool] = Field(False, description="If true, treat as company/organization")
+    is_org: Optional[bool] = Field(None, description="If true, treat as company/organization; None means unspecified")
     organization_id: Optional[int] = None
     meta: Optional[str] = None
 
