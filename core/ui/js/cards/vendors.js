@@ -646,38 +646,52 @@ export function mountContacts(host) {
     });
 
     async function save() {
-      if (!nameField.value.trim()) {
-        toast('Name is required', 'error');
-        return;
-      }
-
+      const nameVal = nameField.value.trim();
       const emailVal = emailField.value.trim();
       const phoneVal = phoneField.value.trim();
       const useExtended = extendToggle.getValue();
       const legacyContact = emailVal || phoneVal || '';
 
+      const errors = [];
+      if (!nameVal) errors.push('Name is required.');
+      if (!emailVal && !phoneVal) errors.push('Provide at least Email or Phone.');
+      if (!legacyContact) errors.push('Contact (email or phone) is required.');
+      if (errors.length) {
+        toast(errors.join(' '), 'error');
+        return;
+      }
+
       const payload = {
-        name: nameField.value.trim(),
-        contact: legacyContact || null,
+        name: nameVal,
+        contact: legacyContact,
         role: 'contact',
-        is_vendor: vendorToggle.getValue() ? 1 : 0,
-        is_org: entry?.is_org ? 1 : 0,
-        organization_id: entry?.organization_id ?? null,
-        meta: {
-          email: emailVal,
-          phone: phoneVal,
-          address: useExtended
-            ? {
-                line1: addr1Field.value.trim(),
-                line2: addr2Field.value.trim(),
-                city: cityField.value.trim(),
-                state: stateField.value.trim(),
-                zip: zipField.value.trim(),
-              }
-            : { line1: '', line2: '', city: '', state: '', zip: '' },
-          notes: useExtended ? notesField.value.trim() : '',
-        },
       };
+
+      if (vendorToggle.getValue()) payload.is_vendor = true;
+
+      const meta = {};
+      if (emailVal) meta.email = emailVal;
+      if (phoneVal) meta.phone = phoneVal;
+      if (useExtended) {
+        const addr1Val = addr1Field.value.trim();
+        const addr2Val = addr2Field.value.trim();
+        const cityVal = cityField.value.trim();
+        const stateVal = stateField.value.trim();
+        const zipVal = zipField.value.trim();
+        const hasAddress = addr1Val || addr2Val || cityVal || stateVal || zipVal;
+        if (hasAddress) {
+          meta.address = {
+            line1: addr1Val || undefined,
+            line2: addr2Val || undefined,
+            city: cityVal || undefined,
+            state: stateVal || undefined,
+            zip: zipVal || undefined,
+          };
+        }
+        const notesVal = notesField.value.trim();
+        if (notesVal) meta.notes = notesVal;
+      }
+      if (Object.keys(meta).length) payload.meta = meta;
 
       try {
         saveBtn.textContent = 'Saving…';
@@ -700,7 +714,24 @@ export function mountContacts(host) {
         await loadData();
       } catch (err) {
         console.error('save contact failed', err);
-        toast('Save failed', 'error');
+        const detail = (() => {
+          try {
+            return err?.response?.data ?? err?.data ?? err?.detail;
+          } catch (e) {
+            console.warn('error parsing save response', e);
+            return null;
+          }
+        })();
+        if (detail) {
+          const msg = typeof detail === 'string'
+            ? detail
+            : Array.isArray(detail)
+              ? detail.map((d) => d.msg || d.error || JSON.stringify(d)).join('\n')
+              : JSON.stringify(detail);
+          toast(msg, 'error');
+        } else {
+          toast('Save failed', 'error');
+        }
         saveBtn.textContent = 'Save';
         saveBtn.disabled = false;
       }
