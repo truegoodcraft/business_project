@@ -19,7 +19,7 @@ class Vendor(Base):
     role = Column(String, nullable=False, server_default="contact")  # compat: derived from is_vendor
     # Flags
     is_vendor = Column(Integer, nullable=False, server_default="0")  # 0/1 (SQLite boolean)
-    is_org = Column(Integer, nullable=False, server_default="0")  # 0/1 (SQLite boolean)
+    is_org = Column(Integer, nullable=True)  # 0/1 (SQLite boolean); NULL allowed
     organization_id = Column(Integer, ForeignKey("vendors.id"), nullable=True)
     meta = Column(Text, nullable=True)  # JSON string
     created_at = Column(DateTime, nullable=False, server_default=func.now())

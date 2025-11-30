@@ -46,10 +46,12 @@ def _apply_defaults(payload: dict, facade: str, existing: Optional[VendorModel] 
     data["is_vendor"] = 1 if is_vendor_flag else 0
     data["role"] = "vendor" if is_vendor_flag else "contact"
 
-    is_org_flag = _parse_bool(data.get("is_org"))
-    if is_org_flag is None:
-        is_org_flag = bool(existing.is_org) if existing is not None else False
-    data["is_org"] = 1 if is_org_flag else 0
+    if "is_org" in data:
+        is_org_flag = _parse_bool(data.get("is_org"))
+        if is_org_flag is None:
+            data["is_org"] = None
+        else:
+            data["is_org"] = 1 if is_org_flag else 0
     return data
 
 
@@ -66,8 +68,10 @@ def _query_filters(q: Optional[str], role: Optional[str], organization_id: Optio
     if vendor_flag is not None:
         filters.append(VendorModel.is_vendor == (1 if vendor_flag else 0))
     org_flag = _parse_bool(is_org)
-    if org_flag is not None:
-        filters.append(VendorModel.is_org == (1 if org_flag else 0))
+    if org_flag is True:
+        filters.append(VendorModel.is_org == 1)
+    elif org_flag is False:
+        filters.append(or_(VendorModel.is_org == 0, VendorModel.is_org.is_(None)))
     if role_in:
         roles = [r.strip().lower() for r in role_in.split(",") if r.strip()]
         if roles:
