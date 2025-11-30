@@ -18,8 +18,9 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 from starlette.staticfiles import StaticFiles
 
-from core.appdb.engine import DB_PATH as DB_FILE, SessionLocal
+from core.appdb.engine import DB_PATH as DB_FILE, ENGINE, SessionLocal
 from core.appdb.paths import ui_dir
+from core.appdb.migrate import ensure_vendors_flags
 from core.config.paths import APP_DIR, BUS_ROOT, DATA_DIR, JOURNALS_DIR
 from core.config.writes import require_writes
 from core.services.capabilities import registry
@@ -177,7 +178,7 @@ def _ensure_schema_upgrades(db: Session) -> None:
             db.execute(text(f"ALTER TABLE {table} ADD COLUMN {ddl}"))
 
     if not _col_exists("vendors", "role"):
-        db.execute(text("ALTER TABLE vendors ADD COLUMN role TEXT DEFAULT 'vendor'"))
+        db.execute(text("ALTER TABLE vendors ADD COLUMN role TEXT DEFAULT 'contact'"))
     if not _col_exists("vendors", "kind"):
         db.execute(text("ALTER TABLE vendors ADD COLUMN kind TEXT DEFAULT 'org'"))
     if not _col_exists("vendors", "organization_id"):
@@ -218,6 +219,7 @@ def _ensure_schema_upgrades(db: Session) -> None:
 
 
 def _run_startup_migrations() -> None:
+    ensure_vendors_flags(ENGINE)
     db = SessionLocal()
     try:
         _ensure_schema_upgrades(db)

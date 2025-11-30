@@ -24,11 +24,11 @@ def _sqlite_url(p: Path) -> str:
       C:/Users/me/AppData/Local/BUSCore/app/app.db
       -> sqlite+pysqlite:///C:/Users/me/AppData/Local/BUSCore/app/app.db
     """
-    posix = p.as_posix()
+    posix = p.resolve().as_posix()
     # If it starts with a drive letter, leave it; otherwise strip leading slashes.
     if re.match(r"^[A-Za-z]:/", posix):
         return f"sqlite+pysqlite:///{posix}"
-    return f"sqlite+pysqlite:///{posix.lstrip('/')}"
+    return f"sqlite+pysqlite:///{posix}"
 
 
 DB_URL = _sqlite_url(DB_PATH)

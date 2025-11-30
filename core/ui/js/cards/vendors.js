@@ -1,566 +1,922 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// TGC BUS Core (Business Utility System Core)
-// Copyright (C) 2025 True Good Craft
-//
-// This file is part of TGC BUS Core.
-//
-// TGC BUS Core is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
-//
-// TGC BUS Core is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with TGC BUS Core.  If not, see <https://www.gnu.org/licenses/>.
+// Contacts & Vendors card (unified shallow/deep flows)
 
-import { apiGet, apiPost, ensureToken } from '../api.js';
+import { apiDelete, apiGet, apiPost, apiPut, ensureToken } from '../api.js';
 
-const LS_KEY = 'contacts.customers.v1';
+const BG = '#1e1f22';
+const FG = '#e6e6e6';
+const PANEL = '#23262b';
+const INPUT_BG = '#2a2c30';
+const BORDER = '#2f3239';
 
-async function vendorExistsByName(name) {
-  const target = (name || '').trim().toLowerCase();
-  if (!target) return false;
-  const normalize = (value) => String(value || '').trim().toLowerCase();
+const ROLE_FILTERS = [
+  { key: 'all', label: 'All', is_vendor: null },
+  { key: 'vendors', label: 'Vendors', is_vendor: true },
+  { key: 'contacts', label: 'Contacts', is_vendor: false },
+];
+
+function formatDate(val) {
+  if (!val) return '';
   try {
-    const list = await apiGet('/app/vendors');
-    const arr = Array.isArray(list) ? list : Array.isArray(list?.items) ? list.items : [];
-    return arr.some((vendor) => normalize(vendor?.name) === target);
+    const d = new Date(val);
+    if (Number.isNaN(d.getTime())) return String(val);
+    return d.toLocaleString();
   } catch {
-    try {
-      const fallback = await apiGet('/app/vendors/list');
-      const arr = Array.isArray(fallback) ? fallback : [];
-      return arr.some((vendor) => normalize(vendor?.name) === target);
-    } catch {
-      return false;
-    }
+    return String(val);
   }
 }
 
-export async function mountVendors(container) {
-  // --- BEGIN SPEC-1 BODY ---
-  container.innerHTML = '';
-  container.style.background = '#0f1115';
-  container.style.color = '#e5e7eb';
-  container.style.padding = '16px';
-  container.style.borderRadius = '12px';
+function chip(text, tone = 'default') {
+  const span = document.createElement('span');
+  span.textContent = text;
+  span.style.display = 'inline-flex';
+  span.style.alignItems = 'center';
+  span.style.gap = '6px';
+  span.style.padding = '4px 10px';
+  span.style.borderRadius = '999px';
+  span.style.fontSize = '12px';
+  span.style.border = `1px solid ${BORDER}`;
+  span.style.background = tone === 'accent' ? '#2f3542' : '#1f2227';
+  span.style.color = FG;
+  return span;
+}
+
+function button(label) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.textContent = label;
+  btn.style.background = '#2a3040';
+  btn.style.color = FG;
+  btn.style.border = `1px solid ${BORDER}`;
+  btn.style.padding = '10px 14px';
+  btn.style.borderRadius = '10px';
+  btn.style.cursor = 'pointer';
+  btn.style.transition = 'background 0.15s ease, transform 0.15s ease';
+  btn.onmouseenter = () => (btn.style.background = '#32384a');
+  btn.onmouseleave = () => (btn.style.background = '#2a3040');
+  btn.onfocus = () => (btn.style.outline = '2px solid #4b6bfb');
+  btn.onblur = () => (btn.style.outline = 'none');
+  return btn;
+}
+
+function input(label, type = 'text') {
+  const wrap = document.createElement('label');
+  wrap.style.display = 'flex';
+  wrap.style.flexDirection = 'column';
+  wrap.style.gap = '6px';
+  wrap.style.color = FG;
+  wrap.style.fontSize = '13px';
+
+  const span = document.createElement('span');
+  span.textContent = label;
+  const field = document.createElement('input');
+  field.type = type;
+  field.style.background = INPUT_BG;
+  field.style.color = FG;
+  field.style.border = `1px solid ${BORDER}`;
+  field.style.borderRadius = '10px';
+  field.style.padding = '10px 12px';
+  field.style.fontSize = '14px';
+  field.style.outline = 'none';
+  field.onfocus = () => (field.style.borderColor = '#4b6bfb');
+  field.onblur = () => (field.style.borderColor = BORDER);
+
+  wrap.append(span, field);
+  return { wrap, field };
+}
+
+function select(label) {
+  const wrap = document.createElement('label');
+  wrap.style.display = 'flex';
+  wrap.style.flexDirection = 'column';
+  wrap.style.gap = '6px';
+  wrap.style.color = FG;
+  wrap.style.fontSize = '13px';
+
+  const span = document.createElement('span');
+  span.textContent = label;
+  const field = document.createElement('select');
+  field.style.background = INPUT_BG;
+  field.style.color = FG;
+  field.style.border = `1px solid ${BORDER}`;
+  field.style.borderRadius = '10px';
+  field.style.padding = '10px 12px';
+  field.style.fontSize = '14px';
+  field.style.outline = 'none';
+  field.onfocus = () => (field.style.borderColor = '#4b6bfb');
+  field.onblur = () => (field.style.borderColor = BORDER);
+
+  wrap.append(span, field);
+  return { wrap, field };
+}
+
+function toast(message, tone = 'ok') {
+  const el = document.createElement('div');
+  el.textContent = message;
+  el.style.position = 'fixed';
+  el.style.bottom = '20px';
+  el.style.right = '20px';
+  el.style.padding = '12px 14px';
+  el.style.borderRadius = '10px';
+  el.style.background = tone === 'error' ? '#5b1f1f' : '#1f3b2f';
+  el.style.color = FG;
+  el.style.boxShadow = '0 8px 20px rgba(0,0,0,0.4)';
+  el.style.zIndex = '9999';
+  document.body.appendChild(el);
+  setTimeout(() => {
+    el.style.opacity = '0';
+    el.style.transition = 'opacity 0.3s ease';
+    setTimeout(() => el.remove(), 300);
+  }, 2000);
+}
+
+function vendorLabel(isVendor) {
+  return isVendor ? 'Vendor' : 'Contact';
+}
+
+function buildContactPayload(modalEl) {
+  const name = modalEl.querySelector('[data-field="name"]')?.value?.trim() || '';
+  const email = modalEl.querySelector('[data-field="email"]')?.value?.trim() || '';
+  const phone = modalEl.querySelector('[data-field="phone"]')?.value?.trim() || '';
+  const extend = modalEl.querySelector('[data-field="extend"]')?.checked || false;
+  const isVendor = modalEl.querySelector('[data-field="is_vendor"]')?.checked || false;
+
+  const addr1 = modalEl.querySelector('[data-field="addr1"]')?.value?.trim() || '';
+  const addr2 = modalEl.querySelector('[data-field="addr2"]')?.value?.trim() || '';
+  const city = modalEl.querySelector('[data-field="city"]')?.value?.trim() || '';
+  const state = modalEl.querySelector('[data-field="state"]')?.value?.trim() || '';
+  const zip = modalEl.querySelector('[data-field="zip"]')?.value?.trim() || '';
+  const notes = modalEl.querySelector('[data-field="notes"]')?.value?.trim() || '';
+
+  const address = {
+    line1: addr1 || null,
+    line2: addr2 || null,
+    city: city || null,
+    state: state || null,
+    zip: zip || null,
+  };
+  const hasAddress = Object.values(address).some(Boolean);
+
+  const meta = {
+    email: email || null,
+    phone: phone || null,
+  };
+
+  if (extend || hasAddress) {
+    meta.address = address;
+  }
+
+  if (extend || notes) {
+    meta.notes = notes || null;
+  }
+
+  if (!meta.email) delete meta.email;
+  if (!meta.phone) delete meta.phone;
+  if (meta.address && !hasAddress) delete meta.address;
+  if (meta.notes == null) delete meta.notes;
+
+  const payload = {
+    name,
+    role: 'contact',
+    contact: email || phone || null,
+    is_vendor: !!isVendor,
+    // allow future org nesting without breaking today
+    is_org: null,
+  };
+
+  if (Object.keys(meta).length) {
+    payload.meta = meta;
+  }
+
+  return payload;
+}
+
+function buildModal() {
+  const overlay = document.createElement('div');
+  overlay.className = 'contacts-modal';
+  overlay.style.position = 'fixed';
+  overlay.style.inset = '0';
+  overlay.style.background = 'rgba(0,0,0,0.55)';
+  overlay.style.display = 'flex';
+  overlay.style.alignItems = 'center';
+  overlay.style.justifyContent = 'center';
+  overlay.style.zIndex = '5000';
+
+  const box = document.createElement('div');
+  box.style.background = PANEL;
+  box.style.borderRadius = '12px';
+  box.style.width = '520px';
+  box.style.padding = '20px';
+  box.style.boxShadow = '0 18px 36px rgba(0,0,0,0.5)';
+  box.style.display = 'flex';
+  box.style.flexDirection = 'column';
+  box.style.gap = '14px';
+  box.style.maxHeight = '85vh';
+  box.style.overflow = 'auto';
+
+  overlay.appendChild(box);
+  return { overlay, box };
+}
+
+export function mountContacts(host) {
+  if (!host) return;
+  host.innerHTML = '';
+  host.style.background = BG;
+  host.style.color = FG;
+  host.style.padding = '16px';
+  host.style.borderRadius = '12px';
+  host.style.boxSizing = 'border-box';
+
+  const state = {
+    list: [],
+    orgs: [],
+    expandedId: null,
+    filterRole: 'all',
+    search: '',
+  };
 
   const header = document.createElement('div');
   header.style.display = 'flex';
-  header.style.alignItems = 'center';
   header.style.justifyContent = 'space-between';
+  header.style.alignItems = 'center';
   header.style.gap = '12px';
-  header.style.marginBottom = '12px';
+  header.style.marginBottom = '10px';
+
+  const headLeft = document.createElement('div');
+  headLeft.style.display = 'flex';
+  headLeft.style.flexDirection = 'column';
+  headLeft.style.gap = '4px';
 
   const title = document.createElement('h2');
   title.textContent = 'Contacts';
   title.style.margin = '0';
+  title.style.color = FG;
 
-  const addContactBtn = document.createElement('button');
-  addContactBtn.type = 'button';
-  addContactBtn.textContent = 'Add Contact';
-  addContactBtn.dataset.action = 'open-contacts-modal';
-  styleBtn(addContactBtn);
+  const subtitle = document.createElement('div');
+  subtitle.textContent = 'Vendors & people you deal with';
+  subtitle.style.color = '#b9bcc5';
+  subtitle.style.fontSize = '13px';
 
-  header.append(title, addContactBtn);
+  headLeft.append(title, subtitle);
 
-  const table = document.createElement('table');
-  table.dataset.role = 'contacts-table';
-  table.className = 'table';
-  table.style.width = '100%';
-  table.style.borderCollapse = 'separate';
-  table.style.borderSpacing = '0';
-  table.style.background = '#111318';
-  table.style.borderRadius = '10px';
-  table.style.overflow = 'hidden';
-  const thead = document.createElement('thead');
-  thead.innerHTML = `
-    <tr>
-      <th style="text-align:left;padding:10px;background:#1a1f2b">Type</th>
-      <th style="text-align:left;padding:10px;background:#1a1f2b">Contact</th>
-      <th style="text-align:left;padding:10px;background:#1a1f2b">Actions</th>
-    </tr>`;
-  const tbody = document.createElement('tbody');
-  table.append(thead, tbody);
+  const newBtn = button('+ New Contact');
 
-  container.append(header, table);
+  header.append(headLeft, newBtn);
 
-  const tbl = document.querySelector('[data-role="contacts-table"]');
-  const tbodyEl = tbl?.querySelector('tbody');
-  const drawer = document.querySelector('[data-role="contacts-drawer"]');
-  const drawerBackdrop = drawer?.querySelector('.drawer-backdrop');
-  const drawerCloseBtn = drawer?.querySelector('.drawer-header [data-action="close-contacts-drawer"]');
-  const linkedList = drawer?.querySelector('[data-role="linked-items"]');
-  const field = (name) => drawer?.querySelector(`[data-field="${name}"]`);
+  const filtersRow = document.createElement('div');
+  filtersRow.style.display = 'flex';
+  filtersRow.style.alignItems = 'center';
+  filtersRow.style.gap = '10px';
+  filtersRow.style.flexWrap = 'wrap';
+  filtersRow.style.marginBottom = '12px';
 
-  function openDrawer() {
-    if (!drawer) return;
-    drawer.classList.remove('hidden');
-    drawer.setAttribute('aria-hidden', 'false');
-  }
-  function closeDrawer() {
-    if (!drawer) return;
-    drawer.classList.add('hidden');
-    drawer.setAttribute('aria-hidden', 'true');
-    if (linkedList) linkedList.innerHTML = '';
-  }
-
-  if (drawer && !drawer.dataset.contactsDrawerBound) {
-    drawerBackdrop?.addEventListener('click', closeDrawer);
-    drawerCloseBtn?.addEventListener('click', closeDrawer);
-    drawer.dataset.contactsDrawerBound = '1';
-  }
-  const bodyEl = document.body;
-  if (drawer && bodyEl && !bodyEl.dataset.contactsDrawerEscBound) {
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && !drawer.classList.contains('hidden')) {
-        closeDrawer();
-      }
-    });
-    bodyEl.dataset.contactsDrawerEscBound = '1';
-  }
-
-  async function loadContactsList() {
-    try {
-      const list = await apiGet('/app/contacts');
-      if (Array.isArray(list)) return list;
-    } catch (e) {
-      const s = e?.status || e?.response?.status;
-      if (s !== 404 && s !== 405) console.warn('GET /app/contacts failed', e);
-    }
-
-    let vendors = [];
-    try {
-      vendors = await apiGet('/app/vendors');
-    } catch (err) {
-      console.warn('GET /app/vendors fallback failed', err);
-      vendors = [];
-    }
-    vendors = Array.isArray(vendors)
-      ? vendors.map((v) => ({
-          id: v.id,
-          type: 'vendor',
-          name: v.name,
-          email: v.email,
-          material: v.material,
-          lead_time_days: v.lead_time_days,
-          notes: v.notes,
-        }))
-      : [];
-
-    let customers = [];
-    try {
-      customers = JSON.parse(localStorage.getItem(LS_KEY) || '[]');
-    } catch {
-      customers = [];
-    }
-    customers = Array.isArray(customers)
-      ? customers.map((c, i) => ({
-          id: c.id || `local:${i}`,
-          type: 'customer',
-          name: c.name,
-          email: c.email,
-          notes: c.notes,
-        }))
-      : [];
-
-    return [...vendors, ...customers];
-  }
-
-  async function openContactDrawer(contact) {
-    if (!drawer) return;
-    const set = (k, v) => {
-      const el = field(k);
-      if (el) el.textContent = v ?? '';
+  ROLE_FILTERS.forEach((f) => {
+    const b = button(f.label);
+    b.style.padding = '8px 12px';
+    const setActive = () => {
+      b.style.background = state.filterRole === f.key ? '#34405c' : '#2a3040';
+      b.style.borderColor = state.filterRole === f.key ? '#4b6bfb' : BORDER;
     };
-
-    const typeLabel = (contact.type || '').toString();
-    set('type', typeLabel ? typeLabel.replace(/^./, (m) => m.toUpperCase()) : '');
-    set('name', contact.name || '');
-    set('email', contact.email || '');
-    set('material', contact.type === 'vendor' ? contact.material || '' : '');
-    set('lead_time_days', contact.lead_time_days != null ? String(contact.lead_time_days) : '');
-    set('notes', contact.notes || '');
-
-    drawer.querySelectorAll('.vendor-only').forEach((el) => {
-      el.style.display = contact.type === 'vendor' ? '' : 'none';
+    setActive();
+    b.addEventListener('click', () => {
+      state.filterRole = f.key;
+      setActive();
+      loadData();
     });
-
-    if (linkedList) {
-      linkedList.innerHTML = '';
-      if (contact.type === 'vendor' && contact.id != null && String(contact.id)) {
-        const loading = document.createElement('li');
-        loading.textContent = 'Loading linked items…';
-        linkedList.appendChild(loading);
-        try {
-          const items = await apiGet(`/app/items?vendor_id=${encodeURIComponent(contact.id)}`);
-          linkedList.innerHTML = '';
-          const arr = Array.isArray(items) ? items : [];
-          arr.forEach((item) => {
-            const li = document.createElement('li');
-            const name = item.name || '(unnamed)';
-            const qty = item.qty != null ? item.qty : 0;
-            li.textContent = `${name} — qty: ${qty}`;
-            linkedList.appendChild(li);
-          });
-          if (!linkedList.children.length) {
-            const li = document.createElement('li');
-            li.textContent = 'No linked items.';
-            linkedList.appendChild(li);
-          }
-        } catch (err) {
-          linkedList.innerHTML = '';
-          const li = document.createElement('li');
-          li.textContent = 'Could not load linked items.';
-          linkedList.appendChild(li);
-          console.warn('GET /app/items vendor linked items failed', err);
-        }
-      } else {
-        const li = document.createElement('li');
-        li.textContent = 'Linked items available for vendors only.';
-        linkedList.appendChild(li);
-      }
-    }
-
-    openDrawer();
-  }
-
-  async function renderContactsTable() {
-    if (!tbodyEl) return;
-    const list = await loadContactsList();
-    tbodyEl.innerHTML = '';
-
-    if (!list.length) {
-      const emptyRow = document.createElement('tr');
-      const emptyCell = document.createElement('td');
-      emptyCell.colSpan = 3;
-      emptyCell.textContent = 'No contacts yet.';
-      emptyCell.style.padding = '12px 16px';
-      emptyCell.style.color = '#9ca3af';
-      emptyRow.appendChild(emptyCell);
-      tbodyEl.appendChild(emptyRow);
-      return;
-    }
-
-    for (const c of list) {
-      const tr = document.createElement('tr');
-      tr.dataset.contactId = String(c.id ?? '');
-      tr.dataset.contactType = String(c.type ?? '');
-
-      const typeCell = document.createElement('td');
-      typeCell.style.padding = '10px';
-      typeCell.style.borderTop = '1px solid #222733';
-      typeCell.textContent = (c.type || '').toString().replace(/^./, (m) => m.toUpperCase());
-
-      const nameCell = document.createElement('td');
-      nameCell.style.padding = '10px';
-      nameCell.style.borderTop = '1px solid #222733';
-      nameCell.textContent = (c.name || '').toString();
-
-      const actionsCell = document.createElement('td');
-      actionsCell.style.padding = '10px';
-      actionsCell.style.borderTop = '1px solid #222733';
-
-      const actionsWrap = document.createElement('div');
-      actionsWrap.style.display = 'flex';
-      actionsWrap.style.gap = '8px';
-
-      const editBtn = document.createElement('button');
-      editBtn.type = 'button';
-      editBtn.dataset.action = 'contact-edit';
-      editBtn.textContent = 'Edit';
-      styleBtn(editBtn);
-
-      const delBtn = document.createElement('button');
-      delBtn.type = 'button';
-      delBtn.dataset.action = 'contact-delete';
-      delBtn.textContent = 'Delete';
-      delBtn.disabled = true;
-      styleBtn(delBtn);
-      delBtn.style.cursor = 'not-allowed';
-      delBtn.style.opacity = '0.5';
-      delBtn.onmouseenter = null;
-      delBtn.onmouseleave = null;
-
-      actionsWrap.append(editBtn, delBtn);
-      actionsCell.append(actionsWrap);
-
-      tr.append(typeCell, nameCell, actionsCell);
-
-      tr.addEventListener('click', (event) => {
-        if (event.target instanceof HTMLElement && event.target.closest('button')) {
-          return;
-        }
-        openContactDrawer(c);
-      });
-
-      editBtn.addEventListener('click', (event) => {
-        event.stopPropagation();
-        openContactDrawer(c);
-      });
-
-      tbodyEl.appendChild(tr);
-    }
-  }
-
-  const contactsModal = document.querySelector('[data-role="contacts-modal"]');
-  const contactsForm = contactsModal?.querySelector('[data-role="contacts-form"]');
-  const contactsSaveBtn = contactsModal?.querySelector('[data-role="contacts-save"]');
-  const contactsOpenBtn = document.querySelector('[data-action="open-contacts-modal"]');
-  const contactsCloseButtons = contactsModal ? Array.from(contactsModal.querySelectorAll('[data-action="close-contacts-modal"]')) : [];
-  const vendorOnlyWrap = contactsModal?.querySelector('[data-visible-when="vendor"]');
-
-  function updateVendorOnly() {
-    if (!vendorOnlyWrap || !contactsForm) return;
-    const t = String(contactsForm.elements.type.value || '').toLowerCase();
-    vendorOnlyWrap.style.display = t === 'vendor' ? '' : 'none';
-  }
-
-  function setContactsBusy(busy) {
-    if (!contactsSaveBtn) return;
-    if (!contactsSaveBtn.dataset._orig) {
-      contactsSaveBtn.dataset._orig = contactsSaveBtn.textContent || 'Save';
-    }
-    contactsSaveBtn.disabled = !!busy;
-    contactsSaveBtn.textContent = busy ? 'Saving…' : contactsSaveBtn.dataset._orig;
-  }
-
-  function openContactsModal(preset = {}) {
-    if (!contactsModal || !contactsForm) return;
-    contactsForm.reset();
-    if (preset.name) contactsForm.elements.name.value = preset.name;
-    const typeField = contactsForm.elements.type;
-    const presetType = (preset.type || '').toLowerCase();
-    if (typeField) {
-      typeField.value = presetType || '';
-    }
-    if (preset.email) contactsForm.elements.email.value = preset.email;
-    if (preset.material) contactsForm.elements.material.value = preset.material;
-    if (preset.lead_time_days != null) contactsForm.elements.lead_time_days.value = preset.lead_time_days;
-    if (preset.notes) contactsForm.elements.notes.value = preset.notes;
-    updateVendorOnly();
-    contactsModal.classList.remove('hidden');
-    contactsModal.classList.add('open');
-    contactsForm.elements.name?.focus();
-  }
-
-  function closeContactsModal() {
-    if (!contactsModal) return;
-    contactsModal.classList.add('hidden');
-    contactsModal.classList.remove('open');
-  }
-
-  contactsOpenBtn?.addEventListener('click', () => openContactsModal());
-
-  if (contactsModal && !contactsModal.dataset.contactsOverlayBound) {
-    contactsModal.addEventListener('click', (event) => {
-      if (event.target === contactsModal || event.target.classList.contains('modal-backdrop')) {
-        closeContactsModal();
-      }
-    });
-    contactsModal.dataset.contactsOverlayBound = '1';
-  }
-
-  contactsCloseButtons.forEach((btn) => {
-    if (!btn.dataset.contactsCloseBound) {
-      btn.addEventListener('click', () => closeContactsModal());
-      btn.dataset.contactsCloseBound = '1';
-    }
+    filtersRow.appendChild(b);
   });
 
-  if (contactsModal && !contactsModal.dataset.contactsEscBound) {
-    const escHandler = (event) => {
-      if (event.key === 'Escape' && !contactsModal.classList.contains('hidden')) {
-        closeContactsModal();
+  const searchWrap = document.createElement('div');
+  searchWrap.style.display = 'flex';
+  searchWrap.style.flex = '1';
+  searchWrap.style.justifyContent = 'flex-end';
+
+  const searchField = document.createElement('input');
+  searchField.type = 'search';
+  searchField.placeholder = 'Search name or contact…';
+  searchField.style.background = INPUT_BG;
+  searchField.style.color = FG;
+  searchField.style.border = `1px solid ${BORDER}`;
+  searchField.style.borderRadius = '10px';
+  searchField.style.padding = '10px 12px';
+  searchField.style.flex = '1';
+  searchField.style.maxWidth = '280px';
+  searchField.addEventListener('input', () => {
+    state.search = searchField.value.trim();
+    loadData();
+  });
+
+  searchWrap.appendChild(searchField);
+  filtersRow.appendChild(searchWrap);
+
+  const table = document.createElement('div');
+  table.style.background = PANEL;
+  table.style.border = `1px solid ${BORDER}`;
+  table.style.borderRadius = '12px';
+  table.style.overflow = 'hidden';
+
+  const headerRow = document.createElement('div');
+  headerRow.style.display = 'grid';
+    headerRow.style.gridTemplateColumns = '2fr 2fr 1fr';
+  headerRow.style.padding = '10px 14px';
+  headerRow.style.background = '#2b2d31';
+  headerRow.style.color = '#cdd1dc';
+  headerRow.style.fontSize = '13px';
+  headerRow.style.fontWeight = '600';
+    ['Name', 'Contact', 'Flags'].forEach((col) => {
+      const c = document.createElement('div');
+      c.textContent = col;
+      headerRow.appendChild(c);
+    });
+
+  const body = document.createElement('div');
+  body.style.display = 'flex';
+  body.style.flexDirection = 'column';
+
+  table.append(headerRow, body);
+
+  host.append(header, filtersRow, table);
+
+  function orgName(id) {
+    if (id == null) return null;
+    const found = state.orgs.find((o) => o.id === id) || state.list.find((o) => o.id === id);
+    return found?.name || null;
+  }
+
+  function contactSummary(entry) {
+    const meta = entry?.meta || {};
+    return [meta.email, meta.phone].filter(Boolean).join(' | ');
+  }
+
+  function renderRow(entry) {
+    const row = document.createElement('div');
+    row.style.display = 'grid';
+    row.style.gridTemplateColumns = '2fr 2fr 1fr';
+    row.style.padding = '10px 14px';
+    row.style.borderTop = `1px solid ${BORDER}`;
+    row.style.cursor = 'pointer';
+    row.style.alignItems = 'center';
+    row.onmouseenter = () => (row.style.background = '#262a31');
+    row.onmouseleave = () => (row.style.background = 'transparent');
+
+    const nameCol = document.createElement('div');
+    nameCol.style.display = 'flex';
+    nameCol.style.flexDirection = 'column';
+    nameCol.style.gap = '4px';
+
+    const nameLine = document.createElement('div');
+    nameLine.style.display = 'flex';
+    nameLine.style.alignItems = 'center';
+    nameLine.style.gap = '8px';
+    const nm = document.createElement('div');
+    nm.textContent = entry.name || '(unnamed)';
+    nm.style.fontWeight = '600';
+    const vendorBadge = chip(vendorLabel(Boolean(entry.is_vendor)), entry.is_vendor ? 'accent' : 'default');
+    vendorBadge.style.opacity = entry.is_vendor ? '1' : '0.8';
+    nameLine.append(nm, vendorBadge);
+    if (entry.is_org) {
+      const orgBadge = chip('Organization');
+      nameLine.append(orgBadge);
+    }
+
+    const metaLine = document.createElement('div');
+    metaLine.style.fontSize = '12px';
+    metaLine.style.color = '#b5b8c2';
+    const org = orgName(entry.organization_id);
+    metaLine.textContent = [contactSummary(entry), org ? `Org: ${org}` : '']
+      .filter(Boolean)
+      .join(' • ');
+
+    nameCol.append(nameLine, metaLine);
+
+    const contactCol = document.createElement('div');
+    contactCol.textContent = contactSummary(entry) || '—';
+    contactCol.style.color = '#cdd1dc';
+
+    const flagsCol = document.createElement('div');
+    flagsCol.style.display = 'flex';
+    flagsCol.style.gap = '6px';
+    flagsCol.style.flexWrap = 'wrap';
+    flagsCol.append(chip(vendorLabel(Boolean(entry.is_vendor)), entry.is_vendor ? 'accent' : 'default'));
+    if (entry.is_org) {
+      flagsCol.append(chip('Organization'));
+    }
+
+    // Do not render actions in the collapsed row; they appear in the drawer only.
+    row.append(nameCol, contactCol, flagsCol);
+
+    const expanded = document.createElement('div');
+    expanded.style.gridColumn = '1 / -1';
+    expanded.style.background = '#1e2025';
+    expanded.style.borderRadius = '10px';
+    expanded.style.marginTop = '10px';
+    expanded.style.padding = '12px 12px 10px';
+    expanded.style.display = state.expandedId === entry.id ? 'grid' : 'none';
+    expanded.style.gridTemplateColumns = '1fr 1fr';
+    expanded.style.gap = '12px';
+
+    const left = document.createElement('div');
+    left.style.display = 'flex';
+    left.style.flexDirection = 'column';
+    left.style.gap = '8px';
+    const nameLabel = document.createElement('div');
+    nameLabel.textContent = entry.name || '(unnamed)';
+    nameLabel.style.fontWeight = '600';
+    const chipsRow = document.createElement('div');
+    chipsRow.style.display = 'flex';
+    chipsRow.style.gap = '8px';
+    chipsRow.append(chip(vendorLabel(Boolean(entry.is_vendor)), entry.is_vendor ? 'accent' : 'default'));
+    if (entry.is_org) chipsRow.append(chip('Organization'));
+    const orgLine = document.createElement('div');
+    orgLine.style.fontSize = '12px';
+    orgLine.style.color = '#b5b8c2';
+    const orgLabel = orgName(entry.organization_id);
+    orgLine.textContent = orgLabel ? `Organization: ${orgLabel}` : 'No organization linked';
+    left.append(nameLabel, chipsRow, orgLine);
+
+    const right = document.createElement('div');
+    right.style.display = 'flex';
+    right.style.flexDirection = 'column';
+    right.style.gap = '6px';
+    const contactLine = document.createElement('div');
+    contactLine.textContent = `Contact: ${contactSummary(entry) || '—'}`;
+    const createdLine = document.createElement('div');
+    createdLine.textContent = `Created at: ${formatDate(entry.created_at) || '—'}`;
+    right.append(contactLine, createdLine);
+
+    const footer = document.createElement('div');
+    footer.style.gridColumn = '1 / -1';
+    footer.style.display = 'flex';
+    footer.style.justifyContent = 'flex-end';
+    footer.style.gap = '8px';
+    const edit2 = button('Edit');
+    edit2.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      openEditor(entry);
+    });
+    const del2 = button('Delete');
+    del2.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      openDelete(entry);
+    });
+    footer.append(edit2, del2);
+
+    expanded.append(left, right, footer);
+
+    row.addEventListener('click', () => {
+      state.expandedId = state.expandedId === entry.id ? null : entry.id;
+      render();
+    });
+
+    const wrapper = document.createElement('div');
+    wrapper.append(row, expanded);
+    return wrapper;
+  }
+
+  function renderEmpty() {
+    const empty = document.createElement('div');
+    empty.textContent = 'No contacts yet.';
+    empty.style.padding = '18px';
+    empty.style.color = '#b5b8c2';
+    empty.style.textAlign = 'center';
+    return empty;
+  }
+
+  function render() {
+    body.innerHTML = '';
+    if (!state.list.length) {
+      body.appendChild(renderEmpty());
+      return;
+    }
+    state.list.forEach((entry) => body.appendChild(renderRow(entry)));
+  }
+
+  async function loadOrgs() {
+    try {
+      let res = await apiGet('/app/vendors?is_org=true');
+      if (!Array.isArray(res) || !res.length) {
+        res = await apiGet('/app/vendors?is_vendor=true');
       }
+      state.orgs = Array.isArray(res) ? res : [];
+    } catch (err) {
+      if (err && (err.status === 404 || err.status === 500)) {
+        state.orgs = [];
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  async function loadData() {
+    const params = new URLSearchParams();
+    const selected = ROLE_FILTERS.find((f) => f.key === state.filterRole);
+    if (selected && selected.is_vendor !== null && selected.is_vendor !== undefined) params.set('is_vendor', selected.is_vendor);
+    if (state.search) params.set('q', state.search);
+    try {
+      const res = await apiGet(`/app/contacts?${params.toString()}`);
+      state.list = Array.isArray(res)
+        ? res.map((r) => ({ ...r, facade: r.is_vendor ? 'vendors' : 'contacts' }))
+        : [];
+    } catch (err) {
+      if (err && (err.status === 404 || err.status === 500)) {
+        state.list = [];
+      } else {
+        throw err;
+      }
+    }
+    await loadOrgs();
+    render();
+  }
+
+  function buildToggle(label, initial = false) {
+    const wrap = document.createElement('label');
+    wrap.style.display = 'flex';
+    wrap.style.alignItems = 'center';
+    wrap.style.gap = '8px';
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = !!initial;
+    const text = document.createElement('span');
+    text.textContent = label;
+    text.style.fontSize = '13px';
+    wrap.append(box, text);
+    return {
+      wrap,
+      input: box,
+      getValue: () => box.checked,
+      setValue: (val) => {
+        box.checked = !!val;
+      },
     };
-    document.addEventListener('keydown', escHandler);
-    contactsModal.dataset.contactsEscBound = '1';
   }
 
-  if (contactsForm && !contactsForm.dataset.contactsTypeBound) {
-    contactsForm.elements.type?.addEventListener('change', updateVendorOnly);
-    contactsForm.dataset.contactsTypeBound = '1';
-  }
+  function openEditor(entry = {}) {
+    const isEdit = Boolean(entry?.id);
+    const { overlay, box } = buildModal();
 
-  if (contactsForm) {
-    updateVendorOnly();
-  }
+    const meta = entry.meta || {};
+    const addressMeta = meta.address || {};
+    let inferredEmail = meta.email || entry.email || '';
+    let inferredPhone = meta.phone || entry.phone || '';
 
-  if (contactsForm && !contactsForm.dataset.contactsSubmitBound) {
-    contactsForm.addEventListener('submit', async (event) => {
-      event.preventDefault();
-      if (contactsSaveBtn?.disabled) return;
+    if (!inferredEmail && typeof entry.contact === 'string') {
+      const [maybeEmail, maybePhone] = entry.contact.split('|').map((s) => s.trim());
+      if (maybeEmail) inferredEmail = maybeEmail;
+      if (maybePhone && !inferredPhone) inferredPhone = maybePhone;
+    }
+    const initialNotes = meta.notes || '';
+    const initialExtended = Boolean(
+      addressMeta.line1 ||
+        addressMeta.line2 ||
+        addressMeta.city ||
+        addressMeta.state ||
+        addressMeta.zip ||
+        initialNotes
+    );
 
-      const fd = new FormData(contactsForm);
-      const name = String(fd.get('name') || '').trim();
-      let type = String(fd.get('type') || '').trim().toLowerCase();
-      const email = String(fd.get('email') || '').trim();
-      const material = String(fd.get('material') || '').trim();
-      const leadRaw = String(fd.get('lead_time_days') || '').trim();
-      const notes = String(fd.get('notes') || '').trim();
+    const titleRow = document.createElement('div');
+    titleRow.style.display = 'flex';
+    titleRow.style.justifyContent = 'space-between';
+    titleRow.style.alignItems = 'center';
 
-      if (!name) { alert('Name required'); return; }
-      if (type !== 'vendor' && type !== 'customer') { alert('Type required'); return; }
+    const heading = document.createElement('div');
+    heading.textContent = isEdit ? 'Edit Contact' : 'New Contact';
+    heading.style.fontSize = '18px';
+    heading.style.fontWeight = '700';
 
-      let lead_time_days = null;
-      if (leadRaw) {
-        const n = parseInt(leadRaw, 10);
-        if (Number.isNaN(n)) { alert('Lead time must be a number'); return; }
-        lead_time_days = n;
+    const closeBtn = button('Cancel');
+
+    titleRow.append(heading, closeBtn);
+
+    const form = document.createElement('div');
+    form.style.display = 'flex';
+    form.style.flexDirection = 'column';
+    form.style.gap = '12px';
+
+    const { wrap: nameWrap, field: nameField } = input('Name *');
+    nameField.required = true;
+    nameField.placeholder = 'Full name or company';
+    nameField.value = entry?.name || '';
+    nameField.dataset.field = 'name';
+
+    const { wrap: emailWrap, field: emailField } = input('Email', 'email');
+    emailField.placeholder = 'name@domain.com';
+    emailField.value = inferredEmail || '';
+    emailField.dataset.field = 'email';
+
+    const { wrap: phoneWrap, field: phoneField } = input('Phone', 'tel');
+    phoneField.placeholder = '555-0123';
+    phoneField.value = inferredPhone || '';
+    phoneField.dataset.field = 'phone';
+
+    const togglesRow = document.createElement('div');
+    togglesRow.style.display = 'grid';
+    togglesRow.style.gap = '8px';
+
+    const extendToggle = buildToggle('Add Address & Notes', initialExtended);
+    const vendorToggle = buildToggle('Treat as Vendor', entry?.is_vendor ?? entry?.facade === 'vendors');
+
+    extendToggle.input.dataset.field = 'extend';
+    vendorToggle.input.dataset.field = 'is_vendor';
+
+    togglesRow.append(extendToggle.wrap, vendorToggle.wrap);
+
+    const extendedSection = document.createElement('div');
+    extendedSection.style.display = extendToggle.getValue() ? 'flex' : 'none';
+    extendedSection.style.flexDirection = 'column';
+    extendedSection.style.gap = '10px';
+    extendedSection.style.paddingTop = '4px';
+
+    const { wrap: addr1Wrap, field: addr1Field } = input('Address Line 1');
+    addr1Field.placeholder = '123 Main St';
+    addr1Field.value = addressMeta.line1 || '';
+    addr1Field.dataset.field = 'addr1';
+
+    const { wrap: addr2Wrap, field: addr2Field } = input('Address Line 2');
+    addr2Field.placeholder = 'Unit, Suite, etc.';
+    addr2Field.value = addressMeta.line2 || '';
+    addr2Field.dataset.field = 'addr2';
+
+    const cityStateZip = document.createElement('div');
+    cityStateZip.style.display = 'grid';
+    cityStateZip.style.gap = '8px';
+    cityStateZip.style.gridTemplateColumns = '1fr 120px 120px';
+
+    const { wrap: cityWrap, field: cityField } = input('City');
+    cityField.placeholder = 'City';
+    cityWrap.style.marginBottom = '0';
+    cityField.dataset.field = 'city';
+
+    const { wrap: stateWrap, field: stateField } = input('State');
+    stateField.placeholder = 'State';
+    stateWrap.style.marginBottom = '0';
+    stateField.dataset.field = 'state';
+
+    const { wrap: zipWrap, field: zipField } = input('Zip');
+    zipField.placeholder = 'Zip';
+    zipWrap.style.marginBottom = '0';
+    zipField.dataset.field = 'zip';
+
+    cityStateZip.append(cityWrap, stateWrap, zipWrap);
+
+    const notesWrap = document.createElement('label');
+    notesWrap.style.display = 'flex';
+    notesWrap.style.flexDirection = 'column';
+    notesWrap.style.gap = '6px';
+    notesWrap.style.color = FG;
+    notesWrap.style.fontSize = '13px';
+    const notesLabel = document.createElement('span');
+    notesLabel.textContent = 'Notes';
+    const notesField = document.createElement('textarea');
+    notesField.rows = 3;
+    notesField.placeholder = 'Anything helpful…';
+    notesField.style.background = INPUT_BG;
+    notesField.style.color = FG;
+    notesField.style.border = `1px solid ${BORDER}`;
+    notesField.style.borderRadius = '10px';
+    notesField.style.padding = '10px 12px';
+    notesField.style.fontSize = '14px';
+    notesField.style.outline = 'none';
+    notesField.onfocus = () => (notesField.style.borderColor = '#4b6bfb');
+    notesField.onblur = () => (notesField.style.borderColor = BORDER);
+    notesField.value = initialNotes;
+    notesField.dataset.field = 'notes';
+    notesWrap.append(notesLabel, notesField);
+
+    extendedSection.append(addr1Wrap, addr2Wrap, cityStateZip, notesWrap);
+
+    extendToggle.input.addEventListener('change', () => {
+      extendedSection.style.display = extendToggle.getValue() ? 'flex' : 'none';
+    });
+
+    form.append(nameWrap, emailWrap, phoneWrap, togglesRow, extendedSection);
+
+    const actions = document.createElement('div');
+    actions.style.display = 'flex';
+    actions.style.justifyContent = 'flex-end';
+    actions.style.gap = '10px';
+    actions.style.marginTop = '6px';
+
+    const saveBtn = button('Save');
+    saveBtn.disabled = !nameField.value.trim();
+
+    const cancelBtn = button('Cancel');
+    cancelBtn.addEventListener('click', () => document.body.removeChild(overlay));
+
+    nameField.addEventListener('input', () => {
+      saveBtn.disabled = !nameField.value.trim();
+    });
+
+    async function save() {
+      const nameVal = box.querySelector('[data-field="name"]')?.value?.trim() || '';
+      const emailVal = box.querySelector('[data-field="email"]')?.value?.trim() || '';
+      const phoneVal = box.querySelector('[data-field="phone"]')?.value?.trim() || '';
+      const payload = buildContactPayload(box);
+
+      const errors = [];
+      if (!nameVal) errors.push('Name is required.');
+      if (!emailVal && !phoneVal) errors.push('Provide at least Email or Phone.');
+      if (!payload.contact) errors.push('Contact (email or phone) is required.');
+      if (errors.length) {
+        toast(errors.join(' '), 'error');
+        return;
       }
-
-      const payload = {
-        name,
-        type,
-        ...(email ? { email } : {}),
-        ...(type === 'vendor' && material ? { material } : {}),
-        ...(lead_time_days != null ? { lead_time_days } : {}),
-        ...(notes ? { notes } : {}),
-      };
-
-      let vendorCreated = false;
 
       try {
-        setContactsBusy(true);
+        saveBtn.textContent = 'Saving…';
+        saveBtn.disabled = true;
         await ensureToken();
-
-        if (type === 'vendor') {
-          if (await vendorExistsByName(name)) {
-            alert('Vendor already exists');
-            return;
-          }
-          const vendorPayload = {
-            name,
-            ...(email ? { email } : {}),
-            ...(material ? { material } : {}),
-            ...(lead_time_days != null ? { lead_time_days } : {}),
-            ...(notes ? { notes } : {}),
-          };
-          try {
-            await apiPost('/app/vendors', vendorPayload);
-            vendorCreated = true;
-            document.dispatchEvent(new CustomEvent('vendors:changed', { bubbles: true }));
-          } catch (vendorErr) {
-            const vs = vendorErr?.status || vendorErr?.response?.status;
-            if (vs !== 404 && vs !== 405) {
-              throw vendorErr;
-            }
-          }
-        }
-
-        try {
-          await apiPost('/app/contacts', payload);
-          closeContactsModal();
-          await renderContactsTable();
-          document.dispatchEvent(new CustomEvent('contacts:changed', { bubbles: true }));
-        } catch (err) {
-          const status = err?.status || err?.response?.status;
-          if ((status === 404 || status === 405) && vendorCreated) {
-            closeContactsModal();
-            await renderContactsTable();
-            document.dispatchEvent(new CustomEvent('contacts:changed', { bubbles: true }));
-            return;
-          }
-          throw err;
-        }
-      } catch (err) {
-        const status = err?.status || err?.response?.status;
-        if (status === 404 || status === 405) {
-          alert('Contacts endpoint is not available yet (HTTP ' + status + '). Please add /app/contacts on the backend.');
+        let saved;
+        if (isEdit) {
+          const facade = entry.facade || (entry.is_vendor ? 'vendors' : 'contacts');
+          if (facade !== 'contacts') delete payload.role;
+          saved = await apiPut(`/app/${facade}/${entry.id}`, payload);
+          toast('Saved');
         } else {
-          alert('Could not save contact.');
+          saved = await apiPost('/app/contacts', payload);
+          toast('Created');
         }
-        console.error('POST /app/contacts failed', err);
-      } finally {
-        setContactsBusy(false);
+        if (saved) {
+          window.dispatchEvent(new CustomEvent('contacts:saved', { detail: saved }));
+        }
+        overlay.remove();
+        await loadData();
+      } catch (err) {
+        console.error('save contact failed', err);
+        const detail = (() => {
+          try {
+            return err?.response?.data ?? err?.data ?? err?.detail;
+          } catch (e) {
+            console.warn('error parsing save response', e);
+            return null;
+          }
+        })();
+        if (detail) {
+          const msg = typeof detail === 'string'
+            ? detail
+            : Array.isArray(detail)
+              ? detail.map((d) => d.msg || d.error || JSON.stringify(d)).join('\n')
+              : JSON.stringify(detail);
+          toast(msg, 'error');
+        } else {
+          toast('Save failed', 'error');
+        }
+        saveBtn.textContent = 'Save';
+        saveBtn.disabled = false;
+      }
+    }
+
+    saveBtn.addEventListener('click', save);
+
+    overlay.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        save();
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        document.body.removeChild(overlay);
       }
     });
-    contactsForm.dataset.contactsSubmitBound = '1';
-  }
 
-  if (container.__contactsRefreshHandler) {
-    document.removeEventListener('contacts:changed', container.__contactsRefreshHandler);
-    document.removeEventListener('vendors:changed', container.__contactsRefreshHandler);
-    document.removeEventListener('customers:changed', container.__contactsRefreshHandler);
-  }
-
-  const refreshContactsTable = () => {
-    renderContactsTable().catch((err) => console.error('renderContactsTable failed', err));
-  };
-
-  container.__contactsRefreshHandler = refreshContactsTable;
-
-  document.addEventListener('contacts:changed', refreshContactsTable);
-  document.addEventListener('vendors:changed', refreshContactsTable);
-  document.addEventListener('customers:changed', refreshContactsTable);
-
-  closeDrawer();
-
-  await renderContactsTable();
-
-  // Defensive: neutralize any legacy openers still in DOM
-  document
-    .querySelectorAll(
-      '[data-action="contact-edit-legacy"], [data-action="open-contact"], [data-action="new-contact"], [data-action="new"]'
-    )
-    .forEach((el) => {
-      const clone = el.cloneNode(true);
-      clone.disabled = true;
-      clone.title = 'Replaced by new Contacts UI';
-      el.replaceWith(clone);
+    closeBtn.addEventListener('click', () => {
+      document.body.removeChild(overlay);
     });
-  // --- END SPEC-1 BODY ---
+
+    actions.append(cancelBtn, saveBtn);
+
+    box.append(titleRow, form, actions);
+    document.body.appendChild(overlay);
+    nameField.focus();
+  }
+
+  async function openDelete(entry) {
+    const { overlay, box } = buildModal();
+    const heading = document.createElement('div');
+    heading.textContent = 'Delete contact/vendor';
+    heading.style.fontSize = '18px';
+    heading.style.fontWeight = '700';
+
+    const bodyText = document.createElement('div');
+    bodyText.style.color = '#cdd1dc';
+    bodyText.style.fontSize = '14px';
+    bodyText.textContent = `What should happen to ${entry.name || 'this record'}?`;
+
+    const actions = document.createElement('div');
+    actions.style.display = 'flex';
+    actions.style.flexDirection = 'column';
+    actions.style.gap = '10px';
+
+    const buttonsRow = document.createElement('div');
+    buttonsRow.style.display = 'flex';
+    buttonsRow.style.justifyContent = 'flex-end';
+    buttonsRow.style.gap = '8px';
+
+    const cancel = button('Cancel');
+    cancel.addEventListener('click', () => document.body.removeChild(overlay));
+
+    const confirm = button('Confirm');
+    const facade = entry.facade || (entry.is_vendor ? 'vendors' : 'contacts');
+
+    if (entry.is_org) {
+      const notice = document.createElement('div');
+      notice.style.fontSize = '13px';
+      notice.style.color = '#cdd1dc';
+      notice.textContent = 'Delete this organization. Optionally cascade to linked contacts.';
+
+      const cascadeWrap = document.createElement('label');
+      cascadeWrap.style.display = 'flex';
+      cascadeWrap.style.alignItems = 'center';
+      cascadeWrap.style.gap = '8px';
+      cascadeWrap.style.marginTop = '6px';
+      const cascadeBox = document.createElement('input');
+      cascadeBox.type = 'checkbox';
+      const cascadeLabel = document.createElement('span');
+      cascadeLabel.textContent = 'Also delete linked contacts (counting…)';
+      cascadeWrap.append(cascadeBox, cascadeLabel);
+
+      actions.append(notice, cascadeWrap);
+
+      try {
+        const res = await apiGet(`/app/contacts?organization_id=${entry.id}`);
+        const count = Array.isArray(res) ? res.length : 0;
+        cascadeLabel.textContent = `Also delete ${count} linked contact${count === 1 ? '' : 's'}`;
+      } catch (err) {
+        console.warn('child count failed', err);
+      }
+
+      confirm.addEventListener('click', async () => {
+        try {
+          confirm.textContent = 'Deleting…';
+          confirm.disabled = true;
+          await ensureToken();
+          const qs = cascadeBox.checked ? '?cascade_children=true' : '';
+          await apiDelete(`/app/vendors/${entry.id}${qs}`);
+          toast('Deleted');
+          document.body.removeChild(overlay);
+          await loadData();
+        } catch (err) {
+          console.error('delete org failed', err);
+          toast('Delete failed', 'error');
+          confirm.textContent = 'Confirm';
+          confirm.disabled = false;
+        }
+      });
+    } else {
+      confirm.addEventListener('click', async () => {
+        try {
+          confirm.textContent = 'Deleting…';
+          confirm.disabled = true;
+          await ensureToken();
+          await apiDelete(`/app/${facade}/${entry.id}`);
+          toast('Deleted');
+          document.body.removeChild(overlay);
+          await loadData();
+        } catch (err) {
+          console.error('delete failed', err);
+          toast('Delete failed', 'error');
+          confirm.textContent = 'Confirm';
+          confirm.disabled = false;
+        }
+      });
+    }
+
+    buttonsRow.append(cancel, confirm);
+
+    box.append(heading, bodyText, actions, buttonsRow);
+    document.body.appendChild(overlay);
+    overlay.focus();
+  }
+
+  newBtn.addEventListener('click', () => openEditor({ is_vendor: false, is_org: false, facade: 'contacts' }));
+
+  if (!window.__contactsHotkeyBlocker) {
+    // Kill any plain "n" shortcut on the Contacts screen
+    document.addEventListener(
+      'keydown',
+      (e) => {
+        const target = e.target;
+        const typing = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+        if (typing) return;
+        if ((e.key === 'n' || e.key === 'N') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+          e.stopImmediatePropagation();
+          // do NOT open a new contact here
+        }
+      },
+      true,
+    );
+    window.__contactsHotkeyBlocker = true;
+  }
+
+  if (!window.__contactsModalListener) {
+    window.addEventListener('open-contacts-modal', (ev) => {
+      const prefill = ev.detail?.prefill || {};
+      openEditor({ ...prefill, facade: 'contacts' });
+    });
+    window.__contactsModalListener = true;
+  }
+
+  loadData();
 }
-function styleBtn(btn){
-  btn.style.background = '#23293a';
-  btn.style.color = '#e5e7eb';
-  btn.style.border = '1px solid #2b3246';
-  btn.style.padding = '6px 10px';
-  btn.style.borderRadius = '10px';
-  btn.style.cursor = 'pointer';
-  btn.onmouseenter = () => btn.style.background = '#2a3146';
-  btn.onmouseleave = () => btn.style.background = '#23293a';
-}
-export default mountVendors;
 
-// ===== Contacts Page Glue (non-invasive) =====
-export function mountContacts() {
-  // Hide non-contacts screens (if present)
-  document.querySelector('[data-role="home-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
-
-  // Show Contacts screen
-  const contactsScreen = document.querySelector('[data-role="contacts-screen"]');
-  if (contactsScreen) contactsScreen.classList.remove('hidden');
-
-  // Ensure the Contacts card is visible
-  const contactsCard = contactsScreen?.querySelector('[data-view="contacts"]');
-  if (contactsCard) contactsCard.classList.remove('hidden');
-
-  // If this module has an existing initializer, call it idempotently.
-  // Try common names; ignore errors if not defined.
-  try {
-    if (typeof ensureContactsMounted === 'function') ensureContactsMounted();
-    else if (typeof mountVendors === 'function') mountVendors(); // some repos co-locate
-  } catch {}
-}
-
-// Use Vendors API for all contact CRUD (SOT: /app/vendors exists; /app/contacts does not)
-const VENDORS_API = '/app/vendors';
-
-// If list/load uses a base URL, ensure it resolves to VENDORS_API on the contacts page.
-if (typeof loadContactsList === 'function' && !loadContactsList.__patched) {
-  const _origLoad = loadContactsList;
-  loadContactsList = async function(...args) {
-    const route = (location.hash || '').replace('#/','');
-    // If original code inspects a base URL, ensure it points to VENDORS_API under contacts.
-    // Otherwise, let original handle it (no breaking change).
-    try { window.CONTACTS_BASE = (route === 'contacts') ? VENDORS_API : VENDORS_API; } catch {}
-    return _origLoad.apply(this, args);
-  };
-  loadContactsList.__patched = true;
-}
+export default mountContacts;

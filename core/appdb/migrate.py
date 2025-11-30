@@ -1,7 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 from __future__ import annotations
 
+from sqlalchemy.engine import Engine
+
 from core.appdb.paths import app_db_path
+from core.appdb.sqlite_patch import ensure_vendors_schema
 
 
 def ensure_appdb_migrated() -> None:
@@ -9,4 +12,10 @@ def ensure_appdb_migrated() -> None:
     app_db_path()
 
 
-__all__ = ["ensure_appdb_migrated"]
+def ensure_vendors_flags(engine: Engine) -> None:
+    """Ensure required vendor columns exist (idempotent)."""
+
+    ensure_vendors_schema(engine)
+
+
+__all__ = ["ensure_appdb_migrated", "ensure_vendors_flags"]

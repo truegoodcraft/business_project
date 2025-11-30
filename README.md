@@ -12,17 +12,17 @@
 
 
 <p align="center">
-  What’s new in v0.6.0
-<p align="center">  
-  Monolith fully purged → microkernel.
-<p align="center">  
-  External integrations are plugins.
-<p align="center">  
-  Fresh-machine boot path proven.
+  What’s new in v0.5.1
+<p align="center">
+  Unified Contacts/Vendors shallow+deep flows.
+<p align="center">
+  Dual façade API (`/app/vendors` + `/app/contacts`).
+<p align="center">
+  Smoke harness covers cascade + facet deletes.
 </p>
 
 
-# BUS Core (v0.6.0 "Iron Core")
+# BUS Core (v0.5.1 "Iron Core")
 
 [![GitHub Repo stars](https://img.shields.io/github/stars/truegoodcraft/TGC-BUS-Core?style=social)](https://github.com/truegoodcraft/TGC-BUS-Core)
 [![License](https://img.shields.io/github/license/truegoodcraft/TGC-BUS-Core)](LICENSE)
@@ -108,6 +108,8 @@ To verify the build, run the smoke harness against a running instance:
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\smoke.ps1
 ```
+
+For the unified Contacts/Vendors flows, run the focused harness added in `buscore-smoke.ps1` to exercise façade defaults, facet-only deletes, and cascade/null handling for organizations.
 
 **Smoke Expectations:**
 
