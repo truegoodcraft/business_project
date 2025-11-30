@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import or_
@@ -17,32 +17,43 @@ from tgc.security import require_token_ctx
 router = APIRouter(tags=["vendors"])
 
 
+def _parse_bool(value: Any) -> Optional[bool]:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int,)):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "y", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "n", "off"}:
+            return False
+    return None
+
+
 def _apply_defaults(payload: dict, facade: str, existing: Optional[VendorModel] = None) -> dict:
     data = payload.copy()
     data.pop("kind", None)
-    if "is_vendor" in data and data["is_vendor"] is not None:
-        data["is_vendor"] = 1 if bool(data["is_vendor"]) else 0
-        data["role"] = "vendor" if data["is_vendor"] else "contact"
-    elif "role" in data and data["role"] is not None:
-        is_vendor = str(data["role"]).lower() in ("vendor", "both")
-        data["is_vendor"] = 1 if is_vendor else 0
-        data["role"] = "vendor" if is_vendor else "contact"
-    else:
-        if existing is not None:
-            data.setdefault("is_vendor", existing.is_vendor)
-            data.setdefault("role", existing.role)
-        else:
-            default_vendor = 1 if facade == "vendors" else 0
-            data.setdefault("is_vendor", default_vendor)
-            data.setdefault("role", "vendor" if default_vendor else "contact")
-    data["role"] = str(data.get("role", "contact")).lower()
-    if existing is not None:
-        data.setdefault("is_org", existing.is_org)
-    data["is_org"] = 1 if bool(data.get("is_org")) else 0
+    is_vendor_flag = _parse_bool(data.get("is_vendor"))
+    role_val = data.get("role")
+    if is_vendor_flag is None and role_val is not None:
+        role_normalized = str(role_val).strip().lower()
+        is_vendor_flag = role_normalized in {"vendor", "both"}
+    if is_vendor_flag is None:
+        is_vendor_flag = bool(existing.is_vendor) if existing is not None else facade == "vendors"
+    data["is_vendor"] = 1 if is_vendor_flag else 0
+    data["role"] = "vendor" if is_vendor_flag else "contact"
+
+    is_org_flag = _parse_bool(data.get("is_org"))
+    if is_org_flag is None:
+        is_org_flag = bool(existing.is_org) if existing is not None else False
+    data["is_org"] = 1 if is_org_flag else 0
     return data
 
 
-def _query_filters(q: Optional[str], role: Optional[str], organization_id: Optional[int], role_in: Optional[str], is_vendor: Optional[bool], is_org: Optional[bool]):
+def _query_filters(q: Optional[str], role: Optional[str], organization_id: Optional[int], role_in: Optional[str], is_vendor: Optional[Any], is_org: Optional[Any]):
     filters = []
     if q:
         like = f"%{q}%"
@@ -51,10 +62,12 @@ def _query_filters(q: Optional[str], role: Optional[str], organization_id: Optio
         filters.append(VendorModel.role == role.lower())
     if organization_id is not None:
         filters.append(VendorModel.organization_id == organization_id)
-    if is_vendor is not None:
-        filters.append(VendorModel.is_vendor == (1 if str(is_vendor).lower() == "true" else 0))
-    if is_org is not None:
-        filters.append(VendorModel.is_org == (1 if str(is_org).lower() == "true" else 0))
+    vendor_flag = _parse_bool(is_vendor)
+    if vendor_flag is not None:
+        filters.append(VendorModel.is_vendor == (1 if vendor_flag else 0))
+    org_flag = _parse_bool(is_org)
+    if org_flag is not None:
+        filters.append(VendorModel.is_org == (1 if org_flag else 0))
     if role_in:
         roles = [r.strip().lower() for r in role_in.split(",") if r.strip()]
         if roles:
@@ -68,8 +81,8 @@ def _crud_routes(prefix: str, facade: str):
         q: Optional[str] = None,
         role: Optional[str] = Query(None, description="vendor|contact|both|any"),
         role_in: Optional[str] = Query(None, description="CSV of roles (compat)"),
-        is_vendor: Optional[bool] = Query(None, description="Filter by vendor flag"),
-        is_org: Optional[bool] = Query(None, description="Filter by organization flag"),
+        is_vendor: Optional[str] = Query(None, description="Filter by vendor flag"),
+        is_org: Optional[str] = Query(None, description="Filter by organization flag"),
         organization_id: Optional[int] = Query(None, description="Filter by parent org ID"),
         db: Session = Depends(get_db),
         _token: str = Depends(require_token_ctx),
