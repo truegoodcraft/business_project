@@ -66,7 +66,7 @@ from core.services.capabilities.registry import MANIFEST_PATH
 from core.policy.guard import require_owner_commit
 from core.policy.model import Policy
 from core.policy.store import load_policy, save_policy
-from core.config.writes import get_writes_enabled, set_writes_enabled, require_writes
+from core.config.writes import require_writes
 from core.plans.commit import commit_local
 from core.plans.model import Plan, PlanStatus
 from core.plans.preview import preview_plan
@@ -92,6 +92,8 @@ from core.settings.reader_state import (
 from core.reader.api import router as reader_local_router
 from core.organizer.api import router as organizer_router
 from core.api.dev import router as dev_router
+from core.api.routes import dev as dev_routes
+from core.api.security import _calc_default_allow_writes
 from core.config.paths import (
     APP_DIR,
     BUS_ROOT,
@@ -270,12 +272,9 @@ PUBLIC_PREFIXES = (
 )
 
 
-# Add this function
-def require_token(req: Request):
-    token = get_session_token(req)
-    _require_token(token)
-    assert token is not None
-    return token
+@app.on_event("startup")
+def _buscore_writeflag_startup() -> None:
+    app.state.allow_writes = _calc_default_allow_writes()
 
 
 # Add these routes to app
@@ -293,17 +292,6 @@ def dev_license(request: Request):
     out = {k: v for k, v in lic.items()}
     out["path"] = str(_license_path())
     return out
-
-
-@app.get("/dev/writes")
-def dev_writes_get(token: str = Depends(require_token)):
-    return {"enabled": get_writes_enabled()}
-
-
-@app.post("/dev/writes")
-def dev_writes_set(payload: dict = Body(...), token: str = Depends(require_token)):
-    enabled = bool(payload.get("enabled", False))
-    return set_writes_enabled(enabled)
 
 
 @app.get("/dev/paths")
@@ -1685,11 +1673,15 @@ def plans_preview(plan_id: str, _writes: None = Depends(require_writes)) -> Dict
 
 
 @protected.post("/plans/{plan_id}/commit")
-def plans_commit(plan_id: str, _writes: None = Depends(require_writes)) -> Dict[str, Any]:
+def plans_commit(
+    plan_id: str,
+    request: Request,
+    _writes: None = Depends(require_writes),
+) -> Dict[str, Any]:
     plan = get_plan(plan_id)
     if not plan:
         raise HTTPException(status_code=404, detail="plan_not_found")
-    require_owner_commit()
+    require_owner_commit(request)
     summary = commit_local(plan)
     status = PlanStatus.COMMITTED if summary.get("ok") else PlanStatus.FAILED
     stats = dict(plan.stats or {})
@@ -1966,6 +1958,7 @@ def server_restart(_writes: None = Depends(require_writes)) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail="restart_failed") from exc
 
 
+app.include_router(dev_routes.router, dependencies=[Depends(require_token_ctx)])
 app.include_router(dev_router, dependencies=[Depends(require_token_ctx)])
 app.include_router(oauth)
 app.include_router(protected)

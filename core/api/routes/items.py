@@ -68,7 +68,7 @@ def create_item(
     _token: str = Depends(require_token_ctx),
     _state: AppState = Depends(get_state),
 ) -> Dict[str, Any]:
-    require_owner_commit()
+    require_owner_commit(req)
 
     location = (payload.get("location") or "").strip() or None
     item_type = payload.get("item_type") or payload.get("type")
@@ -130,7 +130,7 @@ def update_item(
     _token: str = Depends(require_token_ctx),
     _state: AppState = Depends(get_state),
 ) -> Dict[str, Any]:
-    require_owner_commit()
+    require_owner_commit(req)
 
     it = db.query(Item).get(item_id)
     if not it:
@@ -170,7 +170,7 @@ def delete_item(
     _token: str = Depends(require_token_ctx),
     _state: AppState = Depends(get_state),
 ) -> Dict[str, Any]:
-    require_owner_commit()
+    require_owner_commit(req)
 
     it = db.query(Item).get(item_id)
     if not it:
