@@ -229,6 +229,12 @@ table tr:hover { background: #1e2530; }
 /* Make long cell content wrap instead of overflowing on narrow viewports */
 [data-role="inventory-root"] td { word-break: break-word; }
 
+/* Contacts: hide legacy shallow/deep pills if any old path injects them */
+.pill-shallow, .pill-deep, .contact-depth-pills { display: none !important; }
+
+/* Hide legacy single 'Contact' text field if present by class/id */
+#contact_generic, .contact-generic, [data-field="contact-generic"] { display: none !important; }
+
 /* Breakpoints: relax fixed layout and hide low-priority columns on very small screens */
 @media (max-width: 1100px) {
   [data-role="inventory-root"] table { min-width: 800px; }
