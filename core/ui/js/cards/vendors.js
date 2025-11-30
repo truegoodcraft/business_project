@@ -202,7 +202,7 @@ export function mountContacts(host) {
 
   headLeft.append(title, subtitle);
 
-  const newBtn = button('+ New contact/vendor');
+  const newBtn = button('+ New Contact');
 
   header.append(headLeft, newBtn);
 
@@ -506,9 +506,23 @@ export function mountContacts(host) {
     };
   }
 
-  function openEditor(entry) {
+  function openEditor(entry = {}) {
     const isEdit = Boolean(entry?.id);
     const { overlay, box } = buildModal();
+
+    const meta = entry.meta || {};
+    const addressMeta = meta.address || {};
+    const inferredEmail = meta.email || (entry.contact?.includes('@') ? entry.contact : '');
+    const inferredPhone = meta.phone || (!meta.email && !entry.contact?.includes('@') ? entry.contact || '' : '');
+    const initialNotes = meta.notes || '';
+    const initialExtended = Boolean(
+      addressMeta.line1 ||
+        addressMeta.line2 ||
+        addressMeta.city ||
+        addressMeta.state ||
+        addressMeta.zip ||
+        initialNotes
+    );
 
     const titleRow = document.createElement('div');
     titleRow.style.display = 'flex';
@@ -516,7 +530,7 @@ export function mountContacts(host) {
     titleRow.style.alignItems = 'center';
 
     const heading = document.createElement('div');
-    heading.textContent = isEdit ? 'Edit contact/vendor' : 'New contact/vendor';
+    heading.textContent = isEdit ? 'Edit Contact' : 'New Contact';
     heading.style.fontSize = '18px';
     heading.style.fontWeight = '700';
 
@@ -524,144 +538,155 @@ export function mountContacts(host) {
 
     titleRow.append(heading, closeBtn);
 
-    const shallowTab = button('Shallow');
-    const deepTab = button('Deep');
-    shallowTab.style.padding = deepTab.style.padding = '6px 10px';
-    shallowTab.style.background = '#34405c';
-    deepTab.style.background = '#2a3040';
-
-    const tabs = document.createElement('div');
-    tabs.style.display = 'flex';
-    tabs.style.gap = '8px';
-    tabs.append(shallowTab, deepTab);
-
-    const shallow = document.createElement('div');
-    shallow.style.display = 'flex';
-    shallow.style.flexDirection = 'column';
-    shallow.style.gap = '12px';
+    const form = document.createElement('div');
+    form.style.display = 'flex';
+    form.style.flexDirection = 'column';
+    form.style.gap = '12px';
 
     const { wrap: nameWrap, field: nameField } = input('Name *');
     nameField.required = true;
+    nameField.placeholder = 'Full name or company';
     nameField.value = entry?.name || '';
 
-    const { wrap: contactWrap, field: contactField } = input('Contact');
-    contactField.value = entry?.contact || '';
+    const { wrap: emailWrap, field: emailField } = input('Email', 'email');
+    emailField.placeholder = 'name@domain.com';
+    emailField.value = inferredEmail || '';
 
-    const shallowGrid = document.createElement('div');
-    shallowGrid.style.display = 'grid';
-    shallowGrid.style.gridTemplateColumns = '1fr';
-    shallowGrid.style.gap = '10px';
+    const { wrap: phoneWrap, field: phoneField } = input('Phone', 'tel');
+    phoneField.placeholder = '555-0123';
+    phoneField.value = inferredPhone || '';
 
-    shallowGrid.append(nameWrap, contactWrap);
+    const togglesRow = document.createElement('div');
+    togglesRow.style.display = 'grid';
+    togglesRow.style.gap = '8px';
 
-    const toggleWrap = document.createElement('div');
-    toggleWrap.style.display = 'grid';
-    toggleWrap.style.gridTemplateColumns = '1fr';
-    toggleWrap.style.gap = '8px';
-
-    const orgToggle = buildToggle('Company / Organization', Boolean(entry?.is_org));
+    const extendToggle = buildToggle('Add Address & Notes', initialExtended);
     const vendorToggle = buildToggle('Treat as Vendor', entry?.is_vendor ?? entry?.facade === 'vendors');
 
-    toggleWrap.append(orgToggle.wrap, vendorToggle.wrap);
+    togglesRow.append(extendToggle.wrap, vendorToggle.wrap);
 
-    shallow.append(shallowGrid, toggleWrap);
+    const extendedSection = document.createElement('div');
+    extendedSection.style.display = extendToggle.getValue() ? 'flex' : 'none';
+    extendedSection.style.flexDirection = 'column';
+    extendedSection.style.gap = '10px';
+    extendedSection.style.paddingTop = '4px';
 
-    const deep = document.createElement('div');
-    deep.style.display = 'none';
-    deep.style.flexDirection = 'column';
-    deep.style.gap = '12px';
+    const { wrap: addr1Wrap, field: addr1Field } = input('Address Line 1');
+    addr1Field.placeholder = '123 Main St';
+    addr1Field.value = addressMeta.line1 || '';
 
-    const { wrap: orgWrap, field: orgField } = select('Organization');
-    const blankOpt = document.createElement('option');
-    blankOpt.value = '';
-    blankOpt.textContent = 'None';
-    orgField.append(blankOpt);
-    state.orgs
-      .slice()
-      .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-      .forEach((org) => {
-        const opt = document.createElement('option');
-        opt.value = String(org.id);
-        opt.textContent = org.name;
-        orgField.append(opt);
-      });
-    orgField.value = entry?.organization_id ? String(entry.organization_id) : '';
+    const { wrap: addr2Wrap, field: addr2Field } = input('Address Line 2');
+    addr2Field.placeholder = 'Unit, Suite, etc.';
+    addr2Field.value = addressMeta.line2 || '';
 
-    const createdAt = document.createElement('div');
-    createdAt.textContent = `Created at: ${isEdit ? formatDate(entry.created_at) : 'Will be set on save'}`;
-    createdAt.style.fontSize = '13px';
-    createdAt.style.color = '#cdd1dc';
+    const cityStateZip = document.createElement('div');
+    cityStateZip.style.display = 'grid';
+    cityStateZip.style.gap = '8px';
+    cityStateZip.style.gridTemplateColumns = '1fr 120px 120px';
 
-    const metaPlaceholder = document.createElement('div');
-    metaPlaceholder.textContent = 'Advanced metadata will live here later';
-    metaPlaceholder.style.fontSize = '12px';
-    metaPlaceholder.style.color = '#b5b8c2';
+    const { wrap: cityWrap, field: cityField } = input('City');
+    cityField.placeholder = 'City';
+    cityWrap.style.marginBottom = '0';
 
-    deep.append(orgWrap, createdAt, metaPlaceholder);
+    const { wrap: stateWrap, field: stateField } = input('State');
+    stateField.placeholder = 'State';
+    stateWrap.style.marginBottom = '0';
+
+    const { wrap: zipWrap, field: zipField } = input('Zip');
+    zipField.placeholder = 'Zip';
+    zipWrap.style.marginBottom = '0';
+
+    cityStateZip.append(cityWrap, stateWrap, zipWrap);
+
+    const notesWrap = document.createElement('label');
+    notesWrap.style.display = 'flex';
+    notesWrap.style.flexDirection = 'column';
+    notesWrap.style.gap = '6px';
+    notesWrap.style.color = FG;
+    notesWrap.style.fontSize = '13px';
+    const notesLabel = document.createElement('span');
+    notesLabel.textContent = 'Notes';
+    const notesField = document.createElement('textarea');
+    notesField.rows = 3;
+    notesField.placeholder = 'Anything helpful…';
+    notesField.style.background = INPUT_BG;
+    notesField.style.color = FG;
+    notesField.style.border = `1px solid ${BORDER}`;
+    notesField.style.borderRadius = '10px';
+    notesField.style.padding = '10px 12px';
+    notesField.style.fontSize = '14px';
+    notesField.style.outline = 'none';
+    notesField.onfocus = () => (notesField.style.borderColor = '#4b6bfb');
+    notesField.onblur = () => (notesField.style.borderColor = BORDER);
+    notesField.value = initialNotes;
+    notesWrap.append(notesLabel, notesField);
+
+    extendedSection.append(addr1Wrap, addr2Wrap, cityStateZip, notesWrap);
+
+    extendToggle.input.addEventListener('change', () => {
+      extendedSection.style.display = extendToggle.getValue() ? 'flex' : 'none';
+    });
+
+    form.append(nameWrap, emailWrap, phoneWrap, togglesRow, extendedSection);
 
     const actions = document.createElement('div');
     actions.style.display = 'flex';
     actions.style.justifyContent = 'flex-end';
     actions.style.gap = '10px';
+    actions.style.marginTop = '6px';
 
     const saveBtn = button('Save');
     saveBtn.disabled = !nameField.value.trim();
 
-    const togglePanels = (showDeep) => {
-      shallow.style.display = showDeep ? 'none' : 'flex';
-      deep.style.display = showDeep ? 'flex' : 'none';
-      shallowTab.style.background = showDeep ? '#2a3040' : '#34405c';
-      deepTab.style.background = showDeep ? '#34405c' : '#2a3040';
-    };
-    shallowTab.addEventListener('click', () => togglePanels(false));
-    deepTab.addEventListener('click', () => togglePanels(true));
+    const cancelBtn = button('Cancel');
+    cancelBtn.addEventListener('click', () => document.body.removeChild(overlay));
 
     nameField.addEventListener('input', () => {
       saveBtn.disabled = !nameField.value.trim();
     });
 
-    function buildPayload() {
-      const payload = {
-        name: nameField.value.trim(),
-        contact: contactField.value.trim() || null,
-        is_org: orgToggle.getValue(),
-        is_vendor: vendorToggle.getValue(),
-        organization_id: orgField.value ? Number(orgField.value) : null,
-      };
-      return payload;
-    }
-
-    function diffPayload() {
-      if (!isEdit) return buildPayload();
-      const current = buildPayload();
-      const base = {
-        name: entry.name,
-        contact: entry.contact || null,
-        is_org: Boolean(entry.is_org),
-        is_vendor: Boolean(entry.is_vendor),
-        organization_id: entry.organization_id || null,
-      };
-      const diff = {};
-      Object.entries(current).forEach(([k, v]) => {
-        if ((v ?? null) !== (base[k] ?? null)) diff[k] = v;
-      });
-      return diff;
-    }
-
     async function save() {
-      if (saveBtn.disabled) return;
-      const payload = diffPayload();
-      if (!payload.name) {
+      if (!nameField.value.trim()) {
         toast('Name is required', 'error');
         return;
       }
+
+      const emailVal = emailField.value.trim();
+      const phoneVal = phoneField.value.trim();
+      const useExtended = extendToggle.getValue();
+      const legacyContact = emailVal || phoneVal || '';
+
+      const payload = {
+        name: nameField.value.trim(),
+        contact: legacyContact || null,
+        role: 'contact',
+        is_vendor: vendorToggle.getValue() ? 1 : 0,
+        is_org: entry?.is_org ? 1 : 0,
+        organization_id: entry?.organization_id ?? null,
+        meta: {
+          email: emailVal,
+          phone: phoneVal,
+          address: useExtended
+            ? {
+                line1: addr1Field.value.trim(),
+                line2: addr2Field.value.trim(),
+                city: cityField.value.trim(),
+                state: stateField.value.trim(),
+                zip: zipField.value.trim(),
+              }
+            : { line1: '', line2: '', city: '', state: '', zip: '' },
+          notes: useExtended ? notesField.value.trim() : '',
+        },
+      };
+
       try {
         saveBtn.textContent = 'Saving…';
         saveBtn.disabled = true;
         await ensureToken();
         let saved;
         if (isEdit) {
-          const facade = entry.facade || 'vendors';
+          const facade = entry.facade || (entry.is_vendor ? 'vendors' : 'contacts');
+          if (facade !== 'contacts') delete payload.role;
           saved = await apiPut(`/app/${facade}/${entry.id}`, payload);
           toast('Saved');
         } else {
@@ -698,11 +723,9 @@ export function mountContacts(host) {
       document.body.removeChild(overlay);
     });
 
-    const cancelBtn = button('Cancel');
-    cancelBtn.addEventListener('click', () => document.body.removeChild(overlay));
     actions.append(cancelBtn, saveBtn);
 
-    box.append(titleRow, tabs, shallow, deep, actions);
+    box.append(titleRow, form, actions);
     document.body.appendChild(overlay);
     nameField.focus();
   }
