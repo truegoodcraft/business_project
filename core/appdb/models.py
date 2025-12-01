@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
@@ -27,4 +27,50 @@ class Vendor(Base):
     organization = relationship("Vendor", remote_side=[id], uselist=False)
 
 
-__all__ = ["Base", "Vendor"]
+class Item(Base):
+    __tablename__ = "items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    vendor_id = Column(Integer, ForeignKey("vendors.id"), nullable=True)
+    sku = Column(String, nullable=True)
+    name = Column(String, nullable=False)
+    qty = Column(Float, nullable=False, server_default="0")  # DEPRECATED
+    unit = Column(String, nullable=True)  # DEPRECATED
+    price = Column(Float, nullable=True)
+    notes = Column(Text, nullable=True)
+    item_type = Column(String, nullable=False, server_default="product")
+    location = Column(String, nullable=True)
+    uom = Column(String, nullable=False, server_default="ea")
+    qty_stored = Column(Integer, nullable=False, server_default="0")
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+
+
+class Recipe(Base):
+    __tablename__ = "recipes"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    notes = Column(Text)
+    items = relationship("RecipeItem", back_populates="recipe", cascade="all, delete-orphan")
+
+
+class RecipeItem(Base):
+    __tablename__ = "recipe_items"
+
+    id = Column(Integer, primary_key=True)
+    recipe_id = Column(Integer, ForeignKey("recipes.id"), nullable=False)
+    item_id = Column(Integer, ForeignKey("items.id"), nullable=False)
+    role = Column(String, nullable=False)
+    qty_stored = Column(Integer, nullable=False)
+
+    recipe = relationship("Recipe", back_populates="items")
+    item = relationship("Item")
+
+
+__all__ = [
+    "Base",
+    "Item",
+    "Recipe",
+    "RecipeItem",
+    "Vendor",
+]

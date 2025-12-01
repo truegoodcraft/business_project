@@ -20,6 +20,9 @@
 <p align="center">
   Smoke harness covers cascade + facet deletes.
 </p>
+<p align="center">
+  Integer measurements (metric ×100, half-away-from-zero) and a new `#/manufacturing` Recipe → Run workspace.
+</p>
 
 
 # BUS Core (v0.5.1 "Iron Core")

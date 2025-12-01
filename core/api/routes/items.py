@@ -2,7 +2,7 @@
 # core/api/routes/items.py
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
 from core.appdb.engine import get_session
@@ -14,14 +14,71 @@ from tgc.state import AppState, get_state
 
 router = APIRouter(tags=["items"])
 
+UOMS = {"ea", "g", "mm", "mm2", "mm3"}
+MAX_INT64 = 2**63 - 1
+
+
+def _round_half_away_from_zero(val: float) -> int:
+    sign = -1 if val < 0 else 1
+    return int((abs(val) + 0.5) // 1 * sign)
+
+
+def _guard_int_bounds(value: int):
+    if abs(int(value)) > MAX_INT64:
+        raise HTTPException(status_code=400, detail="quantity overflow: exceeds 64-bit integer")
+
+
+def _to_stored(qty: float, uom: str) -> int:
+    if uom == "ea":
+        stored = _round_half_away_from_zero(qty)
+    else:
+        stored = _round_half_away_from_zero(qty * 100)
+    _guard_int_bounds(stored)
+    return stored
+
+
+def _apply_qty_fields(it: Item, payload: Dict[str, Any], resp: Optional[Response] = None):
+    uom = (payload.get("uom") or payload.get("unit") or getattr(it, "uom", "ea") or "ea").lower()
+    if uom not in UOMS:
+        raise HTTPException(status_code=400, detail="unsupported uom")
+    qty_stored = payload.get("qty_stored")
+    used_legacy = False
+    if qty_stored is None:
+        if "qty" in payload:
+            qty_val = payload.get("qty") or 0
+            qty_stored = _to_stored(float(qty_val), uom)
+            used_legacy = True
+        else:
+            qty_stored = getattr(it, "qty_stored", 0) or 0
+    else:
+        try:
+            qty_stored = int(qty_stored)
+        except Exception as exc:  # pragma: no cover - defensive
+            raise HTTPException(status_code=400, detail="qty_stored must be integer") from exc
+        _guard_int_bounds(qty_stored)
+
+    it.uom = uom
+    it.qty_stored = qty_stored
+    try:
+        it.unit = uom
+        it.qty = qty_stored if uom == "ea" else qty_stored / 100.0
+    except Exception:
+        pass
+    if used_legacy and resp is not None:
+        resp.headers["X-BUS-Deprecation"] = "qty/unit"
+
 def _row(it: Item, vendor_name: Optional[str] = None) -> Dict[str, Any]:
     """Shape rows the way the UI expects (fields are additive/forgiving)."""
+    qty_stored = getattr(it, "qty_stored", 0) or 0
+    uom = getattr(it, "uom", "ea") or "ea"
     return {
         "id": it.id,
         "name": it.name,
         "sku": it.sku,
-        "qty": it.qty,
-        "unit": it.unit,
+        "uom": uom,
+        "qty_stored": qty_stored,
+        "qty": qty_stored if uom == "ea" else qty_stored / 100.0,
+        "unit": uom,
         "price": it.price,
         "notes": it.notes,
         # UI reads these (optional):
@@ -67,6 +124,7 @@ def create_item(
     _writes: None = Depends(require_writes),
     _token: str = Depends(require_token_ctx),
     _state: AppState = Depends(get_state),
+    resp: Response,
 ) -> Dict[str, Any]:
     require_owner_commit(req)
 
@@ -81,7 +139,7 @@ def create_item(
             it = Item(id=item_id)
             db.add(it)
         # Apply provided fields
-        for f in ("name", "sku", "qty", "unit", "price", "notes", "vendor_id"):
+        for f in ("name", "sku", "price", "notes", "vendor_id"):
             if f in payload:
                 setattr(it, f, payload[f])
         if "location" in payload:
@@ -94,12 +152,11 @@ def create_item(
                 pass
         if not getattr(it, "name", None):
             it.name = f"Item {item_id}"
+        _apply_qty_fields(it, payload, resp)
     else:
         it = Item(
             name=payload.get("name") or "Unnamed Item",
             sku=payload.get("sku"),
-            qty=payload.get("qty", 0),
-            unit=payload.get("unit"),
             price=payload.get("price"),
             notes=payload.get("notes"),
             vendor_id=payload.get("vendor_id"),
@@ -110,6 +167,7 @@ def create_item(
                 setattr(it, "item_type", item_type)
             except Exception:
                 pass
+        _apply_qty_fields(it, payload, resp)
         db.add(it)
 
     db.commit()
@@ -129,6 +187,7 @@ def update_item(
     _writes: None = Depends(require_writes),
     _token: str = Depends(require_token_ctx),
     _state: AppState = Depends(get_state),
+    resp: Response,
 ) -> Dict[str, Any]:
     require_owner_commit(req)
 
@@ -139,7 +198,7 @@ def update_item(
     location = (payload.get("location") or "").strip() or None
     item_type = payload.get("item_type") or payload.get("type")
 
-    for f in ("name", "sku", "qty", "unit", "price", "notes", "vendor_id"):
+    for f in ("name", "sku", "price", "notes", "vendor_id"):
         if f in payload:
             try:
                 setattr(it, f, payload[f])
@@ -153,6 +212,7 @@ def update_item(
         except Exception:
             pass
 
+    _apply_qty_fields(it, payload, resp)
     db.commit()
     db.refresh(it)
     vname = None
