@@ -2,7 +2,7 @@
 # core/api/routes/items.py
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.orm import Session
 
 from core.appdb.engine import get_session
@@ -118,13 +118,13 @@ def get_item(
 
 @router.post("/items")
 def create_item(
-    payload: Dict[str, Any],
+    resp: Response,
+    payload: Dict[str, Any] = Body(...),
     req: Request,
     db: Session = Depends(get_session),
     _writes: None = Depends(require_writes),
     _token: str = Depends(require_token_ctx),
     _state: AppState = Depends(get_state),
-    resp: Response,
 ) -> Dict[str, Any]:
     require_owner_commit(req)
 
@@ -180,14 +180,14 @@ def create_item(
 
 @router.put("/items/{item_id}")
 def update_item(
+    resp: Response,
     item_id: int,
-    payload: Dict[str, Any],
+    payload: Dict[str, Any] = Body(...),
     req: Request,
     db: Session = Depends(get_session),
     _writes: None = Depends(require_writes),
     _token: str = Depends(require_token_ctx),
     _state: AppState = Depends(get_state),
-    resp: Response,
 ) -> Dict[str, Any]:
     require_owner_commit(req)
 

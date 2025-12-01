@@ -20,6 +20,9 @@ from starlette.staticfiles import StaticFiles
 
 from core.appdb.engine import DB_PATH as DB_FILE, ENGINE, SessionLocal
 from core.appdb.paths import ui_dir
+from core.api.routes.items import router as items_router
+from core.api.routes.manufacturing import router as manufacturing_router
+from core.api.routes.recipes import router as recipes_router
 from core.appdb.migrate import ensure_vendors_flags
 from core.config.paths import APP_DIR, BUS_ROOT, DATA_DIR, JOURNALS_DIR
 from core.config.writes import require_writes
@@ -40,7 +43,6 @@ if not ((3, 11) <= sys.version_info[:2] <= (3, 13)):
     )
 
 # Strict imports - Fail fast if routers have syntax errors
-from core.api.routes.items import router as items_router
 from core.api.routes.vendors import router as vendors_router
 
 
@@ -81,8 +83,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="BUS Core Alpha", version=VERSION, lifespan=lifespan)
 
-if UI_DIR.exists():
-    app.mount("/ui", StaticFiles(directory=str(UI_DIR), html=True), name="ui")
+app.mount("/ui", StaticFiles(directory="core/ui", html=True), name="ui")
 app.mount("/brand", StaticFiles(directory=str(REPO_ROOT)), name="brand")
 
 # ---- Protected health endpoint for smoke tests
@@ -352,9 +353,13 @@ async def dev_capabilities(_token: str = Depends(require_token_ctx)):
 
 items_router.dependencies = [Depends(require_token_ctx)]
 vendors_router.dependencies = [Depends(require_token_ctx)]
+recipes_router.dependencies = [Depends(require_token_ctx)]
+manufacturing_router.dependencies = [Depends(require_token_ctx)]
 
 app.include_router(items_router, prefix="/app")
 app.include_router(vendors_router, prefix="/app")
+app.include_router(recipes_router, prefix="/app")
+app.include_router(manufacturing_router, prefix="/app")
 app.include_router(mfg_router)
 app.include_router(health_router)
 
