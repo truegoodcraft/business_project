@@ -9,3 +9,4 @@ sqlalchemy>=2.0.0
 python-multipart>=0.0.6
 # Security primitives for local secrets/session signing
 cryptography>=46.0.0
+requests>=2.31,<3
