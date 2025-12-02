@@ -23,6 +23,8 @@ from core.appdb.paths import ui_dir
 from core.api.routes.items import router as items_router
 from core.api.routes.manufacturing import router as manufacturing_router
 from core.api.routes.recipes import router as recipes_router
+from core.api.routes.ledger import router as ledger_router
+from core.api.routes.wave_sync import router as wave_router
 from core.appdb.migrate import ensure_vendors_flags
 from core.config.paths import APP_DIR, BUS_ROOT, DATA_DIR, JOURNALS_DIR
 from core.config.writes import require_writes
@@ -355,12 +357,16 @@ items_router.dependencies = [Depends(require_token_ctx)]
 vendors_router.dependencies = [Depends(require_token_ctx)]
 recipes_router.dependencies = [Depends(require_token_ctx)]
 manufacturing_router.dependencies = [Depends(require_token_ctx)]
+ledger_router.dependencies = [Depends(require_token_ctx)]
+wave_router.dependencies = [Depends(require_token_ctx)]
 
 app.include_router(items_router, prefix="/app")
 app.include_router(vendors_router, prefix="/app")
 app.include_router(recipes_router, prefix="/app")
 app.include_router(manufacturing_router, prefix="/app")
 app.include_router(mfg_router)
+app.include_router(ledger_router)
+app.include_router(wave_router)
 app.include_router(health_router)
 
 
