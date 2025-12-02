@@ -90,7 +90,6 @@ def _row(it: Item, vendor_name: Optional[str] = None) -> Dict[str, Any]:
 
 @router.get("/items")
 def list_items(
-    req: Request,
     db: Session = Depends(get_session),
     _token: str = Depends(require_token_ctx),
     _state: AppState = Depends(get_state),
@@ -102,7 +101,6 @@ def list_items(
 @router.get("/items/{item_id}")
 def get_item(
     item_id: int,
-    req: Request,
     db: Session = Depends(get_session),
     _token: str = Depends(require_token_ctx),
     _state: AppState = Depends(get_state),
@@ -118,9 +116,9 @@ def get_item(
 
 @router.post("/items")
 def create_item(
+    req: Request,
     resp: Response,
     payload: Dict[str, Any] = Body(...),
-    req: Request,
     db: Session = Depends(get_session),
     _writes: None = Depends(require_writes),
     _token: str = Depends(require_token_ctx),
@@ -180,10 +178,10 @@ def create_item(
 
 @router.put("/items/{item_id}")
 def update_item(
+    req: Request,
     resp: Response,
     item_id: int,
     payload: Dict[str, Any] = Body(...),
-    req: Request,
     db: Session = Depends(get_session),
     _writes: None = Depends(require_writes),
     _token: str = Depends(require_token_ctx),
@@ -223,8 +221,8 @@ def update_item(
 
 @router.delete("/items/{item_id}")
 def delete_item(
-    item_id: int,
     req: Request,
+    item_id: int,
     db: Session = Depends(get_session),
     _writes: None = Depends(require_writes),
     _token: str = Depends(require_token_ctx),
