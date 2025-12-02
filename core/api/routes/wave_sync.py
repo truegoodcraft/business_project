@@ -19,9 +19,9 @@ async def suggestions():
         return {"suggestions": [], "note": "Set WAVE_PAT and WAVE_BUSINESS_ID env vars"}
     try:
         from core.wave.client import WaveClient  # lazy import
+        from core.wave.mapping import get_item_id
     except Exception as e:
         return {"suggestions": [], "note": f"Wave client unavailable: {e}. Install 'requests' to enable."}
-    from core.wave.mapping import get_item_id
 
     wc = WaveClient(pat, bid)
     data = wc.query_invoices_since("1970-01-01T00:00:00Z")
