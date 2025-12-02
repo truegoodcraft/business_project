@@ -87,21 +87,20 @@ def bootstrap_legacy_batches(avg_cost_cents_by_item: Optional[Dict[int,int]] = N
     created = 0
     with _conn() as con:
         cur = con.cursor()
-        # Prefer items.qty; if not present, try items.qty_stored/100 for backward compatibility
+        # Prefer items.qty; if not present, try items.qty_stored
         # Detect columns
         cur.execute("PRAGMA table_info(items)")
         cols = {r[1] for r in cur.fetchall()}
         if "qty" in cols:
             qty_expr = "qty"
-            scale = 1.0
         elif "qty_stored" in cols:
-            qty_expr = "(qty_stored / 100.0)"  # best-effort fallback
-            scale = 1.0
+            qty_expr = "qty_stored"
         else:
             return {"created": 0, "error": "No qty column found in items"}
         cur.execute(f"SELECT id, {qty_expr} as onhand FROM items")
         for iid, onhand in cur.fetchall():
-            if (onhand or 0) <= 0: continue
+            if (onhand or 0) <= 0:
+                continue
             cost = (avg_cost_cents_by_item or {}).get(iid, 0)
             # create batch
             cur.execute(
@@ -115,5 +114,5 @@ def bootstrap_legacy_batches(avg_cost_cents_by_item: Optional[Dict[int,int]] = N
                 (iid, bid, float(onhand), int(cost), 'bootstrap', 'bootstrap:' + str(bid))
             )
             created += 1
-    return {"created": created}
+    return {"created": created, "using": qty_expr}
 
