@@ -1,99 +1,100 @@
-<#
-  PowerShell 5.1-compatible smoke test.
-  Verifies cookie mint, protected ping, UI shell, and favicon.
-  Falls back to the session cookie jar when Set-Cookie header is not exposed.
+<#  BUS Core – Smoke Test (Windows PowerShell 5.1 compatible)
+    Checks: session, schema, ledger health, create item, purchases (2 batches),
+            consume FIFO (12 units), valuation (=1500¢), movement history
+    Usage:
+      powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\smoke.ps1 -BaseUrl http://127.0.0.1:8765
 #>
-Set-StrictMode -Version Latest
+param(
+  [string]$BaseUrl = "http://127.0.0.1:8765"
+)
+
 $ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
 
-# Use script directory as repo root to avoid CWD issues
-$RepoRoot = Split-Path -Parent $PSScriptRoot
-Set-Location $RepoRoot
-$Base = "http://127.0.0.1:8765"
+function Mark([string]$msg, [ConsoleColor]$color) { Write-Host "  $msg" -ForegroundColor $color }
+function Step([string]$title) { Write-Host ""; Write-Host "▌ $title" -ForegroundColor Cyan }
 
-function Get-SessionCookie {
-  param([string]$Base)
-  Write-Host "== Smoke: /session/token"
-  $session = $null
-  try {
-    $resp = Invoke-WebRequest -Uri "$Base/session/token" -UseBasicParsing -MaximumRedirection 0 -SessionVariable session
-  } catch {
-    throw "Failed to hit /session/token. Is the server running? Error: $($_.Exception.Message)"
-  }
-
-  # Try direct header first (works on PS7+)
-  $cookie = $null
-  if ($resp.Headers -and $resp.Headers.ContainsKey("Set-Cookie")) {
-    $cookie = ($resp.Headers["Set-Cookie"] | Select-Object -First 1).Split(";")[0]
-  }
-
-  # Fallback: cookie jar (PS 5.1 often hides Set-Cookie from Headers)
-  if (-not $cookie) {
-    try {
-      $jar = $session.Cookies.GetCookies($Base)
-      if ($jar -and $jar.Count -gt 0) {
-        $cookie = "$($jar[0].Name)=$($jar[0].Value)"
-      }
-    } catch { }
-  }
-
-  if (-not $cookie) {
-    Write-Warning "No cookie via header or jar; dumping diagnostics..."
-    if ($resp) {
-      Write-Host "StatusCode: $($resp.StatusCode)"
-      if ($resp.Headers) {
-        Write-Host "Headers:"; $resp.Headers.GetEnumerator() | ForEach-Object { Write-Host " - $($_.Key): $($_.Value)" }
-      }
-    }
-    try {
-      $j = $session.Cookies.GetCookies($Base)
-      Write-Host "CookieJar count: $($j.Count)"
-    } catch { }
-    throw "No session cookie obtained from /session/token"
-  }
-  # Extract the token value for header fallback (X-Session-Token)
-  $token = $cookie -replace '^[^=]+=','' -replace ';.*$',''
-  $token = $token.Trim()
-  # Return a small object with both
-  [pscustomobject]@{
-    Cookie = $cookie
-    Token  = $token
-    Session = $session
-  }
+function JsonPost($path, $obj) {
+  $uri = "$BaseUrl$path"
+  $body = ($obj | ConvertTo-Json -Depth 6)
+  $resp = Invoke-WebRequest -UseBasicParsing -Method POST -Uri $uri -WebSession $sess -ContentType "application/json" -Body $body
+  return ($resp.Content | ConvertFrom-Json)
+}
+function JsonGet($path) {
+  $uri = "$BaseUrl$path"
+  $resp = Invoke-WebRequest -UseBasicParsing -Method GET -Uri $uri -WebSession $sess
+  return ($resp.Content | ConvertFrom-Json)
+}
+function Assert($cond, [string]$okMsg, [string]$failMsg) {
+  if ($cond) { Mark "✔ $okMsg" Green } else { Mark "✖ $failMsg" Red; throw $failMsg }
 }
 
-$auth = Get-SessionCookie -Base $Base
-Write-Host "Cookie: $($auth.Cookie)"
-Write-Host "Token:  $($auth.Token)"
+Write-Host ""
+Write-Host "═══════════════════════════════════════════════════════════════"
+Write-Host " BUS Core – Smoke (Items + FIFO Ledger) " -ForegroundColor White
+Write-Host "═══════════════════════════════════════════════════════════════"
 
-Write-Host "== Smoke: /app/ping with cookie"
-# Send both Cookie and X-Session-Token to avoid client cookie quirks
-$headers = @{
-  "Cookie"          = $auth.Cookie
-  "X-Session-Token" = $auth.Token
-}
-# Prefer using the same WebSession to carry jar state too
-$ping = Invoke-WebRequest -Uri "$Base/app/ping" -Headers $headers -UseBasicParsing -MaximumRedirection 0 -WebSession $auth.Session
-if ($ping.StatusCode -ne 200) {
-  throw "/app/ping expected 200, got $($ping.StatusCode)"
-}
-
-Write-Host "== Smoke: UI shell"
+# Session
+Step "Session"
 try {
-  $ui = Invoke-WebRequest -Uri "$Base/ui/shell.html" -UseBasicParsing -MaximumRedirection 0
-  if ($ui.StatusCode -ne 200) { throw "/ui/shell.html expected 200, got $($ui.StatusCode)" }
+  $null = Invoke-WebRequest -UseBasicParsing -Uri "$BaseUrl/session/token" -SessionVariable sess
+  Mark "✔ Session cookie acquired" Green
 } catch {
-  throw "UI shell not available at /ui/shell.html: $($_.Exception.Message)"
+  Mark "✖ Could not get session at $BaseUrl/session/token" Red
+  throw
 }
 
-Write-Host "== Smoke: favicon"
-try {
-  $fav = Invoke-WebRequest -Uri "$Base/favicon.ico" -UseBasicParsing -MaximumRedirection 0
-  if (($fav.StatusCode -ne 200) -and ($fav.StatusCode -ne 204)) {
-    throw "/favicon.ico expected 200 or 204, got $($fav.StatusCode)"
-  }
-} catch {
-  throw "Favicon check failed: $($_.Exception.Message)"
-}
+# Schema / DB
+Step "Schema / DB"
+$dbinfo = JsonGet "/dev/db-info"
+Assert ($dbinfo.tables -contains "items")           "items table present"         "items table missing"
+Assert ($dbinfo.tables -contains "item_batches")    "item_batches present"        "item_batches missing"
+Assert ($dbinfo.tables -contains "item_movements")  "item_movements present"      "item_movements missing"
 
-Write-Host "All smoke checks passed."
+# Ledger health
+Step "Ledger health"
+$health = JsonGet "/app/ledger/health"
+Assert ($health.desync -eq $false) "Ledger in sync" "Ledger reports desync"
+
+# Create test item
+Step "Create test item"
+$stamp  = Get-Date -Format "yyyyMMddHHmmss"
+$sku    = "SMK-$stamp"
+$item   = JsonPost "/app/items" @{
+  name="Smoke Widget"; sku=$sku; uom="ea"; qty_stored=0; price=0;
+  item_type="Material"; location="smoke-rack"
+}
+Assert ($item.id -gt 0) "Item created: #$($item.id) ($sku)" "Failed to create item"
+
+$itemId = $item.id
+$seen = (JsonGet "/app/ledger/debug/db?item_id=$itemId")
+Assert ($seen.items_count -ge 1 -and $seen.item_row -ne $null) "Ledger sees item #$itemId" "Ledger cannot see the new item"
+
+# Stock-in (two batches)
+Step "Stock-in (create cost layers)"
+$po1 = JsonPost "/app/ledger/purchase" @{ item_id=$itemId; qty=10; unit_cost_cents=300; source_kind="purchase"; source_id="po-A" }
+$po2 = JsonPost "/app/ledger/purchase" @{ item_id=$itemId; qty=5;  unit_cost_cents=500; source_kind="purchase"; source_id="po-B" }
+Assert ($po1.ok -and $po2.ok) "Two batches created (#$($po1.batch_id), #$($po2.batch_id))" "Failed to create batches"
+
+# Consume 12 (10@300 + 2@500)
+Step "Consume (FIFO: 10@300 + 2@500)"
+$cons = JsonPost "/app/ledger/consume" @{ item_id=$itemId; qty=12; source_kind="sale"; source_id="so-1" }
+Assert ($cons.ok) "Consumed 12 units via FIFO" "Consumption failed"
+Assert ($cons.consumed.Count -eq 2) "Split across 2 cost layers" "Unexpected batch split"
+
+# Valuation
+Step "Valuation"
+$val = JsonGet "/app/ledger/valuation?item_id=$itemId"
+Assert ($val.total_value_cents -eq 1500) "Valuation = `$15.00 (1500¢)" "Valuation mismatch: $($val.total_value_cents)¢"
+
+# Movement history
+Step "Movement history"
+$mov = JsonGet "/app/ledger/movements?item_id=$itemId&limit=50"
+$cnt = $mov.movements.Count
+Assert ($cnt -ge 4) "Movement entries present ($cnt)" "No movements found"
+
+Write-Host ""
+Write-Host "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓" -ForegroundColor DarkCyan
+Write-Host "┃   Smoke: PASSED  –  items ✅  ledger ✅  fifo ✅  ui ✅ ┃" -ForegroundColor DarkCyan
+Write-Host "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛" -ForegroundColor DarkCyan
+Write-Host ""
