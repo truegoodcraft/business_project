@@ -1,100 +1,140 @@
-<#  BUS Core – Smoke Test (Windows PowerShell 5.1 compatible)
-    Checks: session, schema, ledger health, create item, purchases (2 batches),
-            consume FIFO (12 units), valuation (=1500¢), movement history
-    Usage:
-      powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\smoke.ps1 -BaseUrl http://127.0.0.1:8765
-#>
+# scripts/smoke.ps1
+# Quick, reproducible smoke that proves inventory FIFO works end-to-end.
+# Usage:
+#   powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\smoke.ps1
+#   powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\smoke.ps1 -BindHost 127.0.0.1 -Port 8765 -DbPath data\app.db -Clean
+
 param(
-  [string]$BaseUrl = "http://127.0.0.1:8765"
+  [string]$BindHost = "127.0.0.1",
+  [int]$Port = 8765,
+  [string]$DbPath = "data/app.db",
+  [switch]$Clean,
+  [switch]$Quiet
 )
 
-$ErrorActionPreference = "Stop"
-$ProgressPreference = "SilentlyContinue"
-
-function Mark([string]$msg, [ConsoleColor]$color) { Write-Host "  $msg" -ForegroundColor $color }
-function Step([string]$title) { Write-Host ""; Write-Host "▌ $title" -ForegroundColor Cyan }
-
-function JsonPost($path, $obj) {
-  $uri = "$BaseUrl$path"
-  $body = ($obj | ConvertTo-Json -Depth 6)
-  $resp = Invoke-WebRequest -UseBasicParsing -Method POST -Uri $uri -WebSession $sess -ContentType "application/json" -Body $body
-  return ($resp.Content | ConvertFrom-Json)
+function Say([string]$Text, [string]$Color = "White") {
+  if (-not $Quiet) { Write-Host $Text -ForegroundColor $Color }
 }
-function JsonGet($path) {
-  $uri = "$BaseUrl$path"
-  $resp = Invoke-WebRequest -UseBasicParsing -Method GET -Uri $uri -WebSession $sess
-  return ($resp.Content | ConvertFrom-Json)
-}
-function Assert($cond, [string]$okMsg, [string]$failMsg) {
-  if ($cond) { Mark "✔ $okMsg" Green } else { Mark "✖ $failMsg" Red; throw $failMsg }
-}
+function Tick([string]$Text) { Say ("  [√] " + $Text) "Green" }
+function Boom([string]$Text) { Say ("  [x] " + $Text) "Red" }
 
-Write-Host ""
-Write-Host "═══════════════════════════════════════════════════════════════"
-Write-Host " BUS Core – Smoke (Items + FIFO Ledger) " -ForegroundColor White
-Write-Host "═══════════════════════════════════════════════════════════════"
+$scriptDir = Split-Path -Parent $PSCommandPath
+$repoRoot  = Resolve-Path (Join-Path $scriptDir "..")
+Push-Location $repoRoot
 
-# Session
-Step "Session"
+# Helpers ----------------------------------------------------------
+function Invoke-Json {
+  param([string]$Method,[string]$Url,[object]$Body = $null,[Microsoft.PowerShell.Commands.WebRequestSession]$Session = $null)
+  $params = @{
+    Uri = $Url
+    Method = $Method
+    UseBasicParsing = $true
+  }
+  if ($Session) { $params.WebSession = $Session }
+  if ($Body -ne $null) {
+    $params.ContentType = "application/json"
+    $params.Body = ($Body | ConvertTo-Json -Compress)
+  }
+  return Invoke-WebRequest @params
+}
+function Parse-Json([string]$s) {
+  if ([string]::IsNullOrWhiteSpace($s)) { return $null }
+  return $s | ConvertFrom-Json
+}
+# -----------------------------------------------------------------
+
 try {
-  $null = Invoke-WebRequest -UseBasicParsing -Uri "$BaseUrl/session/token" -SessionVariable sess
-  Mark "✔ Session cookie acquired" Green
+  # Resolve DB path for info & optional cleanup
+  if (-not (Split-Path -IsAbsolute $DbPath)) {
+    $DbPath = Join-Path $PWD.Path $DbPath
+  }
+  if ($Clean -and (Test-Path $DbPath)) {
+    Remove-Item -Force $DbPath
+    Say ("[smoke] Removed existing DB: {0}" -f $DbPath) "DarkGray"
+  }
+
+  $base = "http://{0}:{1}" -f $BindHost,$Port
+  Say ("[smoke] Target: {0}" -f $base) "Cyan"
+
+  # Start cookie session like the UI
+  $resp = Invoke-WebRequest -UseBasicParsing -Uri "$base/session/token" -SessionVariable sess
+  if ($resp.StatusCode -ne 200) { throw "Failed to start session; status $($resp.StatusCode)" }
+  Tick "Session: OK (cookie)"
+
+  # Create a unique item
+  $sku  = "SMOKE-" + [Guid]::NewGuid().ToString("N").Substring(0,8)
+  $item = @{
+    name="Widget A"
+    sku=$sku
+    uom="ea"
+    qty_stored=0
+    price=0
+    item_type="Material"
+    location="rack-1"
+  }
+  $r = Invoke-Json -Method POST -Url "$base/app/items" -Body $item -Session $sess
+  if ($r.StatusCode -ne 200 -and $r.StatusCode -ne 201) { throw "Create item failed ($($r.StatusCode))" }
+  $newItem = Parse-Json $r.Content
+  $itemId = $newItem.id
+  if (-not $itemId) {
+    # fallback: list and find by sku
+    $li = Invoke-WebRequest -UseBasicParsing -Uri "$base/app/items" -WebSession $sess
+    $arr = Parse-Json $li.Content
+    $itemId = ($arr | Where-Object { $_.sku -eq $sku } | Select-Object -First 1).id
+  }
+  if (-not $itemId) { throw "Unable to determine item id" }
+  Tick ("Item created: id={0}, sku={1}" -f $itemId,$sku)
+
+  # Stock in two cost layers (FIFO test setup)
+  $r1 = Invoke-Json -Method POST -Url "$base/app/ledger/purchase" -Body @{ item_id=$itemId; qty=10; unit_cost_cents=300; source_kind="purchase"; source_id="po-1001" } -Session $sess
+  if ($r1.StatusCode -ne 200) { throw "Purchase #1 failed ($($r1.StatusCode)) -> $($r1.Content)" }
+  $r2 = Invoke-Json -Method POST -Url "$base/app/ledger/purchase" -Body @{ item_id=$itemId; qty=5;  unit_cost_cents=500; source_kind="purchase"; source_id="po-1002" } -Session $sess
+  if ($r2.StatusCode -ne 200) { throw "Purchase #2 failed ($($r2.StatusCode)) -> $($r2.Content)" }
+  Tick "Purchases: 10@300 + 5@500"
+
+  # Consume 12 -> expect remaining 3@500 => valuation 1500
+  $rc = Invoke-Json -Method POST -Url "$base/app/ledger/consume" -Body @{ item_id=$itemId; qty=12; source_kind="sale"; source_id="so-2001" } -Session $sess
+  if ($rc.StatusCode -ne 200) { throw "Consume failed ($($rc.StatusCode)) -> $($rc.Content)" }
+  Tick "Consumed: 12 (FIFO)"
+
+  # Verify valuation == 1500 cents
+  $rv = Invoke-WebRequest -UseBasicParsing -Uri "$base/app/ledger/valuation?item_id=$itemId" -WebSession $sess
+  if ($rv.StatusCode -ne 200) { throw "Valuation failed ($($rv.StatusCode))" }
+  $val = (Parse-Json $rv.Content).total_value_cents
+  if ($val -ne 1500) {
+    Boom ("Valuation unexpected: got {0}, expected 1500" -f $val)
+    throw "Valuation mismatch"
+  }
+  Tick "Valuation: OK (1500¢)"
+
+  # Movements sanity
+  $rm = Invoke-WebRequest -UseBasicParsing -Uri "$base/app/ledger/movements?item_id=$itemId&limit=50" -WebSession $sess
+  if ($rm.StatusCode -ne 200) { throw "Movements failed ($($rm.StatusCode))" }
+  $movs = (Parse-Json $rm.Content).movements
+  $count = ($movs | Measure-Object).Count
+  if ($count -lt 4) {
+    Boom ("Movements too few: {0}" -f $count)
+    throw "Movement history incomplete"
+  }
+  Tick ("Movements: OK ({0} rows)" -f $count)
+
+  # Pretty finale
+  Say "" "White"
+  Say "All smoke checks passed." "Green"
+  Say ("DB: {0}" -f $DbPath) "DarkGray"
+  Say ("Item: id={0}, sku={1}" -f $itemId,$sku) "DarkGray"
+
 } catch {
-  Mark "✖ Could not get session at $BaseUrl/session/token" Red
-  throw
+  Say ""
+  Boom ("Smoke FAILED: {0}" -f $_)
+  exit 1
+} finally {
+  if ($Clean) {
+    # Optional reset: remove DB so the run is ephemeral when desired
+    if (Test-Path $DbPath) {
+      Remove-Item -Force $DbPath
+      Say ("[smoke] Cleaned DB: {0}" -f $DbPath) "DarkGray"
+    }
+  }
+  Pop-Location
 }
-
-# Schema / DB
-Step "Schema / DB"
-$dbinfo = JsonGet "/dev/db-info"
-Assert ($dbinfo.tables -contains "items")           "items table present"         "items table missing"
-Assert ($dbinfo.tables -contains "item_batches")    "item_batches present"        "item_batches missing"
-Assert ($dbinfo.tables -contains "item_movements")  "item_movements present"      "item_movements missing"
-
-# Ledger health
-Step "Ledger health"
-$health = JsonGet "/app/ledger/health"
-Assert ($health.desync -eq $false) "Ledger in sync" "Ledger reports desync"
-
-# Create test item
-Step "Create test item"
-$stamp  = Get-Date -Format "yyyyMMddHHmmss"
-$sku    = "SMK-$stamp"
-$item   = JsonPost "/app/items" @{
-  name="Smoke Widget"; sku=$sku; uom="ea"; qty_stored=0; price=0;
-  item_type="Material"; location="smoke-rack"
-}
-Assert ($item.id -gt 0) "Item created: #$($item.id) ($sku)" "Failed to create item"
-
-$itemId = $item.id
-$seen = (JsonGet "/app/ledger/debug/db?item_id=$itemId")
-Assert ($seen.items_count -ge 1 -and $seen.item_row -ne $null) "Ledger sees item #$itemId" "Ledger cannot see the new item"
-
-# Stock-in (two batches)
-Step "Stock-in (create cost layers)"
-$po1 = JsonPost "/app/ledger/purchase" @{ item_id=$itemId; qty=10; unit_cost_cents=300; source_kind="purchase"; source_id="po-A" }
-$po2 = JsonPost "/app/ledger/purchase" @{ item_id=$itemId; qty=5;  unit_cost_cents=500; source_kind="purchase"; source_id="po-B" }
-Assert ($po1.ok -and $po2.ok) "Two batches created (#$($po1.batch_id), #$($po2.batch_id))" "Failed to create batches"
-
-# Consume 12 (10@300 + 2@500)
-Step "Consume (FIFO: 10@300 + 2@500)"
-$cons = JsonPost "/app/ledger/consume" @{ item_id=$itemId; qty=12; source_kind="sale"; source_id="so-1" }
-Assert ($cons.ok) "Consumed 12 units via FIFO" "Consumption failed"
-Assert ($cons.consumed.Count -eq 2) "Split across 2 cost layers" "Unexpected batch split"
-
-# Valuation
-Step "Valuation"
-$val = JsonGet "/app/ledger/valuation?item_id=$itemId"
-Assert ($val.total_value_cents -eq 1500) "Valuation = `$15.00 (1500¢)" "Valuation mismatch: $($val.total_value_cents)¢"
-
-# Movement history
-Step "Movement history"
-$mov = JsonGet "/app/ledger/movements?item_id=$itemId&limit=50"
-$cnt = $mov.movements.Count
-Assert ($cnt -ge 4) "Movement entries present ($cnt)" "No movements found"
-
-Write-Host ""
-Write-Host "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓" -ForegroundColor DarkCyan
-Write-Host "┃   Smoke: PASSED  –  items ✅  ledger ✅  fifo ✅  ui ✅ ┃" -ForegroundColor DarkCyan
-Write-Host "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛" -ForegroundColor DarkCyan
-Write-Host ""

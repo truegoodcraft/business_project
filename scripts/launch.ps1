@@ -1,69 +1,67 @@
-<#  BUS Core – Dev Launcher (Windows PowerShell 5.1 compatible)
-    - Creates venv if missing
-    - Installs/updates deps ONLY if requirements.txt changed (hash)
-    - Ensures data folder exists and exports BUS_DB
-    - Starts uvicorn
-    Usage:
-      powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\launch.ps1 -Host 127.0.0.1 -Port 8765 -Reload:$false -DbPath data\app.db
-#>
+# scripts/launch.ps1
 param(
-  [string]$Host = "127.0.0.1",
-  [int]$Port    = 8765,
-  [bool]$Reload = $false,
-  [string]$DbPath = "data\app.db"
+  [string]$BindHost = "127.0.0.1",
+  [int]$Port = 8765,
+  [string]$DbPath = "data/app.db",
+  [switch]$Reload,
+  [switch]$Quiet
 )
 
-$ErrorActionPreference = "Stop"
-$ProgressPreference = "SilentlyContinue"
-
-function Say([string]$msg, [ConsoleColor]$c = [ConsoleColor]::Gray) { Write-Host $msg -ForegroundColor $c }
-
-$venvPath = ".venv"
-$reqFile  = "requirements.txt"
-$hashFile = Join-Path $venvPath ".req.hash"
-
-# 1) Venv
-if (-not (Test-Path $venvPath)) {
-  Say "[launch] Creating venv..." Cyan
-  python -m venv $venvPath
+# WinPS 5.1-safe color echo
+function Say([string]$Text, [string]$Color = "White") {
+  if (-not $Quiet) { Write-Host $Text -ForegroundColor $Color }
 }
 
-$python = Join-Path $venvPath "Scripts\python.exe"
+# Repo root (parent of /scripts)
+$scriptDir = Split-Path -Parent $PSCommandPath
+$repoRoot  = Resolve-Path (Join-Path $scriptDir "..")
+Push-Location $repoRoot
 
-# 2) Pip install (only if requirements changed)
-if (Test-Path $reqFile) {
-  $newHash = (Get-FileHash $reqFile -Algorithm SHA256).Hash
-  $oldHash = ""
-  if (Test-Path $hashFile) { $oldHash = Get-Content $hashFile -Raw }
-  if ($newHash -ne $oldHash) {
-    Say "[launch] Installing requirements..." Cyan
-    & $python -m pip install --upgrade pip --disable-pip-version-check | Out-Null
-    & $python -m pip install -r $reqFile --no-input | Out-Null
-    $newHash | Out-File $hashFile -Encoding ascii
-  } else {
-    Say "[launch] Requirements unchanged (skip install)" DarkGray
+try {
+  # Ensure venv
+  $venvPy = Join-Path ".\.venv\Scripts" "python.exe"
+  if (-not (Test-Path $venvPy)) {
+    Say "[launch] Creating venv..." "Cyan"
+    python -m venv .venv
+    if ($LASTEXITCODE -ne 0) { throw "venv creation failed." }
   }
-} else {
-  Say "[launch] No requirements.txt found – skipping install" DarkGray
+
+  # Conditional pip install by hashing requirements
+  $req = "requirements.txt"
+  if (-not (Test-Path $req)) { throw "Missing requirements.txt at repo root." }
+
+  $hashPath = ".\.venv\.req.hash"
+  $reqHash  = (Get-FileHash -Algorithm SHA256 $req).Hash
+  $oldHash  = ""
+  if (Test-Path $hashPath) { $oldHash = (Get-Content $hashPath -ErrorAction SilentlyContinue) }
+
+  if ($reqHash -ne $oldHash) {
+    Say "[launch] Installing/updating dependencies..." "Cyan"
+    & $venvPy -m pip install -U -r $req
+    if ($LASTEXITCODE -ne 0) { throw "pip install failed." }
+    $reqHash | Out-File -Encoding ascii $hashPath
+  }
+
+  # Resolve DB path and ensure folder
+  if (-not (Split-Path -IsAbsolute $DbPath)) {
+    $DbPath = Join-Path $PWD.Path $DbPath
+  }
+  $dbDir = Split-Path -Parent $DbPath
+  if (-not (Test-Path $dbDir)) { New-Item -Type Directory -Path $dbDir | Out-Null }
+
+  $env:BUS_DB     = $DbPath
+  $env:PYTHONUTF8 = "1"
+  Say ("[db] BUS_DB -> {0}" -f $env:BUS_DB) "DarkGray"
+  Say ("[db] Using SQLite at: {0}" -f $env:BUS_DB) "DarkGray"
+
+  # Build uvicorn args
+  $uvArgs = @("tgc.http:app","--host",$BindHost,"--port",$Port)
+  if ($Reload) { $uvArgs += "--reload" }
+
+  Say ("[launch] Starting BUS Core at http://{0}:{1}" -f $BindHost,$Port) "Green"
+  & $venvPy -m uvicorn @uvArgs
+  exit $LASTEXITCODE
 }
-
-# 3) Ensure data folder & expand DB path (file may not exist yet)
-$dp = Split-Path -Parent $DbPath
-$leaf = Split-Path -Leaf $DbPath
-if ($dp -and -not (Test-Path $dp)) { New-Item -ItemType Directory -Force -Path $dp | Out-Null }
-if (-not $dp) { $dp = (Get-Location).Path }
-$fullDp = (Resolve-Path $dp).Path
-$resolvedDbPath = Join-Path $fullDp $leaf
-
-# 4) Env
-$env:PYTHONUTF8 = "1"
-$env:BUS_DB     = $resolvedDbPath
-Say "[db] BUS_DB -> $env:BUS_DB" DarkGray
-
-# 5) Run API
-Say "[launch] Starting BUS Core at http://$Host`:$Port" Green
-if ($Reload) {
-  & $python -m uvicorn tgc.http:app --host $Host --port $Port --reload
-} else {
-  & $python -m uvicorn tgc.http:app --host $Host --port $Port
+finally {
+  Pop-Location
 }
