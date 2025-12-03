@@ -136,17 +136,30 @@ TGC BUS Core — Source of Truth (Updated 2025-11-30)
 * **Hash routing only** (`#/…`).
 * **Screens vs. cards:** primary screens (home / inventory / contacts / settings) are structural containers; cards are JS modules mounted into those containers. Only one of them is the *primary* visible screen per canonical route.
 
-### 5.2 Canonical routes (edit this table first)
+## 5.2 Frontend Routes and Manufacturing Flow (Updated)
 
-| Route / state        | Primary screen            | `data-role`        | Card file                       | Mount function     | License surface                           |
-| -------------------- | ------------------------- | ------------------ | ------------------------------- | ------------------ | ----------------------------------------- |
-| *No hash* / `#/home` | Home                      | `home-screen`      | static                          | `mountHome()`      | None                                      |
-| `#/BUSCore`          | Home (alias)              | `home-screen`      | static                          | `mountHome()`      | None                                      |
-| `#/inventory`        | Inventory (items + bulk)  | `inventory-screen` | `core/ui/js/cards/inventory.js` | `mountInventory()` | Pro intent: `POST /app/manufacturing/run` |
-| `#/contacts`         | Contacts (vendors/people) | `contacts-screen`  | `core/ui/js/cards/vendors.js`   | `mountContacts()`  | None                                      |
-| `#/settings`         | Settings / Dev            | `settings-screen`  | `core/ui/js/cards/settings.js`  | `settingsCard()`   | None                                      |
+The application defines the following hash routes:
 
-**Deliberate omissions:** no canonical `#/items`, `#/vendors`, `#/rfq` routes yet; RFQ UI remains a card within legacy Tools surface.
+- `#/manufacturing` — **primary manufacturing workspace** with a 3‑Zone layout:
+  - **Zone A — Recipe Book:** list of recipes; selecting one loads the recipe with its items.
+  - **Zone B — Job Deck:** shows Inputs and Outputs for the selected recipe, quantities rendered via measurement helpers (`toDisplay`). Displays **Max Craftable** computed as the minimum of `floor(on_hand / required)` across all input items.
+  - **Zone C — Execution:** integer **Multiplier** input and **Run Recipe** button that calls `POST /app/manufacturing/run`.
+
+- `#/inventory` — inventory browsing and item management (non‑manufacturing).
+
+**Measurement rules (canonical)**
+
+- Core stores: `*_mm_c2`, `*_mm2_c2`, `*_mm3_c2`, `*_g_c2`, and counts `*_qty` (conceptually). UI enforces the same via `measurement.js` using metric base units ×100 and **half‑away‑from‑zero** rounding.
+- UI/edge may accept imperial units; they are converted to metric base before storage.
+
+**API contracts (relevant)**
+
+- `/app/recipes` CRUD and `/app/recipes/{id}` return embedded minimal item info (`id, name, uom, qty_stored`).
+- `/app/manufacturing/run` accepts `recipe_id` and integer `multiplier`; inventory deltas are integer adds/subtracts; negative inventory is allowed.
+
+**Deprecation window**
+
+- `items.qty` and `items.unit` remain **read‑only** for this release and are derived from `{uom, qty_stored}`. They will be removed in the next release.
 
 ### 5.3 Tools drawer (sidebar) — structure & behavior
 

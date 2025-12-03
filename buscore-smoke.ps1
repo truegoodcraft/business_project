@@ -110,4 +110,23 @@ Step "Cascade delete Ava2" {
   if ($search -and $search.Length -gt 0) { throw "Ava2 still present" }
 }
 
+Step "GET /app/recipes" {
+  $resp = Invoke-WebRequest -UseBasicParsing -Uri "$Base/app/recipes" -Method GET -Headers $Headers -ContentType 'application/json'
+  if ($resp.StatusCode -ne 200) { throw "GET /app/recipes not 200" }
+}
+
+Step "Create sample items and recipe" {
+  $input = Invoke-AppJson -Method Post -Path '/app/items' -Body @{ name = 'Smoke Input'; uom = 'ea'; qty_stored = 10 }
+  $output = Invoke-AppJson -Method Post -Path '/app/items' -Body @{ name = 'Smoke Output'; uom = 'ea'; qty_stored = 0 }
+  $recipe = Invoke-AppJson -Method Post -Path '/app/recipes' -Body @{ name = 'Smoke Recipe'; items = @(@{ item_id = $input.id; role = 'input'; qty_stored = 1 }, @{ item_id = $output.id; role = 'output'; qty_stored = 1 }) }
+  if (-not $recipe.id) { throw "No recipe id" }
+  $script:smokeRecipeId = $recipe.id
+}
+
+Step "Run manufacturing" {
+  $payload = @{ recipe_id = $script:smokeRecipeId; multiplier = 1 } | ConvertTo-Json
+  $resp = Invoke-WebRequest -UseBasicParsing -Uri "$Base/app/manufacturing/run" -Method POST -Body $payload -ContentType 'application/json' -Headers $Headers
+  if ($resp.StatusCode -ne 200) { throw "POST /app/manufacturing/run not 200" }
+}
+
 Write-Host "All smoke steps completed."

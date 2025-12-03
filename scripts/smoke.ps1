@@ -1,99 +1,140 @@
-<#
-  PowerShell 5.1-compatible smoke test.
-  Verifies cookie mint, protected ping, UI shell, and favicon.
-  Falls back to the session cookie jar when Set-Cookie header is not exposed.
-#>
-Set-StrictMode -Version Latest
-$ErrorActionPreference = "Stop"
+# scripts/smoke.ps1
+# Quick, reproducible smoke that proves inventory FIFO works end-to-end.
+# Usage:
+#   powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\smoke.ps1
+#   powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\smoke.ps1 -BindHost 127.0.0.1 -Port 8765 -DbPath data\app.db -Clean
 
-# Use script directory as repo root to avoid CWD issues
-$RepoRoot = Split-Path -Parent $PSScriptRoot
-Set-Location $RepoRoot
-$Base = "http://127.0.0.1:8765"
+param(
+  [string]$BindHost = "127.0.0.1",
+  [int]$Port = 8765,
+  [string]$DbPath = "data/app.db",
+  [switch]$Clean,
+  [switch]$Quiet
+)
 
-function Get-SessionCookie {
-  param([string]$Base)
-  Write-Host "== Smoke: /session/token"
-  $session = $null
-  try {
-    $resp = Invoke-WebRequest -Uri "$Base/session/token" -UseBasicParsing -MaximumRedirection 0 -SessionVariable session
-  } catch {
-    throw "Failed to hit /session/token. Is the server running? Error: $($_.Exception.Message)"
+function Say([string]$Text, [string]$Color = "White") {
+  if (-not $Quiet) { Write-Host $Text -ForegroundColor $Color }
+}
+function Tick([string]$Text) { Say ("  [√] " + $Text) "Green" }
+function Boom([string]$Text) { Say ("  [x] " + $Text) "Red" }
+
+$scriptDir = Split-Path -Parent $PSCommandPath
+$repoRoot  = Resolve-Path (Join-Path $scriptDir "..")
+Push-Location $repoRoot
+
+# Helpers ----------------------------------------------------------
+function Invoke-Json {
+  param([string]$Method,[string]$Url,[object]$Body = $null,[Microsoft.PowerShell.Commands.WebRequestSession]$Session = $null)
+  $params = @{
+    Uri = $Url
+    Method = $Method
+    UseBasicParsing = $true
+  }
+  if ($Session) { $params.WebSession = $Session }
+  if ($Body -ne $null) {
+    $params.ContentType = "application/json"
+    $params.Body = ($Body | ConvertTo-Json -Compress)
+  }
+  return Invoke-WebRequest @params
+}
+function Parse-Json([string]$s) {
+  if ([string]::IsNullOrWhiteSpace($s)) { return $null }
+  return $s | ConvertFrom-Json
+}
+# -----------------------------------------------------------------
+
+try {
+  # Resolve DB path for info & optional cleanup
+  if (-not (Split-Path -IsAbsolute $DbPath)) {
+    $DbPath = Join-Path $PWD.Path $DbPath
+  }
+  if ($Clean -and (Test-Path $DbPath)) {
+    Remove-Item -Force $DbPath
+    Say ("[smoke] Removed existing DB: {0}" -f $DbPath) "DarkGray"
   }
 
-  # Try direct header first (works on PS7+)
-  $cookie = $null
-  if ($resp.Headers -and $resp.Headers.ContainsKey("Set-Cookie")) {
-    $cookie = ($resp.Headers["Set-Cookie"] | Select-Object -First 1).Split(";")[0]
-  }
+  $base = "http://{0}:{1}" -f $BindHost,$Port
+  Say ("[smoke] Target: {0}" -f $base) "Cyan"
 
-  # Fallback: cookie jar (PS 5.1 often hides Set-Cookie from Headers)
-  if (-not $cookie) {
-    try {
-      $jar = $session.Cookies.GetCookies($Base)
-      if ($jar -and $jar.Count -gt 0) {
-        $cookie = "$($jar[0].Name)=$($jar[0].Value)"
-      }
-    } catch { }
-  }
+  # Start cookie session like the UI
+  $resp = Invoke-WebRequest -UseBasicParsing -Uri "$base/session/token" -SessionVariable sess
+  if ($resp.StatusCode -ne 200) { throw "Failed to start session; status $($resp.StatusCode)" }
+  Tick "Session: OK (cookie)"
 
-  if (-not $cookie) {
-    Write-Warning "No cookie via header or jar; dumping diagnostics..."
-    if ($resp) {
-      Write-Host "StatusCode: $($resp.StatusCode)"
-      if ($resp.Headers) {
-        Write-Host "Headers:"; $resp.Headers.GetEnumerator() | ForEach-Object { Write-Host " - $($_.Key): $($_.Value)" }
-      }
+  # Create a unique item
+  $sku  = "SMOKE-" + [Guid]::NewGuid().ToString("N").Substring(0,8)
+  $item = @{
+    name="Widget A"
+    sku=$sku
+    uom="ea"
+    qty_stored=0
+    price=0
+    item_type="Material"
+    location="rack-1"
+  }
+  $r = Invoke-Json -Method POST -Url "$base/app/items" -Body $item -Session $sess
+  if ($r.StatusCode -ne 200 -and $r.StatusCode -ne 201) { throw "Create item failed ($($r.StatusCode))" }
+  $newItem = Parse-Json $r.Content
+  $itemId = $newItem.id
+  if (-not $itemId) {
+    # fallback: list and find by sku
+    $li = Invoke-WebRequest -UseBasicParsing -Uri "$base/app/items" -WebSession $sess
+    $arr = Parse-Json $li.Content
+    $itemId = ($arr | Where-Object { $_.sku -eq $sku } | Select-Object -First 1).id
+  }
+  if (-not $itemId) { throw "Unable to determine item id" }
+  Tick ("Item created: id={0}, sku={1}" -f $itemId,$sku)
+
+  # Stock in two cost layers (FIFO test setup)
+  $r1 = Invoke-Json -Method POST -Url "$base/app/ledger/purchase" -Body @{ item_id=$itemId; qty=10; unit_cost_cents=300; source_kind="purchase"; source_id="po-1001" } -Session $sess
+  if ($r1.StatusCode -ne 200) { throw "Purchase #1 failed ($($r1.StatusCode)) -> $($r1.Content)" }
+  $r2 = Invoke-Json -Method POST -Url "$base/app/ledger/purchase" -Body @{ item_id=$itemId; qty=5;  unit_cost_cents=500; source_kind="purchase"; source_id="po-1002" } -Session $sess
+  if ($r2.StatusCode -ne 200) { throw "Purchase #2 failed ($($r2.StatusCode)) -> $($r2.Content)" }
+  Tick "Purchases: 10@300 + 5@500"
+
+  # Consume 12 -> expect remaining 3@500 => valuation 1500
+  $rc = Invoke-Json -Method POST -Url "$base/app/ledger/consume" -Body @{ item_id=$itemId; qty=12; source_kind="sale"; source_id="so-2001" } -Session $sess
+  if ($rc.StatusCode -ne 200) { throw "Consume failed ($($rc.StatusCode)) -> $($rc.Content)" }
+  Tick "Consumed: 12 (FIFO)"
+
+  # Verify valuation == 1500 cents
+  $rv = Invoke-WebRequest -UseBasicParsing -Uri "$base/app/ledger/valuation?item_id=$itemId" -WebSession $sess
+  if ($rv.StatusCode -ne 200) { throw "Valuation failed ($($rv.StatusCode))" }
+  $val = (Parse-Json $rv.Content).total_value_cents
+  if ($val -ne 1500) {
+    Boom ("Valuation unexpected: got {0}, expected 1500" -f $val)
+    throw "Valuation mismatch"
+  }
+  Tick "Valuation: OK (1500¢)"
+
+  # Movements sanity
+  $rm = Invoke-WebRequest -UseBasicParsing -Uri "$base/app/ledger/movements?item_id=$itemId&limit=50" -WebSession $sess
+  if ($rm.StatusCode -ne 200) { throw "Movements failed ($($rm.StatusCode))" }
+  $movs = (Parse-Json $rm.Content).movements
+  $count = ($movs | Measure-Object).Count
+  if ($count -lt 4) {
+    Boom ("Movements too few: {0}" -f $count)
+    throw "Movement history incomplete"
+  }
+  Tick ("Movements: OK ({0} rows)" -f $count)
+
+  # Pretty finale
+  Say "" "White"
+  Say "All smoke checks passed." "Green"
+  Say ("DB: {0}" -f $DbPath) "DarkGray"
+  Say ("Item: id={0}, sku={1}" -f $itemId,$sku) "DarkGray"
+
+} catch {
+  Say ""
+  Boom ("Smoke FAILED: {0}" -f $_)
+  exit 1
+} finally {
+  if ($Clean) {
+    # Optional reset: remove DB so the run is ephemeral when desired
+    if (Test-Path $DbPath) {
+      Remove-Item -Force $DbPath
+      Say ("[smoke] Cleaned DB: {0}" -f $DbPath) "DarkGray"
     }
-    try {
-      $j = $session.Cookies.GetCookies($Base)
-      Write-Host "CookieJar count: $($j.Count)"
-    } catch { }
-    throw "No session cookie obtained from /session/token"
   }
-  # Extract the token value for header fallback (X-Session-Token)
-  $token = $cookie -replace '^[^=]+=','' -replace ';.*$',''
-  $token = $token.Trim()
-  # Return a small object with both
-  [pscustomobject]@{
-    Cookie = $cookie
-    Token  = $token
-    Session = $session
-  }
+  Pop-Location
 }
-
-$auth = Get-SessionCookie -Base $Base
-Write-Host "Cookie: $($auth.Cookie)"
-Write-Host "Token:  $($auth.Token)"
-
-Write-Host "== Smoke: /app/ping with cookie"
-# Send both Cookie and X-Session-Token to avoid client cookie quirks
-$headers = @{
-  "Cookie"          = $auth.Cookie
-  "X-Session-Token" = $auth.Token
-}
-# Prefer using the same WebSession to carry jar state too
-$ping = Invoke-WebRequest -Uri "$Base/app/ping" -Headers $headers -UseBasicParsing -MaximumRedirection 0 -WebSession $auth.Session
-if ($ping.StatusCode -ne 200) {
-  throw "/app/ping expected 200, got $($ping.StatusCode)"
-}
-
-Write-Host "== Smoke: UI shell"
-try {
-  $ui = Invoke-WebRequest -Uri "$Base/ui/shell.html" -UseBasicParsing -MaximumRedirection 0
-  if ($ui.StatusCode -ne 200) { throw "/ui/shell.html expected 200, got $($ui.StatusCode)" }
-} catch {
-  throw "UI shell not available at /ui/shell.html: $($_.Exception.Message)"
-}
-
-Write-Host "== Smoke: favicon"
-try {
-  $fav = Invoke-WebRequest -Uri "$Base/favicon.ico" -UseBasicParsing -MaximumRedirection 0
-  if (($fav.StatusCode -ne 200) -and ($fav.StatusCode -ne 204)) {
-    throw "/favicon.ico expected 200 or 204, got $($fav.StatusCode)"
-  }
-} catch {
-  throw "Favicon check failed: $($_.Exception.Message)"
-}
-
-Write-Host "All smoke checks passed."

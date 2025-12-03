@@ -3,6 +3,21 @@ import os
 from pathlib import Path
 
 
+def resolve_db_path() -> str:
+    """
+    A canonical resolver for BUS_DB.
+    - If BUS_DB is absolute -> use it.
+    - If BUS_DB is relative (or unset) -> resolve relative to repo root.
+    Repo root = two levels up from this file: .../TGC-BUS-Core/
+    """
+    raw = os.environ.get("BUS_DB", "data/app.db")
+    p = Path(raw)
+    if not p.is_absolute():
+        repo_root = Path(__file__).resolve().parents[2]  # core/appdb/ -> core/ -> REPO
+        p = (repo_root / raw).resolve()
+    return str(p)
+
+
 def _local_appdata() -> Path:
     # Fallback for non-Windows or missing env
     return Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local")))

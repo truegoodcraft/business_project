@@ -587,6 +587,8 @@ protected.include_router(reader_local_router)
 protected.include_router(organizer_router)
 from core.api.routes.items import router as items_router
 from core.api.routes.vendors import router as vendors_router
+from core.api.routes.recipes import router as recipes_router
+from core.api.routes.manufacturing import router as manufacturing_router
 
 oauth = APIRouter()
 
@@ -904,7 +906,7 @@ def inventory_run(
             cur.execute("BEGIN")
             for iid, delta in deltas.items():
                 cur.execute(
-                    "UPDATE items SET qty = COALESCE(qty, 0) + ? WHERE id = ?",
+                    "UPDATE items SET qty_stored = COALESCE(qty_stored, 0) + ? WHERE id = ?",
                     (delta, iid),
                 )
             con.commit()
@@ -1967,6 +1969,8 @@ def create_app():
     if not getattr(app.state, "_domain_routes_registered", False):
         app.include_router(items_router, prefix="/app")
         app.include_router(vendors_router, prefix="/app")
+        app.include_router(recipes_router, prefix="/app")
+        app.include_router(manufacturing_router, prefix="/app")
         app.state._domain_routes_registered = True
     return app
 

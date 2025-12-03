@@ -19,26 +19,10 @@
 
 from __future__ import annotations
 
-from sqlalchemy import Column, Date, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Column, Date, DateTime, ForeignKey, Integer, String, Text, func
 
 from core.appdb.engine import ENGINE, SessionLocal, get_session
-from core.appdb.models import Base, Vendor
-
-
-class Item(Base):
-    __tablename__ = "items"
-
-    id = Column(Integer, primary_key=True, index=True)
-    vendor_id = Column(Integer, ForeignKey("vendors.id"), nullable=True)
-    sku = Column(String, nullable=True)
-    name = Column(String, nullable=False)
-    qty = Column(Float, nullable=False, server_default="0")
-    unit = Column(String, nullable=True)
-    price = Column(Float, nullable=True)
-    notes = Column(Text, nullable=True)
-    item_type = Column(String, nullable=False, server_default="product")
-    location = Column(String, nullable=True)
-    created_at = Column(DateTime, nullable=False, server_default=func.now())
+from core.appdb.models import Base, Item, Recipe, RecipeItem, Vendor
 
 
 class Task(Base):
@@ -73,6 +57,8 @@ __all__ = [
     "Base",
     "ENGINE",
     "Item",
+    "Recipe",
+    "RecipeItem",
     "SessionLocal",
     "Task",
     "Vendor",
