@@ -1,5 +1,9 @@
 from fastapi import APIRouter
+from pydantic import BaseModel, Field
+from typing import Optional
 import os, sqlite3
+
+from core.ledger.fifo import purchase as fifo_purchase, consume as fifo_consume, valuation as fifo_valuation, list_movements as fifo_list
 
 router = APIRouter(prefix="/app/ledger", tags=["ledger"])
 DB_PATH = os.environ.get("BUS_DB", "data/app.db")
@@ -74,3 +78,40 @@ def bootstrap_legacy():
         return {"created": created, "using": "qty_stored"}
     finally:
         con.close()
+
+
+class PurchaseIn(BaseModel):
+    item_id: int
+    qty: float = Field(gt=0)
+    unit_cost_cents: int = Field(ge=0)
+    source_kind: str = "purchase"
+    source_id: Optional[str] = None
+
+
+@router.post("/purchase")
+def purchase(body: PurchaseIn):
+    out = fifo_purchase(body.item_id, body.qty, body.unit_cost_cents, body.source_kind, body.source_id)
+    return out
+
+
+class ConsumeIn(BaseModel):
+    item_id: int
+    qty: float = Field(gt=0)
+    source_kind: str = "consume"
+    source_id: Optional[str] = None
+
+
+@router.post("/consume")
+def consume(body: ConsumeIn):
+    out = fifo_consume(body.item_id, body.qty, body.source_kind, body.source_id)
+    return out
+
+
+@router.get("/valuation")
+def valuation(item_id: Optional[int] = None):
+    return fifo_valuation(item_id)
+
+
+@router.get("/movements")
+def movements(item_id: Optional[int] = None, limit: int = 100):
+    return fifo_list(item_id, limit)
