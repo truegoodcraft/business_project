@@ -22,7 +22,7 @@ from pathlib import Path
 
 from sqlalchemy.engine import URL
 
-from core.appdb.paths import app_db_path, app_root_dir, ui_dir, app_dir
+from core.appdb.paths import app_db_path, app_root_dir, ui_dir, app_dir, resolve_db_path
 
 APP_ROOT: Path = app_root_dir()
 APP_DIR: Path = app_dir()
@@ -30,7 +30,7 @@ STATE_DIR: Path = APP_DIR / "state"
 DATA_DIR: Path = APP_DIR / "data"
 JOURNALS_DIR: Path = DATA_DIR / "journals"
 IMPORTS_DIR: Path = DATA_DIR / "imports"
-DB_PATH: Path = app_db_path()
+DB_PATH: Path = Path(resolve_db_path())
 BUS_ROOT: Path = APP_ROOT
 DB_URL = URL.create(drivername="sqlite+pysqlite", database=DB_PATH.as_posix())
 UI_DIR: Path = ui_dir()

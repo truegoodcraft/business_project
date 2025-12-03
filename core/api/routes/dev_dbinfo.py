@@ -1,5 +1,7 @@
 from fastapi import APIRouter
-import os, sqlite3
+import sqlite3
+
+from core.appdb.paths import resolve_db_path
 
 """Development helper endpoints for inspecting the active SQLite DB."""
 
@@ -8,7 +10,7 @@ router = APIRouter(prefix="/dev", tags=["dev"])
 
 @router.get("/db-info")
 def db_info():
-    db = os.environ.get("BUS_DB", "data/app.db")
+    db = resolve_db_path()
     con = sqlite3.connect(db); cur = con.cursor()
     try:
         cur.execute("SELECT name FROM sqlite_master WHERE type='table'")

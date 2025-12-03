@@ -1,9 +1,12 @@
 from __future__ import annotations
-import os, sqlite3, time
+import os
+import sqlite3, time
 from contextlib import contextmanager
 from typing import Dict, Any
 
-DB_PATH = os.environ.get("BUS_DB", "data/app.db")
+from core.appdb.paths import resolve_db_path
+
+DB_PATH = resolve_db_path()
 
 @contextmanager
 def conn():

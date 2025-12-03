@@ -1,6 +1,7 @@
 # core/ledger/health.py
-import sqlite3, os
-DB_PATH = os.environ.get("BUS_DB", "data/app.db")
+import sqlite3
+from core.appdb.paths import resolve_db_path
+DB_PATH = resolve_db_path()
 
 def _select_on_hand_column(cur) -> str | None:
     cur.execute("PRAGMA table_info(items)")

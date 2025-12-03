@@ -3,7 +3,9 @@ from dataclasses import dataclass
 from typing import Optional, List, Tuple, Dict
 import sqlite3, os, math, json, time
 
-DB_PATH = os.environ.get("BUS_DB", "data/app.db")
+from core.appdb.paths import resolve_db_path
+
+DB_PATH = resolve_db_path()
 
 # Utility
 
