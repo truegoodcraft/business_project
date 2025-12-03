@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from starlette.staticfiles import StaticFiles
 
 from core.appdb.engine import DB_PATH as DB_FILE, ENGINE, SessionLocal
+from core.appdb.ensure import DB_PATH as ACTIVE_DB_PATH, ensure_schema
 from core.appdb.paths import ui_dir
 from core.api.routes.items import router as items_router
 from core.api.routes.manufacturing import router as manufacturing_router
@@ -86,16 +87,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="BUS Core Alpha", version=VERSION, lifespan=lifespan)
 
-# ---- Active DB logging + ensure required items columns
+print(f"[db] BUS_DB -> {os.environ.get('BUS_DB', '(unset)')}")
+print(f"[db] Using SQLite at: {ACTIVE_DB_PATH}")
 try:
-    from core.appdb.ensure import DB_PATH as ACTIVE_DB_PATH, ensure_items_columns
-
-    print(f"[db] BUS_DB -> {os.environ.get('BUS_DB', '(unset)')}")
-    print(f"[db] Using SQLite at: {ACTIVE_DB_PATH}")
-    res = ensure_items_columns()
-    print(f"[db] ensure_items_columns: {res}")
+    res = ensure_schema()
+    print(f"[db] ensure_schema: {res}")
 except Exception as e:
-    print(f"[db] ensure failed (non-fatal): {e}")
+    print(f"[db] ensure_schema failed (non-fatal): {e}")
 
 app.mount("/ui", StaticFiles(directory="core/ui", html=True), name="ui")
 app.mount("/brand", StaticFiles(directory=str(REPO_ROOT)), name="brand")
@@ -295,7 +293,7 @@ async def inventory_run(
         try:
             cur.execute("BEGIN")
             for iid, delta in deltas.items():
-                cur.execute("UPDATE items SET qty = COALESCE(qty, 0) + ? WHERE id = ?", (delta, iid))
+                cur.execute("UPDATE items SET qty_stored = COALESCE(qty_stored, 0) + ? WHERE id = ?", (delta, iid))
             con.commit()
         except Exception:
             con.rollback()

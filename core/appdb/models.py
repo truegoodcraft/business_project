@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import declarative_base, relationship
 
@@ -34,15 +36,13 @@ class Item(Base):
     vendor_id = Column(Integer, ForeignKey("vendors.id"), nullable=True)
     sku = Column(String, nullable=True)
     name = Column(String, nullable=False)
-    qty = Column(Float, nullable=False, server_default="0")  # DEPRECATED
-    unit = Column(String, nullable=True)  # DEPRECATED
-    price = Column(Float, nullable=True)
+    uom = Column(String, nullable=False, default="ea")          # 'ea','g','mm','mm2','mm3'
+    qty_stored = Column(Integer, nullable=False, default=0)      # canonical on-hand
+    price = Column(Float, default=0)
     notes = Column(Text, nullable=True)
-    item_type = Column(String, nullable=False, server_default="product")
+    item_type = Column(String, nullable=True)
     location = Column(String, nullable=True)
-    uom = Column(String, nullable=False, server_default="ea")
-    qty_stored = Column(Integer, nullable=False, server_default="0")
-    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class Recipe(Base):

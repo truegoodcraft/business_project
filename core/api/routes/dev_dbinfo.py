@@ -1,6 +1,8 @@
 from fastapi import APIRouter
 import os, sqlite3
 
+"""Development helper endpoints for inspecting the active SQLite DB."""
+
 router = APIRouter(prefix="/dev", tags=["dev"])
 
 

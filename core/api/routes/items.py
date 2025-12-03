@@ -18,6 +18,12 @@ UOMS = {"ea", "g", "mm", "mm2", "mm3"}
 MAX_INT64 = 2**63 - 1
 
 
+def _derive_qty_and_unit(uom: str, qty_stored: int) -> tuple[float, str]:
+    if uom == "ea":
+        return float(qty_stored), "ea"
+    return qty_stored / 100.0, uom
+
+
 def _round_half_away_from_zero(val: float) -> int:
     sign = -1 if val < 0 else 1
     return int((abs(val) + 0.5) // 1 * sign)
@@ -59,26 +65,22 @@ def _apply_qty_fields(it: Item, payload: Dict[str, Any], resp: Optional[Response
 
     it.uom = uom
     it.qty_stored = qty_stored
-    try:
-        it.unit = uom
-        it.qty = qty_stored if uom == "ea" else qty_stored / 100.0
-    except Exception:
-        pass
     if used_legacy and resp is not None:
         resp.headers["X-BUS-Deprecation"] = "qty/unit"
 
 def _row(it: Item, vendor_name: Optional[str] = None) -> Dict[str, Any]:
     """Shape rows the way the UI expects (fields are additive/forgiving)."""
-    qty_stored = getattr(it, "qty_stored", 0) or 0
+    qty_stored = int(getattr(it, "qty_stored", 0) or 0)
     uom = getattr(it, "uom", "ea") or "ea"
+    qty, unit = _derive_qty_and_unit(uom, qty_stored)
     return {
         "id": it.id,
         "name": it.name,
         "sku": it.sku,
         "uom": uom,
         "qty_stored": qty_stored,
-        "qty": qty_stored if uom == "ea" else qty_stored / 100.0,
-        "unit": uom,
+        "qty": qty,
+        "unit": unit,
         "price": it.price,
         "notes": it.notes,
         # UI reads these (optional):

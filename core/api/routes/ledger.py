@@ -1,69 +1,76 @@
-# core/api/routes/ledger.py
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-from typing import Optional
-from core.ledger.service import stock_in, stock_out_fifo, valuation, bootstrap_legacy_batches
-from core.ledger.health import health_summary
+from fastapi import APIRouter
+import os, sqlite3
 
-router = APIRouter(prefix='/app', tags=['ledger'])
+router = APIRouter(prefix="/app/ledger", tags=["ledger"])
+DB_PATH = os.environ.get("BUS_DB", "data/app.db")
 
-class Adjustment(BaseModel):
-    item_id: int
-    delta: float
-    unit_cost_cents: int = 0
-    source_id: Optional[str] = None
+def _has_items_qty_stored() -> bool:
+    con = sqlite3.connect(DB_PATH); cur = con.cursor()
+    try:
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='items'")
+        if not cur.fetchone():
+            return False
+        cur.execute("PRAGMA table_info(items)")
+        cols = {r[1] for r in cur.fetchall()}
+        return "qty_stored" in cols
+    finally:
+        con.close()
 
-@router.get('/ledger/movements')
-async def list_movements(item_id: Optional[int] = None, limit: int = 100, offset: int = 0):
-    import sqlite3, os
-    con = sqlite3.connect(os.environ.get('BUS_DB', 'data/app.db'))
-    cur = con.cursor()
-    if item_id is None:
-        cur.execute("SELECT id,item_id,batch_id,qty_change,unit_cost_cents,source_kind,source_id,is_oversold,created_at FROM item_movements ORDER BY id DESC LIMIT ? OFFSET ?", (limit, offset))
-    else:
-        cur.execute("SELECT id,item_id,batch_id,qty_change,unit_cost_cents,source_kind,source_id,is_oversold,created_at FROM item_movements WHERE item_id=? ORDER BY id DESC LIMIT ? OFFSET ?", (item_id, limit, offset))
-    cols = [c[0] for c in cur.description]
-    return [dict(zip(cols, r)) for r in cur.fetchall()]
+@router.get("/health")
+def health():
+    if not _has_items_qty_stored():
+        return {"desync": True, "problems": [{"reason": "items.qty_stored missing"}]}
+    return {"desync": False, "note": "Using items.qty_stored for on-hand checks"}
 
-@router.get('/ledger/batches')
-async def list_batches(item_id: Optional[int] = None, only_open: bool = True):
-    import sqlite3, os
-    con = sqlite3.connect(os.environ.get('BUS_DB', 'data/app.db'))
-    cur = con.cursor()
-    base = "SELECT id,item_id,qty_initial,qty_remaining,unit_cost_cents,source_kind,source_id,created_at FROM item_batches"
-    where = []
-    params = []
-    if item_id is not None:
-        where.append("item_id=?"); params.append(item_id)
-    if only_open:
-        where.append("qty_remaining > 0")
-    if where:
-        base += " WHERE " + " AND ".join(where)
-    base += " ORDER BY item_id, created_at"
-    cur.execute(base, tuple(params))
-    cols = [c[0] for c in cur.description]
-    return [dict(zip(cols, r)) for r in cur.fetchall()]
+@router.post("/bootstrap")
+def bootstrap_legacy():
+    if not _has_items_qty_stored():
+        return {"created": 0, "error": "items.qty_stored missing"}
+    con = sqlite3.connect(DB_PATH); cur = con.cursor()
+    try:
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS item_batches(
+            id INTEGER PRIMARY KEY,
+            item_id INTEGER NOT NULL,
+            qty_initial REAL NOT NULL,
+            qty_remaining REAL NOT NULL,
+            unit_cost_cents INTEGER NOT NULL,
+            source_kind TEXT NOT NULL,
+            source_id TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )""")
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS item_movements(
+            id INTEGER PRIMARY KEY,
+            item_id INTEGER NOT NULL,
+            batch_id INTEGER,
+            qty_change REAL NOT NULL,
+            unit_cost_cents INTEGER DEFAULT 0,
+            source_kind TEXT NOT NULL,
+            source_id TEXT,
+            is_oversold BOOLEAN DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )""")
 
-@router.get('/valuation')
-async def get_valuation(item_id: Optional[int] = None):
-    return valuation(item_id)
+        cur.execute("SELECT id, qty_stored FROM items WHERE COALESCE(qty_stored,0) > 0")
+        rows = cur.fetchall()
+        created = 0
+        for item_id, onhand in rows:
+            cur.execute("SELECT 1 FROM item_batches WHERE item_id=? AND source_kind='legacy_migration' LIMIT 1", (item_id,))
+            if cur.fetchone():
+                continue
+            cur.execute("""
+                INSERT INTO item_batches(item_id, qty_initial, qty_remaining, unit_cost_cents, source_kind, source_id)
+                VALUES (?, ?, ?, 0, 'legacy_migration', ?)
+            """, (item_id, float(onhand), float(onhand), f"legacy:{item_id}"))
+            batch_id = cur.lastrowid
+            cur.execute("""
+                INSERT INTO item_movements(item_id, batch_id, qty_change, unit_cost_cents, source_kind, source_id, is_oversold)
+                VALUES (?, ?, ?, 0, 'legacy_migration', ?, 0)
+            """, (item_id, batch_id, float(onhand), f"legacy:{item_id}"))
+            created += 1
 
-@router.get('/ledger/health')
-async def get_health():
-    return health_summary()
-
-@router.post('/ledger/adjustments')
-async def post_adjustment(adj: Adjustment):
-    if adj.delta == 0:
-        return {"ok": True}
-    sid = adj.source_id or f"manual:{adj.item_id}:{adj.delta}"
-    if adj.delta > 0:
-        res = stock_in(adj.item_id, adj.delta, adj.unit_cost_cents, 'adjustment', sid)
-    else:
-        res = stock_out_fifo(adj.item_id, -adj.delta, 'adjustment', sid)
-    return {"ok": True, "result": res.__dict__}
-
-@router.post('/ledger/bootstrap')
-async def post_bootstrap():
-    return bootstrap_legacy_batches()
-
+        con.commit()
+        return {"created": created, "using": "qty_stored"}
+    finally:
+        con.close()
