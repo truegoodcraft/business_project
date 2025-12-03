@@ -1,7 +1,7 @@
 from __future__ import annotations
 import os, sqlite3, time
 from contextlib import contextmanager
-from typing import Set
+from typing import Dict, Any
 
 DB_PATH = os.environ.get("BUS_DB", "data/app.db")
 
@@ -12,42 +12,75 @@ def conn():
     try:
         yield con
     finally:
-        con.commit()
-        con.close()
+        con.commit(); con.close()
 
-def table_exists(name: str) -> bool:
-    with conn() as con:
-        cur = con.cursor()
-        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (name,))
-        return cur.fetchone() is not None
-
-def get_columns(name: str) -> Set[str]:
-    with conn() as con:
-        cur = con.cursor()
-        cur.execute(f"PRAGMA table_info({name})")
-        return {row[1] for row in cur.fetchall()}
-
-def ensure_items_columns() -> dict:
+def ensure_schema() -> Dict[str, Any]:
     """
-    Idempotently ensure items.uom (TEXT NOT NULL DEFAULT 'ea') and
-    items.qty_stored (INTEGER NOT NULL DEFAULT 0) exist.
+    v1 baseline schema (no legacy qty/unit in DB).
+    Canonical stock = items.qty_stored (+ items.uom).
+    Safe to run on every startup.
     """
-    if not table_exists("items"):
-        return {"ok": False, "reason": "items table not found", "path": DB_PATH}
+    created = {"items": False, "item_batches": False, "item_movements": False}
 
-    cols = get_columns("items")
-    changed = False
     with conn() as con:
         cur = con.cursor()
-        if "uom" not in cols:
-            cur.execute("ALTER TABLE items ADD COLUMN uom TEXT NOT NULL DEFAULT 'ea'")
-            changed = True
-        if "qty_stored" not in cols:
-            cur.execute("ALTER TABLE items ADD COLUMN qty_stored INTEGER NOT NULL DEFAULT 0")
-            changed = True
 
-    return {"ok": True, "changed": changed, "path": DB_PATH, "ts": time.strftime("%Y-%m-%d %H:%M:%S")}
+        # ITEMS (no qty/unit legacy cols)
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='items'")
+        if not cur.fetchone():
+            cur.execute("""
+            CREATE TABLE items (
+                id INTEGER PRIMARY KEY,
+                vendor_id INTEGER,
+                sku TEXT,
+                name TEXT NOT NULL,
+                uom TEXT NOT NULL DEFAULT 'ea',          -- 'ea','g','mm','mm2','mm3'
+                qty_stored INTEGER NOT NULL DEFAULT 0,   -- canonical on-hand (int)
+                price REAL DEFAULT 0,
+                notes TEXT,
+                item_type TEXT,
+                location TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+            """)
+            created["items"] = True
+
+        # ITEM BATCHES (cost layers)
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='item_batches'")
+        if not cur.fetchone():
+            cur.execute("""
+            CREATE TABLE item_batches (
+                id INTEGER PRIMARY KEY,
+                item_id INTEGER NOT NULL REFERENCES items(id),
+                qty_initial REAL NOT NULL,
+                qty_remaining REAL NOT NULL,
+                unit_cost_cents INTEGER NOT NULL,
+                source_kind TEXT NOT NULL,
+                source_id TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+            """)
+            created["item_batches"] = True
+
+        # MOVEMENTS (physical ledger)
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='item_movements'")
+        if not cur.fetchone():
+            cur.execute("""
+            CREATE TABLE item_movements (
+                id INTEGER PRIMARY KEY,
+                item_id INTEGER NOT NULL REFERENCES items(id),
+                batch_id INTEGER REFERENCES item_batches(id),
+                qty_change REAL NOT NULL,                  -- +in / -out (physical)
+                unit_cost_cents INTEGER DEFAULT 0,         -- snapshot
+                source_kind TEXT NOT NULL,
+                source_id TEXT,
+                is_oversold BOOLEAN DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+            """)
+            created["item_movements"] = True
+
+    return {"ok": True, "path": DB_PATH, "created": created, "ts": time.strftime("%Y-%m-%d %H:%M:%S")}
 
 if __name__ == "__main__":
-    out = ensure_items_columns()
-    print(out)
+    print(ensure_schema())

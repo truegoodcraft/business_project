@@ -906,7 +906,7 @@ def inventory_run(
             cur.execute("BEGIN")
             for iid, delta in deltas.items():
                 cur.execute(
-                    "UPDATE items SET qty = COALESCE(qty, 0) + ? WHERE id = ?",
+                    "UPDATE items SET qty_stored = COALESCE(qty_stored, 0) + ? WHERE id = ?",
                     (delta, iid),
                 )
             con.commit()
