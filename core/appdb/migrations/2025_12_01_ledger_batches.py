@@ -3,7 +3,9 @@ from contextlib import contextmanager
 from typing import Set
 import sqlite3, os, time
 
-DB_PATH = os.environ.get("BUS_DB", "data/app.db")
+from core.appdb.paths import resolve_db_path
+
+DB_PATH = resolve_db_path()
 
 @contextmanager
 def conn():

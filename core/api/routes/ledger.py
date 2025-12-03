@@ -1,12 +1,13 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional
-import os, sqlite3
+import sqlite3
 
 from core.ledger.fifo import purchase as fifo_purchase, consume as fifo_consume, valuation as fifo_valuation, list_movements as fifo_list
+from core.appdb.paths import resolve_db_path
 
 router = APIRouter(prefix="/app/ledger", tags=["ledger"])
-DB_PATH = os.environ.get("BUS_DB", "data/app.db")
+DB_PATH = resolve_db_path()
 
 def _has_items_qty_stored() -> bool:
     con = sqlite3.connect(DB_PATH); cur = con.cursor()
@@ -90,8 +91,14 @@ class PurchaseIn(BaseModel):
 
 @router.post("/purchase")
 def purchase(body: PurchaseIn):
-    out = fifo_purchase(body.item_id, body.qty, body.unit_cost_cents, body.source_kind, body.source_id)
-    return out
+    try:
+        return fifo_purchase(body.item_id, body.qty, body.unit_cost_cents, body.source_kind, body.source_id)
+    except ValueError as e:
+        msg = str(e)
+        if msg.startswith("item_not_found:"):
+            _, item_id, path = msg.split(":", 2)
+            raise HTTPException(status_code=404, detail={"reason": "item_not_found", "item_id": int(item_id), "db_path": path})
+        raise
 
 
 class ConsumeIn(BaseModel):
@@ -103,8 +110,14 @@ class ConsumeIn(BaseModel):
 
 @router.post("/consume")
 def consume(body: ConsumeIn):
-    out = fifo_consume(body.item_id, body.qty, body.source_kind, body.source_id)
-    return out
+    try:
+        return fifo_consume(body.item_id, body.qty, body.source_kind, body.source_id)
+    except ValueError as e:
+        msg = str(e)
+        if msg.startswith("item_not_found:"):
+            _, item_id, path = msg.split(":", 2)
+            raise HTTPException(status_code=404, detail={"reason": "item_not_found", "item_id": int(item_id), "db_path": path})
+        raise
 
 
 @router.get("/valuation")
@@ -115,3 +128,21 @@ def valuation(item_id: Optional[int] = None):
 @router.get("/movements")
 def movements(item_id: Optional[int] = None, limit: int = 100):
     return fifo_list(item_id, limit)
+
+
+@router.get("/debug/db")
+def ledger_debug(item_id: int | None = None):
+    path = resolve_db_path()
+    with sqlite3.connect(path) as con:
+        cur = con.cursor()
+        cur.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='items'")
+        has_items = bool(cur.fetchone()[0])
+        item_row = None
+        items_count = None
+        if has_items:
+            cur.execute("SELECT COUNT(*) FROM items")
+            items_count = int(cur.fetchone()[0])
+            if item_id is not None:
+                cur.execute("SELECT id,name,sku,uom,qty_stored FROM items WHERE id=?", (int(item_id),))
+                item_row = cur.fetchone()
+    return {"db_path": path, "has_items": has_items, "items_count": items_count, "item_row": item_row}

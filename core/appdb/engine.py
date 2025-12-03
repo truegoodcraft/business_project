@@ -9,11 +9,11 @@ from typing import Generator
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
-from core.appdb.paths import app_db_path  # SoT path helper
+from core.appdb.paths import resolve_db_path  # SoT path helper
 
 # --- Path & URL -------------------------------------------------------------
 
-DB_PATH: Path = app_db_path()
+DB_PATH: Path = Path(resolve_db_path())
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 

@@ -1,6 +1,7 @@
 # core/wave/mapping.py
-import sqlite3, os
-DB_PATH = os.environ.get("BUS_DB", "data/app.db")
+import sqlite3
+from core.appdb.paths import resolve_db_path
+DB_PATH = resolve_db_path()
 
 def ensure_table():
     con = sqlite3.connect(DB_PATH)
