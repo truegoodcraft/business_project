@@ -11,7 +11,7 @@ async def require_token_ctx(request: Request):
     s = state.settings
     tok = request.cookies.get(s.session_cookie_name) or request.headers.get("X-Session-Token")
     if not state.tokens.check(tok):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid session")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
     return None  # context placeholder
 
 
