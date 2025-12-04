@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional
@@ -5,6 +6,7 @@ import sqlite3
 
 from core.ledger.fifo import purchase as fifo_purchase, consume as fifo_consume, valuation as fifo_valuation, list_movements as fifo_list
 from core.appdb.paths import resolve_db_path
+from core.api.utils.devguard import require_dev
 
 router = APIRouter(prefix="/app/ledger", tags=["ledger"])
 DB_PATH = resolve_db_path()
@@ -132,6 +134,7 @@ def movements(item_id: Optional[int] = None, limit: int = 100):
 
 @router.get("/debug/db")
 def ledger_debug(item_id: int | None = None):
+    require_dev()
     path = resolve_db_path()
     with sqlite3.connect(path) as con:
         cur = con.cursor()

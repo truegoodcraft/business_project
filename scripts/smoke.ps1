@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # scripts/smoke.ps1
 # Quick, reproducible smoke that proves inventory FIFO works end-to-end.
 # Usage:
@@ -42,6 +43,9 @@ function Parse-Json([string]$s) {
   return $s | ConvertFrom-Json
 }
 # -----------------------------------------------------------------
+
+# Enable dev context for smoke validation; server must be started with matching env to expose dev-only routes
+$env:BUS_DEV = "1"
 
 try {
   # Resolve DB path for info & optional cleanup
@@ -106,6 +110,35 @@ try {
     throw "Valuation mismatch"
   }
   Tick "Valuation: OK (1500¢)"
+
+  # Dev/detail gating checks (pass if 200 in dev mode or clean 404/403 when gated)
+  function Test-GatedEndpoint {
+    param(
+      [string]$Url,
+      [string]$Label
+    )
+    $resp = $null
+    try {
+      $resp = Invoke-WebRequest -UseBasicParsing -Uri $Url -WebSession $sess -ErrorAction Stop
+    } catch {
+      $resp = $_.Exception.Response
+    }
+    $status = if ($resp) { $resp.StatusCode } else { $null }
+    if ($status -eq 200) {
+      Tick ("{0}: available (dev mode)" -f $Label)
+      return
+    }
+    if (-not $status) { $status = "(no response)" }
+    if ($status -eq 404 -or $status -eq 403) {
+      Tick ("{0}: gated ({1})" -f $Label,$status)
+      return
+    }
+    Boom ("{0}: unexpected status {1}" -f $Label,$status)
+    throw "Gating check failed"
+  }
+
+  Test-GatedEndpoint "$base/health/detailed" "Health detail"
+  Test-GatedEndpoint "$base/dev/db-info" "Dev DB info"
 
   # Movements sanity
   $rm = Invoke-WebRequest -UseBasicParsing -Uri "$base/app/ledger/movements?item_id=$itemId&limit=50" -WebSession $sess

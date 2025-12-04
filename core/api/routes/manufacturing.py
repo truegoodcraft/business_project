@@ -8,6 +8,7 @@ from core.config.writes import require_writes
 from core.policy.guard import require_owner_commit
 from core.services.models import Item, Recipe, RecipeItem
 from core.journal.manufacturing import append_journal
+from core.utils.license_loader import get_license
 from tgc.security import require_token_ctx
 from tgc.state import AppState, get_state
 
@@ -36,6 +37,13 @@ async def run_recipe(
     _state: AppState = Depends(get_state),
 ):
     require_owner_commit(req)
+    lic = get_license() or {}
+    tier = str(lic.get("tier", "community")).lower()
+    if tier != "pro":
+        raise HTTPException(
+            status_code=403,
+            detail="Manufacturing automation requires Pro license",
+        )
     r = db.query(Recipe).get(payload.recipe_id)
     if not r:
         raise HTTPException(404, "recipe not found")

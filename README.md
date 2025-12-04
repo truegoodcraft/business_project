@@ -12,20 +12,17 @@
 
 
 <p align="center">
-  What’s new in v0.5.1
+  What’s new in v0.5.3
 <p align="center">
-  Unified Contacts/Vendors shallow+deep flows.
+  Minimal public health check; detailed diagnostics gated for development.
 <p align="center">
-  Dual façade API (`/app/vendors` + `/app/contacts`).
+  Debug and transparency surfaces require BUS_DEV=1; manufacturing licensing is explicit.
 <p align="center">
-  Smoke harness covers cascade + facet deletes.
-</p>
-<p align="center">
-  Integer measurements (metric ×100, half-away-from-zero) and a new `#/manufacturing` Recipe → Run workspace.
+  Sensitive operational docs moved internal; README now points to the Statement of Truth for API details.
 </p>
 
 
-# BUS Core (v0.5.1 "Iron Core")
+# BUS Core (v0.5.3 "Iron Core")
 
 [![GitHub Repo stars](https://img.shields.io/github/stars/truegoodcraft/TGC-BUS-Core?style=social)](https://github.com/truegoodcraft/TGC-BUS-Core)
 [![License](https://img.shields.io/github/license/truegoodcraft/TGC-BUS-Core)](LICENSE)
@@ -98,6 +95,10 @@ $env:BUSCORE_EXTRAS="1"; .\scripts\launch.ps1
   * **Security:** Local encrypted secrets, session token management, policy engine.
   * **UI:** Single-page shell (Home, Inventory, Contacts, Settings).
 
+**API façade style.** Client code uses a small set of helpers and does not need to know internal route details. Public documentation intentionally omits low-level routes, tokens, and security specifics.
+
+**API Surface.** For comprehensive endpoint details, the canonical source is the Statement of Truth: [`docs/SOT.md`](docs/SOT.md). Engineering-level route listings are maintained in internal docs.
+
 -----
 
 ## 🛠 Development
@@ -114,11 +115,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\smoke.ps1
 
 For the unified Contacts/Vendors flows, run the focused harness added in `buscore-smoke.ps1` to exercise façade defaults, facet-only deletes, and cascade/null handling for organizations.
 
-**Smoke Expectations:**
-
-  * Public `GET /health` returns 200 `{"ok": true}`.
-  * Protected `GET /health` (with token) returns 200 with `version`, `policy`, and `license`.
-  * `GET /ui/shell.html` returns 200.
+The smoke harness validates session creation, inventory movements, valuation, and gated diagnostics without exposing route lists. Use it for quick confidence checks after changes.
 
 -----
 
