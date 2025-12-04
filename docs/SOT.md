@@ -1,9 +1,10 @@
-TGC BUS Core — Source of Truth (Updated 2025-12-02)
+TGC BUS Core — Source of Truth (Updated 2025-12-04)
 
 > **Authority rule:** The uploaded **codebase is truth**.
 > Where this document and the code disagree, the SoT **must be updated to reflect code**.
 > Anything not stated = **unknown / not specified**.
 
+> **Change note (2025-12-04, v0.6.1):** Inventory item creation is **definition-only** (Smart Qty values are not sent on create). Add Item modal closes only via explicit Cancel or successful Save. Monitor user friction and consider a follow-up “Receive/Adjust” step if confusion surfaces.
 > **Change note (2025-12-02, v0.6.0):** **Major architectural update.** Canonical scripts moved to `scripts/launch.ps1` and `scripts/smoke.ps1`. Database default location changed to `data/app.db` (overridable via `BUS_DB`). Auth for UI and Smoke transitioned to **cookie-based session** (header token optional/unused by smoke). Schema bootstrap defined (automatic creation of `items`, `item_batches`, `item_movements`). `items` table updated with `uom` and `qty_stored`. Added Ledger debug endpoints and FIFO smoke assertions.
 > **Change note (2025-12-02, v0.5.3):** Documented Windows desktop launcher + system tray behavior and tied launcher icons to the existing branding/favicon SoT.
 > **Change note (2025-12-02, v0.5.2):** Documented all HTTP endpoints that were missing from the SoT but present in the BUS Core v0.5.1 “Iron Core” system map: `/favicon.ico`, `/session/token/plain`, `/session/rotate`, `/transparency.report`, `/logs`, Reader endpoints (`/reader/resolve_ids`, `/reader/resolve_paths`), Reader settings (`/settings/reader` GET/POST), plugin registry/capability endpoints (`/plugins`, `/plugins/{service_id}/read`, `/plugins/{pid}/enable`, `/probe`, `/capabilities`, `/execTransform`, `/nodes.manifest.sync`), and data-export/import endpoints under `/app/export` and `/app/import/*`.
@@ -26,7 +27,7 @@ TGC BUS Core — Source of Truth (Updated 2025-12-02)
 
 ## Versioning & Changelog
 
-  * **Current SoT document version:** `v0.6.0 "Iron Core"`.
+  * **Current SoT document version:** `v0.6.1 "Iron Core"`.
 
   * All BUS Core SoTs and adjacent TGC method/process docs use a three-part version string: `vX.Y.Z`.
 
@@ -58,6 +59,12 @@ TGC BUS Core — Source of Truth (Updated 2025-12-02)
     ```
 
   * Existing `Change note (YYYY-MM-DD)` entries represent the pre-`X.Y.Z` history and remain valid as the historical changelog.
+
+-----
+
+## UX Watchlist
+
+  * Item create is definition-only; initial stock via separate Receive/Adjust/Movement flow. Monitor user friction and consider an optional second-step “Receive Aid” if users are confused by the separation.
 
 -----
 
@@ -1645,10 +1652,10 @@ writes into the exports directory under `%LOCALAPPDATA%\BUSCore\exports`.
 
 
 [DELTA HEADER]
-SOT_VERSION_AT_START: v0.6.0 "Iron Core"
-SESSION_LABEL: Ledger tables + auth deprecation – 2025-12-03
-DATE: 2025-12-03
-SCOPE: db, ledger, inventory, auth
+SOT_VERSION_AT_START: v0.6.1 "Iron Core"
+SESSION_LABEL: Definition-only item create + modal close guard – 2025-12-04
+DATE: 2025-12-04
+SCOPE: inventory, ui, docs
 [/DELTA HEADER]
 
 (1) SESSION FACTS / NOTES (EXHAUSTIVE)
