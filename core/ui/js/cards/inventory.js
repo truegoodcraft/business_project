@@ -46,7 +46,12 @@ export function mountInventory() {
 // Needed by app.js router; ensures route changes don’t leak handlers/modals
 export function unmountInventory() {
   // Close any open modals from this card
-  document.querySelectorAll('.modal-overlay').forEach(el => el.remove());
+  document.querySelectorAll('.modal-overlay').forEach((el) => {
+    try {
+      if (typeof el._inventoryCleanup === 'function') el._inventoryCleanup();
+    } catch (_) {/* ignore */}
+    el.remove();
+  });
   // Remove delegated click binding
   if (_rootEl && _clickBound) {
     _rootEl.removeEventListener('click', _onRootClick);
@@ -351,10 +356,6 @@ export function openItemModal(item = null) {
     populateVendors(refreshed, saved.id);
   };
 
-  const cleanup = () => {
-    window.removeEventListener('contacts:saved', onContactSaved);
-  };
-
   vendorSelect.addEventListener('change', () => {
     if (vendorSelect.value === '__create__') {
       window.dispatchEvent(new CustomEvent('open-contacts-modal', { detail: { prefill: { is_vendor: true, is_org: true } } }));
@@ -380,14 +381,37 @@ export function openItemModal(item = null) {
     hinge.textContent = expanded ? '– Hide Details' : '+ Add Details (SKU, Vendor, Notes)';
   });
 
-  // Cancel
-  cancelBtn.addEventListener('click', () => { cleanup(); overlay.remove(); });
+  // Guard against backdrop click + ESC closing; only Cancel closes
+  const escBlocker = (e) => {
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+  };
+  document.addEventListener('keydown', escBlocker, true);
+
+  const cleanup = () => {
+    window.removeEventListener('contacts:saved', onContactSaved);
+    document.removeEventListener('keydown', escBlocker, true);
+  };
+
+  const closeModalSafely = () => {
+    cleanup();
+    overlay.remove();
+  };
+
+  overlay._inventoryCleanup = closeModalSafely;
+
+  cancelBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    closeModalSafely();
+  });
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay) {
-      cleanup();
-      overlay.remove();
+      e.stopPropagation();
     }
-  });
+  }, true);
+  card.addEventListener('click', (e) => e.stopPropagation());
 
   // Live parser feedback
   qtyInput.addEventListener('input', updateBadge);
@@ -437,40 +461,35 @@ export function openItemModal(item = null) {
   }
 
   // Save handler (works in collapsed or expanded)
-  saveBtn.addEventListener('click', async () => {
+  saveBtn.addEventListener('click', async (e) => {
+    e.preventDefault();
     const name = fieldValue(fName).trim();
-    const price = parseFloat(fieldValue(fPrice)) || null;
-    const location = fieldValue(fLocation).trim() || null;
-    const parsed = parseSmartInput(qtyInput.value || '');
 
     // Client-side validation
     if (!name) return markInvalid(fName.querySelector('input'));
-    if (!parsed || typeof parsed.qty !== 'number' || isNaN(parsed.qty) || parsed.qty <= 0) {
-      return markInvalid(qtyInput);
-    }
 
-    const base = {
+    const priceVal = (() => {
+      const n = parseFloat(fieldValue(fPrice));
+      return Number.isFinite(n) ? n : 0;
+    })();
+
+    const payload = {
       name,
-      qty: parsed.qty,
-      unit: parsed.unit || null,
-      price,
-      location,
+      sku: (fieldValue(fSku) || '').trim() || undefined,
+      vendor_id: vendorSelect && vendorSelect.tagName === 'SELECT' ? (vendorSelect.value || undefined) : undefined,
+      location: (fieldValue(fLocation) || '').trim() || undefined,
+      price: priceVal,
       type: (expanded ? fieldValue(typeRow) : 'Product') || 'Product',
+      notes: expanded ? (notes.value.trim() || undefined) : undefined,
+      // Definition-only: omit any qty/unit derived from Smart Qty. Stock adjustments happen in ledger flows.
     };
-    const ledgerVals = expanded ? {
-      sku: fieldValue(fSku).trim() || null,
-      vendor_id: vendorSelect && vendorSelect.tagName === 'SELECT' ? (vendorSelect.value || null) : null,
-      notes: notes.value.trim() || null,
-    } : { sku: null, vendor_id: null, notes: null };
 
-    const payload = { ...base, ...ledgerVals };
     const url = isEdit ? `/app/items/${item.id}` : '/app/items';
     const method = isEdit ? apiPut : apiPost;
     try {
       await ensureToken();
       await method(url, payload, { headers: { 'Content-Type': 'application/json' } });
-      cleanup();
-      overlay.remove();
+      closeModalSafely();
       reloadInventory?.(); // existing function in this module to refresh table
     } catch (_) {
       markInvalid(saveBtn);
