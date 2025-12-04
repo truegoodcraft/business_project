@@ -42,8 +42,8 @@ export function mountHome() {
   tools.className = 'metric-grid';
   tools.append(
     toolTile('Inventory', 'Manage stock levels and pricing.', '#/inventory'),
-    toolTile('Vendors', 'Track supplier contacts and roles.', '#'),
-    toolTile('Runs', 'Review recent manufacturing activity.', '#'),
+    toolTile('Vendors', 'Track supplier contacts and roles.', '#/contacts'),
+    toolTile('Manufacturing', 'Run recipes and view recent activity.', '#/manufacturing'),
   );
 
   container.innerHTML = '';

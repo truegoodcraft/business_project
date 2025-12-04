@@ -23,10 +23,12 @@ import mountVendors from "./js/cards/vendors.js";
 import { mountHome } from "./js/cards/home.js";
 import "./js/cards/home_donuts.js";
 import { mountInventory, unmountInventory } from "./js/cards/inventory.js";
+import { mountManufacturing, unmountManufacturing } from "./js/cards/manufacturing.js";
 import { settingsCard } from "./js/cards/settings.js";
 
 const ROUTES = {
   '#/inventory': showInventory,
+  '#/manufacturing': showManufacturing,
   '#/contacts': showContacts,
   '#/settings': showSettings,
   '#/home': showHome,
@@ -71,7 +73,8 @@ function clearCardHost() {
   const inventoryHost = document.querySelector('[data-role="inventory-root"]');
   const contactsHost = document.querySelector('[data-view="contacts"]');
   const settingsHost = document.querySelector('[data-role="settings-root"]');
-  [root, inventoryHost, contactsHost, settingsHost].forEach((node) => {
+  const manufacturingHost = document.querySelector('[data-tab-panel="manufacturing"]');
+  [root, inventoryHost, contactsHost, settingsHost, manufacturingHost].forEach((node) => {
     if (node) node.innerHTML = '';
   });
 }
@@ -112,8 +115,10 @@ async function showContacts() {
   // Close Tools drawer if open
   document.querySelector('[data-role="tools-subnav"]')?.classList.remove('open');
   unmountInventory();
+  unmountManufacturing();
   document.querySelector('[data-role="home-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   const contactsScreen = document.querySelector('[data-role="contacts-screen"]');
   contactsScreen?.classList.remove('hidden');
   await ensureContactsMounted();
@@ -123,14 +128,29 @@ async function showInventory() {
   document.querySelector('[data-role="home-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
+  unmountManufacturing();
   document.querySelector('[data-role="inventory-screen"]')?.classList.remove('hidden');
   mountInventory();
 }
 
+async function showManufacturing() {
+  document.querySelector('[data-role="home-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
+  const screen = document.querySelector('[data-role="manufacturing-screen"]');
+  screen?.classList.remove('hidden');
+  unmountInventory();
+  await mountManufacturing();
+}
+
 async function showSettings() {
   unmountInventory();
+  unmountManufacturing();
   document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
   showScreen(null);
+  document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   const settingsScreen = document.querySelector('[data-role="settings-screen"]');
   settingsScreen?.classList.remove('hidden');
   if (!settingsMounted) {
@@ -148,6 +168,8 @@ async function showHome() {
   unmountInventory();   // ensure Inventory hides when returning Home
   document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
+  unmountManufacturing();
+  document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
 }
 
 // Tools drawer: open on hover, click locks/unlocks
@@ -156,6 +178,7 @@ async function showHome() {
   const toolsToggle  = document.querySelector('[data-action="toggle-tools"]');
   const drawer       = document.querySelector('[data-role="tools-subnav"]');
   const inventoryLink= document.querySelector('[data-link="tools-inventory"]');
+  const manufacturingLink = document.querySelector('[data-link="tools-manufacturing"]');
   const contactsLink = document.querySelector('[data-link="tools-contacts"], a[href="#/contacts"]');
 
   if (!navTools || !drawer) return;
@@ -182,6 +205,7 @@ async function showHome() {
   // Navigating away always closes + unlocks
   const closeAndUnlock = () => { locked = false; drawer.classList.remove('open'); };
   if (inventoryLink) inventoryLink.addEventListener('click', closeAndUnlock);
+  if (manufacturingLink) manufacturingLink.addEventListener('click', closeAndUnlock);
   if (contactsLink)  contactsLink.addEventListener('click', closeAndUnlock);
   window.addEventListener('hashchange', closeAndUnlock);
 })();
