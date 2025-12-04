@@ -67,7 +67,10 @@ async function renderNewRunForm(parent) {
   }
 
   const card = el('div', { class: 'card' });
-  const title = el('h2', { text: 'New Production Run' });
+  const headerRow = el('div', { style: 'display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;' }, [
+    el('h2', { text: 'New Production Run' }),
+    el('a', { href: '#/recipes', class: 'btn small', style: 'text-decoration:none;border-radius:10px;padding:8px 12px;' }, 'Manage Recipes')
+  ]);
   
   // Controls
   const formGrid = el('div', { class: 'form-grid', style: 'display:grid;grid-template-columns:1fr 110px;gap:12px;align-items:end;margin-bottom:20px;' });
@@ -110,7 +113,7 @@ async function renderNewRunForm(parent) {
   const runBtn = el('button', { class: 'btn primary', disabled: 'true', style: 'border-radius:10px;padding:10px 14px;' }, 'Run Production');
   
   btnRow.append(statusMsg, runBtn);
-  card.append(title, formGrid, tableContainer, btnRow);
+  card.append(headerRow, formGrid, tableContainer, btnRow);
   parent.append(card);
 
   // Logic

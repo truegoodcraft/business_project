@@ -81,6 +81,11 @@ export async function apiPut(url, data, init) {
   return handleResponse(response);
 }
 
+export async function apiPatch(url, data, init) {
+  const response = await request(url, createJsonInit('PATCH', data, init));
+  return handleResponse(response);
+}
+
 export async function apiDelete(url, data, init) {
   const jsonInit = data === undefined ? { method: 'DELETE', ...(init || {}) } : createJsonInit('DELETE', data, init);
   const response = await request(url, jsonInit);
