@@ -1,0 +1,277 @@
+Here you go — a **clean, professional, research-paper style document**, fully rewritten but retaining *every* idea you put into the original.
+Versioned **1.0.0**, changelog at bottom, ready for direct copy/paste into your repo as `STYLE_GUIDE.md`, `DESIGN_PHILOSOPHY.md`, or whatever you prefer.
+
+---
+
+# **BUS Core — Local-First Design Philosophy & UI Style Report**
+
+**Version:** 1.0.0
+**Status:** Stable
+**Author:** Jamie W
+**Scope:** Product Philosophy, UX Principles, Design Rationale
+
+---
+
+## **Abstract**
+
+Modern SaaS systems shape their user interfaces around business needs that often conflict with the needs of the small shops, makers, and solo operators who rely on them.
+Subscription revenue, telemetry, engagement loops, and cloud dependency directly influence UX decisions, screen layout, and even the visual language of the software itself.
+
+BUS Core is designed from the opposite direction.
+
+This report outlines the philosophical and practical foundation behind BUS Core’s visual design and interaction model. It treats *local-first computing*, *data ownership*, and *operational clarity* not as branding points but as the central constraints that determine all aesthetic, architectural, and UX choices.
+
+The goal is simple: build software that behaves like a tool, not a service — and to ensure that every interface in BUS Core reflects that principle.
+
+---
+
+# **1. Introduction**
+
+BUS Core was created in response to the growing frustration among micro-makers and small shops who feel trapped inside systems that rent back their own operational data.
+This document explains the design choices behind BUS Core’s local-first architecture and interface style, with emphasis on:
+
+* Ownership over data
+* Immediate local responsiveness
+* Minimal abstraction
+* Predictable behaviour
+* Zero upsell pressure
+* Transparent computation and cost tracking
+
+It is not a brand guideline or a CSS reference.
+It is the “why” behind every visual and structural choice.
+
+---
+
+# **2. SaaS Systems: How Business Model Shapes Interface**
+
+Modern SaaS products share four baked-in incentives:
+
+1. **Recurring Revenue Dependence**
+   UIs include upgrade prompts, gated features, and usage limits to push plans upward.
+
+2. **Telemetry & Behavioral Tracking**
+   Interface pathways are shaped to maximize engagement and data collection.
+
+3. **Cloud Lock-In**
+   Reliance on vendor servers encourages patterns that reduce portability and migration.
+
+4. **Engagement as a Measurable Metric**
+   Dashboards emphasize usage streaks, charts, email prompts, confetti, and alerts that benefit the vendor, not the user.
+
+These incentives fundamentally distort UI design:
+
+* Empty space is filled with metrics the business wants the user to see.
+* Buttons are placed to increase “stickiness,” not efficiency.
+* Complexity is introduced to justify SaaS pricing.
+* Performance is bottlenecked by network latency and server-side processes.
+
+The result: tools become services, and users become tenants inside systems they do not own.
+
+---
+
+# **3. The Local-First Alternative**
+
+BUS Core is not cloud software, and its design cannot follow SaaS norms.
+
+### **Local-first computing produces different interface pressures:**
+
+* **Local computation → instant response**
+  No spinners, no loading screens, no “optimistic UI hacks.”
+
+* **Data stored locally → no upsell surface**
+  The UI never needs to promote integrations, teams, or paid tiers.
+
+* **No telemetry → no engagement loops**
+  No forced wizard flows, nudges, or “did you forget to finish your setup?” dialog boxes.
+
+* **No server dependency → predictable offline behaviour**
+  The system behaves the same in a cabin, a workshop, or a shared industrial space.
+
+The absence of business-model friction clears the way for a simpler, more tool-like UX.
+
+---
+
+# **4. BUS Core UI Principles**
+
+These rules guide every screen, panel, and interaction.
+
+### **4.1. “Dashboard as Workbench”**
+
+The home screen shows only what helps you run the shop:
+
+* Stock levels
+* Vendor status
+* Run history
+* Costs
+* Active SKUs
+
+No streaks.
+No “growth scores.”
+No nudges.
+
+### **4.2. Zero-Frustration Navigation**
+
+Every tool is one click deep.
+Nothing is hidden behind multi-step funnels.
+
+### **4.3. Deterministic Behaviour**
+
+Actions must be:
+
+* reversible (rollback)
+* previewable
+* logged
+* idempotent
+
+If an action could surprise the user, the UX is wrong.
+
+### **4.4. Data is the Interface**
+
+Data tables, charts, and run logs *are* the UI.
+No ornamental elements, no “design for aesthetic engagement.”
+
+### **4.5. No Emotional Manipulation**
+
+No:
+
+* confetti
+* “congratulations!”
+* gamified progress
+* achievement popups
+* time pressure UI
+
+The system respects the user’s attention.
+
+---
+
+# **5. Visual Language (High-Level)**
+
+### **5.1. Aesthetic Foundations**
+
+* Dark industrial theme
+* High contrast
+* Terminal-influenced headings
+* Monospace accents
+* Clean grid
+* No gradients, flares, or animations except what serves clarity
+
+### **5.2. Color Logic**
+
+* **Green** = active, healthy, online
+* **Amber** = pending, delay, watch
+* **Red** = error, failed run, low stock
+* **Purple** = informational / analytic
+* **White/grey** = neutral data, scaffolding
+
+### **5.3. Typography**
+
+* Only two roles:
+
+  * *Monospace* for system-level text
+  * *Sans-serif* for data tables and body content
+* Never stylize text for personality.
+* No marketing fonts.
+
+---
+
+# **6. Why BUS Core Rejects SaaS Patterns**
+
+BUS Core intentionally does **not** include:
+
+* Tooltips that sell premium features
+* Pop-ups asking for reviews
+* “Setup completion” bars
+* AI recommendation sidebars
+* Social, team, invite, or collaboration prompts
+* Cloud sync banners
+* Upgrade funnels
+* Account upsell pages
+
+Not because these can’t be built — but because they violate the philosophy:
+
+> “A good tool disappears.
+> A service demands attention.”
+
+---
+
+# **7. Implications for Future Features**
+
+The philosophy dictates how future modules must behave:
+
+### **Manufacturing Runs**
+
+* Defined as recipes + execution events
+* Snapshotted into logs
+* Reversible when possible
+* Stored locally with deterministic inputs
+* No external dependency
+
+### **Vendor & Contact Modules**
+
+* Simple links, not CRM hierarchy
+* Minimal required fields
+* No lead scoring, pipelines, or SaaS CRM illusions
+
+### **Costing**
+
+* Sensorless, derived, transparent
+* Calculated in smallest metric units
+* No hidden formulas
+
+### **Unit Handling**
+
+* Internally: metric base units
+* UI: user-selectable conversions
+* Rounding only at display layer, not storage layer
+
+### **Analytics**
+
+* Passive and local
+* Never uploaded
+* Rendered instantly from local SQLite
+
+---
+
+# **8. SaaS vs Local-First: Summary Table**
+
+| Category          | SaaS Approach            | Local-First BUS Core Approach     |
+| ----------------- | ------------------------ | --------------------------------- |
+| Data Location     | Vendor cloud             | Local SQLite file                 |
+| UX Priority       | Engagement, upsell       | Efficiency, clarity               |
+| Response Time     | Network-bound            | Instant                           |
+| Telemetry         | On by default            | None                              |
+| Offline Behaviour | Usually broken           | Native                            |
+| Pricing Pressure  | Recurring revenue        | None                              |
+| Interface Pattern | Funnels, popups, gating  | Direct tools, deterministic flows |
+| Abstraction Level | High                     | Minimal                           |
+| Mental Model      | Account inside a service | Tool running on your machine      |
+
+---
+
+# **9. Conclusion**
+
+BUS Core’s visual style flows from its architecture and ethics, not aesthetics alone.
+Local-first computing allows a UI that is calm, predictable, tool-like, and free of the psychological pressure patterns embedded in modern SaaS systems.
+
+This document exists to preserve that clarity as the system evolves.
+Every future feature should be checked against this philosophy before being implemented.
+
+---
+
+# **Changelog**
+
+### **1.0.0 — Initial Release**
+
+* Fully rewritten and formalized the original `style.txt` into a research-style document.
+* Added abstract, comparison table, design principles, visual language, and implications for future modules.
+* Introduced versioning format for future revisions.
+
+---
+
+If you want, I can also produce:
+
+* A **PDF-ready typeset version**
+* A **GitHub-ready Markdown version with anchor links**
+* A **condensed 1-page summary for the website**
+
+Just say the word.
