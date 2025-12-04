@@ -16,3 +16,8 @@ All of the following must be **true** for a change to be accepted:
 - `GET /ui/shell.html` returns HTTP 200 with a non-empty body.
 
 Docs and the `buscore-smoke.ps1` harness are the source of truth for the developer workflow.
+
+
+
+
+DOC IS OUTDATED
