@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # scripts/launch.ps1
 param(
   [string]$BindHost = "127.0.0.1",
@@ -16,6 +17,9 @@ function Say([string]$Text, [string]$Color = "White") {
 $scriptDir = Split-Path -Parent $PSCommandPath
 $repoRoot  = Resolve-Path (Join-Path $scriptDir "..")
 Push-Location $repoRoot
+
+# Default BUS_DEV to 0 unless explicitly set
+if (-not $env:BUS_DEV) { $env:BUS_DEV = "0" }
 
 try {
   # Ensure venv
@@ -53,6 +57,16 @@ try {
   $env:PYTHONUTF8 = "1"
   Say ("[db] BUS_DB -> {0}" -f $env:BUS_DB) "DarkGray"
   Say ("[db] Using SQLite at: {0}" -f $env:BUS_DB) "DarkGray"
+
+  # SPDX header warning (non-fatal)
+  try {
+    $missing = (git grep -L "SPDX-License-Identifier" -- "*.py" "*.ps1" "*.js" "*.ts" "*.css" "*.html" 2>$null | measure-object -line).Lines
+    if ($missing -gt 0) {
+      Write-Warning "[license] $missing files missing SPDX headers. Run: python scripts/tools/add_license_headers.py"
+    }
+  } catch {
+    Write-Verbose "[license] git not available for SPDX check"
+  }
 
   # Build uvicorn args
   $uvArgs = @("tgc.http:app","--host",$BindHost,"--port",$Port)

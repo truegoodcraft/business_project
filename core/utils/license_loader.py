@@ -27,7 +27,10 @@ def _license_path() -> Path:
     # Dev: BUS_ROOT\license.json ; Prod: %LOCALAPPDATA%\BUSCore\license.json
     if os.environ.get("BUS_ROOT"):
         return Path(os.environ["BUS_ROOT"]).resolve() / "license.json"
-    return Path(os.environ["LOCALAPPDATA"]) / "BUSCore" / "license.json"
+    local_root = os.environ.get("LOCALAPPDATA")
+    if local_root:
+        return Path(local_root) / "BUSCore" / "license.json"
+    return Path.home() / "BUSCore" / "license.json"
 
 
 def _coerce_bool(v: Any) -> bool:

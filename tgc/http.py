@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 from __future__ import annotations
 
 import json
@@ -8,25 +9,25 @@ import time
 from collections import deque
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, AsyncIterator, Dict, Generator, Optional
+from typing import Any, AsyncIterator, Dict, Generator
 
 import asyncio
 
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException
+from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from starlette.staticfiles import StaticFiles
 
-from core.appdb.engine import DB_PATH as DB_FILE, ENGINE, SessionLocal
-from core.appdb.ensure import DB_PATH as ACTIVE_DB_PATH, ensure_schema
-from core.appdb.paths import ui_dir
 from core.api.routes.items import router as items_router
 from core.api.routes.manufacturing import router as manufacturing_router
 from core.api.routes.recipes import router as recipes_router
 from core.api.routes.ledger import router as ledger_router
-from core.api.routes.dev_dbinfo import router as dev_dbinfo_router
+from core.api.utils.devguard import require_dev
+from core.appdb.engine import DB_PATH as DB_FILE, ENGINE, SessionLocal
+from core.appdb.ensure import DB_PATH as ACTIVE_DB_PATH, ensure_schema
+from core.appdb.paths import ui_dir
 from core.appdb.migrate import ensure_vendors_flags
 from core.config.paths import APP_DIR, BUS_ROOT, DATA_DIR, JOURNALS_DIR
 from core.config.writes import require_writes
@@ -54,6 +55,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 UI_DIR = ui_dir()
 EXPORTS_DIR = APP_DIR / "exports"
 EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
+DEV_MODE = os.getenv("BUS_DEV", "0") == "1"
 
 
 @asynccontextmanager
@@ -171,12 +173,25 @@ def rotate_token(state=Depends(get_state), _=Depends(require_token_ctx)):
     return resp
 
 
-@app.get("/health")
-async def health(x_session_token: Optional[str] = Header(None, alias="X-Session-Token")) -> Dict[str, Any]:
-    if x_session_token:
-        lic = get_license() or {}
-        return {"ok": True, "version": VERSION, "license": lic}
+def _health_basic() -> Dict[str, Any]:
     return {"ok": True}
+
+
+def _health_detailed() -> Dict[str, Any]:
+    require_dev()
+    lic = get_license() or {"tier": "community", "features": {}, "plugins": {}}
+    return {"ok": True, "version": VERSION, "license": lic, "mode": "dev"}
+
+
+@app.get("/health")
+async def health() -> Dict[str, Any]:
+    return _health_basic()
+
+
+if DEV_MODE:
+    @app.get("/health/detailed")
+    async def health_detailed() -> Dict[str, Any]:
+        return _health_detailed()
 
 
 # ---- DB helpers ----
@@ -359,6 +374,7 @@ async def inventory_ledger(
 
 @app.get("/dev/capabilities")
 async def dev_capabilities(_token: str = Depends(require_token_ctx)):
+    require_dev()
     manifest = registry.load_manifest(MANIFEST_PATH)
     return manifest
 
@@ -375,7 +391,11 @@ app.include_router(recipes_router, prefix="/app")
 app.include_router(manufacturing_router, prefix="/app")
 app.include_router(mfg_router)
 app.include_router(ledger_router)
-app.include_router(dev_dbinfo_router)
+if DEV_MODE:
+    from core.api.routes.dev_dbinfo import router as dev_dbinfo_router
+
+    dev_dbinfo_router.dependencies = [Depends(require_token_ctx), Depends(require_dev)]
+    app.include_router(dev_dbinfo_router)
 try:
     from core.api.routes.wave_sync import router as wave_router
     wave_router.dependencies = [Depends(require_token_ctx)]
