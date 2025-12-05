@@ -1,33 +1,26 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 from __future__ import annotations
 
-__doc__ = r"Windows AppData design targets live under %LOCALAPPDATA%\BUSCore (DB default remains repo data/app.db unless BUS_DB is set)."
-
-import os
 from pathlib import Path
+import os
+
+__doc__ = r"""
+Windows AppData conventions (SoT):
+  Base: %LOCALAPPDATA%\BUSCore
+  DB default (Windows): %LOCALAPPDATA%\BUSCore\app\app.db
+  On non-Windows dev shells, use ~/.buscore/app/app.db
+"""
 
 
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[2]
-
-
-def resolve_db_path() -> str:
-    """SoT resolver: repo-local data/app.db by default; BUS_DB when set."""
-
-    raw = os.environ.get("BUS_DB")
-    if raw:
-        candidate = Path(raw)
-        if not candidate.is_absolute():
-            candidate = (_repo_root() / raw).resolve()
-        return str(candidate)
-    return str((_repo_root() / "data" / "app.db").resolve())
+def _is_windows() -> bool:
+    return os.name == "nt"
 
 
 def _localappdata() -> Path:
-    value = os.environ.get("LOCALAPPDATA")
-    if value:
-        return Path(value)
-    # Non-Windows fallback for local dev shells
+    lad = os.environ.get("LOCALAPPDATA")
+    if lad:
+        return Path(lad)
+    # Fallback (non-Windows dev shells)
     return Path.home() / ".buscore"
 
 
@@ -63,12 +56,36 @@ def state_dir() -> Path:
     return buscore_root() / "state"
 
 
+def app_db_default() -> Path:
+    if _is_windows():
+        return app_root() / "app.db"
+    # non-Windows dev fallback target
+    return Path.home() / ".buscore" / "app" / "app.db"
+
+
 def app_db_design_target() -> Path:
-    """Design target for the app database (not the default)."""
+    # Alias for clarity when other modules want the design-target location
+    return app_db_default()
 
-    return app_root() / "app.db"
+
+def ensure_roots() -> None:
+    for p in (buscore_root(), app_root(), exports_dir(), secrets_dir(), state_dir()):
+        p.mkdir(parents=True, exist_ok=True)
 
 
-def ensure_dirs() -> None:
-    for path in (buscore_root(), app_root(), exports_dir(), secrets_dir(), state_dir()):
-        path.mkdir(parents=True, exist_ok=True)
+def resolve_db_path() -> str:
+    """
+    New SoT (Windows): default DB lives in %LOCALAPPDATA%\BUSCore\app\app.db
+    If BUS_DB is set, use it exactly.
+    On non-Windows dev shells, fallback to ~/.buscore/app/app.db as default.
+    """
+    env_db = os.environ.get("BUS_DB")
+    if env_db:
+        return str(Path(env_db).resolve())
+    ensure_roots()
+    return str(app_db_default().resolve())
+
+
+# Legacy repo path helper (for one-time migration only)
+def legacy_repo_db() -> Path:
+    return (Path.cwd() / "data" / "app.db").resolve()
