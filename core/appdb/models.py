@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
@@ -45,32 +45,43 @@ class Item(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
-class Recipe(Base):
-    __tablename__ = "recipes"
+class ItemBatch(Base):
+    __tablename__ = "item_batches"
 
     id = Column(Integer, primary_key=True)
-    name = Column(String, nullable=False)
-    notes = Column(Text)
-    items = relationship("RecipeItem", back_populates="recipe", cascade="all, delete-orphan")
+    item_id = Column(Integer, ForeignKey("items.id"), nullable=False, index=True)
+    qty_initial = Column(Float, nullable=False)
+    qty_remaining = Column(Float, nullable=False)
+    unit_cost_cents = Column(Integer, nullable=False)
+    source_kind = Column(String, nullable=False)
+    source_id = Column(String, nullable=True)
+    is_oversold = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
 
 
-class RecipeItem(Base):
-    __tablename__ = "recipe_items"
+class ItemMovement(Base):
+    __tablename__ = "item_movements"
 
     id = Column(Integer, primary_key=True)
-    recipe_id = Column(Integer, ForeignKey("recipes.id"), nullable=False)
-    item_id = Column(Integer, ForeignKey("items.id"), nullable=False)
-    role = Column(String, nullable=False)
-    qty_stored = Column(Integer, nullable=False)
-
-    recipe = relationship("Recipe", back_populates="items")
-    item = relationship("Item")
+    item_id = Column(Integer, ForeignKey("items.id"), nullable=False, index=True)
+    batch_id = Column(Integer, ForeignKey("item_batches.id"), nullable=True)
+    qty_change = Column(Float, nullable=False)
+    unit_cost_cents = Column(Integer, nullable=True, default=0)
+    source_kind = Column(String, nullable=False)
+    source_id = Column(String, nullable=True)
+    is_oversold = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
 
 
 __all__ = [
     "Base",
     "Item",
-    "Recipe",
-    "RecipeItem",
+    "ItemBatch",
+    "ItemMovement",
     "Vendor",
 ]
+
+# Import recipe/manufacturing models to attach to the shared Base
+from core.appdb.models_recipes import ManufacturingRun, Recipe, RecipeItem  # noqa: E402  # isort:skip
+
+__all__ += ["Recipe", "RecipeItem", "ManufacturingRun"]

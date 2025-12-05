@@ -141,28 +141,47 @@ async function renderNewRunForm(parent) {
       emptyMsg.style.display = 'none';
       runBtn.disabled = false;
 
+      const baseOutput = Number(fullRecipe.output_qty || 1);
+      const multiplier = Number(mult) || 0;
+      const outputQty = baseOutput * multiplier;
+      const scale = outputQty / (baseOutput || 1);
+
       fullRecipe.items.forEach(ri => {
-        const isInput = ri.role === 'input';
-        const change = (ri.qty_stored * mult) * (isInput ? -1 : 1);
-        const current = ri.item.qty_stored || 0;
+        const current = (ri.item?.qty_stored ?? 0);
+        const change = -(Number(ri.qty_required || 0) * scale);
         const future = current + change;
-        const uom = ri.item.uom || '';
+        const uom = ri.item?.uom || '';
 
         const row = el('tr', { style: 'border-bottom:1px solid #2a2a2a' });
-        
-        // Colorize critical stock
+
         let stockColor = '#eee';
-        if (isInput && future < 0) stockColor = '#ff4444'; // Insufficient stock warning
-        
+        if (future < 0) stockColor = '#ff4444';
+
         row.append(
-          el('td', { style:'padding:8px', text: ri.item.name }),
-          el('td', { style:`padding:8px;color:${isInput ? '#aaa' : '#4caf50'}`, text: isInput ? 'Input' : 'Output' }),
+          el('td', { style:'padding:8px', text: ri.item?.name || `Item #${ri.item_id}` }),
+          el('td', { style:'padding:8px;color:#aaa', text: ri.is_optional ? 'Optional' : 'Input' }),
           el('td', { style:'padding:8px;text-align:right', text: `${current} ${uom}` }),
-          el('td', { style:'padding:8px;text-align:right', text: `${change > 0 ? '+' : ''}${change}` }),
-          el('td', { style:`padding:8px;text-align:right;color:${stockColor}`, text: `${future} ${uom}` })
+          el('td', { style:'padding:8px;text-align:right', text: `${change.toFixed(2)}` }),
+          el('td', { style:`padding:8px;text-align:right;color:${stockColor}`, text: `${future.toFixed(2)} ${uom}` })
         );
         tbody.append(row);
       });
+
+      if (fullRecipe.output_item) {
+        const outCurrent = fullRecipe.output_item.qty_stored || 0;
+        const outChange = outputQty;
+        const outFuture = outCurrent + outChange;
+        const uom = fullRecipe.output_item.uom || '';
+        const row = el('tr', { style: 'border-bottom:1px solid #2a2a2a' });
+        row.append(
+          el('td', { style:'padding:8px', text: fullRecipe.output_item.name }),
+          el('td', { style:'padding:8px;color:#4caf50', text: 'Output' }),
+          el('td', { style:'padding:8px;text-align:right', text: `${outCurrent} ${uom}` }),
+          el('td', { style:'padding:8px;text-align:right', text: `+${outChange}` }),
+          el('td', { style:'padding:8px;text-align:right;color:#4caf50', text: `${outFuture} ${uom}` })
+        );
+        tbody.append(row);
+      }
     } catch (e) {
       console.error(e);
       statusMsg.textContent = 'Error calculating projection.';
@@ -183,7 +202,7 @@ async function renderNewRunForm(parent) {
     try {
       await RecipesAPI.run({
         recipe_id: _state.selectedRecipe.id,
-        multiplier: _state.multiplier
+        output_qty: (_state.selectedRecipe.output_qty || 1) * (_state.multiplier || 1)
       });
       
       statusMsg.textContent = 'Run Complete!';
@@ -199,6 +218,9 @@ async function renderNewRunForm(parent) {
     } catch (e) {
       if (e.status === 403) {
         statusMsg.textContent = 'Locked: Automation requires Pro license.';
+      } else if (e.status === 400 && e.data && e.data.detail && e.data.detail.shortages) {
+        const s = e.data.detail.shortages.map(x => `#${x.item_id}: need ${x.required}, have ${x.on_hand}, missing ${x.missing}`).join(' | ');
+        statusMsg.textContent = `Insufficient stock → ${s}`;
       } else {
         statusMsg.textContent = e.message || 'Run failed.';
       }

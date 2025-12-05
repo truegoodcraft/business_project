@@ -5,7 +5,8 @@ param(
   [int]$Port = 8765,
   [string]$DbPath = "data/app.db",
   [switch]$Reload,
-  [switch]$Quiet
+  [switch]$Quiet,
+  [switch]$Smoke
 )
 
 # WinPS 5.1-safe color echo
@@ -74,6 +75,12 @@ try {
 
   Say ("[launch] Starting BUS Core at http://{0}:{1}" -f $BindHost,$Port) "Green"
   & $venvPy -m uvicorn @uvArgs
+
+  if ($Smoke) {
+    Start-Sleep -Seconds 2
+    Say "[launch] Running smoke.ps1..." "Cyan"
+    pwsh -NoProfile -File "$scriptDir\smoke.ps1" -BaseUrl "http://$BindHost:$Port"
+  }
   exit $LASTEXITCODE
 }
 finally {
