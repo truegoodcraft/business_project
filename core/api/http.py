@@ -590,7 +590,6 @@ from core.api.routes.vendors import router as vendors_router
 from core.api.routes.recipes import router as recipes_router
 from core.api.routes.manufacturing import router as manufacturing_router
 from core.api.routes.ledger import router as ledger_router
-from core.api.routes.adjustments import router as adjustments_router
 
 oauth = APIRouter()
 
@@ -1974,7 +1973,6 @@ def create_app():
         app.include_router(recipes_router, prefix="/app")
         app.include_router(manufacturing_router, prefix="/app")
         app.include_router(ledger_router, prefix="/app")
-        app.include_router(adjustments_router, prefix="/app")
         app.state._domain_routes_registered = True
     return app
 
