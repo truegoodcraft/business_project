@@ -73,7 +73,7 @@ def ensure_roots() -> None:
 
 
 def resolve_db_path() -> str:
-    """
+    r"""
     New SoT (Windows): default DB lives in %LOCALAPPDATA%\BUSCore\app\app.db
     If BUS_DB is set, use it exactly.
     On non-Windows dev shells, fallback to ~/.buscore/app/app.db as default.

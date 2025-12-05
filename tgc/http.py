@@ -386,7 +386,7 @@ app.include_router(vendors_router, prefix="/app")
 app.include_router(recipes_router, prefix="/app")
 app.include_router(manufacturing_router, prefix="/app")
 app.include_router(mfg_router)
-app.include_router(ledger_router)
+app.include_router(ledger_router, prefix="/app")
 if DEV_MODE:
     from core.api.routes.dev_dbinfo import router as dev_dbinfo_router
 
