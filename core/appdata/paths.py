@@ -11,7 +11,6 @@ Windows AppData conventions (SoT):
   On non-Windows dev shells, use ~/.buscore/app/app.db
 """
 
-
 def _is_windows() -> bool:
     return os.name == "nt"
 

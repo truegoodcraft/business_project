@@ -47,6 +47,24 @@ function TryInvoke {
 # Note: We reuse the same $script:Session in all subsequent calls so cookies are sent.
 TryInvoke { Invoke-RestMethod -Method Get -Uri ($BaseUrl + "/session/token") -WebSession $script:Session } | Out-Null
 
+# Precheck: ensure /app/ledger/adjust exists before running deeper smoke steps
+try {
+  $openapi = Invoke-RestMethod -Method Get -Uri "$BaseUrl/openapi.json"
+  $hasAdjust = $false
+  foreach ($k in $openapi.paths.PSObject.Properties.Name) {
+    if ($k -eq "/app/ledger/adjust") { $hasAdjust = $true; break }
+  }
+  if (-not $hasAdjust) {
+    Write-Host "[SMOKE] FATAL: /app/ledger/adjust not found in OpenAPI. Present /app/ledger paths:" -ForegroundColor Red
+    foreach ($k in $openapi.paths.PSObject.Properties.Name) {
+      if ($k -like "/app/ledger/*") { Write-Host "  - $k" -ForegroundColor Red }
+    }
+    throw "ledger.adjust route missing"
+  }
+} catch {
+  throw
+}
+
 $Failures = @()
 function Assert-True {
   param([bool]$Cond, [string]$Msg)
