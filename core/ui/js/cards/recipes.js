@@ -18,7 +18,31 @@ function el(tag, attrs = {}, children = []) {
 
 let _items = [];
 let _recipes = [];
-let _active = null;
+let _activeId = null;
+let _draft = null;
+
+function normalizeRecipe(data) {
+  return {
+    id: data.id,
+    name: data.name || '',
+    code: data.code || '',
+    output_item_id: data.output_item_id ?? null,
+    output_qty: data.output_qty || 1,
+    is_archived: Boolean(data.is_archived),
+    notes: data.notes || '',
+    items: (data.items || []).map((it, idx) => ({
+      item_id: it.item_id,
+      qty_required: Number(it.qty_required || it.qty_stored || 0),
+      is_optional: Boolean(it.is_optional),
+      sort_order: it.sort_order ?? idx,
+    })),
+  };
+}
+
+async function refreshData() {
+  _items = await apiGet('/app/items');
+  _recipes = await RecipesAPI.list();
+}
 
 export async function mountRecipes() {
   await ensureToken();
@@ -27,27 +51,28 @@ export async function mountRecipes() {
   container.innerHTML = '';
 
   try {
-    _items = await apiGet('/app/items');
-    _recipes = await RecipesAPI.list();
-  } catch (e) {
-    container.textContent = 'Failed to load data.';
+    await refreshData();
+  } catch (err) {
+    container.textContent = 'Failed to load recipes.';
     return;
   }
 
   const grid = el('div', { style: 'display:grid;grid-template-columns:1fr 2fr;gap:20px;min-height:calc(100vh - 160px);' });
   const listPanel = el('div', { class: 'card', style: 'overflow:auto;background:#1e1f22;border-radius:10px;border:1px solid #2f3136;' });
   const editorPanel = el('div', { class: 'card', style: 'overflow:auto;background:#1e1f22;border-radius:10px;border:1px solid #2f3136;' });
+
   grid.append(listPanel, editorPanel);
   container.append(grid);
 
   renderList(listPanel, editorPanel);
-  renderEmptyEditor(editorPanel);
+  renderEmpty(editorPanel);
 }
 
 export function unmountRecipes() {
   _items = [];
   _recipes = [];
-  _active = null;
+  _activeId = null;
+  _draft = null;
   const container = document.querySelector('[data-tab-panel="recipes"]');
   if (container) container.innerHTML = '';
 }
@@ -61,7 +86,11 @@ function renderList(container, editor) {
   ]);
   header.lastChild.onclick = () => renderCreateForm(editor, container);
 
-  const search = el('input', { type: 'search', placeholder: 'Filter…', style: 'width:100%;margin:6px 0 12px 0;padding:10px 12px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6' });
+  const search = el('input', {
+    type: 'search',
+    placeholder: 'Filter…',
+    style: 'width:100%;margin:6px 0 12px 0;padding:10px 12px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6'
+  });
   const list = el('div', { style: 'display:flex;flex-direction:column;gap:8px' });
 
   const paint = (term = '') => {
@@ -70,14 +99,21 @@ function renderList(container, editor) {
     _recipes
       .filter(r => !q || r.name.toLowerCase().includes(q))
       .forEach(r => {
-        const row = el('div', { class: 'recipe-row', style: 'padding:10px 12px;background:#23262b;border-radius:10px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;border:1px solid #2f3136;' }, [
+        const row = el('div', {
+          class: 'recipe-row',
+          style: 'padding:10px 12px;background:#23262b;border-radius:10px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;border:1px solid #2f3136;'
+        }, [
           el('span', { text: r.name, style: 'color:#e6e6e6' }),
           el('span', { text: '→', style: 'color:#6b7280' })
         ]);
+        if (r.id === _activeId) {
+          row.style.background = '#2f333b';
+        }
         row.onclick = async () => {
           container.querySelectorAll('.recipe-row').forEach(n => n.style.background = '#23262b');
           row.style.background = '#2f333b';
-          _active = await RecipesAPI.get(r.id);
+          _activeId = r.id;
+          _draft = normalizeRecipe(await RecipesAPI.get(r.id));
           renderEditor(editor, container);
         };
         list.append(row);
@@ -89,154 +125,259 @@ function renderList(container, editor) {
   container.append(header, search, list);
 }
 
-function renderEmptyEditor(right) {
-  right.innerHTML = '';
-  right.append(el('div', { style: 'color:#666;text-align:center;margin-top:50px' }, 'Select a recipe to edit.'));
+function renderEmpty(editor) {
+  editor.innerHTML = '';
+  editor.append(el('div', { style: 'color:#666;text-align:center;margin-top:50px' }, 'Select a recipe to edit.'));
 }
 
-function renderCreateForm(right, left) {
-  right.innerHTML = '';
-  right.append(el('h2', { text: 'Create New Recipe', style: 'margin-top:0' }));
+function renderCreateForm(editor, leftPanel) {
+  _activeId = null;
+  _draft = null;
+  editor.innerHTML = '';
 
-  const name = el('input', { type: 'text', placeholder: 'Recipe Name', style: 'width:100%;margin-bottom:12px;padding:10px 12px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6' });
+  const title = el('h2', { text: 'Create New Recipe', style: 'margin-top:0' });
+  const name = el('input', {
+    type: 'text',
+    placeholder: 'Recipe Name',
+    style: 'width:100%;margin-bottom:12px;padding:10px 12px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6'
+  });
   const save = el('button', { class: 'btn primary', text: 'Create', style: 'border-radius:10px;padding:10px 14px;' });
+  const status = el('div', { style: 'min-height:18px;font-size:13px;color:#aaa;margin-top:6px;' });
 
   save.onclick = async () => {
-    if (!name.value.trim()) return;
+    if (!name.value.trim()) {
+      status.textContent = 'Name is required.';
+      status.style.color = '#ff6666';
+      return;
+    }
     try {
-      await RecipesAPI.create({ name: name.value.trim() });
-      _recipes = await RecipesAPI.list();
-      renderList(left, right);
-      const created = _recipes.find(r => r.name === name.value.trim());
-      if (created) {
-        _active = await RecipesAPI.get(created.id);
-        renderEditor(right, left);
+      await ensureToken();
+      const created = await RecipesAPI.create({ name: name.value.trim() });
+      await refreshData();
+      const found = _recipes.find(r => r.id === (created?.id ?? null) || r.name === name.value.trim());
+      if (found) {
+        _activeId = found.id;
+        _draft = normalizeRecipe(await RecipesAPI.get(found.id));
+        renderList(leftPanel, editor);
+        renderEditor(editor, leftPanel);
       }
     } catch (e) {
-      alert('Failed to create recipe');
+      status.textContent = e?.message || 'Failed to create recipe';
+      status.style.color = '#ff6666';
     }
   };
 
-  right.append(name, save);
+  editor.append(title, name, save, status);
 }
 
-function renderEditor(right, left) {
-  right.innerHTML = '';
-  if (!_active) return renderEmptyEditor(right);
+function renderEditor(editor, leftPanel) {
+  editor.innerHTML = '';
+  if (!_draft) {
+    renderEmpty(editor);
+    return;
+  }
 
-  const nameRow = el('div', { style: 'display:flex;gap:10px;align-items:center;margin-bottom:8px' });
-  const nameInput = el('input', { type: 'text', value: _active.name, style: 'flex:1;padding:10px 12px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6' });
-  const saveName = el('button', { class: 'btn small', text: 'Save', style: 'border-radius:10px;padding:9px 14px;' });
-  saveName.onclick = async () => {
-    try {
-      await RecipesAPI.update(_active.id, { name: nameInput.value.trim() });
-      _active = await RecipesAPI.get(_active.id);
-      _recipes = await RecipesAPI.list();
-      renderList(left, right);
-      renderEditor(right, left);
-    } catch (e) {
-      alert('Failed to update name');
-    }
-  };
-  nameRow.append(nameInput, saveName);
+  const status = el('div', { style: 'min-height:18px;font-size:13px;margin-bottom:6px;color:#9ca3af' });
 
-  const outRow = el('div', { style: 'display:flex;gap:10px;align-items:center;margin-bottom:14px' });
-  const outLabel = el('label', {}, [el('div', { text: 'Output Item', style:'font-size:12px;color:#aaa;margin-bottom:4px' })]);
-  const outSel = el('select', { style: 'min-width:280px;padding:10px 12px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6' });
-  outSel.append(el('option', { value: '' }, '— Select output —'));
-  _items.forEach(i => outSel.append(el('option', { value: i.id, selected: String(i.id) === String(_active.output_item_id) ? 'selected' : undefined }, i.name)));
-  outSel.addEventListener('change', async () => {
-    try {
-      const val = outSel.value ? Number(outSel.value) : null;
-      await RecipesAPI.update(_active.id, { output_item_id: val });
-      _active = await RecipesAPI.get(_active.id);
-    } catch (e) {
-      alert('Failed to set output item');
-    }
+  const nameRow = el('div', { style: 'display:flex;gap:10px;align-items:center;margin-bottom:10px' });
+  const nameInput = el('input', {
+    type: 'text',
+    value: _draft.name,
+    style: 'flex:1;padding:10px 12px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6'
   });
-  outRow.append(outLabel, outSel);
+  nameInput.addEventListener('input', () => { _draft.name = nameInput.value; });
+  nameRow.append(el('label', { text: 'Name', style: 'width:90px;color:#cdd1dc' }), nameInput);
 
-  const table = el('table', { style: 'width:100%;border-collapse:collapse;margin-bottom:14px;background:#1e1f22;border:1px solid #2f3136;border-radius:10px;overflow:hidden;' });
-  const thead = el('thead', { style:'background:#202226' }, el('tr', {}, [
-    el('th', { style:'text-align:left;padding:10px;color:#e6e6e6', text: 'Item' }),
-    el('th', { style:'text-align:right;padding:10px;color:#e6e6e6', text: 'Qty/Unit (qty_stored)' }),
-    el('th', { style:'text-align:right;padding:10px;color:#e6e6e6', text: 'Role' }),
-    el('th', { style:'width:40px' }),
+  const codeRow = el('div', { style: 'display:flex;gap:10px;align-items:center;margin-bottom:10px' });
+  const codeInput = el('input', {
+    type: 'text',
+    value: _draft.code,
+    placeholder: 'Optional code',
+    style: 'flex:1;padding:10px 12px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6'
+  });
+  codeInput.addEventListener('input', () => { _draft.code = codeInput.value; });
+  codeRow.append(el('label', { text: 'Code', style: 'width:90px;color:#cdd1dc' }), codeInput);
+
+  const outputRow = el('div', { style: 'display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap' });
+  const outSel = el('select', {
+    style: 'flex:1;min-width:200px;padding:10px 12px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6'
+  });
+  outSel.append(el('option', { value: '' }, '— Output Item —'));
+  _items.forEach(i => outSel.append(el('option', { value: i.id, selected: String(i.id) === String(_draft.output_item_id) ? 'selected' : undefined }, i.name)));
+  outSel.addEventListener('change', () => {
+    _draft.output_item_id = outSel.value ? Number(outSel.value) : null;
+  });
+
+  const outQty = el('input', {
+    type: 'number',
+    min: '0.0001',
+    step: '0.01',
+    value: _draft.output_qty,
+    style: 'width:140px;padding:10px 12px;text-align:right;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6'
+  });
+  outQty.addEventListener('input', () => { _draft.output_qty = parseFloat(outQty.value) || 0; });
+  outputRow.append(
+    el('label', { text: 'Output Item', style: 'width:90px;color:#cdd1dc' }),
+    outSel,
+    el('label', { text: 'Qty', style: 'color:#cdd1dc' }),
+    outQty
+  );
+
+  const flagsRow = el('div', { style: 'display:flex;gap:16px;align-items:center;margin-bottom:10px' });
+  const archivedToggle = el('input', { type: 'checkbox', checked: _draft.is_archived ? 'checked' : undefined });
+  archivedToggle.addEventListener('change', () => { _draft.is_archived = archivedToggle.checked; });
+  flagsRow.append(archivedToggle, el('span', { text: 'Archived', style: 'color:#cdd1dc' }));
+
+  const notes = el('textarea', {
+    value: _draft.notes || '',
+    placeholder: 'Notes',
+    style: 'width:100%;min-height:80px;padding:10px 12px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6;margin-bottom:10px;'
+  });
+  notes.addEventListener('input', () => { _draft.notes = notes.value; });
+
+  const itemsBox = el('div', { style: 'background:#23262b;padding:14px;border-radius:10px;border:1px solid #2f3136;margin-bottom:12px' });
+  const itemsHeader = el('div', { style: 'display:flex;justify-content:space-between;align-items:center;margin-bottom:10px' }, [
+    el('h4', { text: 'Items', style: 'margin:0;color:#e6e6e6' }),
+    el('button', { class: 'btn small', text: '+ Add', style: 'border-radius:10px;padding:8px 12px;' })
+  ]);
+
+  const table = el('table', { style: 'width:100%;border-collapse:collapse;background:#1e1f22;border:1px solid #2f3136;border-radius:10px;overflow:hidden;' });
+  const thead = el('thead', { style: 'background:#202226' }, el('tr', {}, [
+    el('th', { style: 'text-align:left;padding:10px;color:#e6e6e6' }, 'Item'),
+    el('th', { style: 'text-align:right;padding:10px;color:#e6e6e6' }, 'Qty Required'),
+    el('th', { style: 'text-align:center;padding:10px;color:#e6e6e6' }, 'Optional'),
+    el('th', { style: 'text-align:right;padding:10px;color:#e6e6e6' }, 'Sort'),
+    el('th', { style: 'width:60px' }, '')
   ]));
   const tbody = el('tbody');
-
-  _active.items.forEach(ri => {
-    const row = el('tr', { style:'border-bottom:1px solid #2f3136' });
-
-    const roleSel = el('select', { style:'padding:8px 10px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6' });
-    roleSel.append(el('option', { value:'input', selected: ri.role === 'input' ? 'selected' : undefined }, 'Input'));
-    roleSel.append(el('option', { value:'output', selected: ri.role === 'output' ? 'selected' : undefined }, 'Output'));
-
-    const qty = el('input', { type:'number', value:String(ri.qty_stored), style:'width:140px;text-align:right;padding:8px 10px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6' });
-
-    const saveBtn = el('button', { class:'btn small', text:'Save', style:'border-radius:10px;padding:8px 12px;' });
-    saveBtn.onclick = async () => {
-      const payload = { role: roleSel.value, qty_stored: parseFloat(qty.value) };
-      if (!(payload.qty_stored > 0)) return alert('Qty must be > 0');
-      try {
-        await RecipesAPI.updateItem(_active.id, ri.item_id, payload);
-        _active = await RecipesAPI.get(_active.id);
-        renderEditor(right, left);
-      } catch (e) {
-        alert('Failed to update line');
-      }
-    };
-
-    const delBtn = el('button', { style:'color:#ef4444;background:none;border:none;cursor:pointer;padding:0 6px;font-size:18px;line-height:1' }, '×');
-    delBtn.onclick = async () => {
-      if (!confirm('Remove this item?')) return;
-      try {
-        await RecipesAPI.removeItem(_active.id, ri.item_id);
-        _active = await RecipesAPI.get(_active.id);
-        renderEditor(right, left);
-      } catch (e) {
-        alert('Failed to remove line');
-      }
-    };
-
-    row.append(
-      el('td', { style:'padding:10px;color:#e6e6e6' }, ri.item?.name ?? `#${ri.item_id}`),
-      el('td', { style:'padding:10px;text-align:right' }, qty),
-      el('td', { style:'padding:10px;text-align:right' }, roleSel),
-      el('td', { style:'padding:10px;text-align:right' }, el('div', { style:'display:flex;gap:6px;justify-content:flex-end' }, [saveBtn, delBtn]))
-    );
-
-    tbody.append(row);
-  });
-
   table.append(thead, tbody);
 
-  const addBox = el('div', { style:'background:#23262b;padding:14px;border-radius:10px;border:1px solid #2f3136' });
-  addBox.append(el('h4', { text:'Add Ingredient/Output', style:'margin:0 0 8px 0;color:#e6e6e6' }));
-  const row = el('div', { style:'display:flex;gap:10px;align-items:end;flex-wrap:wrap' });
-  const itemSel = el('select', { style:'flex:2;min-width:200px;padding:10px 12px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6' });
-  itemSel.append(el('option', { value:'' }, '— Select Item —'));
-  _items.forEach(i => itemSel.append(el('option', { value:i.id }, i.name)));
-  const qty = el('input', { type:'number', placeholder:'Qty', style:'flex:1;min-width:120px;padding:10px 12px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6' });
-  const roleSel2 = el('select', { style:'flex:1;min-width:120px;padding:10px 12px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6' });
-  roleSel2.append(el('option', { value:'input' }, 'Input'));
-  roleSel2.append(el('option', { value:'output' }, 'Output'));
-  const addBtn = el('button', { class:'btn primary', text:'Add', style:'border-radius:10px;padding:10px 14px;' });
-  addBtn.onclick = async () => {
-    const item_id = itemSel.value ? Number(itemSel.value) : null;
-    const qtyv = qty.value ? parseFloat(qty.value) : NaN;
-    const role = roleSel2.value;
-    if (!item_id || !(qtyv > 0)) return;
+  function renderItemRows() {
+    tbody.innerHTML = '';
+    _draft.items
+      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+      .forEach((ri, idx) => {
+        const row = el('tr', { style: 'border-bottom:1px solid #2f3136' });
+        const itemSel = el('select', { style: 'width:100%;padding:8px 10px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6' });
+        itemSel.append(el('option', { value: '' }, '— Select —'));
+        _items.forEach(i => itemSel.append(el('option', { value: i.id, selected: String(i.id) === String(ri.item_id) ? 'selected' : undefined }, i.name)));
+        itemSel.addEventListener('change', () => {
+          ri.item_id = itemSel.value ? Number(itemSel.value) : null;
+        });
+
+        const qtyInput = el('input', {
+          type: 'number',
+          min: '0.0001',
+          step: '0.01',
+          value: ri.qty_required,
+          style: 'width:120px;text-align:right;padding:8px 10px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6'
+        });
+        qtyInput.addEventListener('input', () => { ri.qty_required = parseFloat(qtyInput.value) || 0; });
+
+        const optBox = el('input', { type: 'checkbox', checked: ri.is_optional ? 'checked' : undefined });
+        optBox.addEventListener('change', () => { ri.is_optional = optBox.checked; });
+
+        const sortInput = el('input', {
+          type: 'number',
+          value: ri.sort_order ?? idx,
+          style: 'width:70px;text-align:right;padding:8px 10px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6'
+        });
+        sortInput.addEventListener('input', () => { ri.sort_order = parseInt(sortInput.value || `${idx}`, 10); });
+
+        const delBtn = el('button', { class: 'btn small', text: 'Remove', style: 'border-radius:10px;padding:6px 10px;background:#3a3d43;color:#e6e6e6;border:1px solid #2f3136' });
+        delBtn.addEventListener('click', () => {
+          _draft.items = _draft.items.filter((_, i) => i !== idx);
+          renderItemRows();
+        });
+
+        row.append(
+          el('td', { style: 'padding:10px' }, itemSel),
+          el('td', { style: 'padding:10px;text-align:right' }, qtyInput),
+          el('td', { style: 'padding:10px;text-align:center' }, optBox),
+          el('td', { style: 'padding:10px;text-align:right' }, sortInput),
+          el('td', { style: 'padding:10px;text-align:right' }, delBtn)
+        );
+        tbody.append(row);
+      });
+  }
+
+  itemsHeader.lastChild.onclick = () => {
+    _draft.items.push({
+      item_id: _items[0]?.id ?? null,
+      qty_required: 1,
+      is_optional: false,
+      sort_order: _draft.items.length,
+    });
+    renderItemRows();
+  };
+
+  renderItemRows();
+  itemsBox.append(itemsHeader, table);
+
+  const actions = el('div', { style: 'display:flex;justify-content:flex-end;gap:10px;align-items:center' });
+  const saveBtn = el('button', { class: 'btn primary', text: 'Save Recipe', style: 'border-radius:10px;padding:10px 14px;' });
+
+  saveBtn.onclick = async () => {
+    status.textContent = '';
+    status.style.color = '#9ca3af';
+
+    const payload = {
+      id: _draft.id,
+      name: (_draft.name || '').trim(),
+      code: _draft.code || null,
+      output_item_id: _draft.output_item_id || null,
+      output_qty: Number(_draft.output_qty) || 0,
+      is_archived: Boolean(_draft.is_archived),
+      notes: _draft.notes || null,
+      items: (_draft.items || []).map((it, idx) => ({
+        item_id: it.item_id ? Number(it.item_id) : null,
+        qty_required: Number(it.qty_required) || 0,
+        is_optional: Boolean(it.is_optional),
+        sort_order: it.sort_order ?? idx,
+      })),
+    };
+
+    if (!payload.name) {
+      status.textContent = 'Name is required.';
+      status.style.color = '#ff6666';
+      return;
+    }
+    if (payload.output_qty <= 0) {
+      status.textContent = 'Output quantity must be > 0';
+      status.style.color = '#ff6666';
+      return;
+    }
+    const badLine = payload.items.find((it) => !it.item_id || !(it.qty_required > 0));
+    if (badLine) {
+      status.textContent = 'Each item needs an item and qty > 0.';
+      status.style.color = '#ff6666';
+      return;
+    }
+
     try {
-      await RecipesAPI.addItem(_active.id, { item_id, role, qty_stored: qtyv });
-      _active = await RecipesAPI.get(_active.id);
-      renderEditor(right, left);
+      await ensureToken();
+      await RecipesAPI.update(_draft.id, payload);
+      _draft = normalizeRecipe(await RecipesAPI.get(_draft.id));
+      await refreshData();
+      renderList(leftPanel, editor);
+      status.textContent = 'Saved';
+      status.style.color = '#4caf50';
     } catch (e) {
-      alert('Failed to add line');
+      status.textContent = (e?.data?.detail?.message || e?.message || 'Save failed');
+      status.style.color = '#ff6666';
     }
   };
-  row.append(itemSel, qty, roleSel2, addBtn);
-  addBox.append(row);
 
-  right.append(nameRow, outRow, table, addBox);
+  actions.append(status, saveBtn);
+
+  editor.append(
+    el('h2', { text: 'Edit Recipe', style: 'margin-top:0' }),
+    nameRow,
+    codeRow,
+    outputRow,
+    flagsRow,
+    notes,
+    itemsBox,
+    actions,
+  );
 }

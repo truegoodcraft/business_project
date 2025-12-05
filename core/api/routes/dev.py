@@ -7,6 +7,7 @@ import json
 from pydantic import BaseModel
 
 from core.api.security import writes_enabled
+from core.appdb.engine import debug_db_where
 from core.appdata.paths import license_path, buscore_root
 
 router = APIRouter(prefix="/dev", tags=["dev"])
@@ -48,3 +49,8 @@ def dev_license():
         "license_path": str(path),
         "root": str(buscore_root()),
     }
+
+
+@router.get("/db/where")
+def dev_db_where():
+    return debug_db_where()

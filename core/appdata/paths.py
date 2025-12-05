@@ -1,17 +1,26 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Centralized BUSCore AppData path helpers.
-
-This module defines the SoT-correct runtime locations under
-``%LOCALAPPDATA%\BUSCore`` (or a developer-friendly fallback when that
-environment variable is absent). The database design target is exposed but not
-enabled by default; the running default remains the repo-local
-``data/app.db`` unless ``BUS_DB`` is set.
-"""
-
 from __future__ import annotations
+
+__doc__ = r"Windows AppData design targets live under %LOCALAPPDATA%\BUSCore (DB default remains repo data/app.db unless BUS_DB is set)."
 
 import os
 from pathlib import Path
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def resolve_db_path() -> str:
+    """SoT resolver: repo-local data/app.db by default; BUS_DB when set."""
+
+    raw = os.environ.get("BUS_DB")
+    if raw:
+        candidate = Path(raw)
+        if not candidate.is_absolute():
+            candidate = (_repo_root() / raw).resolve()
+        return str(candidate)
+    return str((_repo_root() / "data" / "app.db").resolve())
 
 
 def _localappdata() -> Path:

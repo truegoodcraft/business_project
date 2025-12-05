@@ -93,7 +93,6 @@ from core.settings.reader_state import (
 )
 from core.reader.api import router as reader_local_router
 from core.organizer.api import router as organizer_router
-from core.api.dev import router as dev_router
 from core.api.routes import dev as dev_routes
 from core.api.routes import transactions as transactions_routes
 from core.api.security import _calc_default_allow_writes
@@ -1964,8 +1963,7 @@ def server_restart(_writes: None = Depends(require_writes)) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail="restart_failed") from exc
 
 
-app.include_router(dev_routes.router, dependencies=[Depends(require_token_ctx)])
-app.include_router(dev_router, dependencies=[Depends(require_token_ctx)])
+    app.include_router(dev_routes.router, dependencies=[Depends(require_token_ctx)])
 app.include_router(oauth)
 app.include_router(protected)
 

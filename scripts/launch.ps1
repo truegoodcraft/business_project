@@ -47,31 +47,36 @@ try {
     $reqHash | Out-File -Encoding ascii $hashPath
   }
 
-  # Resolve DB path and ensure folder (default: repo data/app.db per SoT)
-  $targetDb = $null
+  # Resolve DB path for logging (default: repo data/app.db per SoT)
   $dbSource = "REPO"
+  $appliedDb = $env:BUS_DB
 
-  if ($env:BUS_DB) {
-    $targetDb = $env:BUS_DB
+  if ($appliedDb) {
     $dbSource = "ENV"
-  } elseif ($PSBoundParameters.ContainsKey('DbPath') -and $DbPath) {
-    $targetDb = $DbPath
-    $dbSource = "PARAM"
   } else {
-    $targetDb = Join-Path $repoRoot "data\app.db"
+    $appliedDb = Join-Path $repoRoot "data\app.db"
   }
 
-  if (-not (Split-Path -IsAbsolute $targetDb)) {
-    $targetDb = Join-Path $repoRoot $targetDb
+  if ($PSBoundParameters.ContainsKey('DbPath') -and $DbPath) {
+    $resolvedParam = $DbPath
+    if (-not (Split-Path -IsAbsolute $resolvedParam)) {
+      $resolvedParam = Join-Path $repoRoot $resolvedParam
+    }
+    if (-not $env:BUS_DB) {
+      Say ("[db] DbPath provided; set BUS_DB={0} before launch to apply it." -f $resolvedParam) "Yellow"
+    }
   }
 
-  $dbDir = Split-Path -Parent $targetDb
+  if (-not (Split-Path -IsAbsolute $appliedDb)) {
+    $appliedDb = Join-Path $repoRoot $appliedDb
+  }
+
+  $dbDir = Split-Path -Parent $appliedDb
   if (-not (Test-Path $dbDir)) { New-Item -Type Directory -Path $dbDir | Out-Null }
 
-  $env:BUS_DB     = $targetDb
   $env:PYTHONUTF8 = "1"
-  Say ("[db] BUS_DB ({0}) -> {1}" -f $dbSource, $env:BUS_DB) "DarkGray"
-  Say ("[db] Using SQLite at: {0}" -f $env:BUS_DB) "DarkGray"
+  Say ("[db] BUS_DB ({0}) -> {1}" -f $dbSource, $appliedDb) "DarkGray"
+  Say ("[db] Using SQLite at: {0}" -f $appliedDb) "DarkGray"
 
   # SPDX header warning (non-fatal)
   try {

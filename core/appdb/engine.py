@@ -9,7 +9,7 @@ from typing import Generator
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
-from core.appdb.paths import resolve_db_path  # SoT path helper
+from core.appdata.paths import resolve_db_path  # SoT path helper
 
 # --- Path & URL -------------------------------------------------------------
 

@@ -774,8 +774,9 @@ export function mountContacts(host) {
         save();
       }
       if (e.key === 'Escape') {
+        // Do not close on backdrop/escape; explicit Cancel only
         e.preventDefault();
-        document.body.removeChild(overlay);
+        e.stopPropagation();
       }
     });
 
