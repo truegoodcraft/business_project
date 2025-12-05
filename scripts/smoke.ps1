@@ -1,9 +1,13 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
+#requires -Version 5.1
 <#
 .SYNOPSIS
-  BUS Core smoke tests (SOT-compliant). Keep all smoke here (no pytest).
-  Verifies items (definition-only), adjustments (+/- FIFO), recipes (PUT full doc),
-  and manufacturing runs (validation, no oversold).
+  BUS Core smoke tests (SOT-compliant, ASCII-only to avoid parsing issues).
+  Verifies: items (definition-only), adjustments (+/- FIFO), recipes (PUT full doc),
+  and manufacturing runs (validation and no-oversold).
+
+.USAGE
+  pwsh -NoProfile -File scripts/smoke.ps1 -BaseUrl http://127.0.0.1:8765
 #>
 
 param(
@@ -13,57 +17,73 @@ param(
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
-function Write-Step($msg){ Write-Host "[SMOKE] $msg" -ForegroundColor Cyan }
-function Write-Ok($msg){ Write-Host "  ✓ $msg" -ForegroundColor Green }
-function Write-Fail($msg){ Write-Host "  ✗ $msg" -ForegroundColor Red }
+# -----------------------------
+# Helpers (ASCII-only output)
+# -----------------------------
+function Write-Step { param([string]$Msg) Write-Host "[SMOKE] $Msg" -ForegroundColor Cyan }
+function Write-Ok   { param([string]$Msg) Write-Host "  OK  $Msg" -ForegroundColor Green }
+function Write-Fail { param([string]$Msg) Write-Host "  ERR $Msg" -ForegroundColor Red }
 
-function Invoke-JsonPost($Url, $BodyObj) {
+function Invoke-JsonPost {
+  param([string]$Url, [hashtable]$BodyObj)
   $json = $BodyObj | ConvertTo-Json -Depth 10
   return Invoke-RestMethod -Method Post -Uri $Url -ContentType "application/json" -Body $json
 }
-function Invoke-JsonPut($Url, $BodyObj) {
+function Invoke-JsonPut {
+  param([string]$Url, [hashtable]$BodyObj)
   $json = $BodyObj | ConvertTo-Json -Depth 10
   return Invoke-RestMethod -Method Put -Uri $Url -ContentType "application/json" -Body $json
 }
-function TryInvoke { param([scriptblock]$Block)
-  try { & $Block; return @{ ok=$true } } catch { return @{ ok=$false; err=$_ } }
+function TryInvoke {
+  param([scriptblock]$Block)
+  try { & $Block; return @{ ok = $true } }
+  catch { return @{ ok = $false; err = $_ } }
 }
 
-# Session token (if required)
-TryInvoke { Invoke-RestMethod -Method Get -Uri "$BaseUrl/session/token" } | Out-Null
+# Session token (ignore failures quietly)
+TryInvoke { Invoke-RestMethod -Method Get -Uri ($BaseUrl + "/session/token") } | Out-Null
 
 $Failures = @()
-function Assert-True($cond, $msg) {
-  if ($cond) { Write-Ok $msg } else { Write-Fail $msg; $script:Failures += $msg }
+function Assert-True {
+  param([bool]$Cond, [string]$Msg)
+  if ($Cond) { Write-Ok $Msg } else { Write-Fail $Msg; $script:Failures += $Msg }
 }
 
+# -----------------------------
 # 1) Items: create (definition-only)
+# -----------------------------
 Write-Step "Items: create definition-only"
-$itemA = Invoke-JsonPost "$BaseUrl/app/items" @{ name = "SMK-A" }
-$itemB = Invoke-JsonPost "$BaseUrl/app/items" @{ name = "SMK-B" }
-$itemC = Invoke-JsonPost "$BaseUrl/app/items" @{ name = "SMK-C" }
-Assert-True ($itemA.id -gt 0 -and $itemB.id -gt 0 -and $itemC.id -gt 0) "Created items A/B/C"
+$itemA = Invoke-JsonPost ($BaseUrl + "/app/items") @{ name = "SMK-A" }
+$itemB = Invoke-JsonPost ($BaseUrl + "/app/items") @{ name = "SMK-B" }
+$itemC = Invoke-JsonPost ($BaseUrl + "/app/items") @{ name = "SMK-C" }
+Assert-True ((($itemA.id -as [int]) -gt 0) -and (($itemB.id -as [int]) -gt 0) -and (($itemC.id -as [int]) -gt 0)) "Created items A/B/C"
 
-# 2) Adjustments: + then - (no partials, no oversold)
-Write-Step "Adjustments: + then - (FIFO, no oversold)"
-$adj1 = Invoke-JsonPost "$BaseUrl/app/ledger/adjust" @{ item_id = $itemA.id; qty_change = 15 }
-Assert-True ($adj1.ok -or $adj1 -eq $null) "+15 adjust OK"
-$adj2 = Invoke-JsonPost "$BaseUrl/app/ledger/adjust" @{ item_id = $itemA.id; qty_change = -4 }
-Assert-True ($adj2.ok -or $adj2 -eq $null) "-4 adjust OK"
-$negTry = TryInvoke { Invoke-JsonPost "$BaseUrl/app/ledger/adjust" @{ item_id = $itemB.id; qty_change = -999 } }
-Assert-True (-not $negTry.ok) "Negative adjust > on-hand returns 400"
+# -----------------------------
+# 2) Adjustments: positive and negative (FIFO, no oversold)
+# -----------------------------
+Write-Step "Adjustments: positive and negative (FIFO, no oversold)"
+$adj1 = Invoke-JsonPost ($BaseUrl + "/app/ledger/adjust") @{ item_id = $itemA.id; qty_change = 15 }
+Assert-True ($null -ne $adj1) "Positive adjust +15 on A accepted"
 
-# 3) Recipes: create + full PUT (single output, qty_required)
-Write-Step "Recipes: create + PUT full document"
-$recCreate = Invoke-JsonPost "$BaseUrl/app/recipes" @{
+$adj2 = Invoke-JsonPost ($BaseUrl + "/app/ledger/adjust") @{ item_id = $itemA.id; qty_change = -4 }
+Assert-True ($null -ne $adj2) "Negative adjust -4 on A accepted"
+
+$negTry = TryInvoke { Invoke-JsonPost ($BaseUrl + "/app/ledger/adjust") @{ item_id = $itemB.id; qty_change = -999 } }
+Assert-True (-not $negTry.ok) "Negative adjust larger than on-hand returns 400"
+
+# -----------------------------
+# 3) Recipes: create + PUT full document
+# -----------------------------
+Write-Step "Recipes: create and PUT full document"
+$recCreate = Invoke-JsonPost ($BaseUrl + "/app/recipes") @{
   name = "SMK Recipe B-from-A"
   output_item_id = $itemB.id
   output_qty = 1
   items = @(@{ item_id = $itemA.id; qty_required = 3; is_optional = $false })
 }
-Assert-True ($recCreate.id -gt 0) "Recipe created"
+Assert-True ((($recCreate.id -as [int]) -gt 0)) "Recipe created"
 
-$recPut = Invoke-JsonPut "$BaseUrl/app/recipes/$($recCreate.id)" @{
+$recPut = Invoke-JsonPut ($BaseUrl + "/app/recipes/$($recCreate.id)") @{
   id = $recCreate.id
   name = "SMK Recipe B-from-A (v2)"
   output_item_id = $itemB.id
@@ -75,26 +95,33 @@ $recPut = Invoke-JsonPut "$BaseUrl/app/recipes/$($recCreate.id)" @{
     @{ item_id = $itemC.id; qty_required = 1; is_optional = $true;  sort_order = 1 }
   )
 }
-Assert-True ($recPut.ok -eq $true) "Recipe PUT OK"
+Assert-True (($recPut.ok -eq $true)) "Recipe PUT OK"
 
-# 4) Manufacturing: success + shortage 400 + ad-hoc 400
-Write-Step "Manufacturing: run success + shortage checks"
-$runOk = Invoke-JsonPost "$BaseUrl/app/manufacturing/run" @{
+# -----------------------------
+# 4) Manufacturing: success and shortage 400; ad-hoc 400
+# -----------------------------
+Write-Step "Manufacturing: run success and shortage checks"
+
+$runOk = Invoke-JsonPost ($BaseUrl + "/app/manufacturing/run") @{
   recipe_id = $recCreate.id
-  output_qty = 2  # needs 6 of A (15-4 left => 11 available) → should pass
+  output_qty = 2
   notes = "smoke run ok"
 }
-Assert-True ($runOk.status -eq "completed") "Run completed"
+Assert-True (($runOk.status -eq "completed")) "Run completed"
 
-$runBadTry = TryInvoke { Invoke-JsonPost "$BaseUrl/app/manufacturing/run" @{ recipe_id = $recCreate.id; output_qty = 999 } }
+$runBadTry = TryInvoke { Invoke-JsonPost ($BaseUrl + "/app/manufacturing/run") @{ recipe_id = $recCreate.id; output_qty = 999 } }
 Assert-True (-not $runBadTry.ok) "Run with insufficient stock returns 400"
 if (-not $runBadTry.ok) {
-  $msg = $runBadTry.err.ErrorDetails.Message
-  Assert-True ($msg -match "failed_insufficient_stock" -or $msg -match "shortages") "Shortage payload contains shortages"
+  $msg = ""
+  if ($runBadTry.err -and $runBadTry.err.ErrorDetails -and $runBadTry.err.ErrorDetails.Message) {
+    $msg = $runBadTry.err.ErrorDetails.Message
+  }
+  $hasShortage = ($msg -match "failed_insufficient_stock") -or ($msg -match "shortages")
+  Assert-True $hasShortage "Shortage payload contains shortages"
 }
 
 $adhocBadTry = TryInvoke {
-  Invoke-JsonPost "$BaseUrl/app/manufacturing/run" @{
+  Invoke-JsonPost ($BaseUrl + "/app/manufacturing/run") @{
     output_item_id = $itemC.id
     output_qty = 1
     components = @(@{ item_id = $itemB.id; qty_required = 999 })
@@ -102,12 +129,17 @@ $adhocBadTry = TryInvoke {
 }
 Assert-True (-not $adhocBadTry.ok) "Ad-hoc run without stock fails 400"
 
+# -----------------------------
+# Finish
+# -----------------------------
 Write-Step "Smoke complete"
 if ($Failures.Count -gt 0) {
-  Write-Host "`nFailures:" -ForegroundColor Red
-  $Failures | ForEach-Object { Write-Host " - $_" -ForegroundColor Red }
+  Write-Host ""
+  Write-Host "Failures:" -ForegroundColor Red
+  foreach ($f in $Failures) { Write-Host (" - " + $f) -ForegroundColor Red }
   exit 1
 } else {
-  Write-Host "`nAll smoke checks passed." -ForegroundColor Green
+  Write-Host ""
+  Write-Host "All smoke checks passed." -ForegroundColor Green
   exit 0
 }
