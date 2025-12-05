@@ -23,7 +23,7 @@ from starlette.staticfiles import StaticFiles
 from core.api.routes.items import router as items_router
 from core.api.routes.manufacturing import router as manufacturing_router
 from core.api.routes.recipes import router as recipes_router
-from core.api.routes.ledger import router as ledger_router
+from core.api.routes.ledger_api import router as ledger_router
 from core.api.utils.devguard import require_dev
 from core.appdb.engine import DB_PATH as DB_FILE, ENGINE, SessionLocal
 from core.appdb.ensure import DB_PATH as ACTIVE_DB_PATH, ensure_schema

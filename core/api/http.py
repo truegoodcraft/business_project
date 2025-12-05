@@ -591,7 +591,7 @@ from core.api.routes.items import router as items_router
 from core.api.routes.vendors import router as vendors_router
 from core.api.routes.recipes import router as recipes_router
 from core.api.routes.manufacturing import router as manufacturing_router
-from core.api.routes.ledger import router as ledger_router
+from core.api.routes.ledger_api import router as ledger_router
 
 oauth = APIRouter()
 
