@@ -11,6 +11,8 @@ from core.appdb.engine import get_session
 from sqlalchemy.orm import Session
 from core.appdb.ledger import on_hand_qty, fifo_consume as sa_fifo_consume, add_batch
 
+# NOTE: Router prefix is "/ledger"; child paths must not repeat "/ledger" to avoid
+# duplicate segments (e.g., /app/ledger/adjust).
 router = APIRouter(prefix="/ledger", tags=["ledger"])
 DB_PATH = resolve_db_path()
 
