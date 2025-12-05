@@ -62,9 +62,6 @@ try {
     if (-not (Split-Path -IsAbsolute $resolvedParam)) {
       $resolvedParam = Join-Path $repoRoot $resolvedParam
     }
-    if (-not $env:BUS_DB) {
-      Say ("[db] DbPath provided; set BUS_DB={0} before launch to apply it." -f $resolvedParam) "Yellow"
-    }
   }
 
   if (-not (Split-Path -IsAbsolute $appliedDb)) {
@@ -75,8 +72,6 @@ try {
   if (-not (Test-Path $dbDir)) { New-Item -Type Directory -Path $dbDir | Out-Null }
 
   $env:PYTHONUTF8 = "1"
-  Say ("[db] BUS_DB ({0}) -> {1}" -f $dbSource, $appliedDb) "DarkGray"
-  Say ("[db] Using SQLite at: {0}" -f $appliedDb) "DarkGray"
 
   # SPDX header warning (non-fatal)
   try {

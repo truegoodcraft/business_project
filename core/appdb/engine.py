@@ -66,9 +66,3 @@ def debug_db_where() -> dict:
         "resolved_fs_path": resolved,
         "pragma": [tuple(row) for row in pragma],
     }
-
-
-# Optional boot log if explicitly enabled
-if os.getenv("BUSCORE_DEBUG_DB", "0") in ("1", "true", "yes", "on"):
-    info = debug_db_where()
-    print(f"[DB] Using: {info['resolved_fs_path']}  url={info['engine_url']}  pragma={info.get('pragma')}")

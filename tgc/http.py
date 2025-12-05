@@ -88,14 +88,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="BUS Core Alpha", version=VERSION, lifespan=lifespan)
-
-print(f"[db] BUS_DB -> {os.environ.get('BUS_DB', '(unset)')}")
-print(f"[db] Using SQLite at: {ACTIVE_DB_PATH}")
 try:
-    res = ensure_schema()
-    print(f"[db] ensure_schema: {res}")
-except Exception as e:
-    print(f"[db] ensure_schema failed (non-fatal): {e}")
+    ensure_schema()
+except Exception:
+    pass
 
 app.mount("/ui", StaticFiles(directory="core/ui", html=True), name="ui")
 app.mount("/brand", StaticFiles(directory=str(REPO_ROOT)), name="brand")
