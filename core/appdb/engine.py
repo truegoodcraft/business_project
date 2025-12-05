@@ -15,7 +15,7 @@ from core.appdb.paths import resolve_db_path  # SoT path helper
 
 DB_PATH: Path = Path(resolve_db_path())
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-DB_SOURCE = "ENV" if os.environ.get("BUS_DB") else "APPDATA"
+DB_SOURCE = "ENV" if os.environ.get("BUS_DB") else "REPO"
 print(f"[db] BUS_DB ({DB_SOURCE}) -> {DB_PATH}")
 
 
@@ -23,8 +23,8 @@ def _sqlite_url(p: Path) -> str:
     """Windows-safe sqlite+pysqlite URL with exactly 3 slashes.
 
     Example:
-      C:/Users/me/AppData/Local/BUSCore/app/app.db
-      -> sqlite+pysqlite:///C:/Users/me/AppData/Local/BUSCore/app/app.db
+      C:/path/to/repo/data/app.db
+      -> sqlite+pysqlite:///C:/path/to/repo/data/app.db
     """
     posix = p.resolve().as_posix()
     # If it starts with a drive letter, leave it; otherwise strip leading slashes.

@@ -47,9 +47,9 @@ try {
     $reqHash | Out-File -Encoding ascii $hashPath
   }
 
-  # Resolve DB path and ensure folder (default: AppData via platformdirs)
+  # Resolve DB path and ensure folder (default: repo data/app.db per SoT)
   $targetDb = $null
-  $dbSource = "APPDATA"
+  $dbSource = "REPO"
 
   if ($env:BUS_DB) {
     $targetDb = $env:BUS_DB
@@ -58,28 +58,11 @@ try {
     $targetDb = $DbPath
     $dbSource = "PARAM"
   } else {
-    # Default to AppData path (platformdirs equivalent) and migrate repo DB if needed
-    $appDataRoot = Join-Path $env:LOCALAPPDATA "TrueGoodCraft\TGC-BUS-Core"
-    if (-not (Test-Path $appDataRoot)) { New-Item -ItemType Directory -Force -Path $appDataRoot | Out-Null }
-    $targetDb = Join-Path $appDataRoot "app.db"
-
-    try {
-      $appDataDb = $targetDb
-      $repoDb = Join-Path (Join-Path $scriptDir "..") "data\app.db"
-      if ((Test-Path $repoDb) -and -not (Test-Path $appDataDb)) {
-        Say "[db] Migrating existing repo DB to AppData..." "Yellow"
-        $appDataDir = Split-Path -Parent $appDataDb
-        if (-not (Test-Path $appDataDir)) { New-Item -ItemType Directory -Force -Path $appDataDir | Out-Null }
-        Copy-Item -Path $repoDb -Destination $appDataDb -Force
-        Say "[db] Migrated -> $appDataDb" "Yellow"
-      }
-    } catch {
-      Say "[db] Migration skipped (error): $($_.Exception.Message)" "Yellow"
-    }
+    $targetDb = Join-Path $repoRoot "data\app.db"
   }
 
   if (-not (Split-Path -IsAbsolute $targetDb)) {
-    $targetDb = Join-Path $PWD.Path $targetDb
+    $targetDb = Join-Path $repoRoot $targetDb
   }
 
   $dbDir = Split-Path -Parent $targetDb

@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Request
+from pathlib import Path
+import json
 from pydantic import BaseModel
 
 from core.api.security import writes_enabled
+from core.appdata.paths import license_path, buscore_root
 
 router = APIRouter(prefix="/dev", tags=["dev"])
 
@@ -27,11 +30,21 @@ def set_writes(payload: WritesPayload, request: Request):
 @router.get("/license")
 def dev_license():
     """
-    STUB: Development license endpoint to satisfy UI requests.
+    STUB with SoT path awareness:
+    - If %LOCALAPPDATA%\BUSCore\license.json exists, return its JSON.
+    - Otherwise, return a labeled stub with the expected path and root.
     """
 
+    path: Path = license_path()
+    try:
+        if path.exists():
+            return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        # Fallback to stub on any read/parse error
+        pass
     return {
         "stub": True,
         "status": "dev",
-        "note": "stub endpoint; replace with real license service",
+        "license_path": str(path),
+        "root": str(buscore_root()),
     }
