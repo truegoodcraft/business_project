@@ -24,15 +24,18 @@ function Write-Step { param([string]$Msg) Write-Host "[SMOKE] $Msg" -ForegroundC
 function Write-Ok   { param([string]$Msg) Write-Host "  OK  $Msg" -ForegroundColor Green }
 function Write-Fail { param([string]$Msg) Write-Host "  ERR $Msg" -ForegroundColor Red }
 
+# A single session object to persist cookies (Set-Cookie from /session/token)
+$script:Session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+
 function Invoke-JsonPost {
   param([string]$Url, [hashtable]$BodyObj)
   $json = $BodyObj | ConvertTo-Json -Depth 10
-  return Invoke-RestMethod -Method Post -Uri $Url -ContentType "application/json" -Body $json
+  return Invoke-RestMethod -Method Post -Uri $Url -WebSession $script:Session -ContentType "application/json" -Body $json
 }
 function Invoke-JsonPut {
   param([string]$Url, [hashtable]$BodyObj)
   $json = $BodyObj | ConvertTo-Json -Depth 10
-  return Invoke-RestMethod -Method Put -Uri $Url -ContentType "application/json" -Body $json
+  return Invoke-RestMethod -Method Put -Uri $Url -WebSession $script:Session -ContentType "application/json" -Body $json
 }
 function TryInvoke {
   param([scriptblock]$Block)
@@ -40,8 +43,9 @@ function TryInvoke {
   catch { return @{ ok = $false; err = $_ } }
 }
 
-# Session token (ignore failures quietly)
-TryInvoke { Invoke-RestMethod -Method Get -Uri ($BaseUrl + "/session/token") } | Out-Null
+# Establish session: call /session/token to receive auth cookie for this session
+# Note: We reuse the same $script:Session in all subsequent calls so cookies are sent.
+TryInvoke { Invoke-RestMethod -Method Get -Uri ($BaseUrl + "/session/token") -WebSession $script:Session } | Out-Null
 
 $Failures = @()
 function Assert-True {
