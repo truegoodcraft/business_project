@@ -9,6 +9,7 @@ Windows AppData conventions (SoT):
   Base: %LOCALAPPDATA%\BUSCore
   DB default (Windows): %LOCALAPPDATA%\BUSCore\app\app.db
   On non-Windows dev shells, use ~/.buscore/app/app.db
+  (raw string to avoid Windows backslash escape warnings)
 """
 
 def _is_windows() -> bool:
