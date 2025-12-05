@@ -36,10 +36,6 @@ def config_path() -> Path:
     return buscore_root() / "config.json"
 
 
-def license_path() -> Path:
-    return buscore_root() / "license.json"
-
-
 def reader_settings_path() -> Path:
     return buscore_root() / "settings_reader.json"
 

@@ -33,9 +33,8 @@ import sys
 import time
 import uuid
 from ctypes import wintypes
-from io import BytesIO
 from pathlib import Path
-from typing import Any, Dict, Generator, List, Optional, Literal
+from typing import Any, Dict, Generator, List, Optional
 from urllib.parse import urlencode
 
 from fastapi import FastAPI
@@ -48,13 +47,11 @@ from fastapi import (
     Query,
     Request,
 )
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse
 from starlette.staticfiles import StaticFiles
 from starlette.responses import RedirectResponse, Response
 
 import requests
-from jinja2 import Environment, FileSystemLoader, select_autoescape
-
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.cors import CORSMiddleware
 from starlette.status import HTTP_401_UNAUTHORIZED
@@ -79,7 +76,6 @@ from core.runtime.probe import PROBE_TIMEOUT_SEC
 from core.secrets import SecretError, Secrets
 from core.version import VERSION
 from core.utils.export import export_db, import_preview as _import_preview, import_commit as _import_commit
-from core.utils.license_loader import get_license
 from tgc.bootstrap_fs import DATA, LOGS
 
 from pydantic import BaseModel, Field
@@ -93,6 +89,7 @@ from core.settings.reader_state import (
 )
 from core.reader.api import router as reader_local_router
 from core.organizer.api import router as organizer_router
+from core.api.utils.devguard import require_dev
 from core.api.routes import dev as dev_routes
 from core.api.routes import transactions as transactions_routes
 from core.api.security import _calc_default_allow_writes
@@ -170,9 +167,6 @@ def favicon():
 def root():
     return RedirectResponse(url="/ui/shell.html", status_code=307)
 # --- END UI MOUNT ---
-
-EXPORTS_DIR = APP_DIR / "exports"
-EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
 UI_STATIC_DIR = UI_DIR
 
@@ -279,23 +273,6 @@ def _buscore_writeflag_startup() -> None:
     app.state.allow_writes = _calc_default_allow_writes()
 
 
-# Add these routes to app
-@app.get("/dev/license")
-def dev_license(request: Request):
-    # Try to require a session if helpers exist; don't crash in dev
-    try:
-        _load_session_token(request)  # or _require_session(request)
-    except Exception:
-        pass
-
-    from core.utils.license_loader import _license_path, get_license
-
-    lic = get_license(force_reload=True)
-    out = {k: v for k, v in lic.items()}
-    out["path"] = str(_license_path())
-    return out
-
-
 @app.get("/dev/paths")
 def dev_paths():
     from core.config import paths
@@ -326,16 +303,12 @@ def ui_index():
     return RedirectResponse(url="/ui/shell.html", status_code=307)
 
 
-def _health_details_payload() -> Dict[str, Any]:
-    lic = get_license() or {"tier": "community", "features": {}, "plugins": {}}
-    if not isinstance(lic, dict):
-        lic = {"tier": "community", "features": {}, "plugins": {}}
-    lic.setdefault("tier", "community")
-    if not isinstance(lic.get("features"), dict):
-        lic["features"] = {}
-    if not isinstance(lic.get("plugins"), dict):
-        lic["plugins"] = {}
+@app.get("/health")
+def health() -> Dict[str, Any]:
+    return {"ok": True, "version": VERSION}
 
+
+def _health_details_payload() -> Dict[str, Any]:
     policy_dict: Dict[str, Any] = {}
     try:
         if CORE and hasattr(CORE, "policy") and hasattr(CORE.policy, "as_dict"):
@@ -358,19 +331,14 @@ def _health_details_payload() -> Dict[str, Any]:
         "ok": True,
         "version": VERSION,
         "policy": policy_dict,
-        "license": lic,
         "run-id": rid,
     }
 
 
-@app.get("/health")
-def health(
-    request: Request,
-    x_session_token: Optional[str] = Header(None, alias="X-Session-Token"),
-) -> Dict[str, Any]:
-    if x_session_token:
-        return _health_details_payload()
-    return {"ok": True}
+@app.get("/health/detailed")
+def health_detailed() -> Dict[str, Any]:
+    require_dev()
+    return _health_details_payload()
 
 
 @app.get("/")
@@ -397,34 +365,6 @@ def _load_or_create_token() -> str:
 def session_token():
     tok = _load_or_create_token()
     return {"token": tok}
-LICENSE_NAME = "PolyForm-Noncommercial-1.0.0"
-LICENSE_URL = "https://polyformproject.org/licenses/noncommercial/1.0.0/"
-LICENSE = get_license()
-if not isinstance(LICENSE, dict):
-    LICENSE = {}
-LICENSE["tier"] = LICENSE.get("tier") or "unknown"
-if not isinstance(LICENSE.get("features"), dict):
-    LICENSE["features"] = {}
-
-_COMMUNITY_ONLY = {"community", "free", "", None}
-
-
-def _require_license(feature_label: str) -> None:
-    """Gate premium endpoints based on the resolved license tier."""
-
-    lic = get_license(force_reload=True)  # SoT: using existing get_license
-    tier = str(lic.get("tier") or "community").lower()
-    if tier in _COMMUNITY_ONLY:
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "error": "license_required",
-                "feature": feature_label,
-                "tier": tier or "community",
-            },
-        )
-if not isinstance(LICENSE.get("plugins"), dict):
-    LICENSE["plugins"] = {}
 
 CORE: CoreAlpha | None = None
 RUN_ID: str = ""
@@ -477,7 +417,7 @@ def _resolve_plugin_ui_path(plugin_id: str, resource: str) -> Path | None:
 
 
 @app.middleware("http")
-async def _license_header_mw(request: Request, call_next):
+async def _request_log_mw(request: Request, call_next):
     start = time.time()
     response = None
     try:
@@ -492,12 +432,6 @@ async def _license_header_mw(request: Request, call_next):
             "run_id": RUN_ID,
             "status": getattr(response, "status_code", 0),
         }
-        try:
-            if response is not None:
-                response.headers["X-TGC-License"] = LICENSE_NAME
-                response.headers["X-TGC-License-URL"] = LICENSE_URL
-        except Exception:
-            pass
         log(f"[request] {json.dumps(summary, separators=(',', ':'))}")
 
 
@@ -618,11 +552,6 @@ IMPORT_ERROR_CODES = {
 }
 
 
-@app.get("/dev/license")
-def dev_license(req: Request):
-    return LICENSE
-
-
 @protected.post("/app/export")
 def app_export(req: ExportReq, _writes: None = Depends(require_writes)):
     if not req.password:
@@ -649,8 +578,6 @@ def app_import_preview(req: ImportReq, _w: None = Depends(require_writes)):
 
 @protected.post("/app/import/commit")
 def app_import_commit(req: ImportReq, _w: None = Depends(require_writes)):
-    _require_license("import.commit")
-
     res = _import_commit(req.path, req.password)
     if not res.get("ok"):
         err = res.get("error", "commit_failed")
@@ -685,19 +612,10 @@ def journal_info(n: int = 5):
     }
 
 
-class RFQGen(BaseModel):
-    items: List[int]
-    vendors: List[int]
-    fmt: Literal["md", "pdf", "txt"] = "md"
-
-
 class InventoryRun(BaseModel):
     inputs: Dict[int, float] = Field(default_factory=dict)
     outputs: Dict[int, float] = Field(default_factory=dict)
     note: Optional[str] = None
-
-
-_TEMPLATE_ROOT = Path(__file__).resolve().parents[2] / "templates"
 
 
 def _db_conn() -> sqlite3.Connection:
@@ -711,152 +629,6 @@ def _db_conn() -> sqlite3.Connection:
     con.execute("PRAGMA foreign_keys=ON")
     return con
 
-
-_tmpl_env = Environment(
-    loader=FileSystemLoader(str(_TEMPLATE_ROOT)),
-    autoescape=select_autoescape(["html", "xml"]),
-)
-
-
-@app.post("/app/rfq/generate")
-def rfq_generate(
-    body: RFQGen,
-    token: str = Depends(require_token),
-    _writes: None = Depends(require_writes),
-):
-    _require_license("rfq.generate")
-
-    item_ids = list(dict.fromkeys(body.items or []))
-    vendor_ids = list(dict.fromkeys(body.vendors or []))
-
-    with _db_conn() as con:
-        items: Dict[int, sqlite3.Row] = {}
-        vendors: Dict[int, sqlite3.Row] = {}
-        if item_ids:
-            placeholders = ",".join("?" * len(item_ids))
-            query = f"SELECT id, vendor_id, sku, name, qty, unit, price FROM items WHERE id IN ({placeholders})"
-            rows = con.execute(query, item_ids).fetchall()
-            items = {int(row["id"]): row for row in rows}
-        if vendor_ids:
-            placeholders = ",".join("?" * len(vendor_ids))
-            query = f"SELECT id, name, contact FROM vendors WHERE id IN ({placeholders})"
-            rows = con.execute(query, vendor_ids).fetchall()
-            vendors = {int(row["id"]): row for row in rows}
-
-    missing_items = [iid for iid in item_ids if iid not in items]
-    missing_vendors = [vid for vid in vendor_ids if vid not in vendors]
-    if missing_items or missing_vendors:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "error": "Invalid IDs",
-                "missing_items": missing_items,
-                "missing_vendors": missing_vendors,
-            },
-        )
-
-    by_vendor: Dict[int, List[sqlite3.Row]] = {vid: [] for vid in vendor_ids}
-    for record in items.values():
-        vid = record["vendor_id"]
-        if vid in by_vendor:
-            by_vendor[vid].append(record)
-
-    ts = int(time.time())
-    from datetime import datetime
-
-    ts_iso = datetime.utcfromtimestamp(ts).isoformat() + "Z"
-
-    if body.fmt == "pdf":
-        try:
-            from reportlab.lib.pagesizes import LETTER
-            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table
-            from reportlab.lib.styles import getSampleStyleSheet
-        except Exception:
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "error": "PDF generation requires reportlab. Run: pip install reportlab",
-                },
-            )
-        buffer = BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=LETTER)
-        styles = getSampleStyleSheet()
-        flow = [Paragraph(f"Request for Quotation — {ts_iso}", styles["Title"]), Spacer(1, 12)]
-        for vid in vendor_ids:
-            vendor = vendors[vid]
-            flow.append(Paragraph(f"Vendor: {vendor['name']}", styles["Heading2"]))
-            contact = vendor["contact"] if ("contact" in vendor.keys() and vendor["contact"]) else "N/A"
-            flow.append(Paragraph(f"Contact: {contact}", styles["Normal"]))
-            data = [["SKU", "Item", "Qty", "Unit", "Price", "Line Total"]]
-            subtotal = 0.0
-            for item in by_vendor.get(vid, []):
-                qty = float(item["qty"] or 0)
-                price = float(item["price"] or 0)
-                line_total = qty * price
-                subtotal += line_total
-                data.append([
-                    item["sku"],
-                    item["name"],
-                    f"{qty:.3f}",
-                    item["unit"] or "",
-                    f"{price:.2f}",
-                    f"{line_total:.2f}",
-                ])
-            data.append(["", "", "", "", "Vendor Total", f"{subtotal:.2f}"])
-            flow.extend([Table(data), Spacer(1, 12)])
-        doc.build(flow)
-        content = buffer.getvalue()
-        ext = "pdf"
-        media_type = "application/pdf"
-    else:
-        try:
-            template = _tmpl_env.get_template("rfq_template.jinja")
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail="template_not_found") from exc
-
-        # Load per-install business profile (v1: minimal fields)
-        profile = {"business_name": None, "logo_path": None}
-        try:
-            p = APP_DIR / "business_profile.json"
-            if p.exists():
-                profile = json.loads(p.read_text(encoding="utf-8"))
-        except Exception:
-            profile = {"business_name": None, "logo_path": None}
-
-        payload = {
-            "ts_iso": ts_iso,
-            "business_profile": profile,
-            "vendors": [
-                {
-                    "id": vid,
-                    "name": vendors[vid]["name"],
-                    "contact": vendors[vid]["contact"],
-                    "line_items": [
-                        {
-                            "sku": item["sku"],
-                            "name": item["name"],
-                            "qty": float(item["qty"] or 0),
-                            "unit": item["unit"],
-                            "price": float(item["price"] or 0),
-                        }
-                        for item in by_vendor.get(vid, [])
-                    ],
-                }
-                for vid in vendor_ids
-            ],
-        }
-        text = template.render(**payload)
-        content = text.encode("utf-8")
-        ext = "md" if body.fmt == "md" else "txt"
-        media_type = "text/markdown" if ext == "md" else "text/plain"
-
-    EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
-    filename = f"rfq-{ts}.{ext}"
-    output_path = EXPORTS_DIR / filename
-    output_path.write_bytes(content)
-
-    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
-    return StreamingResponse(BytesIO(content), media_type=media_type, headers=headers)
 
 # NEW primary endpoint; keep legacy alias during transition
 @app.post("/app/manufacturing/run")
@@ -876,8 +648,6 @@ def inventory_run(
     token: str = Depends(require_token),
     _writes: None = Depends(require_writes),
 ):
-    _require_license("inventory.run")
-
     inputs = {int(k): float(v) for k, v in (body.inputs or {}).items()}
     outputs = {int(k): float(v) for k, v in (body.outputs or {}).items()}
     ids = set(inputs) | set(outputs)
@@ -1821,7 +1591,6 @@ def probe(
 @protected.get("/capabilities")
 def get_capabilities() -> Dict[str, Any]:
     manifest = registry.emit_manifest_async()
-    manifest.setdefault("license", {"core": LICENSE_NAME, "core_url": LICENSE_URL})
     return _with_run_id(manifest)
 
 
@@ -1981,9 +1750,8 @@ def create_app():
 
 APP = create_app()
 
-
 def build_app():
-    global CORE, RUN_ID, SESSION_TOKEN, LOG_FILE, LICENSE
+    global CORE, RUN_ID, SESSION_TOKEN, LOG_FILE
     policy_path = Path("config/policy.json")
     CORE = CoreAlpha(policy_path=policy_path)
     RUN_ID = CORE.run_id
@@ -1991,7 +1759,6 @@ def build_app():
     DATA.mkdir(parents=True, exist_ok=True)
     (DATA / "session_token.txt").write_text(SESSION_TOKEN, encoding="utf-8")
     CORE.configure_session_token(SESSION_TOKEN)
-    LICENSE = get_license()
     app.state.broker = get_broker()
     LOG_FILE = LOGS / f"core_{RUN_ID}.log"
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)

@@ -91,13 +91,19 @@ $env:BUSCORE_EXTRAS="1"; .\scripts\launch.ps1
 ### Current Surface
 
   * **Backend:** Microkernel (FastAPI + SQLite).
-  * **Domain:** Items, vendors, transactions, manufacturing runs, RFQ generator.
+  * **Domain:** Items, vendors, transactions, manufacturing runs.
   * **Security:** Local encrypted secrets, session token management, policy engine.
   * **UI:** Single-page shell (Home, Inventory, Contacts, Settings).
 
 **API façade style.** Client code uses a small set of helpers and does not need to know internal route details. Public documentation intentionally omits low-level routes, tokens, and security specifics.
 
 **API Surface.** For comprehensive endpoint details, the canonical source is the Statement of Truth: [`docs/SOT.md`](docs/SOT.md). Engineering-level route listings are maintained in internal docs.
+
+### Zero-License Core
+
+  * Core ships without licensing or tier checks.
+  * All formerly Pro-only surfaces (RFQ generator, automated/scheduled runs) have been removed.
+  * `/health` is tier-blind and returns `{"ok": true, "version": "<semver or git SHA>"}`.
 
 -----
 

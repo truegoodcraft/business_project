@@ -217,7 +217,7 @@ async function renderNewRunForm(parent) {
       
     } catch (e) {
       if (e.status === 403) {
-        statusMsg.textContent = 'Locked: Automation requires Pro license.';
+        statusMsg.textContent = 'Run blocked: unauthorized.';
       } else if (e.status === 400 && e.data && e.data.detail && e.data.detail.shortages) {
         const s = e.data.detail.shortages.map(x => `#${x.item_id}: need ${x.required}, have ${x.on_hand}, missing ${x.missing}`).join(' | ');
         statusMsg.textContent = `Insufficient stock → ${s}`;
