@@ -18,7 +18,6 @@ import uvicorn
 
 from core.api.http import UI_STATIC_DIR, build_app
 from core.config.paths import APP_ROOT, STATE_DIR
-from core.utils.license_loader import _license_path
 from tgc.bootstrap_fs import DATA, LOGS, TOKEN_FILE
 
 DEFAULT_PORT = 8765
@@ -38,15 +37,6 @@ def _ensure_runtime_dirs() -> None:
     if os.name == "nt":
         (APP_ROOT / "secrets").mkdir(parents=True, exist_ok=True)
         STATE_DIR.mkdir(parents=True, exist_ok=True)
-
-
-def _ensure_license_file() -> Path:
-    path = _license_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if not path.exists():
-        path.write_text('{"tier":"community","features":{},"plugins":{}}', encoding="utf-8")
-        print(f"Created default license at: {path}")
-    return path
 
 
 def _is_port_free(port: int) -> bool:
@@ -138,7 +128,6 @@ def main(argv: Optional[list[str]] = None) -> int:
     os.chdir(base_dir)
 
     _ensure_runtime_dirs()
-    license_path = _ensure_license_file()
 
     try:
         port, explicit, previous = _select_port(args.port, DATA)
@@ -155,8 +144,6 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     print(f"Session token saved at: {TOKEN_FILE.resolve()}")
     print(f"Served UI from: {UI_STATIC_DIR.resolve()}")
-    print(f"License file: {license_path}")
-
     config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="info")
     server = uvicorn.Server(config)
 

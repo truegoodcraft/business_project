@@ -33,7 +33,6 @@ from core.config.paths import APP_DIR, BUS_ROOT, DATA_DIR, JOURNALS_DIR
 from core.config.writes import require_writes
 from core.services.capabilities import registry
 from core.services.capabilities.registry import MANIFEST_PATH
-from core.utils.license_loader import get_license
 from core.version import VERSION
 from tgc.security import set_session_cookie as attach_session_cookie, require_token_ctx
 from tgc.settings import Settings
@@ -170,13 +169,12 @@ def rotate_token(state=Depends(get_state), _=Depends(require_token_ctx)):
 
 
 def _health_basic() -> Dict[str, Any]:
-    return {"ok": True}
+    return {"ok": True, "version": VERSION}
 
 
 def _health_detailed() -> Dict[str, Any]:
     require_dev()
-    lic = get_license() or {"tier": "community", "features": {}, "plugins": {}}
-    return {"ok": True, "version": VERSION, "license": lic, "mode": "dev"}
+    return {"ok": True, "version": VERSION, "mode": "dev"}
 
 
 @app.get("/health")

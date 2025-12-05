@@ -107,7 +107,6 @@ if (!location.hash) location.hash = '#/inventory';
 document.addEventListener('DOMContentLoaded', async () => {
   try {
     await ensureToken();
-    await initLicenseBadge();
     console.log('BOOT OK');
   } catch (e) {
     console.error('BOOT FAIL', e);
@@ -270,13 +269,13 @@ function initManufacturing() {
         body: JSON.stringify(body),
       });
 
-      if (res.status === 501 || res.status === 403) {
-        alert('Manufacturing not available on this tier.');
+      if (res.status === 501) {
+        alert('Manufacturing is unavailable.');
         locked = true;
         btn.disabled = true;
         btn.textContent = 'Unavailable';
         if (hint) {
-          hint.textContent = 'Manufacturing not available on this tier.';
+          hint.textContent = 'Manufacturing is unavailable.';
           hint.classList.remove('hidden');
         }
         return;
@@ -286,7 +285,7 @@ function initManufacturing() {
         locked = true;
         btn.textContent = 'Unavailable';
         if (hint) {
-          hint.textContent = 'Manufacturing not available on this tier.';
+          hint.textContent = 'Manufacturing is unavailable.';
           hint.classList.remove('hidden');
         }
         return;
@@ -312,19 +311,3 @@ function initManufacturing() {
   });
 }
 
-async function initLicenseBadge() {
-  const el = document.querySelector('[data-role="license-badge"]');
-  if (!el) return;
-  try {
-    const token = await ensureToken();
-    const res = await fetch('/dev/license', {
-      headers: { 'X-Session-Token': token },
-    });
-    if (!res.ok) throw new Error(String(res.status));
-    const lic = await res.json();
-    el.textContent = `License: ${lic?.tier || lic?.license || 'community'}`;
-  } catch (err) {
-    console.warn('license badge fetch failed', err);
-    el.textContent = 'License: community';
-  }
-}

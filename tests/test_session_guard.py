@@ -8,6 +8,8 @@ import pytest
 from fastapi.testclient import TestClient
 from starlette.requests import Request
 
+from core.version import VERSION
+
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -82,8 +84,8 @@ def test_integration_routes_and_cors(test_client: TestClient) -> None:
     assert token == "fixture-token"
 
     unauthorized_health = test_client.get("/health")
-    assert unauthorized_health.status_code == 401
-    assert unauthorized_health.json() == {"error": "unauthorized"}
+    assert unauthorized_health.status_code == 200
+    assert unauthorized_health.json() == {"ok": True, "version": VERSION}
 
     unauthorized_writes = test_client.get("/dev/writes")
     assert unauthorized_writes.status_code == 401
@@ -92,6 +94,7 @@ def test_integration_routes_and_cors(test_client: TestClient) -> None:
     headers = {TOKEN_HEADER: token}
     health = test_client.get("/health", headers=headers)
     assert health.status_code == 200
+    assert health.json() == {"ok": True, "version": VERSION}
 
     writes = test_client.get("/dev/writes", headers=headers)
     assert writes.status_code == 200
