@@ -62,7 +62,6 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from core.appdb.engine import get_session
-from core.appdb.ledger import add_batch, fifo_consume, on_hand_qty
 
 from core.services.capabilities import registry
 from core.services.capabilities.registry import MANIFEST_PATH
@@ -96,6 +95,7 @@ from core.reader.api import router as reader_local_router
 from core.organizer.api import router as organizer_router
 from core.api.dev import router as dev_router
 from core.api.routes import dev as dev_routes
+from core.api.routes import transactions as transactions_routes
 from core.api.security import _calc_default_allow_writes
 from core.config.paths import (
     APP_DIR,
@@ -1969,43 +1969,6 @@ app.include_router(dev_router, dependencies=[Depends(require_token_ctx)])
 app.include_router(oauth)
 app.include_router(protected)
 
-
-# --- BEGIN: Direct app-level ledger adjust endpoint ---
-class _AdjustmentInput(BaseModel):
-    item_id: int
-    qty_change: float = Field(..., ne=0)
-    note: str | None = None
-
-
-@app.post("/app/ledger/adjust")
-def _adjust_stock(body: _AdjustmentInput, db: Session = Depends(get_session)):
-    """Provide adjustment endpoint even if router prefixes change."""
-    if body.qty_change > 0:
-        add_batch(
-            db,
-            body.item_id,
-            body.qty_change,
-            unit_cost_cents=0,
-            source_kind="adjustment",
-            source_id=None,
-        )
-        db.commit()
-        return {"ok": True}
-
-    need = abs(body.qty_change)
-    on_hand = on_hand_qty(db, body.item_id)
-    if on_hand + 1e-9 < need:
-        raise HTTPException(status_code=400, detail="insufficient stock for negative adjustment")
-    fifo_consume(db, body.item_id, need, source_kind="adjustment", source_id=None)
-    db.commit()
-    return {"ok": True}
-
-
-@app.get("/app/_debug/routes")
-def _list_routes():
-    """Simple route listing for debugging mounts."""
-    return [{"path": r.path, "methods": list(r.methods or [])} for r in app.router.routes]
-
 def create_app():
     if not getattr(app.state, "_domain_routes_registered", False):
         app.include_router(items_router, prefix="/app")
@@ -2013,6 +1976,7 @@ def create_app():
         app.include_router(recipes_router, prefix="/app")
         app.include_router(manufacturing_router, prefix="/app")
         app.include_router(ledger_router, prefix="/app")
+        app.include_router(transactions_routes.router, prefix="/app")
         app.state._domain_routes_registered = True
     return app
 

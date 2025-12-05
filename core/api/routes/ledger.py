@@ -11,7 +11,7 @@ from core.appdb.engine import get_session
 from sqlalchemy.orm import Session
 from core.appdb.ledger import on_hand_qty, fifo_consume as sa_fifo_consume, add_batch
 
-router = APIRouter(prefix="/app/ledger", tags=["ledger"])
+router = APIRouter(prefix="/ledger", tags=["ledger"])
 DB_PATH = resolve_db_path()
 
 def _has_items_qty_stored() -> bool:

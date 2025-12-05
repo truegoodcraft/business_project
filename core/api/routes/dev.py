@@ -22,3 +22,16 @@ def get_writes(request: Request):
 def set_writes(payload: WritesPayload, request: Request):
     request.app.state.allow_writes = bool(payload.enabled)
     return {"enabled": request.app.state.allow_writes}
+
+
+@router.get("/license")
+def dev_license():
+    """
+    STUB: Development license endpoint to satisfy UI requests.
+    """
+
+    return {
+        "stub": True,
+        "status": "dev",
+        "note": "stub endpoint; replace with real license service",
+    }

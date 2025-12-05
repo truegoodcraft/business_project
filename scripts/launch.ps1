@@ -3,7 +3,7 @@
 param(
   [string]$BindHost = "127.0.0.1",
   [int]$Port = 8765,
-  [string]$DbPath = "data/app.db",
+  [string]$DbPath = $null,
   [switch]$Reload,
   [switch]$Quiet,
   [switch]$Smoke
@@ -47,16 +47,50 @@ try {
     $reqHash | Out-File -Encoding ascii $hashPath
   }
 
-  # Resolve DB path and ensure folder
-  if (-not (Split-Path -IsAbsolute $DbPath)) {
-    $DbPath = Join-Path $PWD.Path $DbPath
+  # Resolve DB path and ensure folder (default: AppData via platformdirs)
+  $targetDb = $null
+  $dbSource = "APPDATA"
+
+  if ($env:BUS_DB) {
+    $targetDb = $env:BUS_DB
+    $dbSource = "ENV"
+  } elseif ($PSBoundParameters.ContainsKey('DbPath') -and $DbPath) {
+    $targetDb = $DbPath
+    $dbSource = "PARAM"
+  } else {
+    $targetDb = (& $venvPy - <<'PY'
+from platformdirs import user_data_dir
+from pathlib import Path
+print(Path(user_data_dir("TGC-BUS-Core", "TrueGoodCraft")) / "app.db")
+PY
+    ).Trim()
+
+    # One-time migrate repo db -> AppData if AppData missing
+    try {
+      $appDataDb = $targetDb
+      $repoDb = Join-Path (Join-Path $scriptDir "..") "data\app.db"
+      if ((Test-Path $repoDb) -and -not (Test-Path $appDataDb)) {
+        Say "[db] Migrating existing repo DB to AppData..." "Yellow"
+        $appDataDir = Split-Path -Parent $appDataDb
+        if (-not (Test-Path $appDataDir)) { New-Item -ItemType Directory -Force -Path $appDataDir | Out-Null }
+        Copy-Item -Path $repoDb -Destination $appDataDb -Force
+        Say "[db] Migrated -> $appDataDb" "Yellow"
+      }
+    } catch {
+      Say "[db] Migration skipped (error): $($_.Exception.Message)" "Yellow"
+    }
   }
-  $dbDir = Split-Path -Parent $DbPath
+
+  if (-not (Split-Path -IsAbsolute $targetDb)) {
+    $targetDb = Join-Path $PWD.Path $targetDb
+  }
+
+  $dbDir = Split-Path -Parent $targetDb
   if (-not (Test-Path $dbDir)) { New-Item -Type Directory -Path $dbDir | Out-Null }
 
-  $env:BUS_DB     = $DbPath
+  $env:BUS_DB     = $targetDb
   $env:PYTHONUTF8 = "1"
-  Say ("[db] BUS_DB -> {0}" -f $env:BUS_DB) "DarkGray"
+  Say ("[db] BUS_DB ({0}) -> {1}" -f $dbSource, $env:BUS_DB) "DarkGray"
   Say ("[db] Using SQLite at: {0}" -f $env:BUS_DB) "DarkGray"
 
   # SPDX header warning (non-fatal)

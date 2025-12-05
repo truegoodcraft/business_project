@@ -2,45 +2,62 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from platformdirs import user_data_dir
+
+APP_NAME = "TGC-BUS-Core"
+APP_AUTHOR = "TrueGoodCraft"
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def _appdata_root() -> Path:
+    root = Path(user_data_dir(APP_NAME, APP_AUTHOR))
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
 
 def resolve_db_path() -> str:
     """
-    A canonical resolver for BUS_DB.
-    - If BUS_DB is absolute -> use it.
-    - If BUS_DB is relative (or unset) -> resolve relative to repo root.
-    Repo root = two levels up from this file: .../TGC-BUS-Core/
+    Resolve the database path honoring BUS_DB when set; otherwise default to
+    an AppData location (platformdirs user_data_dir).
+    - BUS_DB absolute: use as-is
+    - BUS_DB relative: resolve relative to repo root for backwards compatibility
+    - Unset: %LOCALAPPDATA%/TrueGoodCraft/TGC-BUS-Core/app.db (created if missing)
     """
-    raw = os.environ.get("BUS_DB", "data/app.db")
-    p = Path(raw)
-    if not p.is_absolute():
-        repo_root = Path(__file__).resolve().parents[2]  # core/appdb/ -> core/ -> REPO
-        p = (repo_root / raw).resolve()
-    return str(p)
 
+    raw = os.environ.get("BUS_DB")
+    if raw:
+        p = Path(raw)
+        if not p.is_absolute():
+            p = (_repo_root() / raw).resolve()
+        return str(p)
 
-def _local_appdata() -> Path:
-    # Fallback for non-Windows or missing env
-    return Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local")))
+    return str(app_db_path())
 
 
 def app_root_dir() -> Path:
-    """
-    Root folder for BUS Core data.
-    Default: %LOCALAPPDATA%/BUSCore
-    Override: set BUSCORE_HOME to an absolute path (e.g., D:\\BUSCoreData).
-    """
+    """Root folder for BUS Core data (AppData by default)."""
+
     custom = os.environ.get("BUSCORE_HOME")
-    return Path(custom) if custom else (_local_appdata() / "BUSCore")
+    root = Path(custom) if custom else _appdata_root()
+    root.mkdir(parents=True, exist_ok=True)
+    return root
 
 
 def app_dir() -> Path:
     """Return the canonical application data directory."""
 
-    return app_root_dir() / "app"
+    target = app_root_dir() / "app"
+    target.mkdir(parents=True, exist_ok=True)
+    return target
 
 
 def app_db_path() -> Path:
-    return app_root_dir() / "app" / "app.db"
+    path = app_dir() / "app.db"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def ui_dir() -> Path:

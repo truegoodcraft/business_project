@@ -15,6 +15,8 @@ from core.appdb.paths import resolve_db_path  # SoT path helper
 
 DB_PATH: Path = Path(resolve_db_path())
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+DB_SOURCE = "ENV" if os.environ.get("BUS_DB") else "APPDATA"
+print(f"[db] BUS_DB ({DB_SOURCE}) -> {DB_PATH}")
 
 
 def _sqlite_url(p: Path) -> str:
