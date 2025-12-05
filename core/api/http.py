@@ -61,6 +61,8 @@ from starlette.status import HTTP_401_UNAUTHORIZED
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from core.appdb.engine import get_session
+
 from core.services.capabilities import registry
 from core.services.capabilities.registry import MANIFEST_PATH
 from core.policy.guard import require_owner_commit
@@ -91,8 +93,8 @@ from core.settings.reader_state import (
 )
 from core.reader.api import router as reader_local_router
 from core.organizer.api import router as organizer_router
-from core.api.dev import router as dev_router
 from core.api.routes import dev as dev_routes
+from core.api.routes import transactions as transactions_routes
 from core.api.security import _calc_default_allow_writes
 from core.config.paths import (
     APP_DIR,
@@ -589,7 +591,7 @@ from core.api.routes.items import router as items_router
 from core.api.routes.vendors import router as vendors_router
 from core.api.routes.recipes import router as recipes_router
 from core.api.routes.manufacturing import router as manufacturing_router
-from core.api.routes.ledger import router as ledger_router
+from core.api.routes.ledger_api import router as ledger_router
 
 oauth = APIRouter()
 
@@ -1961,8 +1963,7 @@ def server_restart(_writes: None = Depends(require_writes)) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail="restart_failed") from exc
 
 
-app.include_router(dev_routes.router, dependencies=[Depends(require_token_ctx)])
-app.include_router(dev_router, dependencies=[Depends(require_token_ctx)])
+    app.include_router(dev_routes.router, dependencies=[Depends(require_token_ctx)])
 app.include_router(oauth)
 app.include_router(protected)
 
@@ -1973,6 +1974,7 @@ def create_app():
         app.include_router(recipes_router, prefix="/app")
         app.include_router(manufacturing_router, prefix="/app")
         app.include_router(ledger_router, prefix="/app")
+        app.include_router(transactions_routes.router, prefix="/app")
         app.state._domain_routes_registered = True
     return app
 

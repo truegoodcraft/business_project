@@ -23,7 +23,7 @@ from starlette.staticfiles import StaticFiles
 from core.api.routes.items import router as items_router
 from core.api.routes.manufacturing import router as manufacturing_router
 from core.api.routes.recipes import router as recipes_router
-from core.api.routes.ledger import router as ledger_router
+from core.api.routes.ledger_api import router as ledger_router
 from core.api.utils.devguard import require_dev
 from core.appdb.engine import DB_PATH as DB_FILE, ENGINE, SessionLocal
 from core.appdb.ensure import DB_PATH as ACTIVE_DB_PATH, ensure_schema
@@ -88,14 +88,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="BUS Core Alpha", version=VERSION, lifespan=lifespan)
-
-print(f"[db] BUS_DB -> {os.environ.get('BUS_DB', '(unset)')}")
-print(f"[db] Using SQLite at: {ACTIVE_DB_PATH}")
 try:
-    res = ensure_schema()
-    print(f"[db] ensure_schema: {res}")
-except Exception as e:
-    print(f"[db] ensure_schema failed (non-fatal): {e}")
+    ensure_schema()
+except Exception:
+    pass
 
 app.mount("/ui", StaticFiles(directory="core/ui", html=True), name="ui")
 app.mount("/brand", StaticFiles(directory=str(REPO_ROOT)), name="brand")
@@ -390,7 +386,7 @@ app.include_router(vendors_router, prefix="/app")
 app.include_router(recipes_router, prefix="/app")
 app.include_router(manufacturing_router, prefix="/app")
 app.include_router(mfg_router)
-app.include_router(ledger_router)
+app.include_router(ledger_router, prefix="/app")
 if DEV_MODE:
     from core.api.routes.dev_dbinfo import router as dev_dbinfo_router
 

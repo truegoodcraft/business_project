@@ -3,9 +3,10 @@
 param(
   [string]$BindHost = "127.0.0.1",
   [int]$Port = 8765,
-  [string]$DbPath = "data/app.db",
+  [string]$DbPath = $null,
   [switch]$Reload,
-  [switch]$Quiet
+  [switch]$Quiet,
+  [switch]$Smoke
 )
 
 # WinPS 5.1-safe color echo
@@ -46,17 +47,31 @@ try {
     $reqHash | Out-File -Encoding ascii $hashPath
   }
 
-  # Resolve DB path and ensure folder
-  if (-not (Split-Path -IsAbsolute $DbPath)) {
-    $DbPath = Join-Path $PWD.Path $DbPath
+  # Resolve DB path for logging (default: repo data/app.db per SoT)
+  $dbSource = "REPO"
+  $appliedDb = $env:BUS_DB
+
+  if ($appliedDb) {
+    $dbSource = "ENV"
+  } else {
+    $appliedDb = Join-Path $repoRoot "data\app.db"
   }
-  $dbDir = Split-Path -Parent $DbPath
+
+  if ($PSBoundParameters.ContainsKey('DbPath') -and $DbPath) {
+    $resolvedParam = $DbPath
+    if (-not (Split-Path -IsAbsolute $resolvedParam)) {
+      $resolvedParam = Join-Path $repoRoot $resolvedParam
+    }
+  }
+
+  if (-not (Split-Path -IsAbsolute $appliedDb)) {
+    $appliedDb = Join-Path $repoRoot $appliedDb
+  }
+
+  $dbDir = Split-Path -Parent $appliedDb
   if (-not (Test-Path $dbDir)) { New-Item -Type Directory -Path $dbDir | Out-Null }
 
-  $env:BUS_DB     = $DbPath
   $env:PYTHONUTF8 = "1"
-  Say ("[db] BUS_DB -> {0}" -f $env:BUS_DB) "DarkGray"
-  Say ("[db] Using SQLite at: {0}" -f $env:BUS_DB) "DarkGray"
 
   # SPDX header warning (non-fatal)
   try {
@@ -74,6 +89,14 @@ try {
 
   Say ("[launch] Starting BUS Core at http://{0}:{1}" -f $BindHost,$Port) "Green"
   & $venvPy -m uvicorn @uvArgs
+
+  if ($Smoke) {
+    Start-Sleep -Seconds 2
+    Say "[launch] Running smoke.ps1..." "Cyan"
+    # Build URL safely with -f formatting to avoid $var: parsing errors
+    $baseUrl = "http://{0}:{1}" -f $BindHost, $Port
+    pwsh -NoProfile -File "$scriptDir\smoke.ps1" -BaseUrl $baseUrl
+  }
   exit $LASTEXITCODE
 }
 finally {

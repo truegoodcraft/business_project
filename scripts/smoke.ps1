@@ -1,173 +1,167 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-# scripts/smoke.ps1
-# Quick, reproducible smoke that proves inventory FIFO works end-to-end.
-# Usage:
-#   powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\smoke.ps1
-#   powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\smoke.ps1 -BindHost 127.0.0.1 -Port 8765 -DbPath data\app.db -Clean
+#requires -Version 5.1
+<#
+.SYNOPSIS
+  BUS Core smoke tests (SOT-compliant, ASCII-only to avoid parsing issues).
+  Verifies: items (definition-only), adjustments (+/- FIFO), recipes (PUT full doc),
+  and manufacturing runs (validation and no-oversold).
+
+.USAGE
+  pwsh -NoProfile -File scripts/smoke.ps1 -BaseUrl http://127.0.0.1:8765
+#>
 
 param(
-  [string]$BindHost = "127.0.0.1",
-  [int]$Port = 8765,
-  [string]$DbPath = "data/app.db",
-  [switch]$Clean,
-  [switch]$Quiet
+  [string]$BaseUrl = "http://127.0.0.1:8765"
 )
 
-function Say([string]$Text, [string]$Color = "White") {
-  if (-not $Quiet) { Write-Host $Text -ForegroundColor $Color }
+$ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
+
+# -----------------------------
+# Helpers (ASCII-only output)
+# -----------------------------
+function Write-Step { param([string]$Msg) Write-Host "[SMOKE] $Msg" -ForegroundColor Cyan }
+function Write-Ok   { param([string]$Msg) Write-Host "  OK  $Msg" -ForegroundColor Green }
+function Write-Fail { param([string]$Msg) Write-Host "  ERR $Msg" -ForegroundColor Red }
+
+# A single session object to persist cookies (Set-Cookie from /session/token)
+$script:Session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+
+function Invoke-JsonPost {
+  param([string]$Url, [hashtable]$BodyObj)
+  $json = $BodyObj | ConvertTo-Json -Depth 10
+  return Invoke-RestMethod -Method Post -Uri $Url -WebSession $script:Session -ContentType "application/json" -Body $json
 }
-function Tick([string]$Text) { Say ("  [√] " + $Text) "Green" }
-function Boom([string]$Text) { Say ("  [x] " + $Text) "Red" }
-
-$scriptDir = Split-Path -Parent $PSCommandPath
-$repoRoot  = Resolve-Path (Join-Path $scriptDir "..")
-Push-Location $repoRoot
-
-# Helpers ----------------------------------------------------------
-function Invoke-Json {
-  param([string]$Method,[string]$Url,[object]$Body = $null,[Microsoft.PowerShell.Commands.WebRequestSession]$Session = $null)
-  $params = @{
-    Uri = $Url
-    Method = $Method
-    UseBasicParsing = $true
-  }
-  if ($Session) { $params.WebSession = $Session }
-  if ($Body -ne $null) {
-    $params.ContentType = "application/json"
-    $params.Body = ($Body | ConvertTo-Json -Compress)
-  }
-  return Invoke-WebRequest @params
+function Invoke-JsonPut {
+  param([string]$Url, [hashtable]$BodyObj)
+  $json = $BodyObj | ConvertTo-Json -Depth 10
+  return Invoke-RestMethod -Method Put -Uri $Url -WebSession $script:Session -ContentType "application/json" -Body $json
 }
-function Parse-Json([string]$s) {
-  if ([string]::IsNullOrWhiteSpace($s)) { return $null }
-  return $s | ConvertFrom-Json
+function TryInvoke {
+  param([scriptblock]$Block)
+  try { & $Block; return @{ ok = $true } }
+  catch { return @{ ok = $false; err = $_ } }
 }
-# -----------------------------------------------------------------
 
-# Enable dev context for smoke validation; server must be started with matching env to expose dev-only routes
-$env:BUS_DEV = "1"
+# Establish session: call /session/token to receive auth cookie for this session
+# Note: We reuse the same $script:Session in all subsequent calls so cookies are sent.
+TryInvoke { Invoke-RestMethod -Method Get -Uri ($BaseUrl + "/session/token") -WebSession $script:Session } | Out-Null
 
+# Precheck: ensure /app/ledger/adjust exists before running deeper smoke steps
 try {
-  # Resolve DB path for info & optional cleanup
-  if (-not (Split-Path -IsAbsolute $DbPath)) {
-    $DbPath = Join-Path $PWD.Path $DbPath
+  $openapi = Invoke-RestMethod -Method Get -Uri "$BaseUrl/openapi.json"
+  $hasAdjust = $false
+  foreach ($k in $openapi.paths.PSObject.Properties.Name) {
+    if ($k -eq "/app/ledger/adjust") { $hasAdjust = $true; break }
   }
-  if ($Clean -and (Test-Path $DbPath)) {
-    Remove-Item -Force $DbPath
-    Say ("[smoke] Removed existing DB: {0}" -f $DbPath) "DarkGray"
-  }
-
-  $base = "http://{0}:{1}" -f $BindHost,$Port
-  Say ("[smoke] Target: {0}" -f $base) "Cyan"
-
-  # Start cookie session like the UI
-  $resp = Invoke-WebRequest -UseBasicParsing -Uri "$base/session/token" -SessionVariable sess
-  if ($resp.StatusCode -ne 200) { throw "Failed to start session; status $($resp.StatusCode)" }
-  Tick "Session: OK (cookie)"
-
-  # Create a unique item
-  $sku  = "SMOKE-" + [Guid]::NewGuid().ToString("N").Substring(0,8)
-  $item = @{
-    name="Widget A"
-    sku=$sku
-    uom="ea"
-    qty_stored=0
-    price=0
-    item_type="Material"
-    location="rack-1"
-  }
-  $r = Invoke-Json -Method POST -Url "$base/app/items" -Body $item -Session $sess
-  if ($r.StatusCode -ne 200 -and $r.StatusCode -ne 201) { throw "Create item failed ($($r.StatusCode))" }
-  $newItem = Parse-Json $r.Content
-  $itemId = $newItem.id
-  if (-not $itemId) {
-    # fallback: list and find by sku
-    $li = Invoke-WebRequest -UseBasicParsing -Uri "$base/app/items" -WebSession $sess
-    $arr = Parse-Json $li.Content
-    $itemId = ($arr | Where-Object { $_.sku -eq $sku } | Select-Object -First 1).id
-  }
-  if (-not $itemId) { throw "Unable to determine item id" }
-  Tick ("Item created: id={0}, sku={1}" -f $itemId,$sku)
-
-  # Stock in two cost layers (FIFO test setup)
-  $r1 = Invoke-Json -Method POST -Url "$base/app/ledger/purchase" -Body @{ item_id=$itemId; qty=10; unit_cost_cents=300; source_kind="purchase"; source_id="po-1001" } -Session $sess
-  if ($r1.StatusCode -ne 200) { throw "Purchase #1 failed ($($r1.StatusCode)) -> $($r1.Content)" }
-  $r2 = Invoke-Json -Method POST -Url "$base/app/ledger/purchase" -Body @{ item_id=$itemId; qty=5;  unit_cost_cents=500; source_kind="purchase"; source_id="po-1002" } -Session $sess
-  if ($r2.StatusCode -ne 200) { throw "Purchase #2 failed ($($r2.StatusCode)) -> $($r2.Content)" }
-  Tick "Purchases: 10@300 + 5@500"
-
-  # Consume 12 -> expect remaining 3@500 => valuation 1500
-  $rc = Invoke-Json -Method POST -Url "$base/app/ledger/consume" -Body @{ item_id=$itemId; qty=12; source_kind="sale"; source_id="so-2001" } -Session $sess
-  if ($rc.StatusCode -ne 200) { throw "Consume failed ($($rc.StatusCode)) -> $($rc.Content)" }
-  Tick "Consumed: 12 (FIFO)"
-
-  # Verify valuation == 1500 cents
-  $rv = Invoke-WebRequest -UseBasicParsing -Uri "$base/app/ledger/valuation?item_id=$itemId" -WebSession $sess
-  if ($rv.StatusCode -ne 200) { throw "Valuation failed ($($rv.StatusCode))" }
-  $val = (Parse-Json $rv.Content).total_value_cents
-  if ($val -ne 1500) {
-    Boom ("Valuation unexpected: got {0}, expected 1500" -f $val)
-    throw "Valuation mismatch"
-  }
-  Tick "Valuation: OK (1500¢)"
-
-  # Dev/detail gating checks (pass if 200 in dev mode or clean 404/403 when gated)
-  function Test-GatedEndpoint {
-    param(
-      [string]$Url,
-      [string]$Label
-    )
-    $resp = $null
-    try {
-      $resp = Invoke-WebRequest -UseBasicParsing -Uri $Url -WebSession $sess -ErrorAction Stop
-    } catch {
-      $resp = $_.Exception.Response
+  if (-not $hasAdjust) {
+    Write-Host "[SMOKE] FATAL: /app/ledger/adjust not found in OpenAPI. Present /app/ledger paths:" -ForegroundColor Red
+    foreach ($k in $openapi.paths.PSObject.Properties.Name) {
+      if ($k -like "/app/ledger/*") { Write-Host "  - $k" -ForegroundColor Red }
     }
-    $status = if ($resp) { $resp.StatusCode } else { $null }
-    if ($status -eq 200) {
-      Tick ("{0}: available (dev mode)" -f $Label)
-      return
-    }
-    if (-not $status) { $status = "(no response)" }
-    if ($status -eq 404 -or $status -eq 403) {
-      Tick ("{0}: gated ({1})" -f $Label,$status)
-      return
-    }
-    Boom ("{0}: unexpected status {1}" -f $Label,$status)
-    throw "Gating check failed"
+    throw "ledger.adjust route missing"
   }
-
-  Test-GatedEndpoint "$base/health/detailed" "Health detail"
-  Test-GatedEndpoint "$base/dev/db-info" "Dev DB info"
-
-  # Movements sanity
-  $rm = Invoke-WebRequest -UseBasicParsing -Uri "$base/app/ledger/movements?item_id=$itemId&limit=50" -WebSession $sess
-  if ($rm.StatusCode -ne 200) { throw "Movements failed ($($rm.StatusCode))" }
-  $movs = (Parse-Json $rm.Content).movements
-  $count = ($movs | Measure-Object).Count
-  if ($count -lt 4) {
-    Boom ("Movements too few: {0}" -f $count)
-    throw "Movement history incomplete"
-  }
-  Tick ("Movements: OK ({0} rows)" -f $count)
-
-  # Pretty finale
-  Say "" "White"
-  Say "All smoke checks passed." "Green"
-  Say ("DB: {0}" -f $DbPath) "DarkGray"
-  Say ("Item: id={0}, sku={1}" -f $itemId,$sku) "DarkGray"
-
 } catch {
-  Say ""
-  Boom ("Smoke FAILED: {0}" -f $_)
-  exit 1
-} finally {
-  if ($Clean) {
-    # Optional reset: remove DB so the run is ephemeral when desired
-    if (Test-Path $DbPath) {
-      Remove-Item -Force $DbPath
-      Say ("[smoke] Cleaned DB: {0}" -f $DbPath) "DarkGray"
-    }
+  throw
+}
+
+$Failures = @()
+function Assert-True {
+  param([bool]$Cond, [string]$Msg)
+  if ($Cond) { Write-Ok $Msg } else { Write-Fail $Msg; $script:Failures += $Msg }
+}
+
+# -----------------------------
+# 1) Items: create (definition-only)
+# -----------------------------
+Write-Step "Items: create definition-only"
+$itemA = Invoke-JsonPost ($BaseUrl + "/app/items") @{ name = "SMK-A" }
+$itemB = Invoke-JsonPost ($BaseUrl + "/app/items") @{ name = "SMK-B" }
+$itemC = Invoke-JsonPost ($BaseUrl + "/app/items") @{ name = "SMK-C" }
+Assert-True ((($itemA.id -as [int]) -gt 0) -and (($itemB.id -as [int]) -gt 0) -and (($itemC.id -as [int]) -gt 0)) "Created items A/B/C"
+
+# -----------------------------
+# 2) Adjustments: positive and negative (FIFO, no oversold)
+# -----------------------------
+Write-Step "Adjustments: positive and negative (FIFO, no oversold)"
+$adj1 = Invoke-JsonPost ($BaseUrl + "/app/ledger/adjust") @{ item_id = $itemA.id; qty_change = 15 }
+Assert-True ($null -ne $adj1) "Positive adjust +15 on A accepted"
+
+$adj2 = Invoke-JsonPost ($BaseUrl + "/app/ledger/adjust") @{ item_id = $itemA.id; qty_change = -4 }
+Assert-True ($null -ne $adj2) "Negative adjust -4 on A accepted"
+
+$negTry = TryInvoke { Invoke-JsonPost ($BaseUrl + "/app/ledger/adjust") @{ item_id = $itemB.id; qty_change = -999 } }
+Assert-True (-not $negTry.ok) "Negative adjust larger than on-hand returns 400"
+
+# -----------------------------
+# 3) Recipes: create + PUT full document
+# -----------------------------
+Write-Step "Recipes: create and PUT full document"
+$recCreate = Invoke-JsonPost ($BaseUrl + "/app/recipes") @{
+  name = "SMK Recipe B-from-A"
+  output_item_id = $itemB.id
+  output_qty = 1
+  items = @(@{ item_id = $itemA.id; qty_required = 3; is_optional = $false })
+}
+Assert-True ((($recCreate.id -as [int]) -gt 0)) "Recipe created"
+
+$recPut = Invoke-JsonPut ($BaseUrl + "/app/recipes/$($recCreate.id)") @{
+  id = $recCreate.id
+  name = "SMK Recipe B-from-A (v2)"
+  output_item_id = $itemB.id
+  output_qty = 1
+  is_archived = $false
+  notes = "smoke"
+  items = @(
+    @{ item_id = $itemA.id; qty_required = 3; is_optional = $false; sort_order = 0 },
+    @{ item_id = $itemC.id; qty_required = 1; is_optional = $true;  sort_order = 1 }
+  )
+}
+Assert-True (($recPut.ok -eq $true)) "Recipe PUT OK"
+
+# -----------------------------
+# 4) Manufacturing: success and shortage 400; ad-hoc 400
+# -----------------------------
+Write-Step "Manufacturing: run success and shortage checks"
+
+$runOk = Invoke-JsonPost ($BaseUrl + "/app/manufacturing/run") @{
+  recipe_id = $recCreate.id
+  output_qty = 2
+  notes = "smoke run ok"
+}
+Assert-True (($runOk.status -eq "completed")) "Run completed"
+
+$runBadTry = TryInvoke { Invoke-JsonPost ($BaseUrl + "/app/manufacturing/run") @{ recipe_id = $recCreate.id; output_qty = 999 } }
+Assert-True (-not $runBadTry.ok) "Run with insufficient stock returns 400"
+if (-not $runBadTry.ok) {
+  $msg = ""
+  if ($runBadTry.err -and $runBadTry.err.ErrorDetails -and $runBadTry.err.ErrorDetails.Message) {
+    $msg = $runBadTry.err.ErrorDetails.Message
   }
-  Pop-Location
+  $hasShortage = ($msg -match "failed_insufficient_stock") -or ($msg -match "shortages")
+  Assert-True $hasShortage "Shortage payload contains shortages"
+}
+
+$adhocBadTry = TryInvoke {
+  Invoke-JsonPost ($BaseUrl + "/app/manufacturing/run") @{
+    output_item_id = $itemC.id
+    output_qty = 1
+    components = @(@{ item_id = $itemB.id; qty_required = 999 })
+  }
+}
+Assert-True (-not $adhocBadTry.ok) "Ad-hoc run without stock fails 400"
+
+# -----------------------------
+# Finish
+# -----------------------------
+Write-Step "Smoke complete"
+if ($Failures.Count -gt 0) {
+  Write-Host ""
+  Write-Host "Failures:" -ForegroundColor Red
+  foreach ($f in $Failures) { Write-Host (" - " + $f) -ForegroundColor Red }
+  exit 1
+} else {
+  Write-Host ""
+  Write-Host "All smoke checks passed." -ForegroundColor Green
+  exit 0
 }

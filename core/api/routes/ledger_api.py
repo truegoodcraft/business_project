@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 from typing import Optional
 import sqlite3
@@ -7,8 +7,13 @@ import sqlite3
 from core.ledger.fifo import purchase as fifo_purchase, consume as fifo_consume, valuation as fifo_valuation, list_movements as fifo_list
 from core.appdb.paths import resolve_db_path
 from core.api.utils.devguard import require_dev
+from core.appdb.engine import get_session
+from sqlalchemy.orm import Session
+from core.appdb.ledger import on_hand_qty, fifo_consume as sa_fifo_consume, add_batch
 
-router = APIRouter(prefix="/app/ledger", tags=["ledger"])
+# NOTE: Router prefix is "/ledger"; child paths must not repeat "/ledger" to avoid
+# duplicate segments (e.g., /app/ledger/adjust).
+router = APIRouter(prefix="/ledger", tags=["ledger"])
 DB_PATH = resolve_db_path()
 
 def _has_items_qty_stored() -> bool:
@@ -120,6 +125,38 @@ def consume(body: ConsumeIn):
             _, item_id, path = msg.split(":", 2)
             raise HTTPException(status_code=404, detail={"reason": "item_not_found", "item_id": int(item_id), "db_path": path})
         raise
+
+
+# -------------------------
+# POST /app/ledger/adjust
+# -------------------------
+class AdjustmentInput(BaseModel):
+    item_id: int
+    qty_change: float = Field(..., ne=0)
+    note: str | None = None
+
+
+@router.post("/adjust")
+def adjust_stock(body: AdjustmentInput, db: Session = Depends(get_session)):
+    """
+    Positive adjustment:
+      - create a new batch with qty_remaining=+N and unit_cost_cents=0
+      - write a matching positive movement
+    Negative adjustment:
+      - consume FIFO from existing batches
+      - 400 if insufficient on-hand; no partials
+    """
+    if body.qty_change > 0:
+        add_batch(db, body.item_id, body.qty_change, unit_cost_cents=0, source_kind="adjustment", source_id=None)
+        db.commit()
+        return {"ok": True}
+    need = abs(body.qty_change)
+    on_hand = on_hand_qty(db, body.item_id)
+    if on_hand + 1e-9 < need:
+        raise HTTPException(status_code=400, detail="insufficient stock for negative adjustment")
+    sa_fifo_consume(db, body.item_id, need, source_kind="adjustment", source_id=None)
+    db.commit()
+    return {"ok": True}
 
 
 @router.get("/valuation")

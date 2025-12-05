@@ -9,20 +9,39 @@ from typing import Generator
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
-from core.appdb.paths import resolve_db_path  # SoT path helper
+from core.appdata.paths import resolve_db_path, legacy_repo_db  # SoT helpers
 
 # --- Path & URL -------------------------------------------------------------
 
-DB_PATH: Path = Path(resolve_db_path())
-DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+env_db = os.environ.get("BUS_DB")
+# New default: AppData target; one-time migrate repo DB if present
+target_path = Path(resolve_db_path())
+target_path.parent.mkdir(parents=True, exist_ok=True)
+
+source = "ENV" if env_db else "APPDATA"
+
+# One-time migration: if legacy repo DB exists and AppData DB does not, copy it
+legacy = legacy_repo_db()
+if not env_db:
+    try:
+        if legacy.exists() and (not target_path.exists()):
+            legacy.parent.mkdir(parents=True, exist_ok=True)
+            target_path.write_bytes(legacy.read_bytes())
+            source = "APPDATA (migrated from repo)"
+    except Exception:
+        # Non-fatal; proceed with empty AppData DB if copy fails
+        pass
+
+DB_PATH: Path = target_path
+print(f"[db] BUS_DB ({source}) -> {DB_PATH}")
 
 
 def _sqlite_url(p: Path) -> str:
     """Windows-safe sqlite+pysqlite URL with exactly 3 slashes.
 
     Example:
-      C:/Users/me/AppData/Local/BUSCore/app/app.db
-      -> sqlite+pysqlite:///C:/Users/me/AppData/Local/BUSCore/app/app.db
+      C:/path/to/repo/data/app.db
+      -> sqlite+pysqlite:///C:/path/to/repo/data/app.db
     """
     posix = p.resolve().as_posix()
     # If it starts with a drive letter, leave it; otherwise strip leading slashes.
@@ -64,9 +83,3 @@ def debug_db_where() -> dict:
         "resolved_fs_path": resolved,
         "pragma": [tuple(row) for row in pragma],
     }
-
-
-# Optional boot log if explicitly enabled
-if os.getenv("BUSCORE_DEBUG_DB", "0") in ("1", "true", "yes", "on"):
-    info = debug_db_where()
-    print(f"[DB] Using: {info['resolved_fs_path']}  url={info['engine_url']}  pragma={info.get('pragma')}")
