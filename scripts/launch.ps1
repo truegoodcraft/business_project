@@ -79,7 +79,9 @@ try {
   if ($Smoke) {
     Start-Sleep -Seconds 2
     Say "[launch] Running smoke.ps1..." "Cyan"
-    pwsh -NoProfile -File "$scriptDir\smoke.ps1" -BaseUrl "http://$BindHost:$Port"
+    # Build URL safely with -f formatting to avoid $var: parsing errors
+    $baseUrl = "http://{0}:{1}" -f $BindHost, $Port
+    pwsh -NoProfile -File "$scriptDir\smoke.ps1" -BaseUrl $baseUrl
   }
   exit $LASTEXITCODE
 }
