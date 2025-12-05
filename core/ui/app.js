@@ -107,7 +107,6 @@ if (!location.hash) location.hash = '#/inventory';
 document.addEventListener('DOMContentLoaded', async () => {
   try {
     await ensureToken();
-    await initLicenseBadge();
     console.log('BOOT OK');
   } catch (e) {
     console.error('BOOT FAIL', e);
@@ -312,8 +311,3 @@ function initManufacturing() {
   });
 }
 
-async function initLicenseBadge() {
-  const el = document.querySelector('[data-role="license-badge"]');
-  if (!el) return;
-  el.textContent = 'License: community';
-}
