@@ -58,14 +58,11 @@ try {
     $targetDb = $DbPath
     $dbSource = "PARAM"
   } else {
-    $targetDb = (& $venvPy - <<'PY'
-from platformdirs import user_data_dir
-from pathlib import Path
-print(Path(user_data_dir("TGC-BUS-Core", "TrueGoodCraft")) / "app.db")
-PY
-    ).Trim()
+    # Default to AppData path (platformdirs equivalent) and migrate repo DB if needed
+    $appDataRoot = Join-Path $env:LOCALAPPDATA "TrueGoodCraft\TGC-BUS-Core"
+    if (-not (Test-Path $appDataRoot)) { New-Item -ItemType Directory -Force -Path $appDataRoot | Out-Null }
+    $targetDb = Join-Path $appDataRoot "app.db"
 
-    # One-time migrate repo db -> AppData if AppData missing
     try {
       $appDataDb = $targetDb
       $repoDb = Join-Path (Join-Path $scriptDir "..") "data\app.db"
