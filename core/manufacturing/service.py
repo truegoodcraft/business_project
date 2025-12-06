@@ -21,6 +21,7 @@ from core.appdb.ledger import InsufficientStock, on_hand_qty
 from core.appdb.models import Item, ItemBatch, ItemMovement
 from core.appdb.models_recipes import Recipe, RecipeItem
 from core.journal.manufacturing import PATH as MANUFACTURING_JOURNAL_PATH
+from core.money import round_half_up_cents
 
 
 def transactional(func: Callable):
@@ -210,7 +211,7 @@ def execute_run_txn(
             )
         )
 
-    per_output_cents = int(round(cost_inputs_cents / max(body.output_qty, 1e-9)))
+    per_output_cents = round_half_up_cents(cost_inputs_cents / max(body.output_qty, 1e-9))
     output_batch = ItemBatch(
         item_id=output_item_id,
         qty_initial=body.output_qty,
@@ -267,7 +268,11 @@ def execute_run_txn(
         "cost_inputs_cents": cost_inputs_cents,
     }
 
-    return {"run": mfg_run, "journal_entry": journal_entry}
+    return {
+        "run": mfg_run,
+        "journal_entry": journal_entry,
+        "output_unit_cost_cents": per_output_cents,
+    }
 
 
 __all__ = ["append_run_journal", "execute_run_txn", "fifo", "format_shortages", "validate_run"]

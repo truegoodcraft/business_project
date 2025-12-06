@@ -38,7 +38,12 @@ async def run_manufacturing(
         output_item_id, required, k = validate_run(db, body)
         result = execute_run_txn(db, body, output_item_id, required, k)
         append_run_journal(result["journal_entry"])
-        return {"ok": True, "status": "completed", "run_id": result["run"].id}
+        return {
+            "ok": True,
+            "status": "completed",
+            "run_id": result["run"].id,
+            "output_unit_cost_cents": result["output_unit_cost_cents"],
+        }
     except InsufficientStock as exc:
         db.rollback()
         raise HTTPException(status_code=400, detail={"shortages": format_shortages(exc.shortages)})
