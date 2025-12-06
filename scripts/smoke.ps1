@@ -292,16 +292,16 @@ $actualFull = $actualItem.FullName
 # 2) Build canonical expected root with a single trailing backslash
 $expectedRoot = Join-Path $env:LOCALAPPDATA 'BUSCore\exports'
 $expectedFull = [System.IO.Path]::GetFullPath($expectedRoot)
-if (-not $expectedFull.EndsWith('\\')) { $expectedFull = $expectedFull + '\\' }
+if (-not $expectedFull.EndsWith('\')) { $expectedFull = $expectedFull + '\' }
 
-# 3) Case-insensitive containment check on canonical paths (no URIs, no PS7 features)
+# 3) Case-insensitive containment check on canonical paths
 if ($actualFull.StartsWith($expectedFull, [System.StringComparison]::OrdinalIgnoreCase)) {
   Write-Host "  [PASS] Exported under expected root" -ForegroundColor DarkGreen
-  Write-Host ("          " + $actualFull)  # NOTE: parentheses avoid the stray '+' print
+  Write-Host ("          " + $actualFull)
 } else {
   Write-Host "  [FAIL] Export path not under expected root" -ForegroundColor Red
   Write-Host ("         actual:   " + $actualFull)
-  Write-Host ("         expected: " + $expectedFull.ToLowerInvariant())  # single line, no stray '+'
+  Write-Host ("         expected: " + $expectedFull.ToLowerInvariant())
   exit 1
 }
 
