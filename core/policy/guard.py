@@ -28,15 +28,9 @@ from .model import Role
 from .store import load_policy
 
 
-def require_owner_commit(request: Request | None = None) -> None:
+def require_owner_commit(request: Request) -> None:
     # Allow if env override or UI toggle is on; otherwise block
-    if request is not None:
-        require_writes(request)
-    elif not _calc_default_allow_writes():
-        raise HTTPException(
-            status_code=403,
-            detail="Writes are disabled (toggle via /dev/writes).",
-        )
+    require_writes(request)
     # Optional strict policy (OFF unless BUS_POLICY_ENFORCE=1)
     if os.environ.get("BUS_POLICY_ENFORCE") == "1":
         p = load_policy()

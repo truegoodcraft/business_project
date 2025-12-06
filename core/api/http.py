@@ -276,8 +276,8 @@ def startup_migrations():
         db.close()
 
 
-def get_db(request: Request | None = None) -> Generator[Session, None, None]:
-    if request is not None and getattr(request.app.state, "maintenance", False):
+def get_db(request: Request) -> Generator[Session, None, None]:
+    if getattr(request.app.state, "maintenance", False):
         raise HTTPException(status_code=503, detail={"error": "maintenance"})
 
     db = SessionLocal()
