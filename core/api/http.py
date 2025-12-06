@@ -87,6 +87,7 @@ from core.utils.export import (
 )
 from core.journal.inventory import append_inventory
 from tgc.bootstrap_fs import DATA, LOGS
+from tgc.state import get_state, init_app_state
 
 from pydantic import BaseModel, Field
 
@@ -271,7 +272,15 @@ async def _nocache_ui(request: Request, call_next):
 app.add_middleware(BaseHTTPMiddleware, dispatch=_nocache_ui)
 
 TOKEN_HEADER = "X-Session-Token"
-PUBLIC_PATHS = {"/", "/session/token", "/favicon.ico", "/health"}
+PUBLIC_PATHS = {
+    "/",
+    "/session/token",
+    "/favicon.ico",
+    "/health",
+    "/openapi.json",
+    "/docs",
+    "/docs/oauth2-redirect",
+}
 PUBLIC_PREFIXES = (
     "/ui/",
     "/session/",
@@ -375,9 +384,21 @@ def _load_or_create_token() -> str:
 
 
 @app.get("/session/token")
-def session_token():
-    tok = _load_or_create_token()
-    return {"token": tok}
+def session_token(request: Request):
+    state = get_state(request)
+    tok = state.tokens.current()
+    global SESSION_TOKEN
+    SESSION_TOKEN = tok
+    resp = JSONResponse({"token": tok})
+    resp.set_cookie(
+        key=state.settings.session_cookie_name,
+        value=tok,
+        httponly=True,
+        samesite=(state.settings.same_site or "lax").lower(),
+        secure=bool(state.settings.secure_cookie),
+        path="/",
+    )
+    return resp
 
 CORE: CoreAlpha | None = None
 RUN_ID: str = ""
@@ -455,7 +476,12 @@ def _require_core() -> CoreAlpha:
 
 
 def _extract_token(req: Request) -> str | None:
-    return req.headers.get(TOKEN_HEADER)
+    return (
+        req.cookies.get("bus_session")
+        or req.cookies.get("session")
+        or req.cookies.get("sessionid")
+        or req.headers.get(TOKEN_HEADER)
+    )
 
 
 def get_session_token(request: Request) -> str | None:
@@ -1750,6 +1776,7 @@ app.include_router(oauth)
 app.include_router(protected)
 
 def create_app():
+    init_app_state(app)
     if not getattr(app.state, "_domain_routes_registered", False):
         app.include_router(items_router, prefix="/app")
         app.include_router(vendors_router, prefix="/app")

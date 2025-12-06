@@ -50,13 +50,10 @@ function RoundHalfUpCents([decimal]$v) { return [int][decimal]::Round($v, 0, [Sy
 
 # A single session object to persist cookies (from /session/token)
 $script:Session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
-# Out-of-band headers we must always send (e.g., X-Session-Token)
-$script:Headers = @{}
 
 function Invoke-Json {
   param([string]$Method, [string]$Url, $BodyObj)
   $args = @{ Method=$Method; Uri=$Url; WebSession=$script:Session }
-  if ($script:Headers -and $script:Headers.Count -gt 0) { $args['Headers'] = $script:Headers }
   if ($PSBoundParameters.ContainsKey('BodyObj') -and $null -ne $BodyObj) {
     $args['ContentType'] = 'application/json'
     if ($BodyObj -is [string]) { $args['Body'] = $BodyObj }
@@ -73,8 +70,7 @@ function Try-Invoke {
 
 # Establish session first (avoid 401s on protected endpoints)
 $tokResp = Invoke-RestMethod -Method Get -Uri ($BaseUrl + "/session/token") -WebSession $script:Session
-if ($tokResp -and $tokResp.token) {
-  $script:Headers['X-Session-Token'] = $tokResp.token
+if ($tokResp) {
   Write-Host "  [INFO] Session token acquired" -ForegroundColor DarkCyan
 } else {
   Write-Host "  [FAIL] No session token returned from /session/token" -ForegroundColor Red
