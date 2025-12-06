@@ -27,7 +27,6 @@ export function mountDev(container) {
       <button id="btn-ping" class="btn">Ping Plugin</button>
       <pre id="ping-res" class="log"></pre>
       <div style="margin-top:12px">
-        <button id="btn-writes" class="btn">Toggle Writes</button>
         <span id="writes-state" class="badge"></span>
       </div>
     </div>`;
@@ -36,13 +35,6 @@ export function mountDev(container) {
 
 async function wire() {
   document.getElementById('btn-ping').onclick = window.pingPlugin;
-
-  document.getElementById('btn-writes').onclick = async () => {
-    const s = await apiGetJson('/dev/writes');           // { enabled: boolean }
-    await apiJson('/dev/writes', { enabled: !s.enabled });
-    updateWrites();
-  };
-
   updateWrites();
 }
 

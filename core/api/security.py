@@ -47,7 +47,8 @@ def require_write_access(request: Request):
     """Guard dependency that blocks requests when writes are disabled."""
 
     if not writes_enabled(request):
+        # Stop pointing to /dev/writes
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Writes are disabled (toggle via /dev/writes).",
+            detail={"error": "writes_disabled"},
         )
