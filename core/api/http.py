@@ -630,18 +630,6 @@ def _db_conn() -> sqlite3.Connection:
     return con
 
 
-# NEW primary endpoint; keep legacy alias during transition
-@app.post("/app/manufacturing/run")
-def manufacturing_run(
-    body: InventoryRun,
-    token: str = Depends(require_token),
-    Python_writes: None = Depends(require_writes),
-):
-    # Reuse the legacy implementation to avoid duplication and keep gating consistent.
-    # If the legacy function's signature differs, pass parameters positionally.
-    return inventory_run(body, token, Python_writes)
-
-
 @app.post("/app/inventory/run")
 def inventory_run(
     body: InventoryRun,
