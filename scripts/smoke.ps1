@@ -272,66 +272,48 @@ Step "6. v0.8.3 Journals + Encrypted Backup/Restore"
 # A) Export DB (AES-GCM, password)
 Info "Exporting encrypted backup..."
 $pw = "smoke-083!"
-$exportTry = Try-Invoke { Invoke-Json POST ($BaseUrl + "/app/db/export") @{ password = $pw } }
-if (-not $exportTry.ok) { Fail ("Export failed: {0}" -f $exportTry.err); exit 1 }
-$export = $exportTry.resp
-# --- Export & path assertions (PS 5.1-safe) ---------------------------------
-$resp = $export
 $localAppData = [Environment]::GetFolderPath('LocalApplicationData')
-
-function Normalize-Path([string]$p) {
-  if ([string]::IsNullOrWhiteSpace($p)) { return $null }
-  $p = $p -replace '/', '\\'   # normalize slashes
-  try {
-    return ([System.IO.Path]::GetFullPath($p)).TrimEnd('\\')
-  } catch {
-    return $p.TrimEnd('\\')
-  }
-}
-
-function Make-FileUri([string]$p, [bool]$asDirectory) {
-  if ([string]::IsNullOrWhiteSpace($p)) { return $null }
-  $norm = Normalize-Path $p
-  if ($asDirectory) {
-    if ($norm -and -not $norm.EndsWith('\\')) { $norm = $norm + '\\' }
-  }
-  # New-Object System.Uri with a Windows absolute path yields a file:// URI
-  return (New-Object System.Uri($norm))
-}
-
-$actualPath   = $resp.path
-$expectedRoot = Join-Path $env:LOCALAPPDATA 'BUSCore\exports'
-
-# Existence + non-empty checks
-if (-not (Test-Path -LiteralPath $actualPath)) {
-  Write-Host "  [FAIL] Export file missing at path: $actualPath" -ForegroundColor Red
+# --- Export & path assertions (PS 5.1-safe, case/slash agnostic) ------------
+$resp = Invoke-Json 'POST' "$BaseUrl/app/db/export" @{ password = $pw }
+if (-not $resp.ok) {
+  Write-Host "  [FAIL] Export failed: $($resp.error)" -ForegroundColor Red
   exit 1
 }
+
+# Resolve actual file; fail fast if missing
 try {
-  $len = (Get-Item -LiteralPath $actualPath).Length
+  $actualItem = Get-Item -LiteralPath $resp.path -ErrorAction Stop
 } catch {
-  Write-Host "  [FAIL] Could not stat export file: $($_.Exception.Message)" -ForegroundColor Red
+  Write-Host "  [FAIL] Export file missing at path: $($resp.path)" -ForegroundColor Red
   exit 1
 }
-if ($len -le 0) {
+
+# Canonical, absolute, normalized paths
+$actualFull   = $actualItem.FullName
+$expectedRoot = Join-Path $env:LOCALAPPDATA 'BUSCore\exports'
+$expectedFull = [System.IO.Path]::GetFullPath($expectedRoot)
+if (-not $expectedFull.EndsWith('\\')) { $expectedFull = $expectedFull + '\\' }
+
+# Robust containment on Windows (case-insensitive StartsWith on canonical paths)
+if ($actualFull.StartsWith($expectedFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+  Write-Host "  [PASS] Exported under expected root" -ForegroundColor DarkGreen
+  Write-Host ("          " + $actualFull)
+} else {
+  Write-Host "  [FAIL] Export path not under expected root" -ForegroundColor Red
+  Write-Host "         actual:   $actualFull"
+  Write-Host "         expected: " + $expectedFull.ToLowerInvariant()
+  exit 1
+}
+
+# Non-empty file check
+$len = $actualItem.Length
+if ($len -gt 0) {
+  Write-Host "  [PASS] Export file exists and is non-empty ($len bytes)" -ForegroundColor DarkGreen
+} else {
   Write-Host "  [FAIL] Export file is empty" -ForegroundColor Red
   exit 1
 }
-
-# Robust containment via Uri.IsBaseOf (handles case & slashes)
-$uFile = Make-FileUri $actualPath $false
-$uRoot = Make-FileUri $expectedRoot $true
-
-if ($uRoot -and $uFile -and $uRoot.IsBaseOf($uFile)) {
-  Write-Host "  [PASS] Exported under expected root" -ForegroundColor DarkGreen
-  Write-Host ("          " + (Normalize-Path $actualPath))
-  Write-Host "  [PASS] Export file exists and is non-empty ($len bytes)" -ForegroundColor DarkGreen
-} else {
-  Write-Host "  [FAIL] Export path not under expected root" -ForegroundColor Red
-  Write-Host "         actual:   $actualPath"
-  Write-Host "         expected: " (Normalize-Path $expectedRoot).ToLowerInvariant()
-  exit 1
-}
+$export = $resp
 # ---------------------------------------------------------------------------
 
 # B) Mutate DB (create reversible change)
