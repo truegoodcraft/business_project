@@ -17,8 +17,20 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with TGC BUS Core.  If not, see <https://www.gnu.org/licenses/>.
 
-import threading, contextlib, time, win32con
-import win32file, win32pipe, pywintypes
+import sys
+
+if sys.platform != "win32":
+    raise RuntimeError("NamedPipeServer requires Windows (win32).")
+
+try:
+    import win32con  # from pywin32
+    import win32file, win32pipe, pywintypes
+except ModuleNotFoundError as e:
+    raise RuntimeError(
+        "pywin32 is required for broker pipes on Windows. "
+        "Install with: pip install pywin32"
+    ) from e
+import threading, contextlib, time
 
 class PipeConnection:
     def __init__(self, handle):
