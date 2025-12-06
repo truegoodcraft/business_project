@@ -275,44 +275,56 @@ $pw = "smoke-083!"
 $exportTry = Try-Invoke { Invoke-Json POST ($BaseUrl + "/app/db/export") @{ password = $pw } }
 if (-not $exportTry.ok) { Fail ("Export failed: {0}" -f $exportTry.err); exit 1 }
 $export = $exportTry.resp
-# --- Export & path assertions (robust containment) --------------------------
+# --- Export & path assertions (PS 5.1-safe) ---------------------------------
 $resp = $export
 $localAppData = [Environment]::GetFolderPath('LocalApplicationData')
 
 function Normalize-Path([string]$p) {
   if ([string]::IsNullOrWhiteSpace($p)) { return $null }
   $p = $p -replace '/', '\\'   # normalize slashes
-  try { return ([System.IO.Path]::GetFullPath($p)).TrimEnd('\\') }
-  catch { return $p.TrimEnd('\\') }
+  try {
+    return ([System.IO.Path]::GetFullPath($p)).TrimEnd('\\')
+  } catch {
+    return $p.TrimEnd('\\')
+  }
 }
 
-function Make-FileUri([string]$p) {
+function Make-FileUri([string]$p, [bool]$asDirectory) {
   if ([string]::IsNullOrWhiteSpace($p)) { return $null }
-  $q = (Normalize-Path $p) -replace '\\','/'
-  if (-not $q.StartsWith('/')) { $q = '/' + $q }  # file:///<abs>
-  return [Uri]("file://" + $q + ( $(Test-Path -LiteralPath $p -PathType Container) ? '/' : '' ))
+  $norm = Normalize-Path $p
+  if ($asDirectory) {
+    if ($norm -and -not $norm.EndsWith('\\')) { $norm = $norm + '\\' }
+  }
+  # New-Object System.Uri with a Windows absolute path yields a file:// URI
+  return (New-Object System.Uri($norm))
 }
 
 $actualPath   = $resp.path
 $expectedRoot = Join-Path $env:LOCALAPPDATA 'BUSCore\exports'
 
-# Basic existence + non-empty
+# Existence + non-empty checks
 if (-not (Test-Path -LiteralPath $actualPath)) {
   Write-Host "  [FAIL] Export file missing at path: $actualPath" -ForegroundColor Red
   exit 1
 }
-$len = (Get-Item -LiteralPath $actualPath).Length
+try {
+  $len = (Get-Item -LiteralPath $actualPath).Length
+} catch {
+  Write-Host "  [FAIL] Could not stat export file: $($_.Exception.Message)" -ForegroundColor Red
+  exit 1
+}
 if ($len -le 0) {
   Write-Host "  [FAIL] Export file is empty" -ForegroundColor Red
   exit 1
 }
 
-# Containment check via Uri.IsBaseOf (handles case/slashes reliably)
-$uFile = Make-FileUri $actualPath
-$uRoot = Make-FileUri $expectedRoot
+# Robust containment via Uri.IsBaseOf (handles case & slashes)
+$uFile = Make-FileUri $actualPath $false
+$uRoot = Make-FileUri $expectedRoot $true
+
 if ($uRoot -and $uFile -and $uRoot.IsBaseOf($uFile)) {
   Write-Host "  [PASS] Exported under expected root" -ForegroundColor DarkGreen
-  Write-Host ("          " + (Normalize-Path $actualPath))  # optional informative line
+  Write-Host ("          " + (Normalize-Path $actualPath))
   Write-Host "  [PASS] Export file exists and is non-empty ($len bytes)" -ForegroundColor DarkGreen
 } else {
   Write-Host "  [FAIL] Export path not under expected root" -ForegroundColor Red
