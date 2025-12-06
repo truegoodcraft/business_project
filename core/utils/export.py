@@ -20,19 +20,20 @@
 """Utilities for encrypted export and import of the BUS Core database."""
 from __future__ import annotations
 
-import base64
 import json
 import os
-import shutil
 import sqlite3
 import tempfile
 import time
-from hashlib import sha256
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Dict
 
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
+from core.backup.crypto import (
+    CONTAINER_VERSION,
+    ContainerHeader,
+    decrypt_bytes,
+    encrypt_bytes,
+)
 from core.config.paths import DB_PATH
 
 APP_DB = DB_PATH
@@ -43,66 +44,6 @@ JOURNAL_DIR = DATA_DIR / "journals"
 EXPORTS_DIR = BUS_ROOT / "exports"
 for _p in (JOURNAL_DIR, EXPORTS_DIR):
     _p.mkdir(parents=True, exist_ok=True)
-
-_AAD = b"TGCv05"
-
-
-def _derive_key(password: str, salt: bytes, kdf_cfg: dict) -> bytes:
-    pw = password.encode("utf-8")
-    t = (kdf_cfg or {}).get("type", "auto").lower()
-    if t == "argon2id":
-        try:
-            from argon2.low_level import hash_secret_raw, Type
-        except Exception as e:
-            # explicit type requested but unavailable -> fail
-            raise e
-        return hash_secret_raw(
-            pw,
-            salt,
-            time_cost=int(kdf_cfg.get("time_cost", 3)),
-            memory_cost=int(kdf_cfg.get("memory_kib", 65536)),
-            parallelism=int(kdf_cfg.get("parallelism", 1)),
-            hash_len=int(kdf_cfg.get("dklen", 32)),
-            type=Type.ID,
-        )
-    elif t == "pbkdf2":
-        from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-        from cryptography.hazmat.primitives import hashes
-        kdf = PBKDF2HMAC(
-            algorithm=hashes.SHA256(),
-            length=int(kdf_cfg.get("dklen", 32)),
-            salt=salt,
-            iterations=int(kdf_cfg.get("iterations", 600000)),
-        )
-        return kdf.derive(pw)
-    else:  # auto
-        try:
-            from argon2.low_level import hash_secret_raw, Type
-            return hash_secret_raw(
-                pw, salt, time_cost=3, memory_cost=65536,
-                parallelism=1, hash_len=32, type=Type.ID,
-            )
-        except Exception:
-            from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-            from cryptography.hazmat.primitives import hashes
-            kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=600000)
-            return kdf.derive(pw)
-
-
-def _aesgcm_encrypt(key: bytes, plaintext: bytes, nonce: bytes) -> Tuple[bytes, bytes]:
-    aesgcm = AESGCM(key)
-    ct_with_tag = aesgcm.encrypt(nonce, plaintext, _AAD)
-    ciphertext, tag = ct_with_tag[:-16], ct_with_tag[-16:]
-    return ciphertext, tag
-
-
-def _aesgcm_decrypt(key: bytes, nonce: bytes, ciphertext: bytes, tag: bytes) -> bytes:
-    aesgcm = AESGCM(key)
-    return aesgcm.decrypt(nonce, ciphertext + tag, _AAD)
-
-
-def _sha256_hex(data: bytes) -> str:
-    return sha256(data).hexdigest()
 
 
 def _connect_readonly(db_path: Path):
@@ -164,6 +105,45 @@ def _replace_with_retry(src: Path, dst: Path, attempts: int = 10, delay: float =
     os.replace(src, dst)
 
 
+def list_exports() -> list[dict[str, object]]:
+    EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    entries: list[dict[str, object]] = []
+    for path in sorted(EXPORTS_DIR.glob("*.db.gcm"), key=lambda p: p.stat().st_mtime, reverse=True):
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        entries.append(
+            {
+                "name": path.name,
+                "path": str(path),
+                "modified": stat.st_mtime,
+                "bytes": stat.st_size,
+            }
+        )
+    return entries
+
+
+def stage_uploaded_backup(upload_name: str, data: bytes) -> Dict[str, object]:
+    safe_name = Path(upload_name or "upload.db.gcm").name
+    ts = time.strftime("%Y%m%d-%H%M%S", time.localtime())
+    EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    target = EXPORTS_DIR / f"upload-{ts}-{safe_name}"
+    tmp_file: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile("wb", dir=EXPORTS_DIR, delete=False) as tf:
+            tf.write(data)
+            tf.flush()
+            os.fsync(tf.fileno())
+            tmp_file = Path(tf.name)
+        os.replace(tmp_file, target)
+        return {"ok": True, "path": str(target), "bytes_written": len(data)}
+    except Exception:
+        if tmp_file is not None:
+            _retry_unlink(tmp_file)
+        return {"ok": False, "error": "upload_failed"}
+
+
 def export_db(password: str) -> Dict[str, object]:
     if not password:
         return {"ok": False, "error": "password_required"}
@@ -177,69 +157,30 @@ def export_db(password: str) -> Dict[str, object]:
         with sqlite3.connect(str(APP_DB)) as source, sqlite3.connect(tmp_name) as dest:
             source.backup(dest)
         plaintext = tmp_path.read_bytes()
-        row_counts = _count_rows(tmp_path)
-        db_hash = _sha256_hex(plaintext)
 
-        salt = os.urandom(16)
-        nonce = os.urandom(12)
-        # Decide KDF by availability
-        try:
-            import importlib
+        blob, header = encrypt_bytes(password, plaintext)
+        ts = time.strftime("%Y%m%d-%H%M%S", time.localtime())
+        export_path = EXPORTS_DIR / f"BUSCore-backup-{ts}.db.gcm"
+        EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
-            importlib.import_module("argon2.low_level")
-            kdf_cfg = {
-                "type": "argon2id",
-                "time_cost": 3,
-                "memory_kib": 65536,
-                "parallelism": 1,
-                "dklen": 32,
-            }
-        except Exception:
-            kdf_cfg = {
-                "type": "pbkdf2",
-                "iterations": 600000,
-                "dklen": 32,
-            }
-        key = _derive_key(password, salt, kdf_cfg)
-        ciphertext, tag = _aesgcm_encrypt(key, plaintext, nonce)
-
-        container_manifest = {
-            "version": "v0.5",
-            "ts": int(time.time()),
-            "row_counts": row_counts,
-            "db_hash": db_hash,
-        }
-        container = {
-            "magic": "TGCv05",
-            "version": "v0.5",
-            "kdf": {**kdf_cfg},
-            "salt": base64.b64encode(salt).decode("ascii"),
-            "nonce": base64.b64encode(nonce).decode("ascii"),
-            "tag": base64.b64encode(tag).decode("ascii"),
-            "ciphertext": base64.b64encode(ciphertext).decode("ascii"),
-            "manifest": container_manifest,
-        }
-
-        ts = container_manifest["ts"]
-        export_path = EXPORTS_DIR / f"TGC_EXPORT_{ts}.tgc"
-        with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=EXPORTS_DIR, delete=False) as tmp_file:
-            tmp_json_path = Path(tmp_file.name)
-            json.dump(container, tmp_file, separators=(",", ":"))
+        with tempfile.NamedTemporaryFile("wb", dir=EXPORTS_DIR, delete=False) as tmp_file:
+            tmp_path_bin = Path(tmp_file.name)
+            tmp_file.write(blob)
             tmp_file.flush()
             os.fsync(tmp_file.fileno())
-        os.replace(tmp_json_path, export_path)
+        os.replace(tmp_path_bin, export_path)
 
-        plain_buffer = bytearray(plaintext)
-        for i in range(len(plain_buffer)):
-            plain_buffer[i] = 0
-        del plaintext
-
-        return {"ok": True, "path": str(export_path), "manifest": container_manifest}
+        return {
+            "ok": True,
+            "path": str(export_path),
+            "bytes_written": len(blob),
+            "kdf": header.kdf_id,
+        }
     finally:
         _retry_unlink(tmp_path)
 
 
-def _load_and_decrypt(path: Path, password: str) -> Tuple[Dict[str, object], bytes]:
+def _load_and_decrypt(path: Path, password: str) -> tuple[bytes, ContainerHeader]:
     if not password:
         raise ValueError("password_required")
 
@@ -249,35 +190,17 @@ def _load_and_decrypt(path: Path, password: str) -> Tuple[Dict[str, object], byt
         raise FileNotFoundError("cannot_read_file")
 
     try:
-        raw = path.read_text("utf-8")
-        container = json.loads(raw)
-    except Exception as exc:  # pragma: no cover - parse errors aggregated
-        raise ValueError("bad_container") from exc
+        blob = path.read_bytes()
+    except Exception as exc:  # pragma: no cover - read errors aggregated
+        raise ValueError("cannot_read_file") from exc
 
-    try:
-        if container.get("magic") != "TGCv05":
-            raise ValueError
-        salt = base64.b64decode(container["salt"])
-        nonce = base64.b64decode(container["nonce"])
-        tag = base64.b64decode(container["tag"])
-        ciphertext = base64.b64decode(container["ciphertext"])
-        kdf_cfg_obj = container.get("kdf")
-        kdf_cfg = dict(kdf_cfg_obj) if isinstance(kdf_cfg_obj, dict) else None
-    except Exception as exc:  # pragma: no cover - invalid structure
-        raise ValueError("bad_container") from exc
-
-    try:
-        key = _derive_key(password, salt, kdf_cfg)
-        plaintext = _aesgcm_decrypt(key, nonce, ciphertext, tag)
-    except Exception:
-        raise ValueError("decrypt_failed")
-
-    return container, plaintext
+    plaintext, header = decrypt_bytes(password, blob)
+    return plaintext, header
 
 
 def import_preview(path: str, password: str) -> Dict[str, object]:
     try:
-        container, plaintext = _load_and_decrypt(Path(path), password)
+        plaintext, header = _load_and_decrypt(Path(path), password)
     except (PermissionError, FileNotFoundError, ValueError) as exc:
         msg = str(exc)
         if msg not in {
@@ -290,29 +213,46 @@ def import_preview(path: str, password: str) -> Dict[str, object]:
             msg = "bad_container"
         return {"ok": False, "error": msg}
 
+    if header.version != CONTAINER_VERSION:
+        return {
+            "ok": False,
+            "error": "incompatible_schema",
+            "expected": CONTAINER_VERSION,
+            "found": header.version,
+        }
+
     fd, tmp_path_str = tempfile.mkstemp(suffix=".db")
     os.close(fd)
     tmp_path = Path(tmp_path_str)
+    schema_version: int | None = None
     try:
         tmp_path.write_bytes(plaintext)
-        preview_counts = _count_rows(tmp_path)
+        try:
+            preview_counts = _count_rows(tmp_path)
+        except sqlite3.Error:
+            return {"ok": False, "error": "bad_container"}
+        try:
+            with _connect_readonly(tmp_path) as con:
+                cur = con.cursor()
+                cur.execute("PRAGMA user_version")
+                row = cur.fetchone()
+                schema_version = int(row[0]) if row else 0
+        except sqlite3.Error:
+            schema_version = None
     finally:
         _retry_unlink(tmp_path)
-    incompatible = container.get("manifest", {}).get("version") != "v0.5"
+
     response: Dict[str, object] = {
         "ok": True,
-        "preview": preview_counts,
-        "incompatible": incompatible,
-        "expected": "v0.5",
+        "table_counts": preview_counts,
+        "schema_version": schema_version,
     }
-    if incompatible:
-        response["found"] = container.get("manifest", {}).get("version")
     return response
 
 
 def import_commit(path: str, password: str) -> Dict[str, object]:
     try:
-        container, plaintext = _load_and_decrypt(Path(path), password)
+        plaintext, header = _load_and_decrypt(Path(path), password)
     except (PermissionError, FileNotFoundError, ValueError) as exc:
         msg = str(exc)
         if msg not in {
@@ -325,46 +265,65 @@ def import_commit(path: str, password: str) -> Dict[str, object]:
             msg = "bad_container"
         return {"ok": False, "error": msg}
 
-    with tempfile.NamedTemporaryFile(delete=False) as tf:
-        tf.write(plaintext)
-        tf.flush()
-        os.fsync(tf.fileno())
-        tmp_db_path = Path(tf.name)
+    if header.version != CONTAINER_VERSION:
+        return {
+            "ok": False,
+            "error": "incompatible_schema",
+            "expected": CONTAINER_VERSION,
+            "found": header.version,
+        }
 
-    backup_path: Path | None = None
+    tmp_db_path: Path | None = None
     try:
-        ts = time.strftime("%Y%m%d-%H%M%S", time.localtime())
-        candidate_backup = APP_DB.with_suffix(f".db.{ts}.bak")
+        with tempfile.NamedTemporaryFile(delete=False, dir=APP_DB.parent, suffix=".db") as tf:
+            tf.write(plaintext)
+            tf.flush()
+            os.fsync(tf.fileno())
+            tmp_db_path = Path(tf.name)
 
+        try:
+            with _connect_readonly(tmp_db_path) as con:
+                con.execute("PRAGMA schema_version")
+        except sqlite3.Error:
+            _retry_unlink(tmp_db_path)
+            return {"ok": False, "error": "bad_container"}
+
+        ts = time.strftime("%Y%m%d-%H%M%S", time.localtime())
         APP_DB.parent.mkdir(parents=True, exist_ok=True)
-        if APP_DB.exists():
-            shutil.copy2(APP_DB, candidate_backup)
-            backup_path = candidate_backup
+        JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
+
+        archive_suffix = f".pre-restore-{ts}"
+        for journal_path in JOURNAL_DIR.glob("*.jsonl"):
+            archived = journal_path.with_name(journal_path.name + archive_suffix)
+            journal_path.rename(archived)
 
         _replace_with_retry(tmp_db_path, APP_DB)
+
+        for name in ("inventory.jsonl", "manufacturing.jsonl"):
+            fresh = JOURNAL_DIR / name
+            fresh.parent.mkdir(parents=True, exist_ok=True)
+            fresh.write_text("", encoding="utf-8")
 
         audit_path = JOURNAL_DIR / "plugin_audit.jsonl"
         audit_entry = {
             "ts": int(time.time()),
             "action": "import",
             "src": str(Path(path).resolve()),
-            "manifest": container.get("manifest"),
+            "manifest": {"version": header.version},
         }
         try:
-            con = _connect_readonly(APP_DB)
-        except NameError:
-            con = sqlite3.connect(str(APP_DB))
-        with con:
-            audit_entry["preview_counts"] = {**_count_rows(APP_DB)}
+            with _connect_readonly(APP_DB) as con:
+                audit_entry["preview_counts"] = {**_count_rows(APP_DB)}
+        except sqlite3.Error:
+            audit_entry["preview_counts"] = {}
+
         with audit_path.open("a", encoding="utf-8") as audit_file:
-            audit_file.write(json.dumps(audit_entry, separators=(",", ":")) + "\n")
-    finally:
-        # Best-effort cleanup in case replace failed to remove the temp
+            audit_file.write(json.dumps(audit_entry, separators=(',', ':')) + "\n")
+    except Exception:
+        if tmp_db_path is not None:
+            _retry_unlink(tmp_db_path)
+        return {"ok": False, "error": "commit_failed"}
+    else:
         _retry_unlink(tmp_db_path)
 
-    result: Dict[str, object] = {"ok": True, "replaced": True}
-    if backup_path is not None:
-        result["backup"] = str(backup_path)
-    else:
-        result["backup"] = None
-    return result
+    return {"ok": True, "replaced": True, "restart_required": True}

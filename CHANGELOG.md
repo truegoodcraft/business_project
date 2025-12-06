@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.8.3
+- Journals append only after database commits; restore archives and recreates journals.
+- Password-based AES-GCM exports to `%LOCALAPPDATA%/BUSCore/exports` with preview/commit restore flow.
+- Admin UI card for export/restore plus smoke coverage for reversible restores.
+
 ## v0.8.2
 - Single-run POST contract for manufacturing runs.
 - Fail-fast manufacturing (shortages=400, no writes).

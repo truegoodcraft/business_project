@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 from fastapi import APIRouter, HTTPException, Depends
+import logging
+import time
+import sqlite3
 from pydantic import BaseModel, Field
 from typing import Optional
-import sqlite3
 
 from core.ledger.fifo import purchase as fifo_purchase, consume as fifo_consume, valuation as fifo_valuation, list_movements as fifo_list
 from core.appdb.paths import resolve_db_path
@@ -15,11 +17,13 @@ from core.appdb.ledger import (
     fifo_consume as sa_fifo_consume,
     on_hand_qty,
 )
+from core.journal.inventory import append_inventory
 
 # NOTE: Router prefix is "/ledger"; child paths must not repeat "/ledger" to avoid
 # duplicate segments (e.g., /app/ledger/adjust).
 router = APIRouter(prefix="/ledger", tags=["ledger"])
 DB_PATH = resolve_db_path()
+logger = logging.getLogger(__name__)
 
 def _has_items_qty_stored() -> bool:
     con = sqlite3.connect(DB_PATH); cur = con.cursor()
@@ -172,6 +176,15 @@ def adjust_stock(body: AdjustmentInput, db: Session = Depends(get_session)):
             source_id=None,
         )
         db.commit()
+        _append_inventory(
+            {
+                "ts": int(time.time()),
+                "op": "adjust",
+                "item_id": body.item_id,
+                "qty_delta": float(body.qty_change),
+                "reason": body.note,
+            }
+        )
         return {"ok": True}
 
     need = abs(body.qty_change)
@@ -189,6 +202,15 @@ def adjust_stock(body: AdjustmentInput, db: Session = Depends(get_session)):
     try:
         sa_fifo_consume(db, body.item_id, need, source_kind="adjustment", source_id=None)
         db.commit()
+        _append_inventory(
+            {
+                "ts": int(time.time()),
+                "op": "adjust",
+                "item_id": body.item_id,
+                "qty_delta": float(body.qty_change),
+                "reason": body.note,
+            }
+        )
         return {"ok": True}
     except InsufficientStock as exc:
         db.rollback()
@@ -228,3 +250,10 @@ def ledger_debug(item_id: int | None = None):
                 cur.execute("SELECT id,name,sku,uom,qty_stored FROM items WHERE id=?", (int(item_id),))
                 item_row = cur.fetchone()
     return {"db_path": path, "has_items": has_items, "items_count": items_count, "item_row": item_row}
+
+
+def _append_inventory(entry: dict) -> None:
+    try:
+        append_inventory(entry)
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("Failed to append inventory journal entry")

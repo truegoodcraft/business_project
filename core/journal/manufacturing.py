@@ -1,16 +1,32 @@
 # core/journal/manufacturing.py
-import json, os, time
+import json
+import logging
+import os
+from pathlib import Path
+from typing import Dict
 
-PATH = os.environ.get('BUS_MANUFACTURING_JOURNAL', 'data/journals/manufacturing.jsonl')
+from core.config.paths import JOURNAL_DIR
 
-os.makedirs(os.path.dirname(PATH), exist_ok=True)
+logger = logging.getLogger(__name__)
 
-def append_journal(recipe, multiplier, deltas):
-    entry = {
-        'ts': int(time.time()),
-        'recipe': {'id': recipe.id, 'name': recipe.name},
-        'multiplier': multiplier,
-        'deltas': deltas,
-    }
-    with open(PATH, 'a', encoding='utf-8') as f:
-        f.write(json.dumps(entry) + "\n")
+MANUFACTURING_JOURNAL = Path(
+    os.getenv("BUS_MANUFACTURING_JOURNAL", str(JOURNAL_DIR / "manufacturing.jsonl"))
+)
+
+
+def append_mfg_journal(entry: Dict) -> None:
+    """Append a manufacturing journal entry (best-effort, append-only)."""
+
+    try:
+        MANUFACTURING_JOURNAL.parent.mkdir(parents=True, exist_ok=True)
+        with open(MANUFACTURING_JOURNAL, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+    except Exception:  # pragma: no cover - best-effort logging
+        logger.exception(
+            "Failed to append manufacturing journal at %s", MANUFACTURING_JOURNAL
+        )
+
+
+__all__ = ["MANUFACTURING_JOURNAL", "append_mfg_journal"]

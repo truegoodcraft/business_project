@@ -25,6 +25,7 @@ import ctypes
 import hashlib
 import hmac
 import json
+import logging
 import os
 import secrets
 import sqlite3
@@ -42,10 +43,12 @@ from fastapi import (
     APIRouter,
     Body,
     Depends,
+    File,
     Header,
     HTTPException,
     Query,
     Request,
+    UploadFile,
 )
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.staticfiles import StaticFiles
@@ -75,7 +78,14 @@ from core.runtime.policy import PolicyDecision
 from core.runtime.probe import PROBE_TIMEOUT_SEC
 from core.secrets import SecretError, Secrets
 from core.version import VERSION
-from core.utils.export import export_db, import_preview as _import_preview, import_commit as _import_commit
+from core.utils.export import (
+    export_db,
+    import_preview as _import_preview,
+    import_commit as _import_commit,
+    list_exports as _list_exports,
+    stage_uploaded_backup,
+)
+from core.journal.inventory import append_inventory
 from tgc.bootstrap_fs import DATA, LOGS
 
 from pydantic import BaseModel, Field
@@ -111,6 +121,9 @@ if os.name == "nt":  # pragma: no cover - windows specific
     from core.win.sandbox import spawn_sandboxed
 else:  # pragma: no cover - non-windows fallback
     NamedPipeServer = PluginBroker = handle_connection = spawn_sandboxed = None  # type: ignore[assignment]
+
+
+logger = logging.getLogger(__name__)
 
 
 def _load_session_token() -> str:
@@ -549,10 +562,11 @@ IMPORT_ERROR_CODES = {
     "bad_container",
     "decrypt_failed",
     "password_required",
+    "incompatible_schema",
 }
 
 
-@protected.post("/app/export")
+@protected.post("/app/db/export")
 def app_export(req: ExportReq, _writes: None = Depends(require_writes)):
     if not req.password:
         raise HTTPException(status_code=400, detail={"error": "password_required"})
@@ -565,7 +579,23 @@ def app_export(req: ExportReq, _writes: None = Depends(require_writes)):
     return res
 
 
-@protected.post("/app/import/preview")
+@protected.get("/app/db/exports")
+def app_exports(_writes: None = Depends(require_writes)):
+    return {"ok": True, "exports": _list_exports()}
+
+
+@protected.post("/app/db/import/upload")
+async def app_import_upload(
+    file: UploadFile = File(...), _w: None = Depends(require_writes)
+):
+    data = await file.read()
+    res = stage_uploaded_backup(file.filename, data)
+    if not res.get("ok"):
+        raise HTTPException(status_code=400, detail={"error": res.get("error", "upload_failed")})
+    return res
+
+
+@protected.post("/app/db/import/preview")
 def app_import_preview(req: ImportReq, _w: None = Depends(require_writes)):
     res = _import_preview(req.path, req.password)
     if not res.get("ok"):
@@ -576,7 +606,7 @@ def app_import_preview(req: ImportReq, _w: None = Depends(require_writes)):
     return res
 
 
-@protected.post("/app/import/commit")
+@protected.post("/app/db/import/commit")
 def app_import_commit(req: ImportReq, _w: None = Depends(require_writes)):
     res = _import_commit(req.path, req.password)
     if not res.get("ok"):
@@ -676,30 +706,25 @@ def inventory_run(
             raise
 
     snapshot_version = int(time.time())
-    journal_path = JOURNALS_DIR / "inventory.jsonl"
     record = {
         "ts": snapshot_version,
+        "op": "inventory_run",
         "inputs": inputs,
         "outputs": outputs,
         "deltas": deltas,
         "note": body.note,
         "snapshot_version": snapshot_version,
     }
-    try:
-        journal_path.parent.mkdir(parents=True, exist_ok=True)
-        with journal_path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "error": "journal_write_failed",
-                "path": str(journal_path),
-                "message": str(e),
-            },
-        )
+    _append_inventory(record)
 
     return {"ok": True, "deltas": deltas, "snapshot_version": snapshot_version}
+
+
+def _append_inventory(entry: dict) -> None:
+    try:
+        append_inventory(entry)
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("Failed to append inventory journal entry")
 
 
 @protected.get("/dev/ping_plugin")

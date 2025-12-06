@@ -6,7 +6,6 @@ from __future__ import annotations
 import json
 from contextlib import wraps
 from datetime import datetime
-from pathlib import Path
 from typing import Callable, List, Tuple
 
 from fastapi import HTTPException
@@ -20,7 +19,6 @@ from core.api.schemas.manufacturing import (
 from core.appdb.ledger import InsufficientStock, on_hand_qty
 from core.appdb.models import Item, ItemBatch, ItemMovement
 from core.appdb.models_recipes import Recipe, RecipeItem
-from core.journal.manufacturing import PATH as MANUFACTURING_JOURNAL_PATH
 from core.money import round_half_up_cents
 
 
@@ -90,12 +88,6 @@ class fifo:
             )
 
         return allocations
-
-
-def append_run_journal(entry: dict) -> None:
-    Path(MANUFACTURING_JOURNAL_PATH).parent.mkdir(parents=True, exist_ok=True)
-    with open(MANUFACTURING_JOURNAL_PATH, "a", encoding="utf-8") as f:
-        f.write(json.dumps(entry) + "\n")
 
 
 def format_shortages(shortages: List[dict]) -> List[dict]:
@@ -275,4 +267,4 @@ def execute_run_txn(
     }
 
 
-__all__ = ["append_run_journal", "execute_run_txn", "fifo", "format_shortages", "validate_run"]
+__all__ = ["execute_run_txn", "fifo", "format_shortages", "validate_run"]
