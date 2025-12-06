@@ -1,39 +1,22 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 from datetime import datetime
 import json
-from typing import Any, List
+from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from core.api.schemas.manufacturing import (
-    AdhocRunRequest,
-    ManufacturingRunRequest,
-    RecipeRunRequest,
-    parse_run_request,
-)
+from core.api.schemas.manufacturing import ManufacturingRunRequest, parse_run_request
 from core.appdb.engine import get_session
 from core.appdb.ledger import InsufficientStock, add_batch, fifo_consume, on_hand_qty
-from core.appdb.models_recipes import ManufacturingRun, Recipe, RecipeItem
+from core.appdb.models_recipes import ManufacturingRun
 from core.config.writes import require_writes
+from core.manufacturing.service import format_shortages, validate_run
 from core.policy.guard import require_owner_commit
 from tgc.security import require_token_ctx
 from tgc.state import AppState, get_state
 
 router = APIRouter(prefix="/manufacturing", tags=["manufacturing"])
-
-
-def _format_shortages(shortages: List[dict]) -> List[dict]:
-    formatted = []
-    for shortage in shortages:
-        formatted.append(
-            {
-                "item_id": shortage.get("item_id"),
-                "required": float(shortage.get("required", 0.0)),
-                "available": float(shortage.get("available", shortage.get("on_hand", 0.0))),
-            }
-        )
-    return formatted
 
 
 @router.post("/run")
@@ -49,37 +32,7 @@ async def run_manufacturing(
 
     body: ManufacturingRunRequest = parse_run_request(raw_body)
 
-    if isinstance(body, RecipeRunRequest):
-        recipe = db.get(Recipe, body.recipe_id)
-        if not recipe:
-            raise HTTPException(status_code=404, detail="Recipe not found")
-        if not recipe.output_item_id:
-            raise HTTPException(status_code=400, detail="Recipe has no output_item_id")
-        output_item_id = recipe.output_item_id
-        k = body.output_qty / (recipe.output_qty or 1.0)
-        required = []
-        for it in (
-            db.query(RecipeItem)
-            .filter(RecipeItem.recipe_id == recipe.id)
-            .order_by(RecipeItem.sort_order)
-            .all()
-        ):
-            required.append(
-                {
-                    "item_id": it.item_id,
-                    "qty": float(it.qty_required) * k,
-                    "is_optional": bool(it.is_optional),
-                }
-            )
-    elif isinstance(body, AdhocRunRequest):
-        output_item_id = body.output_item_id
-        k = 1.0
-        required = [
-            {"item_id": c.item_id, "qty": c.qty_required, "is_optional": bool(c.is_optional)}
-            for c in body.components
-        ]
-    else:  # pragma: no cover - defensive
-        raise HTTPException(status_code=400, detail="invalid payload")
+    output_item_id, required, k = validate_run(db, body)
 
     run = ManufacturingRun(
         recipe_id=getattr(body, "recipe_id", None),
@@ -89,21 +42,7 @@ async def run_manufacturing(
         notes=getattr(body, "notes", None),
     )
     db.add(run)
-    db.commit()
-    db.refresh(run)
-
-    shortages = []
-    for r in required:
-        if r["is_optional"]:
-            continue
-        on_hand = on_hand_qty(db, r["item_id"])
-        if on_hand + 1e-9 < r["qty"]:
-            shortages.append({"item_id": r["item_id"], "required": r["qty"], "available": on_hand})
-    if shortages:
-        run.status = "failed_insufficient_stock"
-        run.meta = json.dumps({"shortages": shortages})
-        db.commit()
-        raise HTTPException(status_code=400, detail={"shortages": shortages})
+    db.flush()
 
     cost_inputs_cents = 0
     try:
@@ -142,20 +81,10 @@ async def run_manufacturing(
         return {"ok": True, "status": "completed", "run_id": run.id}
     except InsufficientStock as exc:
         db.rollback()
-        run = db.get(ManufacturingRun, run.id)
-        if run:
-            formatted_shortages = _format_shortages(exc.shortages)
-            run.status = "failed_insufficient_stock"
-            run.meta = json.dumps({"shortages": formatted_shortages})
-            db.commit()
-        raise HTTPException(status_code=400, detail={"shortages": _format_shortages(exc.shortages)})
+        raise HTTPException(status_code=400, detail={"shortages": format_shortages(exc.shortages)})
     except HTTPException:
-        raise
-    except Exception as exc:  # pragma: no cover - defensive
         db.rollback()
-        run = db.get(ManufacturingRun, run.id)
-        if run:
-            run.status = "failed_error"
-            run.meta = json.dumps({"error": str(exc)[:500]})
-            db.commit()
+        raise
+    except Exception:  # pragma: no cover - defensive
+        db.rollback()
         raise HTTPException(status_code=500, detail={"status": "failed_error"})
