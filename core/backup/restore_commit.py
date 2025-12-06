@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Callable, Optional, Tuple
 
 
-def _wal_checkpoint(db_path: Path) -> None:
+def wal_checkpoint(db_path: Path) -> None:
     """Best-effort WAL checkpoint to flush -wal/-shm files before replace."""
 
     try:
@@ -44,11 +44,11 @@ def _wal_checkpoint(db_path: Path) -> None:
         pass
 
 
-def _same_dir_temp(target_dir: Path, prefix: str) -> Path:
+def same_dir_temp(target_dir: Path, prefix: str) -> Path:
     """Allocate a temp file path in the same directory (and volume) as target."""
 
     target_dir.mkdir(parents=True, exist_ok=True)
-    for i in range(100):
+    for i in range(1000):
         p = target_dir / f"{prefix}.tmp.{int(time.time() * 1000)}.{i}"
         if not p.exists():
             return p
@@ -64,10 +64,10 @@ def close_all_db_handles(dispose_call: Optional[Callable[[], None]] = None) -> N
         except Exception:
             pass
     gc.collect()
-    time.sleep(0.1)
+    time.sleep(0.2)
 
 
-def atomic_replace_with_retries(src: Path, dst: Path, retries: int = 10, backoff: float = 0.2) -> None:
+def atomic_replace_with_retries(src: Path, dst: Path, retries: int = 12, backoff: float = 0.25) -> None:
     """Atomic replace with backoff for Windows sharing violations."""
 
     last_exc: Exception | None = None
@@ -111,4 +111,9 @@ def archive_journals(journal_dir: Path, ts: str) -> Tuple[int, int]:
         pass
 
     return (archived, errors)
+
+
+# Backwards compatibility for older imports
+_wal_checkpoint = wal_checkpoint
+_same_dir_temp = same_dir_temp
 

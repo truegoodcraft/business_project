@@ -633,8 +633,21 @@ def app_import_preview(req: ImportReq, _w: None = Depends(require_writes)):
 
 
 @protected.post("/app/db/import/commit")
-def app_import_commit(req: ImportReq, _w: None = Depends(require_writes)):
-    res = _import_commit(req.path, req.password)
+def app_import_commit(req: ImportReq, request: Request, _w: None = Depends(require_writes)):
+    def _dispose_all():
+        state = getattr(request.app, "state", None)
+        eng = None
+        if state is not None:
+            state_db = getattr(state, "db", None)
+            eng = getattr(state_db, "engine", None) or getattr(state, "engine", None)
+        if eng is None:
+            eng = ENGINE
+        try:
+            eng.dispose()
+        except Exception:
+            pass
+
+    res = _import_commit(req.path, req.password, dispose_call=_dispose_all)
     if not res.get("ok"):
         err = res.get("error", "commit_failed")
         if err in IMPORT_ERROR_CODES:

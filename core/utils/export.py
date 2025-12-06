@@ -26,15 +26,15 @@ import sqlite3
 import tempfile
 import time
 from pathlib import Path
-from typing import Dict
+from typing import Callable, Dict, Optional
 
 from core.appdb.engine import ENGINE
 from core.backup.restore_commit import (
-    _same_dir_temp,
-    _wal_checkpoint,
     archive_journals,
     atomic_replace_with_retries,
     close_all_db_handles,
+    same_dir_temp,
+    wal_checkpoint,
 )
 
 from core.backup.crypto import (
@@ -249,7 +249,9 @@ def import_preview(path: str, password: str) -> Dict[str, object]:
     return response
 
 
-def import_commit(path: str, password: str) -> Dict[str, object]:
+def import_commit(
+    path: str, password: str, dispose_call: Optional[Callable[[], None]] = None
+) -> Dict[str, object]:
     try:
         plaintext, header = _load_and_decrypt(Path(path), password)
     except (PermissionError, FileNotFoundError, ValueError) as exc:
@@ -274,7 +276,7 @@ def import_commit(path: str, password: str) -> Dict[str, object]:
 
     tmp_db_path: Path | None = None
     try:
-        tmp_db_path = _same_dir_temp(APP_DB.parent, "restore-db")
+        tmp_db_path = same_dir_temp(APP_DB.parent, "restore-db")
         with tmp_db_path.open("wb") as tf:
             tf.write(plaintext)
             tf.flush()
@@ -290,8 +292,10 @@ def import_commit(path: str, password: str) -> Dict[str, object]:
         ts = time.strftime("%Y%m%d-%H%M%S", time.localtime())
         APP_DB.parent.mkdir(parents=True, exist_ok=True)
         JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
-        _wal_checkpoint(APP_DB)
-        close_all_db_handles(ENGINE.dispose)
+        wal_checkpoint(APP_DB)
+
+        dispose_fn = dispose_call or ENGINE.dispose
+        close_all_db_handles(dispose_fn)
 
         atomic_replace_with_retries(tmp_db_path, APP_DB)
 
