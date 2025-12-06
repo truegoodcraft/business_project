@@ -275,12 +275,50 @@ $pw = "smoke-083!"
 $exportTry = Try-Invoke { Invoke-Json POST ($BaseUrl + "/app/db/export") @{ password = $pw } }
 if (-not $exportTry.ok) { Fail ("Export failed: {0}" -f $exportTry.err); exit 1 }
 $export = $exportTry.resp
+# --- Export & path assertions ------------------------------------------------
+$resp = $export
 $localAppData = [Environment]::GetFolderPath('LocalApplicationData')
-$exportsRoot = Join-Path $localAppData 'BUSCore\\exports'
-if ($export.path -and ($export.path -like "$exportsRoot*")) { Pass "Export path under LocalAppData exports" } else { Fail ("Export path not under expected root ({0})" -f $exportsRoot); exit 1 }
-if (-not (Test-Path $export.path)) { Fail "Export file missing"; exit 1 }
-$exportInfo = Get-Item $export.path
-if ($exportInfo.Length -gt 0) { Pass ("Export file exists (bytes={0})" -f $exportInfo.Length) } else { Fail "Export file is empty"; exit 1 }
+
+function Normalize-Path([string]$p) {
+  if ([string]::IsNullOrWhiteSpace($p)) { return $null }
+  $p = $p -replace '/', '\\'         # normalize slashes
+  try {
+    return ([System.IO.Path]::GetFullPath($p)).TrimEnd('\\').ToLowerInvariant()
+  } catch { return $p.ToLowerInvariant() }
+}
+
+$actualFile     = Normalize-Path $resp.path
+$expectedRoot   = Normalize-Path (Join-Path $env:LOCALAPPDATA 'BUSCore\exports')
+
+if (-not (Test-Path -LiteralPath $resp.path)) {
+  Write-Host "  [FAIL] Export file missing at path: $($resp.path)" -ForegroundColor Red
+  exit 1
+}
+
+# Compare case-insensitive, normalized, and require the file to be inside the expected root
+if ($actualFile.StartsWith($expectedRoot + '\\')) {
+  Write-Host "  [PASS] Exported under expected root" -ForegroundColor DarkGreen
+} else {
+  Write-Host "  [FAIL] Export path not under expected root" -ForegroundColor Red
+  Write-Host "         actual:   $($resp.path)"
+  Write-Host "         expected: $expectedRoot"
+  exit 1
+}
+
+# Optional: size > 0 check
+try {
+  $len = (Get-Item -LiteralPath $resp.path).Length
+  if ($len -gt 0) {
+    Write-Host "  [PASS] Export file exists and is non-empty ($len bytes)" -ForegroundColor DarkGreen
+  } else {
+    Write-Host "  [FAIL] Export file is empty" -ForegroundColor Red
+    exit 1
+  }
+} catch {
+  Write-Host "  [FAIL] Could not stat export file: $($_.Exception.Message)" -ForegroundColor Red
+  exit 1
+}
+# ---------------------------------------------------------------------------
 
 # B) Mutate DB (create reversible change)
 Info "Applying reversible inventory mutation..."
