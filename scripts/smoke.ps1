@@ -280,35 +280,35 @@ if (-not $resp.ok) {
   exit 1
 }
 
-# Resolve actual file; fail fast if missing
+# 1) Ensure file exists + capture canonical absolute path
 try {
   $actualItem = Get-Item -LiteralPath $resp.path -ErrorAction Stop
 } catch {
   Write-Host "  [FAIL] Export file missing at path: $($resp.path)" -ForegroundColor Red
   exit 1
 }
+$actualFull = $actualItem.FullName
 
-# Canonical, absolute, normalized paths
-$actualFull   = $actualItem.FullName
+# 2) Build canonical expected root with a single trailing backslash
 $expectedRoot = Join-Path $env:LOCALAPPDATA 'BUSCore\exports'
 $expectedFull = [System.IO.Path]::GetFullPath($expectedRoot)
 if (-not $expectedFull.EndsWith('\\')) { $expectedFull = $expectedFull + '\\' }
 
-# Robust containment on Windows (case-insensitive StartsWith on canonical paths)
+# 3) Case-insensitive containment check on canonical paths (no URIs, no PS7 features)
 if ($actualFull.StartsWith($expectedFull, [System.StringComparison]::OrdinalIgnoreCase)) {
   Write-Host "  [PASS] Exported under expected root" -ForegroundColor DarkGreen
-  Write-Host ("          " + $actualFull)
+  Write-Host ("          " + $actualFull)  # NOTE: parentheses avoid the stray '+' print
 } else {
   Write-Host "  [FAIL] Export path not under expected root" -ForegroundColor Red
-  Write-Host "         actual:   $actualFull"
-  Write-Host "         expected: " + $expectedFull.ToLowerInvariant()
+  Write-Host ("         actual:   " + $actualFull)
+  Write-Host ("         expected: " + $expectedFull.ToLowerInvariant())  # single line, no stray '+'
   exit 1
 }
 
-# Non-empty file check
+# 4) Non-empty file check
 $len = $actualItem.Length
 if ($len -gt 0) {
-  Write-Host "  [PASS] Export file exists and is non-empty ($len bytes)" -ForegroundColor DarkGreen
+  Write-Host ("  [PASS] Export file exists and is non-empty ({0} bytes)" -f $len) -ForegroundColor DarkGreen
 } else {
   Write-Host "  [FAIL] Export file is empty" -ForegroundColor Red
   exit 1
