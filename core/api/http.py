@@ -276,7 +276,10 @@ def startup_migrations():
         db.close()
 
 
-def get_db() -> Generator[Session, None, None]:
+def get_db(request: Request | None = None) -> Generator[Session, None, None]:
+    if request is not None and getattr(request.app.state, "maintenance", False):
+        raise HTTPException(status_code=503, detail={"error": "maintenance"})
+
     db = SessionLocal()
     try:
         yield db

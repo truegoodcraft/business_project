@@ -298,7 +298,11 @@ def import_commit(
         wal_checkpoint(APP_DB)
 
         dispose_fn = dispose_call or ENGINE.dispose
+
+        # First sweep: dispose engines/pools and close stray connections
         close_all_db_handles(dispose_fn)
+        # Second sweep right before replace to ensure handles are gone
+        close_all_db_handles(None)
 
         atomic_replace_with_retries(tmp_db_path, APP_DB)
 

@@ -22,11 +22,12 @@
 from __future__ import annotations
 
 import errno
-import gc
 import os
-import sqlite3
+import random
 import time
 from pathlib import Path
+import gc as _gc
+import sqlite3 as _sqlite3
 from typing import Callable, Optional, Tuple
 
 
@@ -34,7 +35,7 @@ def wal_checkpoint(db_path: Path) -> None:
     """Best-effort WAL checkpoint to flush -wal/-shm files before replace."""
 
     try:
-        con = sqlite3.connect(f"file:{db_path.as_posix()}?mode=rw", uri=True)
+        con = _sqlite3.connect(f"file:{db_path.as_posix()}?mode=rw", uri=True)
         try:
             con.execute("PRAGMA wal_checkpoint(TRUNCATE);")
         finally:
@@ -56,22 +57,42 @@ def same_dir_temp(target_dir: Path, prefix: str) -> Path:
 
 
 def close_all_db_handles(dispose_call: Optional[Callable[[], None]] = None) -> None:
-    """Dispose SQLAlchemy engine/pool and encourage GC to release handles."""
+    """
+    Dispose SQLAlchemy pools AND force-close stray sqlite3 connections.
+    Required on Windows to avoid WinError 32 during os.replace.
+    """
 
     if dispose_call:
         try:
             dispose_call()
         except Exception:
             pass
-    gc.collect()
-    time.sleep(0.2)
+
+    try:
+        _gc.collect()
+        for obj in list(_gc.get_objects()):
+            try:
+                if isinstance(obj, _sqlite3.Connection):
+                    try:
+                        obj.close()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        _gc.collect()
+    except Exception:
+        pass
+
+    time.sleep(0.35)
 
 
-def atomic_replace_with_retries(src: Path, dst: Path, retries: int = 12, backoff: float = 0.25) -> None:
-    """Atomic replace with backoff for Windows sharing violations."""
+def atomic_replace_with_retries(src: Path, dst: Path, retries: int = 30, backoff: float = 0.25) -> None:
+    """
+    Retry os.replace on Windows sharing violations with jittered backoff.
+    """
 
     last_exc: Exception | None = None
-    for _ in range(retries):
+    for attempt in range(retries):
         try:
             os.replace(str(src), str(dst))
             return
@@ -79,12 +100,12 @@ def atomic_replace_with_retries(src: Path, dst: Path, retries: int = 12, backoff
             last_exc = exc
             winerr = getattr(exc, "winerror", 0)
             if winerr in (32, 33) or exc.errno in (errno.EACCES, errno.EBUSY):
-                time.sleep(backoff)
+                delay = min(backoff * (1.35 ** attempt) + random.uniform(0, 0.05), 2.0)
+                time.sleep(delay)
                 continue
             raise
     raise RuntimeError(
-        f"replace_failed:{type(last_exc).__name__}:{getattr(last_exc, 'winerror', None)}:"
-        f"{getattr(last_exc, 'errno', None)}"
+        f"replace_failed:{type(last_exc).__name__}:win32={getattr(last_exc, 'winerror', None)}:errno={getattr(last_exc, 'errno', None)}"
     )
 
 
