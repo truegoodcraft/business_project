@@ -5,7 +5,19 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
@@ -61,6 +73,12 @@ class ItemBatch(Base):
 
 class ItemMovement(Base):
     __tablename__ = "item_movements"
+    __table_args__ = (
+        CheckConstraint(
+            "NOT (source_kind='manufacturing' AND is_oversold=1)",
+            name="ck_item_movements_no_mfg_oversell",
+        ),
+    )
 
     id = Column(Integer, primary_key=True)
     item_id = Column(Integer, ForeignKey("items.id"), nullable=False, index=True)
