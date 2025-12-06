@@ -49,8 +49,9 @@ async function withAuth(init = {}) {
   await ensureToken();
 
   const headers = new Headers(init.headers || {});
+  // REMOVED: X-Session-Token header (Backend is cookie-only now)
 
-  // FIX: Send the cookie with the request (Backend is cookie-only now)
+  // FIX: 'same-origin' ensures the browser sends the cookie
   return { ...init, headers, credentials: 'same-origin' };
 }
 
@@ -81,5 +82,7 @@ export const apiGetJson = async (url, init) => {
   const r = await apiGet(url, init);
   return r.json();
 };
+
+// --- end single-auth helpers ---
 
 export const apiJsonJson = (url, obj, init) => apiJson(url, obj, init).then(res => res.json());
