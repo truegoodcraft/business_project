@@ -404,4 +404,10 @@ if __name__ == "__main__":
     import uvicorn
 
     settings = Settings()
-    uvicorn.run("tgc.http:app", host=settings.host, port=settings.port, log_level="info")
+    uvicorn.run(
+        "core.api.http:create_app",
+        host=settings.host,
+        port=settings.port,
+        log_level="info",
+        factory=True,
+    )

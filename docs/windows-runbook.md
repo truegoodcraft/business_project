@@ -14,5 +14,5 @@ $env:BUS_DB = (Resolve-Path .\data\app.db).Path
 python core/appdb/migrations/2025_11_30_int_measurements.py
 
 # Launch (adjust module/path if different in repo)
-uvicorn tgc.http:app --host 127.0.0.1 --port 8765
+uvicorn core.api.http:create_app --factory --host 127.0.0.1 --port 8765
 ```
