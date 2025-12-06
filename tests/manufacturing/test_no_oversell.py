@@ -1,0 +1,142 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+from __future__ import annotations
+
+import importlib
+import sys
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy.exc import IntegrityError
+
+
+@pytest.fixture()
+def manufacturing_no_oversell_setup(tmp_path, monkeypatch):
+    db_path = tmp_path / "app.db"
+    monkeypatch.setenv("BUS_DB", str(db_path))
+
+    for module_name in [
+        "core.api.http",
+        "core.api.routes.manufacturing",
+        "core.appdb.engine",
+        "core.appdb.models",
+        "core.appdb.models_recipes",
+        "core.manufacturing.service",
+        "core.services.models",
+    ]:
+        sys.modules.pop(module_name, None)
+
+    import core.appdb.engine as engine_module
+    import core.appdb.models as models_module
+    import core.appdb.models_recipes as recipes_module
+    import core.services.models as services_models
+    import core.api.http as api_http
+
+    engine_module = importlib.reload(engine_module)
+    models_module = importlib.reload(models_module)
+    recipes_module = importlib.reload(recipes_module)
+    services_models = importlib.reload(services_models)
+    api_http = importlib.reload(api_http)
+
+    from tgc.settings import Settings
+    from tgc.state import init_state
+
+    api_http.app.state.app_state = init_state(Settings())
+    api_http.app.state.allow_writes = True
+
+    models_module.Base.metadata.create_all(bind=engine_module.ENGINE)
+
+    from core.config.writes import set_writes_enabled
+
+    set_writes_enabled(True)
+
+    client = TestClient(api_http.APP)
+    session_token = api_http._load_or_create_token()
+    api_http.app.state.app_state.tokens._rec.token = session_token
+    client.headers.update({"X-Session-Token": session_token})
+
+    with engine_module.SessionLocal() as db:
+        output_item = models_module.Item(name="Output", uom="ea", qty_stored=0)
+        input_item = models_module.Item(name="Input", uom="ea", qty_stored=6)
+        db.add_all([output_item, input_item])
+        db.flush()
+
+        recipe = recipes_module.Recipe(name="Widget", output_item_id=output_item.id, output_qty=1.0)
+        db.add(recipe)
+        db.flush()
+
+        db.add(
+            recipes_module.RecipeItem(
+                recipe_id=recipe.id,
+                item_id=input_item.id,
+                qty_required=2.0,
+                is_optional=False,
+            )
+        )
+
+        db.add(
+            models_module.ItemBatch(
+                item_id=input_item.id,
+                qty_initial=6.0,
+                qty_remaining=6.0,
+                unit_cost_cents=15,
+                source_kind="seed",
+                source_id=None,
+                is_oversold=False,
+            )
+        )
+        db.commit()
+
+        recipe_id = recipe.id
+        input_item_id = input_item.id
+
+    yield {
+        "client": client,
+        "engine": engine_module,
+        "models": models_module,
+        "recipes": recipes_module,
+        "recipe_id": recipe_id,
+        "input_item_id": input_item_id,
+    }
+
+
+def test_never_sets_is_oversold_on_manufacturing(manufacturing_no_oversell_setup):
+    client = manufacturing_no_oversell_setup["client"]
+    engine = manufacturing_no_oversell_setup["engine"]
+    models = manufacturing_no_oversell_setup["models"]
+
+    resp = client.post(
+        "/app/manufacturing/run",
+        json={"recipe_id": manufacturing_no_oversell_setup["recipe_id"], "output_qty": 2},
+    )
+
+    assert resp.status_code == 200
+
+    with engine.SessionLocal() as db:
+        movements = (
+            db.query(models.ItemMovement)
+            .filter(models.ItemMovement.source_kind == "manufacturing")
+            .all()
+        )
+        assert movements
+        assert all(m.is_oversold is False for m in movements)
+
+
+def test_constraint_rejects_oversold_flag(manufacturing_no_oversell_setup):
+    engine = manufacturing_no_oversell_setup["engine"]
+    models = manufacturing_no_oversell_setup["models"]
+
+    with engine.SessionLocal() as db:
+        db.add(
+            models.ItemMovement(
+                item_id=manufacturing_no_oversell_setup["input_item_id"],
+                batch_id=None,
+                qty_change=-1.0,
+                unit_cost_cents=0,
+                source_kind="manufacturing",
+                source_id=None,
+                is_oversold=True,
+            )
+        )
+        with pytest.raises(IntegrityError):
+            db.commit()
+        db.rollback()
