@@ -250,7 +250,10 @@ def import_preview(path: str, password: str) -> Dict[str, object]:
 
 
 def import_commit(
-    path: str, password: str, dispose_call: Optional[Callable[[], None]] = None
+    path: str,
+    password: str,
+    dispose_call: Optional[Callable[[], None]] = None,
+    dev_mode: bool = False,
 ) -> Dict[str, object]:
     try:
         plaintext, header = _load_and_decrypt(Path(path), password)
@@ -317,10 +320,13 @@ def import_commit(
 
         with audit_path.open("a", encoding="utf-8") as audit_file:
             audit_file.write(json.dumps(audit_entry, separators=(',', ':')) + "\n")
-    except Exception:
+    except Exception as exc:
         if tmp_db_path is not None:
             _retry_unlink(tmp_db_path)
-        return {"ok": False, "error": "commit_failed"}
+        err_res: Dict[str, object] = {"ok": False, "error": "commit_failed"}
+        if dev_mode:
+            err_res["info"] = f"{type(exc).__name__}:{getattr(exc, 'winerror', None)}:{getattr(exc, 'errno', None)}:{exc}"
+        return err_res
     else:
         _retry_unlink(tmp_db_path)
 

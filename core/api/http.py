@@ -31,6 +31,7 @@ import secrets
 import sqlite3
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from ctypes import wintypes
@@ -161,6 +162,27 @@ def _check_state(state_b64: str) -> bool:
 
 
 app = FastAPI(title="BUS Core Alpha", version=VERSION)
+
+# --- Maintenance / Restore Interlock ---------------------------------------
+app.state.maintenance = False
+app.state.restore_lock = threading.Lock()
+
+MAINT_ALLOW = {
+    "/session/token",
+    "/openapi.json",
+    "/app/db/import/preview",
+    "/app/db/import/commit",
+}
+
+
+@app.middleware("http")
+async def maintenance_guard(request: Request, call_next):
+    if getattr(request.app.state, "maintenance", False):
+        if request.url.path not in MAINT_ALLOW:
+            return JSONResponse({"detail": {"error": "maintenance"}}, status_code=503)
+    return await call_next(request)
+
+# ---------------------------------------------------------------------------
 
 
 UI_DIR = ui_dir()
@@ -634,6 +656,15 @@ def app_import_preview(req: ImportReq, _w: None = Depends(require_writes)):
 
 @protected.post("/app/db/import/commit")
 def app_import_commit(req: ImportReq, request: Request, _w: None = Depends(require_writes)):
+    app = request.app
+    dev = os.environ.get("BUS_DEV") in {"1", "true", "True"}
+
+    lock = getattr(app.state, "restore_lock", None)
+    if lock is not None and not lock.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail={"error": "restore_in_progress"})
+
+    app.state.maintenance = True
+
     def _dispose_all():
         state = getattr(request.app, "state", None)
         eng = None
@@ -647,13 +678,24 @@ def app_import_commit(req: ImportReq, request: Request, _w: None = Depends(requi
         except Exception:
             pass
 
-    res = _import_commit(req.path, req.password, dispose_call=_dispose_all)
-    if not res.get("ok"):
-        err = res.get("error", "commit_failed")
-        if err in IMPORT_ERROR_CODES:
-            raise HTTPException(status_code=400, detail={"error": err})
-        raise HTTPException(status_code=400, detail={"error": "commit_failed"})
-    return res
+    try:
+        res = _import_commit(req.path, req.password, dispose_call=_dispose_all, dev_mode=dev)
+        if not res.get("ok"):
+            err = res.get("error", "commit_failed")
+            if err in IMPORT_ERROR_CODES:
+                raise HTTPException(status_code=400, detail={"error": err, **({"info": res.get("info")} if dev and res.get("info") else {})})
+            detail = {"error": "commit_failed"}
+            if dev and res.get("info"):
+                detail["info"] = res["info"]
+            raise HTTPException(status_code=400, detail=detail)
+        return res
+    finally:
+        app.state.maintenance = False
+        try:
+            if lock is not None and lock.locked():
+                lock.release()
+        except Exception:
+            pass
 
 
 # --- Debug: journal info (auth required; does NOT require writes on) ---
