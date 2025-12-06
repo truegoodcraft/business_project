@@ -19,6 +19,7 @@
 
 import { ensureToken } from "./js/token.js";
 import { mountBackupExport } from "./js/cards/backup.js";
+import { mountAdmin } from "./js/cards/admin.js";
 import mountVendors from "./js/cards/vendors.js";
 import { mountHome } from "./js/cards/home.js";
 import "./js/cards/home_donuts.js";
@@ -33,6 +34,7 @@ const ROUTES = {
   '#/recipes': showRecipes,
   '#/contacts': showContacts,
   '#/settings': showSettings,
+  '#/admin': showAdmin,
   '#/home': showHome,
   '#/': showInventory,
   '': showInventory,
@@ -77,7 +79,8 @@ function clearCardHost() {
   const settingsHost = document.querySelector('[data-role="settings-root"]');
   const manufacturingHost = document.querySelector('[data-tab-panel="manufacturing"]');
   const recipesHost = document.querySelector('[data-tab-panel="recipes"]');
-  [root, inventoryHost, contactsHost, settingsHost, manufacturingHost, recipesHost].forEach((node) => {
+  const adminHost = document.querySelector('[data-role="admin-root"]');
+  [root, inventoryHost, contactsHost, settingsHost, manufacturingHost, recipesHost, adminHost].forEach((node) => {
     if (node) node.innerHTML = '';
   });
 }
@@ -123,6 +126,7 @@ async function showContacts() {
   document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="admin-screen"]')?.classList.add('hidden');
   const contactsScreen = document.querySelector('[data-role="contacts-screen"]');
   contactsScreen?.classList.remove('hidden');
   await ensureContactsMounted();
@@ -134,6 +138,7 @@ async function showInventory() {
   document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="admin-screen"]')?.classList.add('hidden');
   unmountManufacturing();
   unmountRecipes();
   document.querySelector('[data-role="inventory-screen"]')?.classList.remove('hidden');
@@ -146,11 +151,28 @@ async function showManufacturing() {
   document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="admin-screen"]')?.classList.add('hidden');
   const screen = document.querySelector('[data-role="manufacturing-screen"]');
   screen?.classList.remove('hidden');
   unmountInventory();
   unmountRecipes();
   await mountManufacturing();
+}
+
+async function showAdmin() {
+  document.querySelector('[data-role="home-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
+  unmountInventory();
+  unmountManufacturing();
+  unmountRecipes();
+  const adminScreen = document.querySelector('[data-role="admin-screen"]');
+  adminScreen?.classList.remove('hidden');
+  const host = document.querySelector('[data-role="admin-root"]');
+  if (host) mountAdmin(host);
 }
 
 async function showSettings() {
@@ -161,6 +183,7 @@ async function showSettings() {
   showScreen(null);
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="admin-screen"]')?.classList.add('hidden');
   const settingsScreen = document.querySelector('[data-role="settings-screen"]');
   settingsScreen?.classList.remove('hidden');
   if (!settingsMounted) {
@@ -181,6 +204,7 @@ async function showHome() {
   unmountManufacturing();
   unmountRecipes();
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="admin-screen"]')?.classList.add('hidden');
 }
 
 async function showRecipes() {
@@ -189,6 +213,7 @@ async function showRecipes() {
   document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="admin-screen"]')?.classList.add('hidden');
   const recipesScreen = document.querySelector('[data-role="recipes-screen"]');
   recipesScreen?.classList.remove('hidden');
   unmountInventory();

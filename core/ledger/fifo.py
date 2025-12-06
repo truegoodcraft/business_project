@@ -1,9 +1,13 @@
 from __future__ import annotations
+import logging
 import sqlite3
+import time
 from contextlib import contextmanager
 from typing import Optional, Dict, Any, List
 from core.appdb.paths import resolve_db_path
+from core.journal.inventory import append_inventory
 
+logger = logging.getLogger(__name__)
 DB_PATH = resolve_db_path()
 
 
@@ -29,6 +33,7 @@ def _ensure_tables(con: sqlite3.Connection) -> None:
         unit_cost_cents INTEGER NOT NULL,
         source_kind TEXT NOT NULL,
         source_id TEXT,
+        is_oversold BOOLEAN DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )""")
     cur.execute("""
@@ -67,8 +72,8 @@ def purchase(item_id: int, qty: float, unit_cost_cents: int, source_kind: str = 
         cur = con.cursor()
         # Batch
         cur.execute("""
-            INSERT INTO item_batches(item_id, qty_initial, qty_remaining, unit_cost_cents, source_kind, source_id)
-            VALUES(?,?,?,?,?,?)
+            INSERT INTO item_batches(item_id, qty_initial, qty_remaining, unit_cost_cents, source_kind, source_id, is_oversold)
+            VALUES(?,?,?,?,?,?,0)
         """, (int(item_id), float(qty), float(qty), int(unit_cost_cents), source_kind, source_id))
         batch_id = cur.lastrowid
         # Movement (+in)
@@ -78,6 +83,19 @@ def purchase(item_id: int, qty: float, unit_cost_cents: int, source_kind: str = 
         """, (int(item_id), batch_id, float(qty), int(unit_cost_cents), source_kind, source_id))
         # Update stock
         _inc_qty_stored(con, item_id, qty)
+        con.commit()
+        _append_inventory(
+            {
+                "ts": int(time.time()),
+                "op": "purchase",
+                "item_id": int(item_id),
+                "qty": float(qty),
+                "unit_cost_cents": int(unit_cost_cents),
+                "source_kind": source_kind,
+                "source_id": source_id,
+                "batch_id": batch_id,
+            }
+        )
         return {"ok": True, "db_path": DB_PATH, "batch_id": batch_id}
 
 def consume(item_id: int, qty: float, source_kind: str = "consume", source_id: Optional[str] = None) -> Dict[str, Any]:
@@ -126,8 +144,20 @@ def consume(item_id: int, qty: float, source_kind: str = "consume", source_id: O
 
         # update stock (negative)
         _inc_qty_stored(con, item_id, -qty)
+        con.commit()
 
         total_cost_cents = sum(int(c["unit_cost_cents"]) * float(c["qty"]) for c in consumed if c["unit_cost_cents"] is not None)
+        _append_inventory(
+            {
+                "ts": int(time.time()),
+                "op": "consume",
+                "item_id": int(item_id),
+                "qty": float(qty),
+                "allocations": consumed,
+                "source_kind": source_kind,
+                "source_id": source_id,
+            }
+        )
         return {"ok": True, "db_path": DB_PATH, "consumed": consumed, "qty": qty, "total_cost_cents": int(round(total_cost_cents))}
 
 def valuation(item_id: Optional[int] = None) -> Dict[str, Any]:
@@ -171,3 +201,10 @@ def list_movements(item_id: Optional[int] = None, limit: int = 100) -> Dict[str,
         cols = [c[0] for c in cur.description]
         data = [dict(zip(cols, r)) for r in cur.fetchall()]
         return {"movements": data}
+
+
+def _append_inventory(entry: dict) -> None:
+    try:
+        append_inventory(entry)
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("Failed to append inventory journal entry")

@@ -69,7 +69,13 @@ function Try-Invoke {
 }
 
 # Establish session first (avoid 401s on protected endpoints)
-Invoke-RestMethod -Method Get -Uri ($BaseUrl + "/session/token") -WebSession $script:Session | Out-Null
+$tokResp = Invoke-RestMethod -Method Get -Uri ($BaseUrl + "/session/token") -WebSession $script:Session
+if ($tokResp) {
+  Write-Host "  [INFO] Session token acquired" -ForegroundColor DarkCyan
+} else {
+  Write-Host "  [FAIL] No session token returned from /session/token" -ForegroundColor Red
+  exit 1
+}
 
 # Best-effort feature check (safe if /openapi.json exists; non-fatal if not)
 try {
@@ -257,6 +263,108 @@ if ([int]$output[0].unit_cost_cents -eq [int]$expectedUnit) {
 # 5.6 never oversell: manufacturing movements must have is_oversold=0
 $overs = @($mov3 | Where-Object { $_.source_kind -eq "manufacturing" -and [int]$_.is_oversold -ne 0 })
 if ($overs.Count -eq 0) { Pass "Manufacturing movements have is_oversold=0" } else { Fail "Found is_oversold=1 on manufacturing movement(s)"; exit 1 }
+
+# -----------------------------
+# 6) v0.8.3 Journals + Encrypted Backup/Restore
+# -----------------------------
+Step "6. v0.8.3 Journals + Encrypted Backup/Restore"
+
+# A) Export DB (AES-GCM, password)
+Info "Exporting encrypted backup..."
+$pw = "smoke-083!"
+$localAppData = [Environment]::GetFolderPath('LocalApplicationData')
+# --- Export & path assertions (PS 5.1-safe, case/slash agnostic) ------------
+$resp = Invoke-Json 'POST' "$BaseUrl/app/db/export" @{ password = $pw }
+if (-not $resp.ok) {
+  Write-Host "  [FAIL] Export failed: $($resp.error)" -ForegroundColor Red
+  exit 1
+}
+
+# 1) Ensure file exists + capture canonical absolute path
+try {
+  $actualItem = Get-Item -LiteralPath $resp.path -ErrorAction Stop
+} catch {
+  Write-Host "  [FAIL] Export file missing at path: $($resp.path)" -ForegroundColor Red
+  exit 1
+}
+$actualFull = $actualItem.FullName
+
+# 2) Build canonical expected root with a single trailing backslash
+$expectedRoot = Join-Path $env:LOCALAPPDATA 'BUSCore\exports'
+$expectedFull = [System.IO.Path]::GetFullPath($expectedRoot)
+if (-not $expectedFull.EndsWith('\')) { $expectedFull = $expectedFull + '\' }
+
+# 3) Case-insensitive containment check on canonical paths
+if ($actualFull.StartsWith($expectedFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+  Write-Host "  [PASS] Exported under expected root" -ForegroundColor DarkGreen
+  Write-Host ("          " + $actualFull)
+} else {
+  Write-Host "  [FAIL] Export path not under expected root" -ForegroundColor Red
+  Write-Host ("         actual:   " + $actualFull)
+  Write-Host ("         expected: " + $expectedFull.ToLowerInvariant())
+  exit 1
+}
+
+# 4) Non-empty file check
+$len = $actualItem.Length
+if ($len -gt 0) {
+  Write-Host ("  [PASS] Export file exists and is non-empty ({0} bytes)" -f $len) -ForegroundColor DarkGreen
+} else {
+  Write-Host "  [FAIL] Export file is empty" -ForegroundColor Red
+  exit 1
+}
+$export = $resp
+# ---------------------------------------------------------------------------
+
+# B) Mutate DB (create reversible change)
+Info "Applying reversible inventory mutation..."
+$mvBaseline = Get-LatestMovementId
+$mut = Invoke-Json POST ($BaseUrl + "/app/ledger/adjust") @{ item_id = $itemA.id; qty_change = 5 }
+$mvAfterMut = Get-LatestMovementId
+if ($mvAfterMut -gt $mvBaseline) { Pass "Movement id advanced after mutation" } else { Fail "Expected movement id to advance after mutation"; exit 1 }
+
+# C) Restore Preview
+Info "Previewing restore from encrypted backup..."
+$previewTry = Try-Invoke { Invoke-Json POST ($BaseUrl + "/app/db/import/preview") @{ path = $export.path; password = $pw } }
+if (-not $previewTry.ok) { Fail ("Restore preview failed: {0}" -f $previewTry.err); exit 1 }
+$preview = $previewTry.resp
+$hasCounts = $false
+try { if ($preview.table_counts.Keys.Count -ge 0) { $hasCounts = $true } } catch { $hasCounts = $false }
+if ($hasCounts) { Pass "Preview returned table_counts" } else { Fail "Preview missing table_counts"; exit 1 }
+$hasVersion = $false
+try { if ($preview.schema_version -or $preview.user_version -or $preview.database_version) { $hasVersion = $true } } catch { $hasVersion = $false }
+if ($hasVersion) { Pass "Preview returned schema/user version" } else { Pass "Preview version field not present (tolerated)" }
+
+# D) Restore Commit (atomic replace)
+Info "Committing restore (atomic replace)..."
+$commitTry = Try-Invoke { Invoke-Json POST ($BaseUrl + "/app/db/import/commit") @{ path = $export.path; password = $pw } }
+if (-not $commitTry.ok) { Fail ("Restore commit failed: {0}" -f $commitTry.err); exit 1 }
+$commitResp = $commitTry.resp
+if ($commitResp.replaced -eq $true) { Pass "Restore commit replaced database" } else { Fail "Restore commit did not indicate replacement"; exit 1 }
+if ($commitResp.restart_required -eq $true) { Pass "Restart required flag set" } else { Fail "Expected restart_required=true"; exit 1 }
+
+# E) Post-restore verification
+Info "Verifying state reverted to pre-mutation snapshot..."
+$mvAfterRestore = Get-LatestMovementId
+if ($mvAfterRestore -eq $mvBaseline) { Pass "Movement id reverted to baseline after restore" } else { Fail ("Movement id mismatch after restore (expected {0}, got {1})" -f $mvBaseline, $mvAfterRestore); exit 1 }
+
+# F) Journal archiving on restore
+Info "Checking journal archiving..."
+$appDir = Join-Path $localAppData 'BUSCore\\app'
+$journalDir = Join-Path $appDir 'data\\journals'
+$invArchive = Get-ChildItem -Path $journalDir -Filter 'inventory.jsonl.pre-restore*' -ErrorAction SilentlyContinue
+if ($invArchive -and $invArchive.Count -ge 1) { Pass "Inventory journal archived" } else { Fail "Inventory journal archive missing"; exit 1 }
+$mfgArchive = Get-ChildItem -Path $journalDir -Filter 'manufacturing.jsonl.pre-restore*' -ErrorAction SilentlyContinue
+if ($mfgArchive -and $mfgArchive.Count -ge 1) { Pass "Manufacturing journal archived" } else { Fail "Manufacturing journal archive missing"; exit 1 }
+
+$invNew = Join-Path $journalDir 'inventory.jsonl'
+$mfgNew = Join-Path $journalDir 'manufacturing.jsonl'
+if (Test-Path $invNew) { $invInfo = Get-Item $invNew; if ($invInfo.Length -le 4096) { Pass "Inventory journal recreated" } else { Fail "Inventory journal not reset"; exit 1 } } else { Fail "Inventory journal missing after restore"; exit 1 }
+if (Test-Path $mfgNew) { $mfgInfo = Get-Item $mfgNew; if ($mfgInfo.Length -le 4096) { Pass "Manufacturing journal recreated" } else { Fail "Manufacturing journal not reset"; exit 1 } } else { Fail "Manufacturing journal missing after restore"; exit 1 }
+
+# G) Cleanup
+Info "Cleaning up exported backup file..."
+try { Remove-Item -Path $export.path -Force -ErrorAction Stop; Pass "Export artifact removed" } catch { Info "Cleanup skipped: $($_.Exception.Message)" }
 
 # -----------------------------
 # Finish

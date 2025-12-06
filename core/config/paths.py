@@ -22,20 +22,26 @@ from pathlib import Path
 
 from sqlalchemy.engine import URL
 
-from core.appdb.paths import app_db_path, app_root_dir, ui_dir, app_dir, resolve_db_path
+from core.appdb.paths import app_db_path, app_root_dir, resolve_db_path, ui_dir
 
-APP_ROOT: Path = app_root_dir()
-APP_DIR: Path = app_dir()
+BUS_ROOT: Path = app_root_dir()
+APP_DB: Path = Path(resolve_db_path())
+APP_DIR: Path = APP_DB.parent
+APP_ROOT: Path = BUS_ROOT
 STATE_DIR: Path = APP_DIR / "state"
 DATA_DIR: Path = APP_DIR / "data"
-JOURNALS_DIR: Path = DATA_DIR / "journals"
+JOURNAL_DIR: Path = DATA_DIR / "journals"
+JOURNALS_DIR: Path = JOURNAL_DIR
 IMPORTS_DIR: Path = DATA_DIR / "imports"
-DB_PATH: Path = Path(resolve_db_path())
-BUS_ROOT: Path = APP_ROOT
+EXPORTS_DIR: Path = BUS_ROOT / "exports"
+DB_PATH: Path = APP_DB
 DB_URL = URL.create(drivername="sqlite+pysqlite", database=DB_PATH.as_posix())
 UI_DIR: Path = ui_dir()
 
-CONFIG_PATH = app_dir() / "config.json"
+for _dir in (BUS_ROOT, APP_DIR, DATA_DIR, JOURNAL_DIR, EXPORTS_DIR, IMPORTS_DIR, STATE_DIR):
+    _dir.mkdir(parents=True, exist_ok=True)
+
+CONFIG_PATH = APP_DIR / "config.json"
 
 
 def _load_config_dict() -> dict:

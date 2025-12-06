@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from fastapi import Request
+from fastapi import FastAPI, Request
 
 from core.runtime import CoreAlpha
 from tgc.logging_setup import setup_logging
@@ -37,3 +37,11 @@ def get_state(request: Request) -> AppState:
     if state is None:
         raise RuntimeError("AppState not initialized")
     return state
+
+
+def init_app_state(app: FastAPI) -> None:
+    """Idempotently attach AppState to the FastAPI instance."""
+
+    if getattr(app.state, "app_state", None) is None:
+        settings = Settings()
+        app.state.app_state = init_state(settings)

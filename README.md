@@ -12,17 +12,17 @@
 
 
 <p align="center">
-  What’s new in v0.5.3
+  What’s new in v0.8.3
 <p align="center">
-  Minimal public health check; detailed diagnostics gated for development.
+  Journals are append-only after database commits; backup/restore is password-protected and archives journals on restore.
 <p align="center">
-  Debug and transparency surfaces require BUS_DEV=1; manufacturing licensing is explicit.
+  Admin UI surfaces export/restore flows; exports live under %LOCALAPPDATA%\BUSCore\exports.
 <p align="center">
-  Sensitive operational docs moved internal; README now points to the Statement of Truth for API details.
+  Backup/restore smoke tests keep state reversible.
 </p>
 
 
-# BUS Core (v0.5.3 "Iron Core")
+# BUS Core (v0.8.3 "Iron Core")
 
 [![GitHub Repo stars](https://img.shields.io/github/stars/truegoodcraft/TGC-BUS-Core?style=social)](https://github.com/truegoodcraft/TGC-BUS-Core)
 [![License](https://img.shields.io/github/license/truegoodcraft/TGC-BUS-Core)](LICENSE)
@@ -79,6 +79,22 @@ To install heavy integration libraries (Google, Notion, ReportLab), run the laun
 ```powershell
 $env:BUSCORE_EXTRAS="1"; .\scripts\launch.ps1
 ```
+
+## 📒 Journals
+
+- Inventory and manufacturing journals live at `%LOCALAPPDATA%\BUSCore\app\data\journals`.
+- Mutations are durable in the database first, then appended to the JSONL journals (never the other way around).
+- Restore commits archive existing `*.jsonl` files to `*.pre-restore-<YYYYMMDD-HHMMSS>` and recreate fresh, empty `inventory.jsonl` and `manufacturing.jsonl` files.
+
+## 📦 Backup & Restore
+
+- Exports are password-encrypted (Argon2id/PBKDF2 + AES-GCM) and saved to `%LOCALAPPDATA%\BUSCore\exports\BUSCore-backup-<timestamp>.db.gcm`.
+- From the Admin tab in the UI, enter a password and click **Export** to write a new snapshot.
+- To restore:
+  1. Select or upload a backup file from the Admin tab.
+  2. Enter the password, click **Preview** to verify schema version and table counts.
+  3. Click **Commit** to atomically replace the database. Journals are archived and recreated; restart is required.
+- CLI alternative: call the protected endpoints `/app/db/export`, `/app/db/import/preview`, and `/app/db/import/commit` with the password and path returned by the export response.
 
 -----
 

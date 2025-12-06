@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
+import logging
+import time
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
@@ -8,17 +10,14 @@ from core.api.schemas.manufacturing import ManufacturingRunRequest, parse_run_re
 from core.appdb.engine import get_session
 from core.appdb.ledger import InsufficientStock
 from core.config.writes import require_writes
-from core.manufacturing.service import (
-    append_run_journal,
-    execute_run_txn,
-    format_shortages,
-    validate_run,
-)
+from core.journal.manufacturing import append_mfg_journal
+from core.manufacturing.service import execute_run_txn, format_shortages, validate_run
 from core.policy.guard import require_owner_commit
 from tgc.security import require_token_ctx
 from tgc.state import AppState, get_state
 
 router = APIRouter(prefix="/manufacturing", tags=["manufacturing"])
+logger = logging.getLogger(__name__)
 
 
 @router.post("/run")
@@ -37,7 +36,16 @@ async def run_manufacturing(
     try:
         output_item_id, required, k = validate_run(db, body)
         result = execute_run_txn(db, body, output_item_id, required, k)
-        append_run_journal(result["journal_entry"])
+        _append_journal(
+            {
+                "ts": int(time.time()),
+                "type": "manufacturing_run",
+                "run_id": result["run"].id,
+                "recipe_id": getattr(body, "recipe_id", None),
+                "status": "success",
+                "output_qty": body.output_qty,
+            }
+        )
         return {
             "ok": True,
             "status": "completed",
@@ -46,10 +54,37 @@ async def run_manufacturing(
         }
     except InsufficientStock as exc:
         db.rollback()
-        raise HTTPException(status_code=400, detail={"shortages": format_shortages(exc.shortages)})
+        shortages = format_shortages(exc.shortages)
+        _append_journal(
+            {
+                "ts": int(time.time()),
+                "type": "manufacturing_run",
+                "run_id": None,
+                "recipe_id": getattr(body, "recipe_id", None),
+                "status": "failed",
+                "shortages": shortages,
+            }
+        )
+        raise HTTPException(status_code=400, detail={"shortages": shortages})
     except HTTPException:
         db.rollback()
+        _append_journal(
+            {
+                "ts": int(time.time()),
+                "type": "manufacturing_run",
+                "run_id": None,
+                "recipe_id": getattr(body, "recipe_id", None),
+                "status": "failed",
+            }
+        )
         raise
     except Exception:  # pragma: no cover - defensive
         db.rollback()
         raise HTTPException(status_code=500, detail={"status": "failed_error"})
+
+
+def _append_journal(entry: dict) -> None:
+    try:
+        append_mfg_journal(entry)
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("Failed to append manufacturing journal entry")

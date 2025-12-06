@@ -9,7 +9,7 @@ from tgc.state import get_state
 async def require_token_ctx(request: Request):
     state = get_state(request)
     s = state.settings
-    tok = request.cookies.get(s.session_cookie_name) or request.headers.get("X-Session-Token")
+    tok = getattr(request.state, "session", None) or request.cookies.get(s.session_cookie_name) or request.cookies.get("session") or request.cookies.get("sessionid")
     if not state.tokens.check(tok):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
     return None  # context placeholder

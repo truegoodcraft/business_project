@@ -17,32 +17,40 @@ def contacts_client(tmp_path, monkeypatch):
     (home / "app").mkdir(parents=True, exist_ok=True)
 
     for module_name in [
-        "tgc.http",
+        "core.api.http",
         "core.appdb.models",
         "core.appdb.engine",
         "core.services.models",
         "core.api.routes.vendors",
         "core.api.routes.items",
         "core.appdb.session",
+        "tgc.state",
+        "tgc.settings",
     ]:
         sys.modules.pop(module_name, None)
 
     import core.appdb.engine as engine_module
     import core.appdb.models as models_module
     import core.services.models as services_models
-    import tgc.http as api_http
+    import core.api.http as api_http
+    import tgc.state as state_module
+    import tgc.settings as settings_module
 
     # Reload modules so they pick up the isolated BUSCORE_HOME
     engine_module = importlib.reload(engine_module)
     models_module = importlib.reload(models_module)
     services_models = importlib.reload(services_models)
     api_http = importlib.reload(api_http)
+    state_module = importlib.reload(state_module)
+    settings_module = importlib.reload(settings_module)
 
     models_module.Base.metadata.create_all(bind=engine_module.ENGINE)
 
     # Initialize application state and schema without relying on lifespan hooks.
-    api_http.app.state.app_state = api_http.init_state(api_http.Settings())
-    api_http._run_startup_migrations()
+    app = api_http.create_app()
+    settings = settings_module.Settings()
+    app.state.app_state = state_module.init_state(settings)
+    api_http.startup_migrations()
     from core.config.writes import set_writes_enabled
 
     set_writes_enabled(True)
@@ -52,9 +60,12 @@ def contacts_client(tmp_path, monkeypatch):
         db.commit()
         assert db.query(models_module.Vendor).count() == 0
 
-    client = TestClient(api_http.app)
-    token_resp = client.get("/session/token/plain")
-    token = token_resp.text
+    client = TestClient(app)
+    token_resp = client.get("/session/token")
+    assert token_resp.status_code == 200
+    token = token_resp.json().get("token")
+    api_http.SESSION_TOKEN = token
+    assert api_http.validate_session_token(token)
     client.headers.update({"X-Session-Token": token})
 
     with engine_module.SessionLocal() as db:

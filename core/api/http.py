@@ -25,11 +25,13 @@ import ctypes
 import hashlib
 import hmac
 import json
+import logging
 import os
 import secrets
 import sqlite3
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from ctypes import wintypes
@@ -42,10 +44,12 @@ from fastapi import (
     APIRouter,
     Body,
     Depends,
+    File,
     Header,
     HTTPException,
     Query,
     Request,
+    UploadFile,
 )
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.staticfiles import StaticFiles
@@ -75,8 +79,16 @@ from core.runtime.policy import PolicyDecision
 from core.runtime.probe import PROBE_TIMEOUT_SEC
 from core.secrets import SecretError, Secrets
 from core.version import VERSION
-from core.utils.export import export_db, import_preview as _import_preview, import_commit as _import_commit
+from core.utils.export import (
+    export_db,
+    import_preview as _import_preview,
+    import_commit as _import_commit,
+    list_exports as _list_exports,
+    stage_uploaded_backup,
+)
+from core.journal.inventory import append_inventory
 from tgc.bootstrap_fs import DATA, LOGS
+from tgc.state import get_state, init_app_state
 
 from pydantic import BaseModel, Field
 
@@ -113,6 +125,9 @@ else:  # pragma: no cover - non-windows fallback
     NamedPipeServer = PluginBroker = handle_connection = spawn_sandboxed = None  # type: ignore[assignment]
 
 
+logger = logging.getLogger(__name__)
+
+
 def _load_session_token() -> str:
     return _load_or_create_token()
 
@@ -147,6 +162,27 @@ def _check_state(state_b64: str) -> bool:
 
 
 app = FastAPI(title="BUS Core Alpha", version=VERSION)
+
+# --- Maintenance / Restore Interlock ---------------------------------------
+app.state.maintenance = False
+app.state.restore_lock = threading.Lock()
+
+MAINT_ALLOW = {
+    "/session/token",
+    "/openapi.json",
+    "/app/db/import/preview",
+    "/app/db/import/commit",
+}
+
+
+@app.middleware("http")
+async def maintenance_guard(request: Request, call_next):
+    if getattr(request.app.state, "maintenance", False):
+        if request.url.path not in MAINT_ALLOW:
+            return JSONResponse({"detail": {"error": "maintenance"}}, status_code=503)
+    return await call_next(request)
+
+# ---------------------------------------------------------------------------
 
 
 UI_DIR = ui_dir()
@@ -240,7 +276,10 @@ def startup_migrations():
         db.close()
 
 
-def get_db() -> Generator[Session, None, None]:
+def get_db(request: Request) -> Generator[Session, None, None]:
+    if getattr(request.app.state, "maintenance", False):
+        raise HTTPException(status_code=503, detail={"error": "maintenance"})
+
     db = SessionLocal()
     try:
         yield db
@@ -258,7 +297,15 @@ async def _nocache_ui(request: Request, call_next):
 app.add_middleware(BaseHTTPMiddleware, dispatch=_nocache_ui)
 
 TOKEN_HEADER = "X-Session-Token"
-PUBLIC_PATHS = {"/", "/session/token", "/favicon.ico", "/health"}
+PUBLIC_PATHS = {
+    "/",
+    "/session/token",
+    "/favicon.ico",
+    "/health",
+    "/openapi.json",
+    "/docs",
+    "/docs/oauth2-redirect",
+}
 PUBLIC_PREFIXES = (
     "/ui/",
     "/session/",
@@ -362,9 +409,21 @@ def _load_or_create_token() -> str:
 
 
 @app.get("/session/token")
-def session_token():
-    tok = _load_or_create_token()
-    return {"token": tok}
+def session_token(request: Request):
+    state = get_state(request)
+    tok = state.tokens.current()
+    global SESSION_TOKEN
+    SESSION_TOKEN = tok
+    resp = JSONResponse({"token": tok})
+    resp.set_cookie(
+        key=state.settings.session_cookie_name,
+        value=tok,
+        httponly=True,
+        samesite=(state.settings.same_site or "lax").lower(),
+        secure=bool(state.settings.secure_cookie),
+        path="/",
+    )
+    return resp
 
 CORE: CoreAlpha | None = None
 RUN_ID: str = ""
@@ -442,7 +501,12 @@ def _require_core() -> CoreAlpha:
 
 
 def _extract_token(req: Request) -> str | None:
-    return req.headers.get(TOKEN_HEADER)
+    return (
+        req.cookies.get("bus_session")
+        or req.cookies.get("session")
+        or req.cookies.get("sessionid")
+        or req.headers.get(TOKEN_HEADER)
+    )
 
 
 def get_session_token(request: Request) -> str | None:
@@ -549,10 +613,11 @@ IMPORT_ERROR_CODES = {
     "bad_container",
     "decrypt_failed",
     "password_required",
+    "incompatible_schema",
 }
 
 
-@protected.post("/app/export")
+@protected.post("/app/db/export")
 def app_export(req: ExportReq, _writes: None = Depends(require_writes)):
     if not req.password:
         raise HTTPException(status_code=400, detail={"error": "password_required"})
@@ -565,7 +630,23 @@ def app_export(req: ExportReq, _writes: None = Depends(require_writes)):
     return res
 
 
-@protected.post("/app/import/preview")
+@protected.get("/app/db/exports")
+def app_exports(_writes: None = Depends(require_writes)):
+    return {"ok": True, "exports": _list_exports()}
+
+
+@protected.post("/app/db/import/upload")
+async def app_import_upload(
+    file: UploadFile = File(...), _w: None = Depends(require_writes)
+):
+    data = await file.read()
+    res = stage_uploaded_backup(file.filename, data)
+    if not res.get("ok"):
+        raise HTTPException(status_code=400, detail={"error": res.get("error", "upload_failed")})
+    return res
+
+
+@protected.post("/app/db/import/preview")
 def app_import_preview(req: ImportReq, _w: None = Depends(require_writes)):
     res = _import_preview(req.path, req.password)
     if not res.get("ok"):
@@ -576,15 +657,48 @@ def app_import_preview(req: ImportReq, _w: None = Depends(require_writes)):
     return res
 
 
-@protected.post("/app/import/commit")
-def app_import_commit(req: ImportReq, _w: None = Depends(require_writes)):
-    res = _import_commit(req.path, req.password)
-    if not res.get("ok"):
-        err = res.get("error", "commit_failed")
-        if err in IMPORT_ERROR_CODES:
-            raise HTTPException(status_code=400, detail={"error": err})
-        raise HTTPException(status_code=400, detail={"error": "commit_failed"})
-    return res
+@protected.post("/app/db/import/commit")
+def app_import_commit(req: ImportReq, request: Request, _w: None = Depends(require_writes)):
+    app = request.app
+    dev = os.environ.get("BUS_DEV") in {"1", "true", "True"}
+
+    lock = getattr(app.state, "restore_lock", None)
+    if lock is not None and not lock.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail={"error": "restore_in_progress"})
+
+    app.state.maintenance = True
+
+    def _dispose_all():
+        state = getattr(request.app, "state", None)
+        eng = None
+        if state is not None:
+            state_db = getattr(state, "db", None)
+            eng = getattr(state_db, "engine", None) or getattr(state, "engine", None)
+        if eng is None:
+            eng = ENGINE
+        try:
+            eng.dispose()
+        except Exception:
+            pass
+
+    try:
+        res = _import_commit(req.path, req.password, dispose_call=_dispose_all, dev_mode=dev)
+        if not res.get("ok"):
+            err = res.get("error", "commit_failed")
+            if err in IMPORT_ERROR_CODES:
+                raise HTTPException(status_code=400, detail={"error": err, **({"info": res.get("info")} if dev and res.get("info") else {})})
+            detail = {"error": "commit_failed"}
+            if dev and res.get("info"):
+                detail["info"] = res["info"]
+            raise HTTPException(status_code=400, detail=detail)
+        return res
+    finally:
+        app.state.maintenance = False
+        try:
+            if lock is not None and lock.locked():
+                lock.release()
+        except Exception:
+            pass
 
 
 # --- Debug: journal info (auth required; does NOT require writes on) ---
@@ -676,30 +790,25 @@ def inventory_run(
             raise
 
     snapshot_version = int(time.time())
-    journal_path = JOURNALS_DIR / "inventory.jsonl"
     record = {
         "ts": snapshot_version,
+        "op": "inventory_run",
         "inputs": inputs,
         "outputs": outputs,
         "deltas": deltas,
         "note": body.note,
         "snapshot_version": snapshot_version,
     }
-    try:
-        journal_path.parent.mkdir(parents=True, exist_ok=True)
-        with journal_path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "error": "journal_write_failed",
-                "path": str(journal_path),
-                "message": str(e),
-            },
-        )
+    _append_inventory(record)
 
     return {"ok": True, "deltas": deltas, "snapshot_version": snapshot_version}
+
+
+def _append_inventory(entry: dict) -> None:
+    try:
+        append_inventory(entry)
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("Failed to append inventory journal entry")
 
 
 @protected.get("/dev/ping_plugin")
@@ -1725,6 +1834,7 @@ app.include_router(oauth)
 app.include_router(protected)
 
 def create_app():
+    init_app_state(app)
     if not getattr(app.state, "_domain_routes_registered", False):
         app.include_router(items_router, prefix="/app")
         app.include_router(vendors_router, prefix="/app")

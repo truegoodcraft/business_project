@@ -83,12 +83,25 @@ try {
     Write-Verbose "[license] git not available for SPDX check"
   }
 
-  # Build uvicorn args
-  $uvArgs = @("tgc.http:app","--host",$BindHost,"--port",$Port)
-  if ($Reload) { $uvArgs += "--reload" }
+  # Ensure repo root is on PYTHONPATH (so imports work even if caller runs elsewhere)
+  $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
+  $env:PYTHONPATH = "$repoRoot;$env:PYTHONPATH"
 
+  # Canonical FastAPI entrypoint (factory)
+  $appModule = 'core.api.http:create_app'
+  $appArgs   = @('--factory','--host',$BindHost,'--port',$Port)
+
+  if ($Reload) { $appArgs += "--reload" }
+
+  # Optional safety: verify the file exists before launching
+  if (-not (Test-Path (Join-Path $repoRoot 'core\api\http.py'))) {
+    Write-Error "Cannot find core\api\http.py under $repoRoot. Aborting."
+    exit 1
+  }
+
+  # Launch
   Say ("[launch] Starting BUS Core at http://{0}:{1}" -f $BindHost,$Port) "Green"
-  & $venvPy -m uvicorn @uvArgs
+  & $venvPy -m uvicorn $appModule @appArgs
 
   if ($Smoke) {
     Start-Sleep -Seconds 2
