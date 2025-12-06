@@ -28,6 +28,15 @@ import time
 from pathlib import Path
 from typing import Dict
 
+from core.appdb.engine import ENGINE
+from core.backup.restore_commit import (
+    _same_dir_temp,
+    _wal_checkpoint,
+    archive_journals,
+    atomic_replace_with_retries,
+    close_all_db_handles,
+)
+
 from core.backup.crypto import (
     CONTAINER_VERSION,
     ContainerHeader,
@@ -93,16 +102,6 @@ def _retry_unlink(p: Path, attempts: int = 10, delay: float = 0.1):
             return
         except PermissionError:
             time.sleep(delay)
-
-
-def _replace_with_retry(src: Path, dst: Path, attempts: int = 10, delay: float = 0.1):
-    for _ in range(attempts):
-        try:
-            os.replace(src, dst)
-            return
-        except PermissionError:
-            time.sleep(delay)
-    os.replace(src, dst)
 
 
 def list_exports() -> list[dict[str, object]]:
@@ -275,11 +274,11 @@ def import_commit(path: str, password: str) -> Dict[str, object]:
 
     tmp_db_path: Path | None = None
     try:
-        with tempfile.NamedTemporaryFile(delete=False, dir=APP_DB.parent, suffix=".db") as tf:
+        tmp_db_path = _same_dir_temp(APP_DB.parent, "restore-db")
+        with tmp_db_path.open("wb") as tf:
             tf.write(plaintext)
             tf.flush()
             os.fsync(tf.fileno())
-            tmp_db_path = Path(tf.name)
 
         try:
             with _connect_readonly(tmp_db_path) as con:
@@ -291,18 +290,13 @@ def import_commit(path: str, password: str) -> Dict[str, object]:
         ts = time.strftime("%Y%m%d-%H%M%S", time.localtime())
         APP_DB.parent.mkdir(parents=True, exist_ok=True)
         JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
+        _wal_checkpoint(APP_DB)
+        close_all_db_handles(ENGINE.dispose)
 
-        archive_suffix = f".pre-restore-{ts}"
-        for journal_path in JOURNAL_DIR.glob("*.jsonl"):
-            archived = journal_path.with_name(journal_path.name + archive_suffix)
-            journal_path.rename(archived)
+        atomic_replace_with_retries(tmp_db_path, APP_DB)
 
-        _replace_with_retry(tmp_db_path, APP_DB)
-
-        for name in ("inventory.jsonl", "manufacturing.jsonl"):
-            fresh = JOURNAL_DIR / name
-            fresh.parent.mkdir(parents=True, exist_ok=True)
-            fresh.write_text("", encoding="utf-8")
+        ts_str = ts
+        archive_journals(JOURNAL_DIR, ts_str)
 
         audit_path = JOURNAL_DIR / "plugin_audit.jsonl"
         audit_entry = {
