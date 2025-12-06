@@ -27,7 +27,8 @@ export async function ensureToken() {
   if (_tokenPromise) return _tokenPromise; // in-flight, await it
 
   _tokenPromise = (async () => {
-    const r = await fetch('/session/token', { credentials: 'omit' });
+    // FIX: 'omit' -> 'same-origin' to allow Set-Cookie to work
+    const r = await fetch('/session/token', { credentials: 'same-origin' });
     if (!r.ok) throw new Error(`token fetch failed: ${r.status}`);
     const j = await r.json();
     _tokenCache = j.token;
@@ -44,10 +45,13 @@ function clearToken() {
 }
 
 async function withAuth(init = {}) {
-  const t = await ensureToken();
+  // Ensure we have established the session (and planted the cookie)
+  await ensureToken();
+
   const headers = new Headers(init.headers || {});
-  headers.set('X-Session-Token', t);      // single authority header
-  return { ...init, headers, credentials: 'omit' };
+
+  // FIX: Send the cookie with the request (Backend is cookie-only now)
+  return { ...init, headers, credentials: 'same-origin' };
 }
 
 export async function request(url, init) {
@@ -77,7 +81,5 @@ export const apiGetJson = async (url, init) => {
   const r = await apiGet(url, init);
   return r.json();
 };
-
-// --- end single-auth helpers ---
 
 export const apiJsonJson = (url, obj, init) => apiJson(url, obj, init).then(res => res.json());
