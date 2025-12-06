@@ -101,7 +101,7 @@ from core.settings.reader_state import (
 )
 from core.reader.api import router as reader_local_router
 from core.organizer.api import router as organizer_router
-from core.api.utils.devguard import require_dev
+from core.api.utils.devguard import require_dev, is_dev
 from core.api.routes import dev as dev_routes
 from core.api.routes import transactions as transactions_routes
 from core.api.security import _calc_default_allow_writes
@@ -173,6 +173,28 @@ MAINT_ALLOW = {
     "/app/db/import/preview",
     "/app/db/import/commit",
 }
+
+
+@app.exception_handler(HTTPException)
+async def _http_exc_handler(request: Request, exc: HTTPException):
+    # Dev: return as-is.
+    if is_dev():
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+    # Prod: sanitize.
+    detail = exc.detail
+    safe = {"error": "bad_request"}
+    if isinstance(detail, dict) and "error" in detail and isinstance(detail["error"], str):
+        safe = {"error": detail["error"]}
+    return JSONResponse(status_code=exc.status_code, content={"detail": safe})
+
+
+@app.exception_handler(Exception)
+async def _unhandled_exc_handler(request: Request, exc: Exception):
+    try:
+        log(f'[error] unhandled: path="{request.url.path}" class="{exc.__class__.__name__}"')
+    except Exception:
+        pass
+    return JSONResponse(status_code=500, content={"detail": {"error": "internal_error"}})
 
 
 @app.middleware("http")
@@ -296,7 +318,6 @@ async def _nocache_ui(request: Request, call_next):
 
 app.add_middleware(BaseHTTPMiddleware, dispatch=_nocache_ui)
 
-TOKEN_HEADER = "X-Session-Token"
 PUBLIC_PATHS = {
     "/",
     "/session/token",
@@ -309,7 +330,7 @@ PUBLIC_PATHS = {
 PUBLIC_PREFIXES = (
     "/ui/",
     "/session/",
-    "/dev/",
+    # "/dev/" removed to enforce middleware auth on dev routes
     "/brand/",
     "/favicon.ico",
 )
@@ -501,12 +522,13 @@ def _require_core() -> CoreAlpha:
 
 
 def _extract_token(req: Request) -> str | None:
-    return (
+    # Cookie-only session per SoT
+    token = (
         req.cookies.get("bus_session")
         or req.cookies.get("session")
         or req.cookies.get("sessionid")
-        or req.headers.get(TOKEN_HEADER)
     )
+    return token
 
 
 def get_session_token(request: Request) -> str | None:
@@ -578,7 +600,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_methods=["*"],
-    allow_headers=["Accept", "Content-Type", TOKEN_HEADER],
+    allow_headers=["Accept", "Content-Type"],
 )
 
 
@@ -1829,7 +1851,12 @@ def server_restart(_writes: None = Depends(require_writes)) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail="restart_failed") from exc
 
 
-    app.include_router(dev_routes.router, dependencies=[Depends(require_token_ctx)])
+# Dev endpoints: require both auth and dev mode.
+app.include_router(
+    dev_routes.router,
+    dependencies=[Depends(require_token_ctx), Depends(require_dev)],
+)
+
 app.include_router(oauth)
 app.include_router(protected)
 

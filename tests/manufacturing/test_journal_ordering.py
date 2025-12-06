@@ -54,7 +54,7 @@ def manufacturing_journal_setup(tmp_path, monkeypatch):
     client = TestClient(api_http.APP)
     session_token = api_http._load_or_create_token()
     api_http.app.state.app_state.tokens._rec.token = session_token
-    client.headers.update({"X-Session-Token": session_token})
+    client.headers.update({"Cookie": f"bus_session={session_token}"})
 
     with engine_module.SessionLocal() as db:
         output_item = models_module.Item(name="Output", uom="ea", qty_stored=0)

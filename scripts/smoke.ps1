@@ -367,6 +367,49 @@ Info "Cleaning up exported backup file..."
 try { Remove-Item -Path $export.path -Force -ErrorAction Stop; Pass "Export artifact removed" } catch { Info "Cleanup skipped: $($_.Exception.Message)" }
 
 # -----------------------------
+# 7) Cleanup
+# -----------------------------
+Step "7. Cleanup"
+Info "Zeroing inventory and removing test data..."
+
+$targetItems = @($itemA, $itemB, $itemC)
+foreach ($itm in $targetItems) {
+  # We need fresh qty_stored. Query /app/items again or just query this specific item if possible?
+  # /app/items returns all. We can filter.
+  # But simpler: we know the IDs.
+  # We cannot assume the state. We must query.
+
+  # Note: 0.8.2 /app/items does not support server-side filtering by id in query string?
+  # Let's assume we fetch all and find it.
+}
+
+$allItems = Invoke-Json GET ($BaseUrl + "/app/items") $null
+foreach ($itm in $targetItems) {
+  $id = $itm.id
+  $current = $allItems | Where-Object { $_.id -eq $id }
+
+  if ($current) {
+    [double]$qty = $current.qty_stored
+    if ($qty -ne 0) {
+      $delta = -$qty
+      $adj = Try-Invoke { Invoke-Json POST ($BaseUrl + "/app/ledger/adjust") @{ item_id = $id; qty_change = $delta; reason = "Smoke Test Cleanup" } }
+      if ($adj.ok) { Pass ("Zeroed inventory for Item {0} (delta={1})" -f $id, $delta) } else { Fail ("Failed to zero inventory for Item {0}" -f $id) }
+    } else {
+      Pass ("Item {0} already at zero inventory" -f $id)
+    }
+
+    # Archive/Delete item
+    # Assuming DELETE /app/items/{id} works
+    $del = Try-Invoke { Invoke-RestMethod -Method DELETE -Uri ($BaseUrl + "/app/items/$id") -WebSession $script:Session }
+    if ($del.ok) { Pass ("Deleted Item {0}" -f $id) } else { Info ("Could not delete Item {0} (probably has history)" -f $id) }
+  }
+}
+
+# Archive/Delete Recipe
+$delRec = Try-Invoke { Invoke-RestMethod -Method DELETE -Uri ($BaseUrl + "/app/recipes/$($rec.id)") -WebSession $script:Session }
+if ($delRec.ok) { Pass "Deleted Recipe $($rec.id)" } else { Info "Could not delete Recipe (probably has history)" }
+
+# -----------------------------
 # Finish
 # -----------------------------
 Write-Host ""

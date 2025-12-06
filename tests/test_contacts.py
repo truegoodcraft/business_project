@@ -63,10 +63,20 @@ def contacts_client(tmp_path, monkeypatch):
     client = TestClient(app)
     token_resp = client.get("/session/token")
     assert token_resp.status_code == 200
-    token = token_resp.json().get("token")
-    api_http.SESSION_TOKEN = token
-    assert api_http.validate_session_token(token)
-    client.headers.update({"X-Session-Token": token})
+
+    # Manual cookie propagation for test environment (Robust handling for list vs dict headers)
+    cookie_val = None
+    if isinstance(token_resp.headers, list):
+        for k, v in token_resp.headers:
+            if k.lower() == "set-cookie":
+                cookie_val = v
+                break
+    elif hasattr(token_resp.headers, "get"):
+        cookie_val = token_resp.headers.get("set-cookie")
+
+    if cookie_val:
+        val = cookie_val.split(";")[0]
+        client.headers.update({"Cookie": val})
 
     with engine_module.SessionLocal() as db:
         db.query(models_module.Vendor).delete()

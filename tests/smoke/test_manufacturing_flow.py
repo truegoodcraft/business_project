@@ -23,6 +23,7 @@ MODULES_TO_RESET = [
 def bootstrap_app(tmp_path, monkeypatch):
     db_path = tmp_path / "app.db"
     monkeypatch.setenv("BUS_DB", str(db_path))
+    monkeypatch.setenv("BUS_DEV", "1")
 
     for module_name in MODULES_TO_RESET:
         sys.modules.pop(module_name, None)
@@ -54,7 +55,7 @@ def bootstrap_app(tmp_path, monkeypatch):
     client = TestClient(api_http.APP)
     session_token = api_http._load_or_create_token()
     api_http.app.state.app_state.tokens._rec.token = session_token
-    client.headers.update({"X-Session-Token": session_token})
+    client.headers.update({"Cookie": f"bus_session={session_token}"})
 
     return {
         "client": client,

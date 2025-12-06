@@ -11,7 +11,7 @@
 - **FREE tier only** — No `feature_enabled()` checks in this SPEC.
 - **Dark theme** — Background `#1e1f22`, text `#e6e6e6`, inputs `#2a2c30`.
 - **Rounded UI** — `border-radius: 10px` on inputs, buttons, modals.
-- **Writes require `X-Session-Token`** — All `apiPost/Put/Delete` must wait for `ensureToken()`.
+- **Writes require Authentication** — All `apiPost/Put/Delete` must wait for `ensureToken()`.
 
 ---
 
