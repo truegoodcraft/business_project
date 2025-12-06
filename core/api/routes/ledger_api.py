@@ -9,7 +9,12 @@ from core.appdb.paths import resolve_db_path
 from core.api.utils.devguard import require_dev
 from core.appdb.engine import get_session
 from sqlalchemy.orm import Session
-from core.appdb.ledger import on_hand_qty, fifo_consume as sa_fifo_consume, add_batch
+from core.appdb.ledger import (
+    InsufficientStock,
+    add_batch,
+    fifo_consume as sa_fifo_consume,
+    on_hand_qty,
+)
 
 # NOTE: Router prefix is "/ledger"; child paths must not repeat "/ledger" to avoid
 # duplicate segments (e.g., /app/ledger/adjust).
@@ -136,27 +141,64 @@ class AdjustmentInput(BaseModel):
     note: str | None = None
 
 
+def _format_shortages(shortages: list[dict]) -> list[dict]:
+    return [
+        {
+            "item_id": s.get("item_id"),
+            "required": float(s.get("required", 0.0)),
+            "available": float(s.get("available", s.get("on_hand", 0.0))),
+        }
+        for s in shortages
+    ]
+
+
 @router.post("/adjust")
 def adjust_stock(body: AdjustmentInput, db: Session = Depends(get_session)):
     """
     Positive adjustment:
-      - create a new batch with qty_remaining=+N and unit_cost_cents=0
+      - create a new batch with qty_remaining=+N and unit_cost_cents=0 (SoT silent on costing)
       - write a matching positive movement
     Negative adjustment:
       - consume FIFO from existing batches
       - 400 if insufficient on-hand; no partials
     """
     if body.qty_change > 0:
-        add_batch(db, body.item_id, body.qty_change, unit_cost_cents=0, source_kind="adjustment", source_id=None)
+        add_batch(
+            db,
+            body.item_id,
+            body.qty_change,
+            unit_cost_cents=0,
+            source_kind="adjustment",
+            source_id=None,
+        )
         db.commit()
         return {"ok": True}
+
     need = abs(body.qty_change)
     on_hand = on_hand_qty(db, body.item_id)
     if on_hand + 1e-9 < need:
-        raise HTTPException(status_code=400, detail="insufficient stock for negative adjustment")
-    sa_fifo_consume(db, body.item_id, need, source_kind="adjustment", source_id=None)
-    db.commit()
-    return {"ok": True}
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "shortages": _format_shortages(
+                    [{"item_id": body.item_id, "required": need, "available": on_hand}]
+                )
+            },
+        )
+
+    try:
+        sa_fifo_consume(db, body.item_id, need, source_kind="adjustment", source_id=None)
+        db.commit()
+        return {"ok": True}
+    except InsufficientStock as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail={"shortages": _format_shortages(exc.shortages)})
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception:
+        db.rollback()
+        raise
 
 
 @router.get("/valuation")
