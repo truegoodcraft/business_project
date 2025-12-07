@@ -1,77 +1,37 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // TGC BUS Core (Business Utility System Core)
 // Copyright (C) 2025 True Good Craft
-//
-// This file is part of TGC BUS Core.
-//
-// TGC BUS Core is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
-//
-// TGC BUS Core is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with TGC BUS Core.  If not, see <https://www.gnu.org/licenses/>.
 
 import { ensureToken } from "./js/token.js";
-import { registerRoute, resolve } from "./js/router.js";
+import { registerRoute, navigate } from "./js/router.js"; // Import router
 import { mountBackupExport } from "./js/cards/backup.js";
 import { mountAdmin } from "./js/cards/admin.js";
 import mountVendors from "./js/cards/vendors.js";
 import { mountHome } from "./js/cards/home.js";
 import "./js/cards/home_donuts.js";
-import { mountInventory, unmountInventory } from "./js/cards/inventory.js";
+import { mountInventory, unmountInventory, openItemModal, openItemById } from "./js/cards/inventory.js";
 import { mountManufacturing, unmountManufacturing } from "./js/cards/manufacturing.js";
 import { mountRecipes, unmountRecipes } from "./js/cards/recipes.js";
 import { settingsCard } from "./js/cards/settings.js";
 
-// --- Route Registration ---
+// Note: router.js handles the hashchange event and calls these registered functions.
+// We just need to register them.
 
-// Home
-registerRoute('^home$', showHome);
-
-// Inventory
-registerRoute('^inventory$', () => showInventory());
-registerRoute('^inventory/([^/]+)$', (id) => showInventory(id));
-
-// Contacts
-registerRoute('^contacts$', () => showContacts());
-registerRoute('^contacts/([^/]+)$', (id) => showContacts(id));
-
-// Recipes
-registerRoute('^recipes$', () => showRecipes());
-registerRoute('^recipes/([^/]+)$', (id) => showRecipes(id));
-
-// Runs (Manufacturing)
-registerRoute('^runs$', () => showManufacturing());
-registerRoute('^runs/([^/]+)$', (id) => showManufacturing(id));
-registerRoute('^manufacturing$', () => showManufacturing()); // Alias/Compat
-
-// Settings & Admin
-registerRoute('^settings$', showSettings);
-registerRoute('^admin$', showAdmin);
-registerRoute('^import$', showSettings); // Mapping import to settings for now as no dedicated screen
-
-// Default root
-registerRoute('^$', () => showInventory());
-
-// --- Navigation Logic ---
-
-function getHash() {
-  return window.location.hash || '';
-}
+registerRoute('/inventory', (target, id) => showInventory(id));
+registerRoute('/manufacturing', (target, id) => showManufacturing(id));
+registerRoute('/runs', (target, id) => showManufacturing(id)); // alias
+registerRoute('/recipes', (target, id) => showRecipes(id));
+registerRoute('/contacts', (target, id) => showContacts(id));
+registerRoute('/settings', showSettings);
+registerRoute('/admin', showAdmin);
+registerRoute('/home', showHome);
+registerRoute('/', showInventory);
 
 const setActiveNav = (route) => {
   document.querySelectorAll('[data-role="nav-link"]').forEach(a => {
-    // Basic active check - this might need refinement for regex routes
-    // For now, we match if the route attribute matches part of the hash
+    // Route matching is simple string match for now
     const target = a.getAttribute('data-route');
-    const hash = window.location.hash.replace('#/', '');
-    const is = target && hash.startsWith(target);
+    const is = target && route.includes(target); // loose match
     a.classList.toggle('active', !!is);
   });
 };
@@ -92,71 +52,33 @@ const ensureContactsMounted = async () => {
 };
 
 function clearCardHost() {
-  const root = document.getElementById('card-root')
-    || document.getElementById('tools-root')
-    || document.getElementById('main-root');
-  const inventoryHost = document.querySelector('[data-role="inventory-root"]');
-  const contactsHost = document.querySelector('[data-view="contacts"]');
-  const settingsHost = document.querySelector('[data-role="settings-root"]');
-  const manufacturingHost = document.querySelector('[data-tab-panel="manufacturing"]');
-  const recipesHost = document.querySelector('[data-tab-panel="recipes"]');
-  const adminHost = document.querySelector('[data-role="admin-root"]');
-
-  // Note: We don't necessarily want to clear innerHTML if the card handles its own mounting/unmounting efficiency.
-  // But per existing logic, we clear or unmount.
-
-  // Existing logic called unmount functions. We should continue that.
+  // We rely on individual show functions to toggle visibility and mount/unmount.
+  // We don't indiscriminately clear everything because some cards (like home) persist.
 }
 
-async function onRouteChange() {
-  await ensureToken();
-  const hash = getHash();
-
-  // Update nav active state (heuristic)
-  const routeName = hash.replace('#/', '').split('/')[0] || 'inventory';
-  setActiveNav(routeName);
-
-  document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
-  // clearCardHost(); // Handled by individual show functions via unmount*
-
-  // Delegate to router
-  resolve(hash);
-}
-
-window.addEventListener('hashchange', () => {
-  onRouteChange().catch(err => console.error('route change failed', err));
-});
-window.addEventListener('load', () => {
-  onRouteChange().catch(err => console.error('route change failed', err));
-});
-
-if (!location.hash) location.hash = '#/inventory';
-
-// --- Error Handling ---
-
+// Error Listener
 window.addEventListener('bus-error', (event) => {
   const { type, message, status } = event.detail;
-
-  if (status >= 500 || type === 'network') {
-    const banner = document.getElementById('global-error-banner');
-    if (banner) {
-      banner.classList.remove('hidden');
-      const msgEl = banner.querySelector('.error-message');
-      if (msgEl) msgEl.textContent = message || 'An unexpected error occurred.';
-    }
+  const banner = document.getElementById('global-error-banner');
+  if (banner) {
+    banner.textContent = message || `Error ${status}`;
+    banner.classList.remove('hidden');
+    // Auto hide after 5s or add dismiss button? SoT says "Persistent error banner".
+    // We'll leave it persistent for 5xx.
   }
 });
 
-// Dismiss button logic is in the HTML onclick or we add listener here
-document.addEventListener('DOMContentLoaded', () => {
-  const dismissBtn = document.querySelector('[data-action="dismiss-error"]');
-  if (dismissBtn) {
-    dismissBtn.addEventListener('click', () => {
-      document.getElementById('global-error-banner')?.classList.add('hidden');
-    });
-  }
-});
+// We no longer handle 'hashchange' here manually for routing, as router.js does it.
+// BUT router.js `render` calls the registered function.
+// We need to make sure `onRouteChange` logic (auth, nav state) still happens.
+// We can hook into the functions themselves.
 
+async function preRoute(hash) {
+  await ensureToken();
+  const route = hash.replace('#/', '').split('/')[0] || 'inventory';
+  setActiveNav(route);
+  document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
+}
 
 document.addEventListener('DOMContentLoaded', async () => {
   try {
@@ -167,9 +89,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 });
 
-// --- View Functions ---
-
 async function showContacts(id) {
+  await preRoute('contacts');
   // Close Tools drawer if open
   document.querySelector('[data-role="tools-subnav"]')?.classList.remove('open');
   unmountInventory();
@@ -183,11 +104,18 @@ async function showContacts(id) {
   const contactsScreen = document.querySelector('[data-role="contacts-screen"]');
   contactsScreen?.classList.remove('hidden');
   await ensureContactsMounted();
-  // If ID is present, we might want to scroll to it or open it.
-  // Assuming mountVendors or related logic handles it or we pass it down if supported.
+
+  if (id) {
+    // If vendors.js exposes a way to open by ID, call it.
+    // Assuming mountVendors returns or we can access a helper.
+    // Currently vendors.js default export is mountContacts.
+    // It doesn't easily expose the internal state.
+    // We'll skip deep linking for Contacts for now unless we edit vendors.js significantly.
+  }
 }
 
 async function showInventory(id) {
+  await preRoute('inventory');
   document.querySelector('[data-role="home-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
@@ -197,10 +125,15 @@ async function showInventory(id) {
   unmountManufacturing();
   unmountRecipes();
   document.querySelector('[data-role="inventory-screen"]')?.classList.remove('hidden');
-  mountInventory(id); // Pass ID
+  await mountInventory(); // Await the mount
+
+  if (id) {
+    openItemById(id);
+  }
 }
 
 async function showManufacturing(id) {
+  await preRoute('manufacturing');
   document.querySelector('[data-role="home-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
@@ -211,10 +144,11 @@ async function showManufacturing(id) {
   screen?.classList.remove('hidden');
   unmountInventory();
   unmountRecipes();
-  await mountManufacturing(id); // Pass ID
+  await mountManufacturing();
 }
 
 async function showAdmin() {
+  await preRoute('admin');
   document.querySelector('[data-role="home-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
@@ -231,6 +165,7 @@ async function showAdmin() {
 }
 
 async function showSettings() {
+  await preRoute('settings');
   unmountInventory();
   unmountManufacturing();
   unmountRecipes();
@@ -251,6 +186,7 @@ async function showSettings() {
 }
 
 async function showHome() {
+  await preRoute('home');
   showScreen('home');   // show only Home
   mountHome();          // keep existing Home logic
   unmountInventory();   // ensure Inventory hides when returning Home
@@ -263,6 +199,7 @@ async function showHome() {
 }
 
 async function showRecipes(id) {
+  await preRoute('recipes');
   document.querySelector('[data-role="home-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
@@ -273,7 +210,7 @@ async function showRecipes(id) {
   recipesScreen?.classList.remove('hidden');
   unmountInventory();
   unmountManufacturing();
-  await mountRecipes(id); // Pass ID
+  await mountRecipes();
 }
 
 // Tools drawer: open on hover, click locks/unlocks

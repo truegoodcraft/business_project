@@ -18,14 +18,9 @@
 </head>
 <body>
   <!-- Global Error Banner -->
-  <div id="global-error-banner" class="hidden">
-    <div class="banner-content">
-      <strong>Error:</strong> <span class="error-message"></span>
-    </div>
-    <button data-action="dismiss-error" class="banner-dismiss" aria-label="Dismiss">×</button>
-  </div>
+  <div id="global-error-banner" class="hidden"></div>
 
-  <nav id="sidebar" class="sidebar">
+  <nav id="sidebar">
     <div class="brand">
       <a class="app-home" href="#/home" data-link="brand-home">
         <img src="/brand/Flat-Dark.png?v=buscore-2" alt="BUS Core" class="app-logo">
@@ -34,20 +29,19 @@
     </div>
     <ul class="nav">
       <li data-role="nav-tools">
-        <a href="#" data-link="tools" data-action="toggle-tools" class="nav-link">Tools</a>
+        <a href="#" data-link="tools" data-action="toggle-tools">Tools</a>
         <ul data-role="tools-subnav" class="nav-group">
-          <li><a href="#/inventory" data-link="tools-inventory" class="nav-sublink">Inventory</a></li>
-          <li><a href="#/runs" data-link="tools-manufacturing" data-role="nav-link" data-route="runs" class="nav-sublink">Manufacturing</a></li>
-          <li><a href="#/recipes" data-link="tools-recipes" data-role="nav-link" data-route="recipes" class="nav-sublink">Recipes</a></li>
-          <li><a href="#/contacts" data-link="tools-contacts" class="nav-sublink">Contacts</a></li>
+          <li><a href="#/inventory" data-link="tools-inventory">Inventory</a></li>
+          <li><a href="#/runs" data-link="tools-manufacturing" data-role="nav-link" data-route="runs">Manufacturing</a></li>
+          <li><a href="#/recipes" data-link="tools-recipes" data-role="nav-link" data-route="recipes">Recipes</a></li>
+          <li><a href="#/contacts" data-link="tools-contacts">Contacts</a></li>
         </ul>
       </li>
-      <li><a href="#/admin" data-role="nav-link" data-route="admin" class="nav-link">Admin</a></li>
-      <li><a href="#/settings" data-role="nav-link" data-route="settings" class="nav-link">Settings</a></li>
+      <li><a href="#/admin" data-role="nav-link" data-route="admin">Admin</a></li>
+      <li><a href="#/settings" data-role="nav-link" data-route="settings">Settings</a></li>
     </ul>
   </nav>
-
-  <main id="main" class="main-content">
+  <main id="main">
     <div id="app">
 
       <!-- Home screen container -->
@@ -72,26 +66,27 @@
         <!-- 4) Last transactions (10) -->
         <div class="recent-table">
           <h3 class="table-title">Last transactions (10)</h3>
-          <table data-role="recent-transactions" class="table">
+          <table data-role="recent-transactions">
             <thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Notes</th></tr></thead>
             <tbody></tbody>
           </table>
+          <!-- View All link intentionally removed until full table + donut shipped -->
         </div>
       </div>
 
       <!-- Contacts screen (hidden by default) -->
       <div data-role="contacts-screen" class="hidden">
         <div class="card" data-view="contacts">
-          <div class="screen-header">
-            <h2 class="screen-title">Contacts</h2>
-            <button type="button" data-action="open-contacts-modal" class="btn primary">Add Contact</button>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;">
+            <h2 style="margin:0;">Contacts</h2>
+            <button type="button" data-action="open-contacts-modal">Add Contact</button>
           </div>
-          <table data-role="contacts-table" class="table">
+          <table data-role="contacts-table" class="table" style="width:100%;border-collapse:separate;border-spacing:0;background:#111318;border-radius:10px;overflow:hidden">
             <thead>
               <tr>
-                <th class="th-left">Type</th>
-                <th class="th-left">Contact</th>
-                <th class="th-left">Actions</th>
+                <th style="text-align:left;padding:10px;background:#1a1f2b">Type</th>
+                <th style="text-align:left;padding:10px;background:#1a1f2b">Contact</th>
+                <th style="text-align:left;padding:10px;background:#1a1f2b">Actions</th>
               </tr>
             </thead>
             <tbody><!-- rows rendered by vendors.js --></tbody>
@@ -105,7 +100,7 @@
 
       <div data-role="manufacturing-screen" class="hidden">
         <div class="screen-header">
-          <h1 class="screen-title">Manufacturing</h1>
+          <h1 style="margin:0;">Manufacturing</h1>
         </div>
         <div class="screen-body">
           <div data-tab-panel="manufacturing"></div>
@@ -114,7 +109,7 @@
 
       <div data-role="recipes-screen" class="hidden">
         <div class="screen-header">
-          <h1 class="screen-title">Recipes</h1>
+          <h1 style="margin:0;">Recipes</h1>
         </div>
         <div class="screen-body">
           <div data-tab-panel="recipes"></div>
@@ -133,7 +128,7 @@
 <div data-role="expense-modal" class="modal hidden" aria-hidden="true">
   <div class="modal-backdrop" data-action="close-expense-modal"></div>
   <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="expense-title">
-    <form data-role="expense-form" class="modal-content">
+    <form data-role="expense-form">
       <h2 id="expense-title">Add Expense</h2>
       <div class="field">
         <label>Amount <span class="required">*</span></label>
@@ -152,8 +147,8 @@
         <textarea name="notes" rows="2" placeholder="(optional)"></textarea>
       </div>
       <div class="modal-footer">
-        <button type="button" data-action="close-expense-modal" class="btn">Cancel</button>
-        <button type="submit" class="btn primary">Save</button>
+        <button type="button" data-action="close-expense-modal">Cancel</button>
+        <button type="submit">Save</button>
       </div>
     </form>
   </div>
@@ -172,6 +167,32 @@
             <li><a href="#/contacts">Contacts</a></li>
           </ul>
         </div>
+
+        <!-- Keep legacy Tools section but force hidden so its tabs/Contacts never show -->
+        <section data-route="tools" class="hidden">
+          <!-- Tools page header tabs (scoped to Tools page only) -->
+          <div data-role="tools-tabs-root" class="hidden">
+            <!-- Tabs header -->
+            <div data-role="main-tabs" class="tabs">
+              <button type="button" data-tab="manufacturing">Manufacturing</button>
+              <button type="button" data-tab="tasks">Tasks</button>
+              <button type="button" data-tab="backup">Backup</button>
+            </div>
+
+            <!-- Tabs panels (kept empty here; JS shows/hides) -->
+            <section data-tab-panel="manufacturing" class="tab-panel hidden">
+              <!-- Manufacturing stub form lives in JS or existing markup -->
+            </section>
+            <section data-tab-panel="tasks" class="tab-panel hidden">
+              <!-- Local tasks table lives in JS or existing markup -->
+            </section>
+            <section data-tab-panel="backup" class="tab-panel hidden">
+              <!-- Backup export button already present elsewhere; JS will wire -->
+              <button data-action="export-backup" class="btn btn-primary btn-block">Export</button>
+              <p>Downloads current app.db (or fallback endpoint).</p>
+            </section>
+          </div>
+        </section>
       </div>
     </div>
   </main>
@@ -180,8 +201,8 @@
     <div class="drawer-backdrop" data-action="close-contacts-drawer"></div>
     <div class="drawer-panel">
       <header class="drawer-header">
-        <h3 id="contact-drawer-title" class="drawer-title">Contact</h3>
-        <button type="button" data-action="close-contacts-drawer" aria-label="Close" class="close-btn">×</button>
+        <h3 id="contact-drawer-title" style="margin:0;font-size:18px;color:#f8fafc">Contact</h3>
+        <button type="button" data-action="close-contacts-drawer" aria-label="Close" style="background:transparent;border:none;color:#9ca3af;font-size:24px;cursor:pointer;line-height:1">×</button>
       </header>
       <section class="drawer-body">
         <div class="kv"><span class="k">Type</span><span class="v" data-field="type"></span></div>
@@ -206,8 +227,8 @@
     <div class="modal-backdrop" aria-hidden="true"></div>
     <div class="modal-dialog modal-content">
       <header class="modal-header">
-        <h2 id="contacts-modal-title" class="modal-title">Add Contact</h2>
-        <button type="button" data-action="close-contacts-modal" aria-label="Close" class="close-btn">×</button>
+        <h2 id="contacts-modal-title">Add Contact</h2>
+        <button type="button" data-action="close-contacts-modal" aria-label="Close">×</button>
       </header>
 
       <form data-role="contacts-form" class="modal-body">
@@ -245,9 +266,9 @@
           <textarea id="contact-notes" name="notes"></textarea>
         </div>
 
-        <footer class="modal-actions">
-          <button type="button" data-action="close-contacts-modal" class="btn">Cancel</button>
-          <button type="submit" data-role="contacts-save" class="btn primary">Save</button>
+        <footer class="modal-footer">
+          <button type="button" data-action="close-contacts-modal">Cancel</button>
+          <button type="submit" data-role="contacts-save">Save</button>
         </footer>
       </form>
     </div>

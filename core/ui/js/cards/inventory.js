@@ -7,6 +7,8 @@ import { parseSmartInput } from '../utils/parser.js';
 // Keep delegated handler binding stable across route changes
 let _rootEl = null;
 let _clickBound = false;
+let _currentInventoryState = null; // Stored for deep linking
+
 function _onRootClick(e) {
   const addBtn = e.target.closest('[data-role="btn-add-item"]');
   if (addBtn) {
@@ -31,11 +33,11 @@ function el(tag, attrs = {}, children = []) {
 
 let reloadInventory = null;
 
-export function mountInventory() {
+export async function mountInventory() {
   const container = document.querySelector('[data-role="inventory-root"]');
   if (!container) return;
   _rootEl = container;
-  _mountInventory(container);
+  await _mountInventory(container); // Await this now
   // Bind once for delegated toolbar events
   if (!_clickBound) {
     _rootEl.addEventListener('click', _onRootClick);
@@ -56,6 +58,19 @@ export function unmountInventory() {
   if (_rootEl && _clickBound) {
     _rootEl.removeEventListener('click', _onRootClick);
     _clickBound = false;
+  }
+  _currentInventoryState = null;
+}
+
+// Exported for deep linking
+export function openItemById(id) {
+  if (!_currentInventoryState || !_currentInventoryState.items) return;
+  // Try both number and string comparison
+  const item = _currentInventoryState.items.find(i => i.id == id);
+  if (item) {
+    openItemModal(item);
+  } else {
+    console.warn(`Item ${id} not found in loaded inventory.`);
   }
 }
 
@@ -81,18 +96,10 @@ function renderTable(state) {
   });
 }
 
-async function adjustQuantity(itemId) {
-  const deltaStr = prompt('Adjust quantity by (e.g. -2 or 5):');
-  if (deltaStr === null) return;
-  const delta = Number(deltaStr);
-  if (!Number.isFinite(delta)) return alert('Enter a valid number');
-  await ensureToken();
-  await apiPost('/app/inventory/run', { inputs: {}, outputs: { [itemId]: delta } });
-}
-
 export async function _mountInventory(container) {
   await ensureToken();
   const state = { items: [], tableBody: null };
+  _currentInventoryState = state; // Store for deep access
 
   container.innerHTML = '';
   const controls = el('div', { class: 'inventory-controls toolbar' }, [
@@ -182,7 +189,6 @@ export async function _mountInventory(container) {
   }
 
   function confirmDelete() {
-    // Keep UI simple; replace with nicer modal if desired
     return Promise.resolve(window.confirm('Delete this item? This cannot be undone.'));
   }
 
@@ -191,8 +197,6 @@ export async function _mountInventory(container) {
 
 // ---------- Shallow/Deep Modal ----------
 async function fetchVendors() {
-  // Not specified in the SoT you've given me: exact vendor endpoint/shape.
-  // Try /app/vendors first; fall back to /app/contacts.
   try {
     const v = await apiGetJson('/app/vendors?is_vendor=true');
     if (Array.isArray(v)) return v;
@@ -200,7 +204,6 @@ async function fetchVendors() {
   try {
     const c = await apiGetJson('/app/contacts?is_vendor=true');
     if (Array.isArray(c)) {
-      // Map into minimal { id, name } expected by dropdown
       return c.map(x => ({ id: x.id ?? x.contact_id ?? x.uuid ?? null, name: x.name ?? x.display ?? '—' }))
               .filter(x => x.id != null);
     }
@@ -481,7 +484,6 @@ export function openItemModal(item = null) {
       price: priceVal,
       type: (expanded ? fieldValue(typeRow) : 'Product') || 'Product',
       notes: expanded ? (notes.value.trim() || undefined) : undefined,
-      // Definition-only: omit any qty/unit derived from Smart Qty. Stock adjustments happen in ledger flows.
     };
 
     const url = isEdit ? `/app/items/${item.id}` : '/app/items';
@@ -496,4 +498,3 @@ export function openItemModal(item = null) {
     }
   });
 }
-

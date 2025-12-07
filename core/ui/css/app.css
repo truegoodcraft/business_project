@@ -2,17 +2,17 @@
 
 :root {
   color-scheme: dark;
-  --bg: #1a1a1a; /* Merged from shell.html */
-  --surface: #242424; /* Merged from shell.html card bg */
-  --border: #333333; /* Merged from shell.html sidebar border */
-  --text: #eeeeee; /* Merged from shell.html fg */
+  --bg: #1a1a1a;
+  --surface: #242424;
+  --border: #333333;
+  --text: #eeeeee;
   --muted: #9aa3b5;
-  --accent: #0a84ff; /* Merged from shell.html accent */
+  --accent: #0a84ff;
   --accent-2: #2563eb;
   --accent-3: #f59e0b;
   --accent-4: #22c55e;
   --danger: #ef4444;
-  --sidebar-bg: #222222; /* Merged from shell.html */
+  --sidebar-bg: #222222;
   --badge-bg: rgba(10, 132, 255, 0.14);
   font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
 }
@@ -41,7 +41,7 @@ a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
 /* Sidebar Styling */
-.sidebar {
+#sidebar {
   width: 200px;
   background: var(--sidebar-bg);
   padding: 16px 0;
@@ -51,31 +51,33 @@ a:hover { text-decoration: underline; }
   flex-shrink: 0;
 }
 
-.sidebar .brand {
+#sidebar .brand {
   margin-bottom: 16px;
   padding: 0 16px;
   display: flex;
   align-items: center;
 }
 
-.sidebar .app-logo {
+#sidebar .app-logo {
   height: 28px;
   width: auto;
   margin-right: 8px;
 }
 
-.sidebar .app-title {
+#sidebar .app-title {
   font-weight: 600;
   color: var(--text);
 }
 
-.sidebar .nav {
+#sidebar .nav {
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
-.sidebar .nav-link {
+/* Nav Links - make them look like buttons/tabs */
+#sidebar .nav > li > a,
+#sidebar .nav-link {
   display: block;
   text-align: center;
   padding: 8px 12px;
@@ -85,20 +87,22 @@ a:hover { text-decoration: underline; }
   text-decoration: none;
 }
 
-.sidebar .nav-link:hover,
-.sidebar .nav-link.active {
+#sidebar .nav > li > a:hover,
+#sidebar .nav > li > a.active,
+#sidebar .nav-link:hover,
+#sidebar .nav-link.active {
   background: #2a2a2a;
 }
 
-.sidebar .nav-group {
+#sidebar .nav-group {
   display: none;
   flex-direction: column;
   padding-left: 0;
   margin-top: 4px;
 }
-.sidebar .nav-group.open { display: flex; }
+#sidebar .nav-group.open { display: flex; }
 
-.sidebar .nav-sublink {
+#sidebar .nav-sublink {
   display: block;
   text-align: center;
   padding: 6px 10px;
@@ -109,14 +113,14 @@ a:hover { text-decoration: underline; }
   text-decoration: none;
 }
 
-.sidebar .nav-sublink:hover,
-.sidebar .nav-sublink.active {
+#sidebar .nav-sublink:hover,
+#sidebar .nav-sublink.active {
   background: #2a2a2a;
   color: #fff;
 }
 
 /* Main Content */
-.main-content {
+#main {
   flex: 1;
   padding: 20px;
   overflow: auto;
@@ -129,7 +133,7 @@ a:hover { text-decoration: underline; }
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 16px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); /* Subtle shadow per spec */
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
   margin-bottom: 16px;
 }
 
@@ -182,7 +186,7 @@ textarea {
   padding: 8px 10px;
   border-radius: 10px;
   font-family: inherit;
-  width: 100%; /* Default to full width in fields */
+  width: 100%;
 }
 input:focus, select:focus, textarea:focus {
   outline: 2px solid var(--accent);
@@ -227,16 +231,6 @@ table tr:hover { background: #1e2530; }
   box-shadow: 0 4px 12px rgba(0,0,0,0.3);
 }
 #global-error-banner.hidden { display: none; }
-.banner-dismiss {
-  background: transparent;
-  border: none;
-  color: #fff;
-  font-size: 24px;
-  line-height: 1;
-  padding: 0;
-  margin-left: 16px;
-}
-.banner-dismiss:hover { background: transparent; opacity: 0.8; }
 
 /* Modals */
 .modal {
@@ -359,8 +353,6 @@ table tr:hover { background: #1e2530; }
 
 /* Responsive */
 @media (max-width: 700px) {
-  .sidebar { display: none; /* Mobile menu needed but out of scope? SoT implies fixed sidebar. */ }
+  #sidebar { display: none; }
   body { flex-direction: column; }
-  .sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--border); }
-  /* Actually SoT 2 "Sidebar fixed left" implies desktop focus. Keep it simple. */
 }
