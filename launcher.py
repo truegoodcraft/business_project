@@ -1,16 +1,52 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 from __future__ import annotations
 
+import sys
+import subprocess
+import os
+
+# 1. Dependency Check Routine
+required_modules = ['requests', 'fastapi', 'uvicorn', 'pystray', 'PIL']
+missing_modules = []
+
+for mod in required_modules:
+    try:
+        import_name = "PIL" if mod == "PIL" else mod
+        __import__(import_name)
+    except ImportError:
+        missing_modules.append(mod)
+    except Exception:
+        # Ignore other errors (like Xlib crash) during dependency check
+        pass
+
+if missing_modules:
+    print("!" * 60)
+    print("CRITICAL STARTUP ERROR: Missing Dependencies")
+    print(f"Missing modules: {', '.join(missing_modules)}")
+    print("-" * 60)
+    print("Attempting to auto-install dependencies...")
+    try:
+        req_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "requirements.txt")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", req_path])
+        print("Dependencies installed. Please restart the launcher.")
+        sys.exit(0)
+    except Exception as e:
+        print(f"Auto-install failed: {e}")
+        print("Please manually run: pip install -r requirements.txt")
+        print("!" * 60)
+        try:
+             input("Press Enter to exit...")
+        except EOFError:
+             pass
+        sys.exit(1)
+
 import argparse
 import atexit
-import os
 import signal
 import socket
-import sys
 import threading
 import time
 import webbrowser
-import subprocess
 from pathlib import Path
 from typing import Optional, Tuple
 from urllib import error, request
