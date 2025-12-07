@@ -47,17 +47,41 @@ function buildError(status, body, statusText) {
   return error;
 }
 
+function dispatchError(type, message, status) {
+  window.dispatchEvent(new CustomEvent('bus-error', {
+    detail: { type, message, status }
+  }));
+}
+
 async function handleResponse(response) {
   const body = await parseBody(response);
   if (response.ok) {
     return body;
   }
+
+  // Dispatch error event
+  const message = (body && typeof body === 'object' && (body.error || body.message)) || response.statusText;
+  dispatchError('http', message, response.status);
+
   throw buildError(response.status, body, response.statusText);
 }
 
+// Wrapper to handle network errors
+async function safeRequest(url, init) {
+  try {
+    const response = await request(url, init);
+    return await handleResponse(response);
+  } catch (error) {
+    // If it's a network error (no status), dispatch it
+    if (!error.status) {
+      dispatchError('network', error.message, 0);
+    }
+    throw error;
+  }
+}
+
 export async function apiGet(url, init) {
-  const response = await request(url, { method: 'GET', ...(init || {}) });
-  return handleResponse(response);
+  return safeRequest(url, { method: 'GET', ...(init || {}) });
 }
 
 export async function apiGetJson(url, init) {
@@ -72,22 +96,18 @@ function createJsonInit(method, data, init) {
 }
 
 export async function apiPost(url, data, init) {
-  const response = await request(url, createJsonInit('POST', data, init));
-  return handleResponse(response);
+  return safeRequest(url, createJsonInit('POST', data, init));
 }
 
 export async function apiPut(url, data, init) {
-  const response = await request(url, createJsonInit('PUT', data, init));
-  return handleResponse(response);
+  return safeRequest(url, createJsonInit('PUT', data, init));
 }
 
 export async function apiPatch(url, data, init) {
-  const response = await request(url, createJsonInit('PATCH', data, init));
-  return handleResponse(response);
+  return safeRequest(url, createJsonInit('PATCH', data, init));
 }
 
 export async function apiDelete(url, data, init) {
   const jsonInit = data === undefined ? { method: 'DELETE', ...(init || {}) } : createJsonInit('DELETE', data, init);
-  const response = await request(url, jsonInit);
-  return handleResponse(response);
+  return safeRequest(url, jsonInit);
 }

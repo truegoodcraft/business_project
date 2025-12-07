@@ -6,102 +6,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" type="image/svg+xml" href="favicon.svg?v=buscore-8">
   <link rel="stylesheet" href="/ui/css/app.css">
-  <style>
-    :root { --bg:#1a1a1a; --fg:#eee; --accent:#0a84ff; --sidebar:#222; }
-    *{box-sizing:border-box}
-    body{margin:0;font:14px/1.5 system-ui,Segoe UI,Arial;background:var(--bg);color:var(--fg);display:flex;height:100vh}
-    #sidebar{width:200px;background:var(--sidebar);padding:16px 0;border-right:1px solid #333}
-    #sidebar h1{margin:0 0 16px 16px;font-size:14px;color:#aaa}
-    .tab{padding:10px 16px;cursor:pointer;border-left:4px solid transparent}
-    .tab.active{background:#333;border-left-color:var(--accent);font-weight:600}
-    .tab:hover:not(.active){background:#2a2a2a}
-    .nav-group{display:none;flex-direction:column;padding-left:16px;gap:4px;margin-top:4px}
-    .nav-group.open{display:flex}
-    .nav-group .nav-item{padding:8px 16px;border-left:4px solid transparent;color:inherit;text-decoration:none;display:block;border-radius:4px}
-    .nav-group .nav-item:hover{background:#2a2a2a}
-    .nav-group .nav-item.nav-subitem{font-size:13px;color:#ccc}
-    #main{flex:1;padding:20px;overflow:auto}
-    .card{background:#242424;padding:16px;border-radius:8px;margin-bottom:16px}
-    .card h2{margin:0 0 8px;color:var(--accent)}
-    button{background:var(--accent);color:#fff;border:none;padding:8px 12px;border-radius:6px;cursor:pointer}
-    button:hover{opacity:.9}
-    pre{background:#111;padding:12px;border-radius:6px;overflow:auto;font-size:12px}
-    .hidden{display:none!important}
-    .brand-inline{display:flex;align-items:center}
-    .tabs{display:flex;gap:8px;margin-bottom:16px}
-    .tabs button{background:#2b2f36;color:#e6e6e6;border:1px solid #363b44;padding:8px 14px;border-radius:10px;cursor:pointer}
-    .tabs button.active{background:var(--accent);border-color:var(--accent);color:#fff}
-    .tab-panel{display:flex;flex-direction:column;gap:16px}
-    .modal.hidden{display:none}
-    .modal.open{display:flex}
-    .modal .modal-backdrop{position:absolute;inset:0;background:rgba(0,0,0,0.5)}
-    .modal .modal-dialog{position:relative;z-index:1}
-    .drawer{position:fixed;inset:0;display:flex;justify-content:flex-end;pointer-events:none;z-index:60;transition:visibility 0s linear .3s}
-    .drawer.hidden{visibility:hidden}
-    .drawer:not(.hidden){pointer-events:auto;visibility:visible;transition-delay:0s}
-    .drawer .drawer-backdrop{position:absolute;inset:0;background:rgba(0,0,0,0.6);opacity:1;transition:opacity .3s ease}
-    .drawer.hidden .drawer-backdrop{opacity:0}
-    .drawer-panel{position:relative;width:360px;max-width:90vw;background:#1f2126;color:#e6e6e6;box-shadow:-4px 0 16px rgba(0,0,0,0.4);transform:translateX(0);transition:transform .3s ease;display:flex;flex-direction:column}
-    .drawer.hidden .drawer-panel{transform:translateX(100%)}
-    .drawer-header{display:flex;align-items:center;justify-content:space-between;padding:16px;border-bottom:1px solid #2c2f36}
-    .drawer-body{padding:16px;overflow-y:auto;max-height:calc(100vh - 64px);display:flex;flex-direction:column;gap:12px}
-    .drawer-body .kv{display:flex;justify-content:space-between;gap:12px;font-size:13px;background:#23262b;padding:8px 12px;border-radius:8px}
-    .drawer-body .kv .k{color:#9ca3af;text-transform:uppercase;font-size:11px}
-    .drawer-body .kv .v{color:#e6e6e6;word-break:break-word}
-    .drawer-body .mt{margin:16px 0 4px;font-size:14px;color:#cbd5f5}
-    .drawer-body .list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
-    .drawer-body .list li{background:#23262b;padding:8px 12px;border-radius:8px;font-size:13px}
-    .small-dot-icon{display:inline-block;width:6px;height:6px;border-radius:50%;background:#ff7a00;vertical-align:middle;margin:0 6px 0 2px}
-    .app-logo{height:28px;width:auto;vertical-align:middle;margin-right:8px}
-    .brand-nav{
-      height:16px;
-      width:auto;
-      vertical-align:middle;
-      margin:0 8px 0 6px;
-      object-fit:contain;
-      image-rendering:auto;
-    }
-    @media (min-width:1280px){.brand-nav{height:18px}}
-    .hero-logo{max-width:420px;width:100%;height:auto;display:block;margin:16px auto}
-    @media (max-width:480px){.app-logo{height:24px;margin-right:6px}}
-    /* === Sidebar primary nav: centered with safe insets === */
-    #sidebar .nav{ list-style:none; margin:0; padding:0; }
-    #sidebar .nav > li > a{
-      display:block;
-      text-align:center;     /* center the link text */
-      padding:8px 12px;      /* internal buffer */
-      margin:0 10px;         /* inset from left/right panel edges */
-      border-radius:8px;
-      text-decoration:none;
-      color:inherit;
-    }
-    #sidebar .nav > li > a:hover,
-    #sidebar .nav > li > a.active{
-      background:#2a2a2a;
-    }
-    /* Submenu links keep a slight indent but get touch-friendly padding */
-    #sidebar .nav-group a{
-      display:block;
-      padding:6px 10px;
-      border-radius:6px;
-      text-decoration:none;
-      color:inherit;
-    }
-    #sidebar .nav-group a:hover{ background:#2a2a2a; }
-    /* === Sidebar submenu items centered === */
-    #sidebar .nav-group { padding-left: 0; }
-    #sidebar .nav-group li { list-style: none; }
-    #sidebar .nav-group a {
-      display: block;
-      text-align: center;
-      padding: 6px 10px;
-      margin: 0 10px;
-      border-radius: 6px;
-      text-decoration: none;
-      color: inherit;
-    }
-    #sidebar .nav-group a:hover { background: #2a2a2a; }
-  </style>
   <script>
   (function(){
     const href = "favicon.svg?v=buscore-8";
@@ -113,7 +17,15 @@
   </script>
 </head>
 <body>
-  <nav id="sidebar">
+  <!-- Global Error Banner -->
+  <div id="global-error-banner" class="hidden">
+    <div class="banner-content">
+      <strong>Error:</strong> <span class="error-message"></span>
+    </div>
+    <button data-action="dismiss-error" class="banner-dismiss" aria-label="Dismiss">×</button>
+  </div>
+
+  <nav id="sidebar" class="sidebar">
     <div class="brand">
       <a class="app-home" href="#/home" data-link="brand-home">
         <img src="/brand/Flat-Dark.png?v=buscore-2" alt="BUS Core" class="app-logo">
@@ -122,19 +34,20 @@
     </div>
     <ul class="nav">
       <li data-role="nav-tools">
-        <a href="#" data-link="tools" data-action="toggle-tools">Tools</a>
+        <a href="#" data-link="tools" data-action="toggle-tools" class="nav-link">Tools</a>
         <ul data-role="tools-subnav" class="nav-group">
-          <li><a href="#/inventory" data-link="tools-inventory">Inventory</a></li>
-          <li><a href="#/manufacturing" data-link="tools-manufacturing" data-role="nav-link" data-route="manufacturing">Manufacturing</a></li>
-          <li><a href="#/recipes" data-link="tools-recipes" data-role="nav-link" data-route="recipes">Recipes</a></li>
-          <li><a href="#/contacts" data-link="tools-contacts">Contacts</a></li>
+          <li><a href="#/inventory" data-link="tools-inventory" class="nav-sublink">Inventory</a></li>
+          <li><a href="#/runs" data-link="tools-manufacturing" data-role="nav-link" data-route="runs" class="nav-sublink">Manufacturing</a></li>
+          <li><a href="#/recipes" data-link="tools-recipes" data-role="nav-link" data-route="recipes" class="nav-sublink">Recipes</a></li>
+          <li><a href="#/contacts" data-link="tools-contacts" class="nav-sublink">Contacts</a></li>
         </ul>
       </li>
-      <li><a href="#/admin" data-role="nav-link" data-route="admin">Admin</a></li>
-      <li><a href="#/settings" data-role="nav-link" data-route="settings">Settings</a></li>
+      <li><a href="#/admin" data-role="nav-link" data-route="admin" class="nav-link">Admin</a></li>
+      <li><a href="#/settings" data-role="nav-link" data-route="settings" class="nav-link">Settings</a></li>
     </ul>
   </nav>
-  <main id="main">
+
+  <main id="main" class="main-content">
     <div id="app">
 
       <!-- Home screen container -->
@@ -159,27 +72,26 @@
         <!-- 4) Last transactions (10) -->
         <div class="recent-table">
           <h3 class="table-title">Last transactions (10)</h3>
-          <table data-role="recent-transactions">
+          <table data-role="recent-transactions" class="table">
             <thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Notes</th></tr></thead>
             <tbody></tbody>
           </table>
-          <!-- View All link intentionally removed until full table + donut shipped -->
         </div>
       </div>
 
       <!-- Contacts screen (hidden by default) -->
       <div data-role="contacts-screen" class="hidden">
         <div class="card" data-view="contacts">
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;">
-            <h2 style="margin:0;">Contacts</h2>
-            <button type="button" data-action="open-contacts-modal">Add Contact</button>
+          <div class="screen-header">
+            <h2 class="screen-title">Contacts</h2>
+            <button type="button" data-action="open-contacts-modal" class="btn primary">Add Contact</button>
           </div>
-          <table data-role="contacts-table" class="table" style="width:100%;border-collapse:separate;border-spacing:0;background:#111318;border-radius:10px;overflow:hidden">
+          <table data-role="contacts-table" class="table">
             <thead>
               <tr>
-                <th style="text-align:left;padding:10px;background:#1a1f2b">Type</th>
-                <th style="text-align:left;padding:10px;background:#1a1f2b">Contact</th>
-                <th style="text-align:left;padding:10px;background:#1a1f2b">Actions</th>
+                <th class="th-left">Type</th>
+                <th class="th-left">Contact</th>
+                <th class="th-left">Actions</th>
               </tr>
             </thead>
             <tbody><!-- rows rendered by vendors.js --></tbody>
@@ -193,7 +105,7 @@
 
       <div data-role="manufacturing-screen" class="hidden">
         <div class="screen-header">
-          <h1 style="margin:0;">Manufacturing</h1>
+          <h1 class="screen-title">Manufacturing</h1>
         </div>
         <div class="screen-body">
           <div data-tab-panel="manufacturing"></div>
@@ -202,7 +114,7 @@
 
       <div data-role="recipes-screen" class="hidden">
         <div class="screen-header">
-          <h1 style="margin:0;">Recipes</h1>
+          <h1 class="screen-title">Recipes</h1>
         </div>
         <div class="screen-body">
           <div data-tab-panel="recipes"></div>
@@ -221,7 +133,7 @@
 <div data-role="expense-modal" class="modal hidden" aria-hidden="true">
   <div class="modal-backdrop" data-action="close-expense-modal"></div>
   <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="expense-title">
-    <form data-role="expense-form">
+    <form data-role="expense-form" class="modal-content">
       <h2 id="expense-title">Add Expense</h2>
       <div class="field">
         <label>Amount <span class="required">*</span></label>
@@ -240,8 +152,8 @@
         <textarea name="notes" rows="2" placeholder="(optional)"></textarea>
       </div>
       <div class="modal-footer">
-        <button type="button" data-action="close-expense-modal">Cancel</button>
-        <button type="submit">Save</button>
+        <button type="button" data-action="close-expense-modal" class="btn">Cancel</button>
+        <button type="submit" class="btn primary">Save</button>
       </div>
     </form>
   </div>
@@ -260,32 +172,6 @@
             <li><a href="#/contacts">Contacts</a></li>
           </ul>
         </div>
-
-        <!-- Keep legacy Tools section but force hidden so its tabs/Contacts never show -->
-        <section data-route="tools" class="hidden">
-          <!-- Tools page header tabs (scoped to Tools page only) -->
-          <div data-role="tools-tabs-root" class="hidden">
-            <!-- Tabs header -->
-            <div data-role="main-tabs" class="tabs">
-              <button type="button" data-tab="manufacturing">Manufacturing</button>
-              <button type="button" data-tab="tasks">Tasks</button>
-              <button type="button" data-tab="backup">Backup</button>
-            </div>
-
-            <!-- Tabs panels (kept empty here; JS shows/hides) -->
-            <section data-tab-panel="manufacturing" class="tab-panel hidden">
-              <!-- Manufacturing stub form lives in JS or existing markup -->
-            </section>
-            <section data-tab-panel="tasks" class="tab-panel hidden">
-              <!-- Local tasks table lives in JS or existing markup -->
-            </section>
-            <section data-tab-panel="backup" class="tab-panel hidden">
-              <!-- Backup export button already present elsewhere; JS will wire -->
-              <button data-action="export-backup" class="btn btn-primary btn-block">Export</button>
-              <p>Downloads current app.db (or fallback endpoint).</p>
-            </section>
-          </div>
-        </section>
       </div>
     </div>
   </main>
@@ -294,8 +180,8 @@
     <div class="drawer-backdrop" data-action="close-contacts-drawer"></div>
     <div class="drawer-panel">
       <header class="drawer-header">
-        <h3 id="contact-drawer-title" style="margin:0;font-size:18px;color:#f8fafc">Contact</h3>
-        <button type="button" data-action="close-contacts-drawer" aria-label="Close" style="background:transparent;border:none;color:#9ca3af;font-size:24px;cursor:pointer;line-height:1">×</button>
+        <h3 id="contact-drawer-title" class="drawer-title">Contact</h3>
+        <button type="button" data-action="close-contacts-drawer" aria-label="Close" class="close-btn">×</button>
       </header>
       <section class="drawer-body">
         <div class="kv"><span class="k">Type</span><span class="v" data-field="type"></span></div>
@@ -320,8 +206,8 @@
     <div class="modal-backdrop" aria-hidden="true"></div>
     <div class="modal-dialog modal-content">
       <header class="modal-header">
-        <h2 id="contacts-modal-title">Add Contact</h2>
-        <button type="button" data-action="close-contacts-modal" aria-label="Close">×</button>
+        <h2 id="contacts-modal-title" class="modal-title">Add Contact</h2>
+        <button type="button" data-action="close-contacts-modal" aria-label="Close" class="close-btn">×</button>
       </header>
 
       <form data-role="contacts-form" class="modal-body">
@@ -359,9 +245,9 @@
           <textarea id="contact-notes" name="notes"></textarea>
         </div>
 
-        <footer class="modal-footer">
-          <button type="button" data-action="close-contacts-modal">Cancel</button>
-          <button type="submit" data-role="contacts-save">Save</button>
+        <footer class="modal-actions">
+          <button type="button" data-action="close-contacts-modal" class="btn">Cancel</button>
+          <button type="submit" data-role="contacts-save" class="btn primary">Save</button>
         </footer>
       </form>
     </div>

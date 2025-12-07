@@ -18,6 +18,7 @@
 // along with TGC BUS Core.  If not, see <https://www.gnu.org/licenses/>.
 
 import { ensureToken } from "./js/token.js";
+import { registerRoute, resolve } from "./js/router.js";
 import { mountBackupExport } from "./js/cards/backup.js";
 import { mountAdmin } from "./js/cards/admin.js";
 import mountVendors from "./js/cards/vendors.js";
@@ -28,29 +29,49 @@ import { mountManufacturing, unmountManufacturing } from "./js/cards/manufacturi
 import { mountRecipes, unmountRecipes } from "./js/cards/recipes.js";
 import { settingsCard } from "./js/cards/settings.js";
 
-const ROUTES = {
-  '#/inventory': showInventory,
-  '#/manufacturing': showManufacturing,
-  '#/recipes': showRecipes,
-  '#/contacts': showContacts,
-  '#/settings': showSettings,
-  '#/admin': showAdmin,
-  '#/home': showHome,
-  '#/': showInventory,
-  '': showInventory,
-};
+// --- Route Registration ---
+
+// Home
+registerRoute('^home$', showHome);
+
+// Inventory
+registerRoute('^inventory$', () => showInventory());
+registerRoute('^inventory/([^/]+)$', (id) => showInventory(id));
+
+// Contacts
+registerRoute('^contacts$', () => showContacts());
+registerRoute('^contacts/([^/]+)$', (id) => showContacts(id));
+
+// Recipes
+registerRoute('^recipes$', () => showRecipes());
+registerRoute('^recipes/([^/]+)$', (id) => showRecipes(id));
+
+// Runs (Manufacturing)
+registerRoute('^runs$', () => showManufacturing());
+registerRoute('^runs/([^/]+)$', (id) => showManufacturing(id));
+registerRoute('^manufacturing$', () => showManufacturing()); // Alias/Compat
+
+// Settings & Admin
+registerRoute('^settings$', showSettings);
+registerRoute('^admin$', showAdmin);
+registerRoute('^import$', showSettings); // Mapping import to settings for now as no dedicated screen
+
+// Default root
+registerRoute('^$', () => showInventory());
+
+// --- Navigation Logic ---
 
 function getHash() {
-  return (window.location.hash || '#/inventory').replace(/\/+$/, '');
-}
-
-function normalizeRoute(hash) {
-  return (hash.replace('#/', '') || 'inventory').split(/[\/?]/)[0];
+  return window.location.hash || '';
 }
 
 const setActiveNav = (route) => {
   document.querySelectorAll('[data-role="nav-link"]').forEach(a => {
-    const is = a.getAttribute('data-route') === route;
+    // Basic active check - this might need refinement for regex routes
+    // For now, we match if the route attribute matches part of the hash
+    const target = a.getAttribute('data-route');
+    const hash = window.location.hash.replace('#/', '');
+    const is = target && hash.startsWith(target);
     a.classList.toggle('active', !!is);
   });
 };
@@ -80,22 +101,26 @@ function clearCardHost() {
   const manufacturingHost = document.querySelector('[data-tab-panel="manufacturing"]');
   const recipesHost = document.querySelector('[data-tab-panel="recipes"]');
   const adminHost = document.querySelector('[data-role="admin-root"]');
-  [root, inventoryHost, contactsHost, settingsHost, manufacturingHost, recipesHost, adminHost].forEach((node) => {
-    if (node) node.innerHTML = '';
-  });
+
+  // Note: We don't necessarily want to clear innerHTML if the card handles its own mounting/unmounting efficiency.
+  // But per existing logic, we clear or unmount.
+
+  // Existing logic called unmount functions. We should continue that.
 }
 
 async function onRouteChange() {
   await ensureToken();
   const hash = getHash();
-  const route = normalizeRoute(hash);
-  setActiveNav(route);
+
+  // Update nav active state (heuristic)
+  const routeName = hash.replace('#/', '').split('/')[0] || 'inventory';
+  setActiveNav(routeName);
 
   document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
-  clearCardHost();
+  // clearCardHost(); // Handled by individual show functions via unmount*
 
-  const fn = ROUTES[hash] || ROUTES['#/inventory'];
-  await fn();
+  // Delegate to router
+  resolve(hash);
 }
 
 window.addEventListener('hashchange', () => {
@@ -107,6 +132,32 @@ window.addEventListener('load', () => {
 
 if (!location.hash) location.hash = '#/inventory';
 
+// --- Error Handling ---
+
+window.addEventListener('bus-error', (event) => {
+  const { type, message, status } = event.detail;
+
+  if (status >= 500 || type === 'network') {
+    const banner = document.getElementById('global-error-banner');
+    if (banner) {
+      banner.classList.remove('hidden');
+      const msgEl = banner.querySelector('.error-message');
+      if (msgEl) msgEl.textContent = message || 'An unexpected error occurred.';
+    }
+  }
+});
+
+// Dismiss button logic is in the HTML onclick or we add listener here
+document.addEventListener('DOMContentLoaded', () => {
+  const dismissBtn = document.querySelector('[data-action="dismiss-error"]');
+  if (dismissBtn) {
+    dismissBtn.addEventListener('click', () => {
+      document.getElementById('global-error-banner')?.classList.add('hidden');
+    });
+  }
+});
+
+
 document.addEventListener('DOMContentLoaded', async () => {
   try {
     await ensureToken();
@@ -116,7 +167,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 });
 
-async function showContacts() {
+// --- View Functions ---
+
+async function showContacts(id) {
   // Close Tools drawer if open
   document.querySelector('[data-role="tools-subnav"]')?.classList.remove('open');
   unmountInventory();
@@ -130,9 +183,11 @@ async function showContacts() {
   const contactsScreen = document.querySelector('[data-role="contacts-screen"]');
   contactsScreen?.classList.remove('hidden');
   await ensureContactsMounted();
+  // If ID is present, we might want to scroll to it or open it.
+  // Assuming mountVendors or related logic handles it or we pass it down if supported.
 }
 
-async function showInventory() {
+async function showInventory(id) {
   document.querySelector('[data-role="home-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
@@ -142,10 +197,10 @@ async function showInventory() {
   unmountManufacturing();
   unmountRecipes();
   document.querySelector('[data-role="inventory-screen"]')?.classList.remove('hidden');
-  mountInventory();
+  mountInventory(id); // Pass ID
 }
 
-async function showManufacturing() {
+async function showManufacturing(id) {
   document.querySelector('[data-role="home-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
@@ -156,7 +211,7 @@ async function showManufacturing() {
   screen?.classList.remove('hidden');
   unmountInventory();
   unmountRecipes();
-  await mountManufacturing();
+  await mountManufacturing(id); // Pass ID
 }
 
 async function showAdmin() {
@@ -207,7 +262,7 @@ async function showHome() {
   document.querySelector('[data-role="admin-screen"]')?.classList.add('hidden');
 }
 
-async function showRecipes() {
+async function showRecipes(id) {
   document.querySelector('[data-role="home-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
@@ -218,7 +273,7 @@ async function showRecipes() {
   recipesScreen?.classList.remove('hidden');
   unmountInventory();
   unmountManufacturing();
-  await mountRecipes();
+  await mountRecipes(id); // Pass ID
 }
 
 // Tools drawer: open on hover, click locks/unlocks
@@ -335,4 +390,3 @@ function initManufacturing() {
     }
   });
 }
-
