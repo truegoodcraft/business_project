@@ -10,6 +10,7 @@ import sys
 import threading
 import time
 import webbrowser
+import subprocess
 from pathlib import Path
 from typing import Optional, Tuple
 from urllib import error, request
@@ -18,7 +19,15 @@ import uvicorn
 
 from core.api.http import UI_STATIC_DIR, build_app
 from core.config.paths import APP_ROOT, STATE_DIR
+from core.config.manager import load_config
 from tgc.bootstrap_fs import DATA, LOGS, TOKEN_FILE
+
+try:
+    import pystray
+    from PIL import Image
+    HAS_GUI = True
+except Exception:
+    HAS_GUI = False
 
 DEFAULT_PORT = 8765
 FALLBACK_PORT = 8777
@@ -122,6 +131,7 @@ def _wait_for_health(port: int, token: str, retries: int = 40, delay: float = 0.
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="TGC Controller launcher")
     parser.add_argument("--port", type=int, help="Override listen port", default=None)
+    parser.add_argument("--headless", action="store_true", help="Run without system tray")
     args = parser.parse_args(argv)
 
     base_dir = _base_directory()
@@ -140,59 +150,135 @@ def main(argv: Optional[list[str]] = None) -> int:
     elif port != DEFAULT_PORT and not explicit:
         print(f"Selected port {port}")
 
-    app, session_token = build_app()
+    # Load config
+    config_data = load_config()
 
-    print(f"Session token saved at: {TOKEN_FILE.resolve()}")
-    print(f"Served UI from: {UI_STATIC_DIR.resolve()}")
-    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="info")
-    server = uvicorn.Server(config)
+    server_state = {
+        "server": None,
+        "thread": None,
+        "started": False,
+        "token": None
+    }
 
-    def _shutdown_server() -> None:
-        if not server.should_exit:
-            server.should_exit = True
+    def run_server():
+        app, session_token = build_app()
+        server_state["token"] = session_token
 
-    atexit.register(_shutdown_server)
+        cfg = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="info")
+        server = uvicorn.Server(cfg)
+        server_state["server"] = server
+        server.run()
+        server_state["started"] = False
 
-    server_thread = threading.Thread(target=server.run, name="uvicorn-server", daemon=True)
-    server_thread.start()
+    def start_server_thread():
+        server_state["started"] = True
+        t = threading.Thread(target=run_server, name="uvicorn-server", daemon=True)
+        server_state["thread"] = t
+        t.start()
 
-    def _wait_for_startup(timeout: float = 10.0) -> bool:
-        deadline = time.time() + timeout
+    def stop_server():
+        if server_state["server"]:
+            server_state["server"].should_exit = True
+        if server_state["thread"]:
+            server_state["thread"].join(timeout=5)
+        server_state["server"] = None
+        server_state["thread"] = None
+
+    def restart_server(icon=None, item=None):
+        print("Restarting server...")
+        stop_server()
+        # Small delay to ensure port release
+        time.sleep(1)
+        start_server_thread()
+        print(f"Server restarted at http://127.0.0.1:{port}")
+
+    def open_browser(icon=None, item=None):
+        webbrowser.open(f"http://127.0.0.1:{port}/ui/#/writes")
+
+    def open_backup(icon=None, item=None):
+        path_str = config_data.backup.default_directory
+        path = os.path.expandvars(path_str)
+        if os.path.exists(path):
+            if os.name == 'nt':
+                os.startfile(path)
+            else:
+                 subprocess.Popen(["xdg-open", path])
+
+    def quit_app(icon, item):
+        icon.stop()
+        stop_server()
+        sys.exit(0)
+
+    # Start server initially
+    start_server_thread()
+
+    def wait_startup_and_notify():
+        # Wait for startup
+        deadline = time.time() + 10.0
+        started = False
         while time.time() < deadline:
-            if getattr(server, "started", False):
-                return True
-            if not server_thread.is_alive():
+            if server_state["server"] and getattr(server_state["server"], "started", False):
+                started = True
                 break
             time.sleep(0.1)
-        return bool(getattr(server, "started", False))
 
-    if not _wait_for_startup():
-        print("Error: server failed to start")
-        server.should_exit = True
-        server_thread.join(timeout=5)
-        return 1
+        if not started:
+            print("Error: server failed to start")
+            return
 
-    _write_last_port(port, DATA)
-    print(f"TGC Controller running at http://127.0.0.1:{port}")
+        print(f"Session token saved at: {TOKEN_FILE.resolve()}")
+        print(f"Served UI from: {UI_STATIC_DIR.resolve()}")
+        _write_last_port(port, DATA)
+        print(f"TGC Controller running at http://127.0.0.1:{port}")
 
-    if _wait_for_health(port, session_token):
-        webbrowser.open(f"http://127.0.0.1:{port}/ui/#/writes")
+        if not _wait_for_health(port, server_state["token"]):
+             print("Warning: core health check failed")
+             return
+
+        if not config_data.launcher.auto_start_in_tray:
+            open_browser()
+
+    threading.Thread(target=wait_startup_and_notify, daemon=True).start()
+
+    headless = args.headless or os.environ.get("BUS_HEADLESS") or not HAS_GUI
+
+    if headless:
+        # Headless mode: wait for interrupts
+        def _signal_handler(signum, frame):
+            stop_server()
+            sys.exit(0)
+
+        for signame in (signal.SIGINT, signal.SIGTERM):
+            signal.signal(signame, _signal_handler)
+
+        while server_state["thread"] and server_state["thread"].is_alive():
+            try:
+                time.sleep(0.5)
+            except KeyboardInterrupt:
+                break
+        stop_server()
+        return 0
     else:
-        print("Warning: core health check failed; UI will not auto-open.")
+        # Tray mode
+        # Icon image
+        try:
+            image = Image.open("Flat-Dark.png")
+        except Exception:
+            # Create a simple fallback image if file not found
+            from PIL import ImageDraw
+            image = Image.new('RGB', (64, 64), color = (30, 31, 34))
+            d = ImageDraw.Draw(image)
+            d.text((10,10), "BUS", fill=(255,255,255))
 
-    def _signal_handler(signum, frame):  # noqa: ARG001
-        server.should_exit = True
+        menu = pystray.Menu(
+            pystray.MenuItem("Open BUS Core", open_browser, default=True),
+            pystray.MenuItem("Restart BUS Core", restart_server),
+            pystray.MenuItem("Open Backup Folder", open_backup),
+            pystray.MenuItem("Quit BUS Core", quit_app)
+        )
 
-    for signame in (signal.SIGINT, signal.SIGTERM):
-        signal.signal(signame, _signal_handler)
-
-    try:
-        while server_thread.is_alive():
-            time.sleep(0.2)
-    except KeyboardInterrupt:
-        server.should_exit = True
-    finally:
-        server_thread.join()
+        icon = pystray.Icon("BUS Core", image, "BUS Core", menu)
+        icon.run()
 
     return 0
 

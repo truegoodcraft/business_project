@@ -104,6 +104,7 @@ from core.organizer.api import router as organizer_router
 from core.api.utils.devguard import require_dev, is_dev
 from core.api.routes import dev as dev_routes
 from core.api.routes import transactions as transactions_routes
+from core.api.routes import config as config_routes
 from core.api.security import _calc_default_allow_writes
 from core.config.paths import (
     APP_DIR,
@@ -1869,6 +1870,7 @@ def create_app():
         app.include_router(manufacturing_router, prefix="/app")
         app.include_router(ledger_router, prefix="/app")
         app.include_router(transactions_routes.router, prefix="/app")
+        app.include_router(config_routes.router, prefix="/app")
         app.state._domain_routes_registered = True
     return app
 
