@@ -55,6 +55,18 @@ function Get-ItemState {
     }
 }
 
+# NEW: Helper to get FIFO valuation from Ledger
+function Get-ItemValue {
+    param($id)
+    try {
+        $v = Invoke-Json GET "$BaseUrl/app/ledger/valuation?item_id=$id" $null
+        # Ledger API returns { "item_id": X, "total_value_cents": Y }
+        return [int]$v.total_value_cents
+    } catch {
+        return 0
+    }
+}
+
 # 1. Session/Health
 Step "1. Session & Health"
 $tok = Invoke-RestMethod -Method Get -Uri "$BaseUrl/session/token" -WebSession $script:Session
@@ -80,7 +92,7 @@ Step "3. Contacts"
 $vendV = Invoke-Json POST "$BaseUrl/app/vendors" @{ name = "SMK-Vendor-V" }
 if ($vendV.id) { Pass "Created Vendor V" } else { Fail "Create Vendor failed"; exit 1 }
 
-# Link Item A to Vendor V (PUT item with vendor_id)
+# Link Item A to Vendor V
 $link = Invoke-Json PUT "$BaseUrl/app/items/$($itemA.id)" @{
   name = "SMK-A-Raw-Updated"
   sku = "SKU-A"
@@ -99,7 +111,8 @@ $in2 = Invoke-Json POST "$BaseUrl/app/ledger/adjust" @{ item_id = $itemA.id; qty
 $stateA = Get-ItemState $itemA.id
 if ($stateA.qty_stored -eq 15) { Pass "Qty is 15" } else { Fail "Qty mismatch: $($stateA.qty_stored)"; exit 1 }
 
-$valA = [int]$stateA.value_cents
+# CHECK VALUE via Ledger
+$valA = Get-ItemValue $itemA.id
 if ($valA -eq 5500) { Pass "Value is 5500 (10*300 + 5*500)" } else { Fail "Value mismatch: $valA"; exit 1 }
 
 
@@ -111,7 +124,9 @@ $out = Invoke-Json POST "$BaseUrl/app/ledger/adjust" @{ item_id = $itemA.id; qty
 $stateA2 = Get-ItemState $itemA.id
 
 if ($stateA2.qty_stored -eq 3) { Pass "Qty is 3" } else { Fail "Qty mismatch: $($stateA2.qty_stored)"; exit 1 }
-if ($stateA2.value_cents -eq 1500) { Pass "Value is 1500" } else { Fail "Value mismatch: $($stateA2.value_cents)"; exit 1 }
+
+$valA2 = Get-ItemValue $itemA.id
+if ($valA2 -eq 1500) { Pass "Value is 1500" } else { Fail "Value mismatch: $valA2"; exit 1 }
 
 
 # 6. Adjustments
@@ -148,8 +163,9 @@ if ($stA.qty_stored -eq 1) { Pass "Item A stock decreased by 2 (rem: 1)" } else 
 $stC = Get-ItemState $itemC.id
 if ($stC.qty_stored -eq 1) { Pass "Item C stock increased by 1" } else { Fail "Item C stock mismatch: $($stC.qty_stored)"; exit 1 }
 
-# Assert C unit cost (1000)
-if ($stC.value_cents -eq 1000) { Pass "Item C cost correct (1000)" } else { Fail "Item C cost mismatch: $($stC.value_cents)"; exit 1 }
+# Assert C unit cost (1000) - Via Ledger Valuation
+$valC = Get-ItemValue $itemC.id
+if ($valC -eq 1000) { Pass "Item C cost correct (1000)" } else { Fail "Item C cost mismatch: $valC"; exit 1 }
 
 
 # 8. Manufacturing Fail
