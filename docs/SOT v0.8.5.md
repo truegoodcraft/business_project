@@ -1164,3 +1164,53 @@ SCOPE: backend, api, security, ui, smoke
 
 * Question: Is there a canonical endpoint for `/app/business_profile` planned?
   Context: UI was calling it, causing 404s. Call suppressed for now.
+  
+  [DELTA HEADER]
+SOT_VERSION_AT_START: v0.8.4
+SESSION_LABEL: v0.8.5 Desktop Lifecycle & Launcher – 2025-12-06
+DATE: 2025-12-06
+SCOPE: launcher, config, ui, dependencies
+[/DELTA HEADER]
+
+(1) SESSION FACTS / NOTES (EXHAUSTIVE)
+- **Dependency Updates:** `requirements.txt` updated to explicitly include `requests`, `pystray`, `Pillow`, `pywin32` (Windows only), `fastapi`, `uvicorn`, `jinja2`, `aiofiles`, `python-multipart` to resolve runtime crashes.
+- **Config Implementation:** `core/config/manager.py` created to manage `%LOCALAPPDATA%\BUSCore\config.json`.
+- **Config API:** `GET /app/config` and `POST /app/config` endpoints implemented; POST returns `{"restart_required": true}`.
+- **Launcher Modes (Dual-Mode):**
+  - **Dev Mode (`BUS_DEV="1"` or `--dev`):** Runs `uvicorn` in blocking mode; console window remains visible; system tray disabled.
+  - **Production Mode (Default):**
+    - Console window is programmatically hidden on startup (using `ctypes` `SW_HIDE`).
+    - `uvicorn` runs in a daemon thread.
+    - System Tray icon (`pystray`) launches and blocks the main thread.
+    - Browser opens in a standard new tab (via `webbrowser.open`) pointing to `/ui/shell.html#/home`.
+- **Tray Functionality:**
+  - Menu items: "Open Dashboard", "Show Console" (unhides window for debug), "Quit BUS Core" (forces `os._exit(0)`).
+  - Icon: Loads `Flat-Dark.png` or falls back to a generated colored block if missing.
+- **Browser Behavior:** Explicitly rejected "App Mode" (`--app` flag); launcher opens default system browser as a standard tab.
+- **Settings UI:** Settings card updated to read/write `launcher` and `ui` config sections via new API.
+
+(2) NEW FACTS / DECISIONS vs SoT
+- **Stealth Launch Mechanism:** Production mode explicitly hides the host console window on Windows using `ctypes.windll.user32.ShowWindow`, behavior not previously detailed in SOT architecture.
+- **CLI Argument:** Added `--dev` argument to `launcher.py` which sets `os.environ["BUS_DEV"] = "1"` internally, providing an explicit CLI trigger for dev mode alongside the environment variable.
+- **Console Recovery:** Added "Show Console" option to System Tray menu to allow recovering the hidden console for debugging in production mode.
+
+(3) CHANGES TO EXISTING FACTS (SoT → session)
+- Old (SoT): [Implied] Launcher runs as a standard script, visible console.
+  New (session): Launcher defaults to "Stealth Mode" (hidden console) unless explicitly gated into Dev Mode.
+- Old (SoT): [SOT §11.6] Config schema defined.
+  New (session): Config schema implemented exactly as defined in SOT §11.6.
+
+(4) CLARIFICATIONS / TIGHTENING
+- SoT §12.1 says "BUS_DEV is the only dev-mode flag" → clarified as: Launcher accepts `--dev` argument which *sets* this flag, remaining compliant while adding ergonomics.
+- SoT §11.6 "Launcher behavior... if auto_start_in_tray=false -> opens browser" → tightened as: Opens browser in standard tab (not app mode/popup).
+
+(5) CONFIRMED / RESTATED (NO CHANGE)
+- SoT says: Config path is `%LOCALAPPDATA%\BUSCore\config.json`.
+  Session: Explicitly confirmed and implemented in `core/config/manager.py`.
+- SoT says: Config schema structure (`launcher`, `ui`, `backup`, `dev`).
+  Session: Explicitly implemented in `core/config/manager.py` defaults.
+- SoT says: `BUS_DEV=1` ⇒ dev mode on; any other value/unset ⇒ production.
+  Session: Validated and enforced in `launcher.py` logic.
+
+(6) OPEN QUESTIONS / UNRESOLVED / UNCERTAIN
+- Uncertain: Handling of `Flat-Dark.png` path resolution in frozen/PyInstaller environments vs raw script execution (fallback generation logic added as safeguard).
