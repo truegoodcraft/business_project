@@ -342,6 +342,12 @@ def _buscore_writeflag_startup() -> None:
     app.state.allow_writes = _calc_default_allow_writes()
 
 
+@app.on_event("startup")
+def ensure_core_initialized():
+    if CORE is None:
+        build_app()
+
+
 @app.get("/dev/paths")
 def dev_paths():
     from core.config import paths
