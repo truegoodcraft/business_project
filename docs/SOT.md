@@ -4,22 +4,13 @@ TGC BUS Core — Source of Truth (Updated 2025-12-05)
 > Where this document and the code disagree, the SoT **must be updated to reflect code**.
 > Anything not stated = **unknown / not specified**.
 
-> **Change note (2025-12-05, v0.9.0 “Iron Core Beta”):**
-> Consolidates all accepted deltas up to 2025-12-05 into the main SoT.
-> Major changes:
->
-> * Default Windows DB path now `%LOCALAPPDATA%\BUSCore\app\app.db` with one-time migration from `data/app.db`.
-> * Manufacturing system formalized around `recipes`, `recipe_items`, `manufacturing_runs` plus FIFO ledger (`item_batches`, `item_movements`) with strict **no-oversold** rule for manufacturing.
-> * Adjustments become first-class FIFO movements (no magic qty overrides).
-> * Journals clarified as **receipts only**; DB is sole state authority; restore archives journals.
-> * Backup/restore defined as encrypted DB export/import with schema-compat checks.
-> * Dev mode consolidated under `BUS_DEV` (single flag); `/health` vs `/health/detailed` split; `/dev/*` and detailed health gated by `BUS_DEV=1`.
-> * UI error contract strengthened: *all* non-2xx surfaced, stock-affecting ops are atomic.
-> * Navigation/routes updated to include `#/recipes` and `#/runs` and deep-link guarantees.
-> * Licensing/tier simplified for 0.9: **only “community” tier exists**, no `license.json`, no Pro features in Core, no “Pro/Upgrade” wording.
-> * Adjacent section added describing the separate **BUS Core Pro** commercial model (perpetual license + updates window), scoped as **outside** the Core codebase.
+> **Change note (2025-12-05, v0.8.2 "Manufacturing Locked"):**
+> **DELTA INCORPORATION:** Merged two sessions into final state:
+> 1. **Zero-license cleanup & UI footer (targeting v0.8.1):** Core now zero-tier, zero-license.json, zero license enforcement. Tier removed from all surfaces (/health, UI, logs, config, DB, backups, journals, local storage). License config/env/DTOs deleted. `/dev/license` removed. RFQ, batch automation, scheduled runs removed from Core. No "Pro", "Upgrade", "Tier" wording in UI or API. **BUS Core Pro exists only as separate commercial project (outside this repo).**
+> 2. **Manufacturing/ledger smoke & invariants (v0.8.2):** `scripts/smoke.ps1` canonical on PowerShell 5.1 (no PS7+ features). Session token via `GET /session/token` before protected ops. Canonical endpoints: /session/token, /openapi.json, /app/items, /app/ledger/adjust, /app/recipes, /app/manufacturing/run, /app/ledger/movements. Manufacturing invariants locked: never oversell (is_oversold=0), shortage → HTTP 400 with no writes (fail-fast), ad-hoc runs require non-empty components[], output unit cost = sum(consumed)/qty (round-half-up), single-run POST only.
+> * **Final merged state (0.8.2):** Zero-license Core with locked manufacturing FIFO invariants. All code-truth updates incorporated.
 
-> **Change note (2025-12-02, v0.6.0):** (kept as historical) Major architectural update: canonical `scripts/launch.ps1` and `scripts/smoke.ps1`; initial ledger bootstrap (`items`, `item_batches`, `item_movements`), cookie-based auth, etc.
+> **Change note (2025-12-02, v0.6.0):** (historical) Major architectural update: canonical `scripts/launch.ps1` and `scripts/smoke.ps1`; initial ledger bootstrap, cookie-based auth.
 
 (Older change notes retained below as historical log.)
 
@@ -27,7 +18,8 @@ TGC BUS Core — Source of Truth (Updated 2025-12-05)
 
 ## Versioning & Changelog
 
-* **Current SoT document version:** `v0.9.0 "Iron Core Beta"`
+* **Current SoT document version:** `v0.8.2 "Manufacturing Locked"`
+* **Previous version:** v0.9.0 "Iron Core Beta" (superseded by v0.8.2 after delta merges)
 
 * All BUS Core SoTs and adjacent TGC method/process docs use a three-part version string: `vX.Y.Z`.
 
@@ -44,9 +36,11 @@ TGC BUS Core — Source of Truth (Updated 2025-12-05)
 * Changelog rules (this document):
 
   * Every SoT change adds a **Change note (YYYY-MM-DD, vX.Y.Z …)** at the top with a short summary.
-  * Older “Change note (YYYY-MM-DD)” entries are preserved as history.
+  * Older "Change note (YYYY-MM-DD)" entries are preserved as history.
 
 (Existing historical change notes from v0.5.x/v0.6.0 remain as-is.)
+
+---
 
 ---
 
@@ -536,75 +530,39 @@ Crashes between commit and journal write may cause gaps; DB is still truth; audi
 
 ---
 
-## 7) Licensing & Tier Model (0.9 – Core only)
+## 7) Licensing Model (Core – Zero License)
 
-### 7.1 Tier model
+### 7.1 Core licensing (0.8.1+)
 
-Logical tiers:
+**Core (this repo) operates with zero licensing logic:**
 
-* `"community"` – free, offline, full Core features.
-* `"pro"` – reserved for BUS Core Pro (separate project, separate repo, proprietary).
-* `"internal"` – dev-only, used under `BUS_DEV=1`.
+* No `license.json` file.
+* No tier concept.
+* No remote license checks.
+* No license enforcement.
+* No license-gated features.
+* No "Pro", "Tier", "Plan", or "Upgrade" wording in UI or responses.
 
-**In BUS Core 0.9 (this repo):**
+**What Core contains:**
 
-* Active tier is always `"community"`.
-* There is **no** `license.json` file.
-* Core performs **no** remote license checks.
-* No Pro features live in this codebase.
+* Items, vendors/contacts.
+* Manufacturing recipes and one-off runs.
+* Stock changes & basic inventory control.
+* Local analytics and Insights from local DB only.
+* Manual backups and restore.
+* Manual file linking (receipts, SOPs, docs).
 
-### 7.2 Tier visibility
+### 7.2 BUS Core Pro (separate project)
 
-* Tier must **not** appear in:
+A separate commercial product (**BUS Core Pro**) exists in a separate repository:
 
-  * UI
-  * `/health`
-  * logs
-  * config
-  * DB schema
-  * backups
-  * journals
-  * local storage
+* Proprietary license, paid product.
+* Wraps the Core engine.
+* Adds distribution, updates, installer, auto-updates, support, nicer launcher.
+* May add acceleration and ergonomics (batch operations, automation/scheduling, multi-run pipelines, etc.).
+* **No Pro-only logic lives in this public Core repo.**
 
-* Tier may appear only:
-
-  * In `/health/detailed` when `BUS_DEV=1`.
-  * In `/dev/*` responses when `BUS_DEV=1`.
-
-### 7.3 Pro-gated features (future, Core-adjacent only)
-
-* Pro-gated endpoints do **not** ship in Core 0.9.
-
-* If any Pro-like endpoint is present in the Core server, for 0.9 it must either:
-
-  * Not exist (404), or
-  * Return `403` with neutral message:
-
-    * `"This feature is not available in this build."`
-
-* No “Pro” or “Upgrade” wording in 0.9 UI or responses.
-
-### 7.4 Community vs Pro capability principle
-
-* **Community (Core):**
-
-  * Items, vendors/contacts.
-  * Manufacturing recipes and one-off runs.
-  * Stock changes & basic inventory control.
-  * Local analytics and Insights from local data.
-  * Manual backups and restore.
-  * Manual file linking (receipts, SOPs, docs).
-
-* **Pro (separate BUS Core Pro project):**
-
-  * May add **acceleration and ergonomics** only:
-
-    * batch operations
-    * automation/scheduling
-    * multi-run pipelines
-    * more comfortable workflows
-
-  * Community must always be able to perform the **same base operations manually** one at a time.
+**Principle:** Community must always be able to perform the same base operations manually, one at a time.
 
 ---
 
@@ -993,118 +951,126 @@ Anything not explicitly documented above remains **“Not specified in the SoT�
 
 ---
 
-## 15) Adjacent: BUS Core Pro – Licensing, Pricing & Accounts (Non-Core, Business SoT)
+## 15) BUS Core Pro (Separate Commercial Project)
 
-> **Scope note:** BUS Core Pro is a **separate project** built **on top of** BUS Core.
-> This section is business/strategy SoT, not Core code behavior.
+This section describes BUS Core Pro at a conceptual level for reference. **Implementation is outside this repo and outside the scope of the Core codebase.**
 
 ### 15.1 Product & relationship
 
 * **Core:** Free, AGPL, open-source. Built from this repo. DIY build/install.
-* **Pro:** Paid, proprietary, separate repo & installer.
+* **Pro:** Paid, proprietary, separate repo & installer. Wraps Core engine. Adds distribution, updates, UX layer (installer, auto-updates, support, nicer launcher). No Pro-only logic lives in this public Core repo.
 
-  * Wraps Core engine.
-  * Adds distribution, updates, UX layer (installer, auto-updates, support, nicer launcher).
-  * No Pro-only logic lives in this public Core repo.
-
-### 15.2 Pricing & updates
+### 15.2 Pricing & updates (reference)
 
 * Target initial price: **~$99 USD one-time** (launch promo ~ $79).
-
-* Includes:
-
-  * Pro app.
-  * 1 year of feature updates.
-  * 1 year of email support.
-
+* Includes: Pro app, 1 year of feature updates, 1 year of email support.
 * Optional renewal: ~ $49/year to extend updates + support.
 
-* **Perpetual rights:**
+**Perpetual rights:**
 
-  * If renewal lapses, user **keeps access** to the latest version released during their active window **forever**.
-  * No hard lockout; app continues working offline.
+* If renewal lapses, user keeps access to the latest version released during their active window forever.
+* No hard lockout; app continues working offline.
 
-### 15.3 License model (Pro only)
+### 15.3 License model (Pro only, separate repo)
 
-* Mechanism: offline license file `buscore.lic`.
-
+* Offline license file `buscore.lic`.
 * Location: `%LOCALAPPDATA%\BUSCore\buscore.lic`.
-
 * Signed with private key; app verifies with public key (offline).
+* DRM stance: trust-based, no hardware binding, no call-home required for normal operation.
 
-* Metadata fields:
-
-  * `user_email`
-  * `product_id` (e.g. `BUS_CORE_PRO`)
-  * `purchase_date`
-  * `updates_expiry_date`
-  * `license_id`
-  * `is_founder` (Boolean, for early adopters/badges)
-
-* DRM stance:
-
-  * Trust-based.
-  * No hardware binding in v1.0.
-  * No call-home required for normal operation.
-
-### 15.4 License validation rules
-
-* If JSON invalid → reject; instruct user to re-download license.
-* If signature invalid → reject; instruct user to re-download license.
-* If `product_id` mismatch → reject; instruct user to obtain correct license.
-* If system clock clearly wrong → warn user and instruct to fix clock; license logic must not assume obviously bogus time.
-
-### 15.5 Updates & access
+### 15.4 Updates & access (reference)
 
 * Active (paid-up) licenses can download latest Pro build.
-* A release is “within window” if `release_date <= updates_expiry_date` (single global time basis, e.g. UTC).
-* After expiry:
+* After expiry: user keeps access to all versions released during their active window.
+* Security-only patches remain available to all licensed users regardless of expiry.
 
-  * User keeps access to all versions released during their active window.
-  * Security-only patches remain available to all licensed users regardless of expiry.
-  * As long as hosting EXEs is practical, historical Pro versions remain available.
-
-### 15.6 Accounts & identity
+### 15.5 Accounts & identity (reference)
 
 * Magic-link login (email only) for Pro account portal.
 * Minimal profile: re-download links, license recovery.
-* Payments handled by external provider (Stripe/Lemon Squeezy); BUS Core systems store **no** payment details.
-* Lost/changed email may require proof before reassignment / re-sending licenses.
+* Payments via external provider (Stripe/Lemon Squeezy); no payment details stored.
 
-### 15.7 Support & refunds
+### 15.6 Support & refunds (reference)
 
 * Support target: respond within **2 business days**.
-
 * Support included for duration of updates window.
-
-* Refund policy:
-
-  * Default: **all sales final** (license files non-revocable).
-  * Jurisdiction-mandated consumer rights override this when applicable.
+* Refund policy: all sales final (license files non-revocable), subject to jurisdiction-mandated consumer rights.
 
 ---
 
-**End of Source of Truth (v0.9.0 “Iron Core Beta”).**
-
+**End of Source of Truth (v0.8.2 "Manufacturing Locked").**
 
 [DELTA HEADER]
-SOT_VERSION_AT_START: unknown
-SESSION_LABEL: Zero-license cleanup & UI footer — 2025-12-05
-DATE: 2025-12-05
-SCOPE: backend, ui, tests, release
+SOT_VERSION_AT_START: v0.8.2
+SESSION_LABEL: v0.8.3 backup/restore & journals hardening – 2025-12-06
+DATE: 2025-12-06
+SCOPE: backend, api, db, windows, journaling, backup-restore, smoke
 [/DELTA HEADER]
 
 (1) SESSION FACTS / NOTES (EXHAUSTIVE)
 
-* Objective confirmed: remove all licensing/tier/Pro logic and artifacts; Core becomes standalone and tierless; target tag v0.8.1.
-* Decomposition strategy: 3-step Codex flow (Step 1: remove license artifacts & /dev/license; Step 2: remove gating & make /health tier-blind; Step 3: delete Pro-only features, strip UI wording, sweep, docs, PR & tag).
-* Step 1 scope: delete license.json handling, license config/env/DTOs; remove `/dev/license`; adjust related tests; attach scan log.
-* Step 2 scope: remove entitlement helpers/usages in Core; set `/health` response to `{ ok: true, version }`; keep any dev detailed health but without license/tier; update tests accordingly.
-* Step 3 scope: remove RFQ, batch automation, scheduled runs; strip all Pro/tier/upgrade wording from UI; repo-wide sweep; docs & changelog; open PR; tag v0.8.1 post-merge.
-* Smoke run executed after changes: all smoke checks passed (items, adjustments, recipes, manufacturing runs).
-* Launch logs observed: warning about SPDX headers; several 404s for non-core/dev endpoints (`/app/transactions*`, `/dev/writes`, `/app/business_profile`) while core flows served 200; server running at `http://127.0.0.1:8765`.
-* Current UI still displays footer text “License: community” (needs removal).
-* Action requested: remove the footer license text, ensure no license/tier wording remains in UI, and update PR with changelog for v0.8.1.
+* Launch/entrypoint:
+
+  * Canonical uvicorn target is `core.api.http:create_app` with `--factory`.
+  * Scripts export `PYTHONPATH` to repo root before launch.
+  * PowerShell requirement is Windows PowerShell 5.1 (no `pwsh` 7+).
+* Windows deps & platform specifics:
+
+  * `pywin32` is required (e.g., `win32con`) for Windows named pipes.
+  * `core/broker/pipes.py` is Windows-only; import guarded; meaningful error on non-Windows.
+* Auth/session & docs:
+
+  * Smoke and API use cookie-based session via `GET /session/token` (no custom header).
+  * `/openapi.json` and docs are accessible (not gated by auth).
+* Journaling (v0.8.3 scope):
+
+  * Rule: **DB commit → then journal append** (never reverse).
+  * Sinks wired for `inventory.jsonl` and `manufacturing.jsonl`.
+  * On restore, existing `*.jsonl` files are archived to `*.pre-restore-<timestamp>`; fresh `inventory.jsonl` and `manufacturing.jsonl` are recreated empty.
+* Encrypted backup/export:
+
+  * AES-GCM encrypted DB exports write to `%LOCALAPPDATA%\BUSCore\exports`.
+  * Smoke validates the export path under that root, case/ slash insensitive, PS 5.1-safe.
+  * Smoke verifies exported file exists and is non-empty, then cleans it up at end.
+* Restore preview:
+
+  * `/app/db/import/preview` returns `table_counts`; absence of a `version` field is tolerated.
+  * Schema check runs before commit.
+* Restore commit (Windows reliability fixes):
+
+  * New helper `core/backup/restore_commit.py` provides:
+
+    * `wal_checkpoint(path)` to flush WAL/SHM.
+    * `same_dir_temp(dir, prefix)` to ensure same-drive temp for atomic replace.
+    * `close_all_db_handles(dispose_call)` to dispose SQLAlchemy engine and force-close stray `sqlite3.Connection` via GC sweep; includes quiet delay.
+    * `atomic_replace_with_retries(src, dst)` with (extended) retries, exponential backoff + jitter; handles WinError 32/33 and EACCES/EBUSY.
+    * `archive_journals(dir, ts)` to rename `*.jsonl` and recreate primaries.
+  * Commit route sequence:
+
+    * Acquire exclusive `app.state.restore_lock`; set `app.state.maintenance = True`.
+    * Decrypt backup to **same directory** temp DB.
+    * `wal_checkpoint(app.db)` then **dispose engine** and perform **two GC sweeps** to close all handles.
+    * Atomic `os.replace(tmp, app.db)` with robust retry.
+    * Archive journals and recreate primaries.
+    * Respond `{ ok: true, replaced: true, restart_required: true }`.
+  * App-level maintenance guard:
+
+    * Middleware 503s all non-allowed endpoints during maintenance.
+    * Allowlist includes `/session/token`, `/openapi.json`, `/app/db/import/preview`, `/app/db/import/commit`.
+  * DB session dependency (`get_db`) rejects session creation during maintenance (503).
+* FastAPI route signatures:
+
+  * Removed `Optional[Request]` / `Request|None` from route/dependency parameters; `Request` is required and non-optional.
+* Smoke harness (PS 5.1-safe):
+
+  * Uses shared `WebRequestSession` (cookies) and no custom headers.
+  * Export root check uses canonical full paths with case-insensitive prefix; parentheses prevent stray `+` in output.
+  * Stage 6 flow: export → reversible mutation → preview → commit → verify state reverted → journals archived/recreated → cleanup.
+* Outcome:
+
+  * All smoke stages pass end-to-end on Windows; Stage 6 commit succeeds and signals `restart_required`.
+  * Version target for release/tag is `v0.8.3`.
+  * SPDX header tool available; repo reported missing headers prior to fix pass.
 
 (2) NEW FACTS / DECISIONS vs SoT
 
@@ -1120,16 +1086,81 @@ SCOPE: backend, ui, tests, release
 
 (5) CONFIRMED / RESTATED (NO CHANGE)
 
-* Session restatement: Core must operate with zero license logic and no tier gating (reconfirmed by smoke being green after removals).
-* Session restatement: `/health` public response must be minimal `{ ok: true, version }` and tier-blind.
-* Session restatement: Pro-only features (RFQ, batch automation, scheduled runs) are not part of Core and should be removed.
-* Session restatement: Post-merge tag is `v0.8.1`; changelog must document removals and tier-blind health.
+* Session restatement: Cookie-based session via `/session/token`; no custom header required — confirmed by smoke and middleware behavior.
+* Session restatement: AES-GCM encrypted export root is `%LOCALAPPDATA%\BUSCore\exports` — validated by smoke path assertion.
+* Session restatement: Journals are receipts; on restore, archive existing journals and recreate primaries — exercised and verified in Stage 6.
+* Session restatement: Manufacturing invariants (fail-fast, atomicity, oversold protection) hold — revalidated by smoke.
 
 (6) OPEN QUESTIONS / UNRESOLVED / UNCERTAIN
 
-* Question: Are 404s for `/app/transactions*`, `/dev/writes`, and `/app/business_profile` expected post-refactor, or should UI calls be removed/disabled?
-  Context: Launch logs show repeated 404s while smoke is green.
-* Uncertain: Whether any non-footer UI surfaces (settings/about/tooltips) still reference “Pro”, “Tier”, “Plan”, or “Upgrade”.
-  Needs: A full text/grep pass over UI assets and visual audit.
-* Uncertain: Whether changelog entry format/versioning cadence requires additional notes (e.g., migration guidance) beyond the v0.8.1 bullets.
-  Needs: Maintainer preference for CHANGELOG style.
+* Question: Post-restore lifecycle — should the service auto-restart when `restart_required:true`, or is restart a UI/launcher responsibility?
+  Context: Commit returns `restart_required:true`; current smoke only asserts flag.
+* Question: Cross-platform semantics — do Linux/macOS paths and file locking need equivalent handling (e.g., maintenance guard remains, but retry/backoff tuned)?
+  Needs: Cross-platform test run and path roots for non-Windows.
+* Uncertain: Finalization tasks for release — version bump applied everywhere, SPDX headers added, and CHANGELOG updated?
+  Needs: Confirmed commits and tag `v0.8.3` pushed.
+
+[DELTA HEADER]
+SOT_VERSION_AT_START: v0.8.3
+SESSION_LABEL: v0.8.4 dev-gating & ui-auth hardening – 2025-12-06
+DATE: 2025-12-06
+SCOPE: backend, api, security, ui, smoke
+[/DELTA HEADER]
+
+(1) SESSION FACTS / NOTES (EXHAUSTIVE)
+
+* Dev/Prod Gating (Milestone 0.8.4):
+  * Centralized `is_dev()` check; strict rule: only `BUS_DEV="1"` enables dev mode.
+  * In Production (`BUS_DEV != "1"`):
+    * `/dev/*` routes return 404 (Not Found).
+    * `/health/detailed` returns 404.
+    * Exception responses are sanitized: return `{"detail": {"error": "bad_request"}}` or `internal_error` with no stack traces or path leaks.
+  * In Dev (`BUS_DEV="1"`):
+    * `/dev/*` routes are accessible but require valid session auth.
+    * Full exception details/tracebacks pass through.
+* Authentication Hardening:
+  * Backend strictly enforces Cookie-only authentication (`bus_session`).
+  * Support for `X-Session-Token` header explicitly removed from `core/api/http.py`.
+  * Public prefixes tightened: `/dev/` removed from public list (now requires auth middleware).
+* Feature Unlocking:
+  * Runtime write toggling via `POST /dev/writes` is removed.
+  * `require_write_access` returns generic 403 if writes are disabled.
+  * Frontend elements for toggling writes removed.
+* Frontend (UI):
+  * `token.js` updated to use `credentials: 'same-origin'` to correctly persist and send the session cookie.
+  * Dead calls to `/dev/writes` (polling) and `/app/business_profile` (non-existent endpoint) removed to fix 401/404 log errors.
+* Smoke Test Harness:
+  * Updated to use cookie-based authentication (via `requests.Session` or manual cookie jar).
+  * Added **Stage 7: Cleanup**:
+    * Zeroes out inventory for test items (A, B, C).
+    * Archives/deletes test recipes and items to leave DB clean.
+
+(2) NEW FACTS / DECISIONS vs SoT
+
+* `BUS_DEV` environment variable value strictly defined as `"1"` (string) to enable dev mode.
+* Production error responses are explicitly sanitized to prevent information leakage.
+* Smoke harness now includes a self-cleanup stage (Stage 7).
+
+(3) CHANGES TO EXISTING FACTS (SoT → session)
+
+* Old (SoT): Smoke and API use cookie-based session via `GET /session/token` (no custom header).
+  New (session): Code updated to *strictly* enforce this; previous support for `X-Session-Token` header (found in code but not SoT) was removed to align with SoT.
+* Old (SoT): Implied existence of write-toggling mechanism.
+  New (session): `POST /dev/writes` removed; dev endpoints are for diagnostics only, not feature unlocking.
+
+(4) CLARIFICATIONS / TIGHTENING
+
+* SoT vague on `BUS_DEV` values → clarified as strict `"1"` only.
+* SoT implied UI authentication flow → clarified/fixed in `token.js` to explicitly require `credentials: 'same-origin'` to function with the strict cookie backend.
+
+(5) CONFIRMED / RESTATED (NO CHANGE)
+
+* SoT says: Cookie-based session via `/session/token`.
+  Session: Explicitly confirmed and hardened; UI fixed to adhere to this.
+* SoT says: Journals are receipts... verify state reverted.
+  Session: Confirmed via Smoke Stage 6 passing in `v0.8.4` environment.
+
+(6) OPEN QUESTIONS / UNRESOLVED / UNCERTAIN
+
+* Question: Is there a canonical endpoint for `/app/business_profile` planned?
+  Context: UI was calling it, causing 404s. Call suppressed for now.
