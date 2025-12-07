@@ -72,27 +72,11 @@ def show_console():
         except Exception:
             pass
 
-# --- 3. Browser App Mode ---
-def open_app_mode(port):
-    """Opens the UI in 'App Mode' (no address bar)."""
+# --- 3. Browser Launch Helper ---
+def open_dashboard(port):
+    """Opens the UI in the default standard browser (new tab)."""
     url = f"http://127.0.0.1:{port}/ui/shell.html#/home"
-
-    if os.name == 'nt':
-        # Try Edge (Default on Windows)
-        try:
-            subprocess.Popen(f'start msedge --app="{url}"', shell=True)
-            return
-        except Exception:
-            pass
-
-        # Fallback to Chrome
-        try:
-            subprocess.Popen(f'start chrome --app="{url}"', shell=True)
-            return
-        except Exception:
-            pass
-
-    # Final Fallback
+    # Simple standard launch. No --app flags.
     webbrowser.open(url)
 
 # --- 4. Main Execution ---
@@ -136,7 +120,7 @@ def main():
         # Wait slightly for server boot
         def launch_delayed():
             time.sleep(1.5)
-            open_app_mode(port)
+            open_dashboard(port)
         threading.Thread(target=launch_delayed).start()
 
     # F. System Tray (Blocking)
@@ -157,7 +141,7 @@ def main():
         show_console()
 
     def on_open_dash(icon, item):
-        open_app_mode(port)
+        open_dashboard(port)
 
     menu = pystray.Menu(
         pystray.MenuItem("Open Dashboard", on_open_dash, default=True),
