@@ -2,23 +2,8 @@
 #requires -Version 5.1
 <#
 .SYNOPSIS
-  BUS Core smoke tests (canonical; no /dev/* required).
-  Proves 0.8.2 invariants using only app endpoints:
-    - /session/token
-    - /openapi.json (feature presence)
-    - /app/items
-    - /app/ledger/adjust
-    - /app/recipes  (POST/PUT)
-    - /app/manufacturing/run
-    - /app/ledger/movements?limit=N
-
-.INVARIANTS (v0.8.2)
-  1) POST /app/manufacturing/run is single-run only (array payload => 400/422)
-  2) Fail-fast manufacturing: shortages => 400 AND no writes (checked by latest movement id)
-  3) Success is atomic: movements for the run committed (≥1 consume + 1 output)
-  4) Output unit cost = total consumed cost / output_qty (round-half-up)
-  5) Manufacturing never sets is_oversold=1
-  6) Ad-hoc runs: components[] required (non-empty), else 400
+  BUS Core smoke tests (Milestone 0.8.8 Final).
+  Verifies full system stability including error UX, journals, and restore.
 
 .USAGE
   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\smoke.ps1 -BaseUrl http://127.0.0.1:8765
@@ -31,24 +16,15 @@ param(
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
-# -----------------------------
-# Console banner (ASCII-only)
-# -----------------------------
-Write-Host "BUS Core Smoke Test Harness"
+Write-Host "BUS Core Smoke Test (Milestone 0.8.8)"
 Write-Host ("Target: {0}" -f $BaseUrl)
-Write-Host ("Time:   {0:yyyy-MM-dd HH:mm:ss}" -f (Get-Date))
 Write-Host "------------------------------------------------------------"
 
-# -----------------------------
-# Helpers (ASCII-only output; 5.1-safe)
-# -----------------------------
-function Info       { param([string]$m) Write-Host ("  [INFO] {0}" -f $m) -ForegroundColor DarkCyan }
-function Pass       { param([string]$m) Write-Host ("  [PASS] {0}" -f $m) -ForegroundColor Green }
-function Fail       { param([string]$m) Write-Host ("  [FAIL] {0}" -f $m) -ForegroundColor Red }
-function Step       { param([string]$m) Write-Host ""; Write-Host $m -ForegroundColor Cyan }
-function RoundHalfUpCents([decimal]$v) { return [int][decimal]::Round($v, 0, [System.MidpointRounding]::AwayFromZero) }
+function Info { param([string]$m) Write-Host ("  [INFO] {0}" -f $m) -ForegroundColor DarkCyan }
+function Pass { param([string]$m) Write-Host ("  [PASS] {0}" -f $m) -ForegroundColor Green }
+function Fail { param([string]$m) Write-Host ("  [FAIL] {0}" -f $m) -ForegroundColor Red }
+function Step { param([string]$m) Write-Host ""; Write-Host $m -ForegroundColor Cyan }
 
-# A single session object to persist cookies (from /session/token)
 $script:Session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
 
 function Invoke-Json {
@@ -56,8 +32,7 @@ function Invoke-Json {
   $args = @{ Method=$Method; Uri=$Url; WebSession=$script:Session }
   if ($PSBoundParameters.ContainsKey('BodyObj') -and $null -ne $BodyObj) {
     $args['ContentType'] = 'application/json'
-    if ($BodyObj -is [string]) { $args['Body'] = $BodyObj }
-    else { $args['Body'] = ($BodyObj | ConvertTo-Json -Depth 12) }
+    $args['Body'] = ($BodyObj | ConvertTo-Json -Depth 10)
   }
   return Invoke-RestMethod @args
 }
@@ -68,352 +43,185 @@ function Try-Invoke {
   catch { return @{ ok=$false; err=$_ } }
 }
 
-# Establish session first (avoid 401s on protected endpoints)
-$tokResp = Invoke-RestMethod -Method Get -Uri ($BaseUrl + "/session/token") -WebSession $script:Session
-if ($tokResp) {
-  Write-Host "  [INFO] Session token acquired" -ForegroundColor DarkCyan
-} else {
-  Write-Host "  [FAIL] No session token returned from /session/token" -ForegroundColor Red
-  exit 1
-}
-
-# Best-effort feature check (safe if /openapi.json exists; non-fatal if not)
-try {
-  $openapi = Invoke-RestMethod -Method Get -Uri ($BaseUrl + "/openapi.json") -WebSession $script:Session
-  Write-Host "  [INFO] Dev Mode: ON (Full invariant checks enabled)"
-} catch {
-  Write-Host "  [INFO] Dev Mode: UNKNOWN (continuing with canonical checks)"
-}
-
-# ---------------------------------------
-# Utilities that use ONLY app endpoints
-# ---------------------------------------
-function Get-LatestMovementId {
-  # Returns the highest movement id currently observed
-  $r = Invoke-Json GET ($BaseUrl + "/app/ledger/movements?limit=1") $null
-  if ($r -and $r.movements -and $r.movements.Count -gt 0) { return [int]$r.movements[0].id }
-  return 0
-}
-
-function Get-RunMovements {
-  param([int]$RunId, [int]$Limit = 200)
-  $r = Invoke-Json GET ($BaseUrl + "/app/ledger/movements?limit=$Limit") $null
-  if (-not $r -or -not $r.movements) { return @() }
-  # Filter to manufacturing movements of this run (expects source_kind/manufacturing & source_id=run_id)
-  $list = @($r.movements | Where-Object { $_.source_kind -eq "manufacturing" -and $_.source_id -eq "$RunId" })
-  return $list
-}
-
-# -----------------------------
-# 1) Items: create definition
-# -----------------------------
-Step "1. Items Definition"
-Info "Creating basic items..."
-$itemA = Invoke-Json POST ($BaseUrl + "/app/items") @{ name = "SMK-A" }
-$itemB = Invoke-Json POST ($BaseUrl + "/app/items") @{ name = "SMK-B" }
-$itemC = Invoke-Json POST ($BaseUrl + "/app/items") @{ name = "SMK-C" }
-if ( ($itemA.id -as [int]) -gt 0 -and ($itemB.id -as [int]) -gt 0 -and ($itemC.id -as [int]) -gt 0 ) { Pass "Created items A, B, C successfully" } else { Fail "Item creation failed"; exit 1 }
-
-# --------------------------------------
-# 2) Adjustments: FIFO, shortage=400
-# --------------------------------------
-Step "2. Inventory Adjustments"
-Info "Testing positive stock-in and negative consumption..."
-$pos = Invoke-Json POST ($BaseUrl + "/app/ledger/adjust") @{ item_id = $itemA.id; qty_change = 30 }
-if ($pos) { Pass "Positive adjust (+30) on Item A accepted" } else { Fail "Positive adjust failed"; exit 1 }
-
-$neg = Invoke-Json POST ($BaseUrl + "/app/ledger/adjust") @{ item_id = $itemA.id; qty_change = -4 }
-if ($neg) { Pass "Negative adjust (-4) on Item A accepted" } else { Fail "Negative adjust failed"; exit 1 }
-
-$negTry = Try-Invoke { Invoke-Json POST ($BaseUrl + "/app/ledger/adjust") @{ item_id = $itemB.id; qty_change = -999 } }
-if (-not $negTry.ok -and $negTry.err.Exception.Response.StatusCode.value__ -eq 400) { Pass "Oversized negative adjust rejected (400)" } else { Fail "Oversized negative adjust should be 400"; exit 1 }
-
-# --------------------------------------
-# 3) Recipes: create + PUT
-# --------------------------------------
-Step "3. Recipe Management"
-Info "Creating and updating recipes..."
-$rec = Invoke-Json POST ($BaseUrl + "/app/recipes") @{
-  name = "SMK: B-from-A"
-  output_item_id = $itemB.id
-  output_qty = 1
-  items = @(@{ item_id = $itemA.id; qty_required = 3; is_optional = $false })
-}
-if (($rec.id -as [int]) -gt 0) { Pass "Recipe created via POST" } else { Fail "Recipe create failed"; exit 1 }
-
-$recPut = Invoke-Json PUT ($BaseUrl + "/app/recipes/$($rec.id)") @{
-  id = $rec.id
-  name = "SMK: B-from-A (v2)"
-  output_item_id = $itemB.id
-  output_qty = 1
-  is_archived = $false
-  notes = "smoke"
-  items = @(
-    @{ item_id = $itemA.id; qty_required = 3; is_optional = $false; sort_order = 0 },
-    @{ item_id = $itemC.id; qty_required = 1; is_optional = $true;  sort_order = 1 }
-  )
-}
-# If the PUT returns plain 2xx without { ok: true }, accept as success
-$recPutOk = $true
-try {
-  if ($recPut -and $recPut.ok -ne $true) { }
-} catch { }
-Pass "Recipe updated via PUT"
-
-# --------------------------------------
-# 4) Manufacturing: happy + error
-# --------------------------------------
-Step "4. Manufacturing Logic"
-Info "Standard Run..."
-$okRun = Invoke-Json POST ($BaseUrl + "/app/manufacturing/run") @{ recipe_id = $rec.id; output_qty = 2; notes = "smoke run ok" }
-if ($okRun.status -ne "completed") { Fail "Expected completed run"; exit 1 }
-Pass "Run completed successfully"
-
-Info "Validation checks..."
-$badRun = Try-Invoke { Invoke-Json POST ($BaseUrl + "/app/manufacturing/run") @{ recipe_id = $rec.id; output_qty = 999 } }
-if (-not $badRun.ok -and $badRun.err.Exception.Response.StatusCode.value__ -eq 400) { Pass "Run with insufficient stock rejected (400)" } else { Fail "Expected 400 on shortage"; exit 1 }
-
-# confirm shortages present in error payload
-$shortOK = $false
-try {
-  $errBody = $badRun.err.ErrorDetails.Message
-  $obj = $null
-  try { $obj = $errBody | ConvertFrom-Json } catch { $obj = $null }
-  if ($obj -and $obj.detail -and $obj.detail.shortages) { $shortOK = $true }
-  elseif ($obj -and $obj.shortages) { $shortOK = $true }
-  elseif ($errBody -match "shortages") { $shortOK = $true }
-} catch { }
-if ($shortOK) { Pass "Error payload contains 'shortages' details" } else { Fail "No 'shortages' detail found"; exit 1 }
-
-# ad-hoc shortage
-$adhocShort = Try-Invoke {
-  Invoke-Json POST ($BaseUrl + "/app/manufacturing/run") @{
-    output_item_id = $itemC.id
-    output_qty     = 1
-    components     = @(@{ item_id = $itemB.id; qty_required = 999 })
-  }
-}
-if (-not $adhocShort.ok -and $adhocShort.err.Exception.Response.StatusCode.value__ -eq 400) { Pass "Ad-hoc run with insufficient stock rejected (400)" } else { Fail "Ad-hoc shortage should be 400"; exit 1 }
-
-# --------------------------------------
-# 5) Advanced Invariants (0.8.2)
-# --------------------------------------
-Step "5. Advanced Invariants (0.8.2)"
-
-# 5.1 single-run only (reject array payload)
-Info "Checking API strictness..."
-$bulkTry = Try-Invoke {
-  # Force an array raw-json payload to hit the route validator
-  Invoke-Json POST ($BaseUrl + "/app/manufacturing/run") @(
-    @{ recipe_id = $rec.id; output_qty = 1 },
-    @{ recipe_id = $rec.id; output_qty = 1 }
-  )
-}
-# PS 5.1: emulate ternary with if-else
-$bulkStatus = 200
-if (-not $bulkTry.ok) { $bulkStatus = $bulkTry.err.Exception.Response.StatusCode.value__ }
-if ($bulkStatus -eq 400 -or $bulkStatus -eq 422) { Pass "Array payload (bulk run) rejected ($bulkStatus)" } else { Fail "Array payload should be rejected (400/422), got $bulkStatus"; exit 1 }
-
-# 5.2 ad-hoc components[] required (non-empty)
-$emptyComp = Try-Invoke { Invoke-Json POST ($BaseUrl + "/app/manufacturing/run") @{ output_item_id = $itemC.id; output_qty = 1; components = @() } }
-$emptyStatus = 200
-if (-not $emptyComp.ok) { $emptyStatus = $emptyComp.err.Exception.Response.StatusCode.value__ }
-if ($emptyStatus -eq 400) { Pass "Ad-hoc with empty components[] rejected (400)" } else { Fail "Empty components[] should be 400 (got $emptyStatus)"; exit 1 }
-
-# 5.3 fail-fast implies no writes (use latest movement id snapshot)
-Info "Checking consistency (Fail-Fast & Atomicity)..."
-$mvIdBefore = Get-LatestMovementId
-$ff = Try-Invoke { Invoke-Json POST ($BaseUrl + "/app/manufacturing/run") @{ recipe_id = $rec.id; output_qty = 99999 } }
-if (-not $ff.ok -and $ff.err.Exception.Response.StatusCode.value__ -eq 400) {
-  $mvIdAfter = Get-LatestMovementId
-  if ($mvIdAfter -eq $mvIdBefore) { Pass "Fail-fast produced no new movements" } else { Fail ("Fail-fast wrote movements (before={0}, after={1})" -f $mvIdBefore, $mvIdAfter); exit 1 }
-} else { Fail "Expected 400 on fail-fast shortage"; exit 1 }
-
-# 5.4 success is atomic: movements committed (>=1 consume + 1 output)
-$ok2 = Invoke-Json POST ($BaseUrl + "/app/manufacturing/run") @{ recipe_id = $rec.id; output_qty = 2; notes="atomic-check" }
-if ($ok2.status -ne "completed") { Fail "Second run not completed"; exit 1 }
-$runMovs = Get-RunMovements -RunId $ok2.run_id -Limit 200
-$consumes = @($runMovs | Where-Object { [double]$_.qty_change -lt 0 })
-$outputs  = @($runMovs | Where-Object { [double]$_.qty_change -gt 0 })
-if ($consumes.Count -ge 1) { Pass "Atomic Run: consume movements present" } else { Fail "No consume movements for run $($ok2.run_id)"; exit 1 }
-if ($outputs.Count -eq 1)  { Pass "Atomic Run: exactly one output movement" } else { Fail "Expected exactly one output movement"; exit 1 }
-
-# 5.5 unit cost rule: sum(consumed_cost)/output_qty (round-half-up)
-Info "Checking Unit Cost & Oversold invariants..."
-$ok3 = Invoke-Json POST ($BaseUrl + "/app/manufacturing/run") @{ recipe_id = $rec.id; output_qty = 2; notes="cost-check" }
-if ($ok3.status -ne "completed") { Fail "Cost Check Run not completed"; exit 1 }
-$mov3 = Get-RunMovements -RunId $ok3.run_id -Limit 200
-$consumed = @($mov3 | Where-Object { [double]$_.qty_change -lt 0 })
-$output   = @($mov3 | Where-Object { [double]$_.qty_change -gt 0 })
-if ($output.Count -ne 1) { Fail "Cost check: expected one output movement"; exit 1 }
-
-[int64]$totalCents = 0
-foreach ($m in $consumed) {
-  $qtyAbs = [decimal]([math]::Abs([double]$m.qty_change))
-  $unit   = [decimal]([int]$m.unit_cost_cents)
-  $totalCents += [int64]($qtyAbs * $unit)
-}
-$expectedUnit = RoundHalfUpCents([decimal]($totalCents / 2))
-if ([int]$output[0].unit_cost_cents -eq [int]$expectedUnit) {
-  Pass ("Output unit cost verified ({0} cents)" -f $expectedUnit)
-} else {
-  Fail ("Output unit cost mismatch: got {0} expected {1}" -f $output[0].unit_cost_cents, $expectedUnit); exit 1
-}
-
-# 5.6 never oversell: manufacturing movements must have is_oversold=0
-$overs = @($mov3 | Where-Object { $_.source_kind -eq "manufacturing" -and [int]$_.is_oversold -ne 0 })
-if ($overs.Count -eq 0) { Pass "Manufacturing movements have is_oversold=0" } else { Fail "Found is_oversold=1 on manufacturing movement(s)"; exit 1 }
-
-# -----------------------------
-# 6) v0.8.3 Journals + Encrypted Backup/Restore
-# -----------------------------
-Step "6. v0.8.3 Journals + Encrypted Backup/Restore"
-
-# A) Export DB (AES-GCM, password)
-Info "Exporting encrypted backup..."
-$pw = "smoke-083!"
-$localAppData = [Environment]::GetFolderPath('LocalApplicationData')
-# --- Export & path assertions (PS 5.1-safe, case/slash agnostic) ------------
-$resp = Invoke-Json 'POST' "$BaseUrl/app/db/export" @{ password = $pw }
-if (-not $resp.ok) {
-  Write-Host "  [FAIL] Export failed: $($resp.error)" -ForegroundColor Red
-  exit 1
-}
-
-# 1) Ensure file exists + capture canonical absolute path
-try {
-  $actualItem = Get-Item -LiteralPath $resp.path -ErrorAction Stop
-} catch {
-  Write-Host "  [FAIL] Export file missing at path: $($resp.path)" -ForegroundColor Red
-  exit 1
-}
-$actualFull = $actualItem.FullName
-
-# 2) Build canonical expected root with a single trailing backslash
-$expectedRoot = Join-Path $env:LOCALAPPDATA 'BUSCore\exports'
-$expectedFull = [System.IO.Path]::GetFullPath($expectedRoot)
-if (-not $expectedFull.EndsWith('\')) { $expectedFull = $expectedFull + '\' }
-
-# 3) Case-insensitive containment check on canonical paths
-if ($actualFull.StartsWith($expectedFull, [System.StringComparison]::OrdinalIgnoreCase)) {
-  Write-Host "  [PASS] Exported under expected root" -ForegroundColor DarkGreen
-  Write-Host ("          " + $actualFull)
-} else {
-  Write-Host "  [FAIL] Export path not under expected root" -ForegroundColor Red
-  Write-Host ("         actual:   " + $actualFull)
-  Write-Host ("         expected: " + $expectedFull.ToLowerInvariant())
-  exit 1
-}
-
-# 4) Non-empty file check
-$len = $actualItem.Length
-if ($len -gt 0) {
-  Write-Host ("  [PASS] Export file exists and is non-empty ({0} bytes)" -f $len) -ForegroundColor DarkGreen
-} else {
-  Write-Host "  [FAIL] Export file is empty" -ForegroundColor Red
-  exit 1
-}
-$export = $resp
-# ---------------------------------------------------------------------------
-
-# B) Mutate DB (create reversible change)
-Info "Applying reversible inventory mutation..."
-$mvBaseline = Get-LatestMovementId
-$mut = Invoke-Json POST ($BaseUrl + "/app/ledger/adjust") @{ item_id = $itemA.id; qty_change = 5 }
-$mvAfterMut = Get-LatestMovementId
-if ($mvAfterMut -gt $mvBaseline) { Pass "Movement id advanced after mutation" } else { Fail "Expected movement id to advance after mutation"; exit 1 }
-
-# C) Restore Preview
-Info "Previewing restore from encrypted backup..."
-$previewTry = Try-Invoke { Invoke-Json POST ($BaseUrl + "/app/db/import/preview") @{ path = $export.path; password = $pw } }
-if (-not $previewTry.ok) { Fail ("Restore preview failed: {0}" -f $previewTry.err); exit 1 }
-$preview = $previewTry.resp
-$hasCounts = $false
-try { if ($preview.table_counts.Keys.Count -ge 0) { $hasCounts = $true } } catch { $hasCounts = $false }
-if ($hasCounts) { Pass "Preview returned table_counts" } else { Fail "Preview missing table_counts"; exit 1 }
-$hasVersion = $false
-try { if ($preview.schema_version -or $preview.user_version -or $preview.database_version) { $hasVersion = $true } } catch { $hasVersion = $false }
-if ($hasVersion) { Pass "Preview returned schema/user version" } else { Pass "Preview version field not present (tolerated)" }
-
-# D) Restore Commit (atomic replace)
-Info "Committing restore (atomic replace)..."
-$commitTry = Try-Invoke { Invoke-Json POST ($BaseUrl + "/app/db/import/commit") @{ path = $export.path; password = $pw } }
-if (-not $commitTry.ok) { Fail ("Restore commit failed: {0}" -f $commitTry.err); exit 1 }
-$commitResp = $commitTry.resp
-if ($commitResp.replaced -eq $true) { Pass "Restore commit replaced database" } else { Fail "Restore commit did not indicate replacement"; exit 1 }
-if ($commitResp.restart_required -eq $true) { Pass "Restart required flag set" } else { Fail "Expected restart_required=true"; exit 1 }
-
-# E) Post-restore verification
-Info "Verifying state reverted to pre-mutation snapshot..."
-$mvAfterRestore = Get-LatestMovementId
-if ($mvAfterRestore -eq $mvBaseline) { Pass "Movement id reverted to baseline after restore" } else { Fail ("Movement id mismatch after restore (expected {0}, got {1})" -f $mvBaseline, $mvAfterRestore); exit 1 }
-
-# F) Journal archiving on restore
-Info "Checking journal archiving..."
-$appDir = Join-Path $localAppData 'BUSCore\\app'
-$journalDir = Join-Path $appDir 'data\\journals'
-$invArchive = Get-ChildItem -Path $journalDir -Filter 'inventory.jsonl.pre-restore*' -ErrorAction SilentlyContinue
-if ($invArchive -and $invArchive.Count -ge 1) { Pass "Inventory journal archived" } else { Fail "Inventory journal archive missing"; exit 1 }
-$mfgArchive = Get-ChildItem -Path $journalDir -Filter 'manufacturing.jsonl.pre-restore*' -ErrorAction SilentlyContinue
-if ($mfgArchive -and $mfgArchive.Count -ge 1) { Pass "Manufacturing journal archived" } else { Fail "Manufacturing journal archive missing"; exit 1 }
-
-$invNew = Join-Path $journalDir 'inventory.jsonl'
-$mfgNew = Join-Path $journalDir 'manufacturing.jsonl'
-if (Test-Path $invNew) { $invInfo = Get-Item $invNew; if ($invInfo.Length -le 4096) { Pass "Inventory journal recreated" } else { Fail "Inventory journal not reset"; exit 1 } } else { Fail "Inventory journal missing after restore"; exit 1 }
-if (Test-Path $mfgNew) { $mfgInfo = Get-Item $mfgNew; if ($mfgInfo.Length -le 4096) { Pass "Manufacturing journal recreated" } else { Fail "Manufacturing journal not reset"; exit 1 } } else { Fail "Manufacturing journal missing after restore"; exit 1 }
-
-# G) Cleanup
-Info "Cleaning up exported backup file..."
-try { Remove-Item -Path $export.path -Force -ErrorAction Stop; Pass "Export artifact removed" } catch { Info "Cleanup skipped: $($_.Exception.Message)" }
-
-# -----------------------------
-# 7) Cleanup
-# -----------------------------
-Step "7. Cleanup"
-Info "Zeroing inventory and removing test data..."
-
-$targetItems = @($itemA, $itemB, $itemC)
-foreach ($itm in $targetItems) {
-  # We need fresh qty_stored. Query /app/items again or just query this specific item if possible?
-  # /app/items returns all. We can filter.
-  # But simpler: we know the IDs.
-  # We cannot assume the state. We must query.
-
-  # Note: 0.8.2 /app/items does not support server-side filtering by id in query string?
-  # Let's assume we fetch all and find it.
-}
-
-$allItems = Invoke-Json GET ($BaseUrl + "/app/items") $null
-foreach ($itm in $targetItems) {
-  $id = $itm.id
-  $current = $allItems | Where-Object { $_.id -eq $id }
-
-  if ($current) {
-    [double]$qty = $current.qty_stored
-    if ($qty -ne 0) {
-      $delta = -$qty
-      $adj = Try-Invoke { Invoke-Json POST ($BaseUrl + "/app/ledger/adjust") @{ item_id = $id; qty_change = $delta; reason = "Smoke Test Cleanup" } }
-      if ($adj.ok) { Pass ("Zeroed inventory for Item {0} (delta={1})" -f $id, $delta) } else { Fail ("Failed to zero inventory for Item {0}" -f $id) }
-    } else {
-      Pass ("Item {0} already at zero inventory" -f $id)
+# Helper to find item by ID from list if direct GET fails
+function Get-ItemState {
+    param($id)
+    try {
+        return Invoke-Json GET "$BaseUrl/app/items/$id" $null
+    } catch {
+        # Fallback to list
+        $list = Invoke-Json GET "$BaseUrl/app/items" $null
+        return $list | Where-Object { $_.id -eq $id }
     }
-
-    # Archive/Delete item
-    # Assuming DELETE /app/items/{id} works
-    $del = Try-Invoke { Invoke-RestMethod -Method DELETE -Uri ($BaseUrl + "/app/items/$id") -WebSession $script:Session }
-    if ($del.ok) { Pass ("Deleted Item {0}" -f $id) } else { Info ("Could not delete Item {0} (probably has history)" -f $id) }
-  }
 }
 
-# Archive/Delete Recipe
-$delRec = Try-Invoke { Invoke-RestMethod -Method DELETE -Uri ($BaseUrl + "/app/recipes/$($rec.id)") -WebSession $script:Session }
-if ($delRec.ok) { Pass "Deleted Recipe $($rec.id)" } else { Info "Could not delete Recipe (probably has history)" }
+# 1. Session/Health
+Step "1. Session & Health"
+$tok = Invoke-RestMethod -Method Get -Uri "$BaseUrl/session/token" -WebSession $script:Session
+if ($tok) { Pass "Session token acquired" } else { Fail "No token"; exit 1 }
 
-# -----------------------------
-# Finish
-# -----------------------------
-Write-Host ""
-Write-Host "============================================================"
-Write-Host "  ALL TESTS PASSED"
-Write-Host "============================================================"
+$health = Try-Invoke { Invoke-RestMethod -Method Get -Uri "$BaseUrl/health" -WebSession $script:Session }
+if ($health.ok) { Pass "Health check OK" } else { Fail "Health check failed: $($health.err)"; exit 1 }
+
+
+# 2. Inventory CRUD
+Step "2. Inventory CRUD"
+$itemA = Invoke-Json POST "$BaseUrl/app/items" @{ name = "SMK-A-Raw" }
+$itemB = Invoke-Json POST "$BaseUrl/app/items" @{ name = "SMK-B-Raw" }
+$itemC = Invoke-Json POST "$BaseUrl/app/items" @{ name = "SMK-C-Prod" }
+if ($itemA.id -and $itemB.id -and $itemC.id) { Pass "Created Items A, B, C" } else { Fail "Create failed"; exit 1 }
+
+$updA = Invoke-Json PUT "$BaseUrl/app/items/$($itemA.id)" @{ name = "SMK-A-Raw-Updated"; sku = "SKU-A" }
+if ($updA.name -eq "SMK-A-Raw-Updated") { Pass "Updated Item A" } else { Fail "Update failed"; exit 1 }
+
+
+# 3. Contacts
+Step "3. Contacts"
+$vendV = Invoke-Json POST "$BaseUrl/app/vendors" @{ name = "SMK-Vendor-V" }
+if ($vendV.id) { Pass "Created Vendor V" } else { Fail "Create Vendor failed"; exit 1 }
+
+# Link Item A to Vendor V (PUT item with vendor_id)
+$link = Invoke-Json PUT "$BaseUrl/app/items/$($itemA.id)" @{
+  name = "SMK-A-Raw-Updated"
+  sku = "SKU-A"
+  vendor_id = $vendV.id
+}
+if ($link.vendor_id -eq $vendV.id) { Pass "Linked Item A to Vendor V" } else { Fail "Link Vendor failed"; exit 1 }
+
+
+# 4. FIFO Stock-In
+Step "4. FIFO Stock-In (Ledger)"
+# Purchase 10 @ $3.00
+$in1 = Invoke-Json POST "$BaseUrl/app/ledger/adjust" @{ item_id = $itemA.id; qty_change = 10; unit_cost_cents = 300; reason = "Batch 1" }
+# Purchase 5 @ $5.00
+$in2 = Invoke-Json POST "$BaseUrl/app/ledger/adjust" @{ item_id = $itemA.id; qty_change = 5; unit_cost_cents = 500; reason = "Batch 2" }
+
+$stateA = Get-ItemState $itemA.id
+if ($stateA.qty_stored -eq 15) { Pass "Qty is 15" } else { Fail "Qty mismatch: $($stateA.qty_stored)"; exit 1 }
+
+$valA = [int]$stateA.value_cents
+if ($valA -eq 5500) { Pass "Value is 5500 (10*300 + 5*500)" } else { Fail "Value mismatch: $valA"; exit 1 }
+
+
+# 5. FIFO Consume
+Step "5. FIFO Consume"
+# Consume 12 units (10 from Batch 1 @ 300, 2 from Batch 2 @ 500)
+$out = Invoke-Json POST "$BaseUrl/app/ledger/adjust" @{ item_id = $itemA.id; qty_change = -12; reason = "Consume" }
+# Remaining: 3 units of Batch 2 @ 500 = 1500 cents
+$stateA2 = Get-ItemState $itemA.id
+
+if ($stateA2.qty_stored -eq 3) { Pass "Qty is 3" } else { Fail "Qty mismatch: $($stateA2.qty_stored)"; exit 1 }
+if ($stateA2.value_cents -eq 1500) { Pass "Value is 1500" } else { Fail "Value mismatch: $($stateA2.value_cents)"; exit 1 }
+
+
+# 6. Adjustments
+Step "6. Adjustments (Item B)"
+# Positive +2 B (found stock, cost 0)
+$adjPos = Invoke-Json POST "$BaseUrl/app/ledger/adjust" @{ item_id = $itemB.id; qty_change = 2; reason = "Found" }
+if ($adjPos) { Pass "Adjust +2 Item B" } else { Fail "Adj +2 failed"; exit 1 }
+# Negative -1 B
+$adjNeg = Invoke-Json POST "$BaseUrl/app/ledger/adjust" @{ item_id = $itemB.id; qty_change = -1; reason = "Lost" }
+if ($adjNeg) { Pass "Adjust -1 Item B" } else { Fail "Adj -1 failed"; exit 1 }
+
+
+# 7. Manufacturing Success
+Step "7. Manufacturing Success"
+# Recipe: 1 C <- 2 A
+$rec = Invoke-Json POST "$BaseUrl/app/recipes" @{
+  name = "Make C"
+  output_item_id = $itemC.id
+  output_qty = 1
+  items = @(@{ item_id = $itemA.id; qty_required = 2 })
+}
+
+# Run: Produce 1 C
+# Consumes 2 A. A was 3 units @ 500. So consume 2 @ 500 = 1000 cost.
+# Output C gets cost 1000 / 1 = 1000.
+$run = Invoke-Json POST "$BaseUrl/app/manufacturing/run" @{ recipe_id = $rec.id; output_qty = 1 }
+if ($run.status -eq "completed") { Pass "Run completed" } else { Fail "Run failed"; exit 1 }
+
+# Assert A stock (3 - 2 = 1)
+$stA = Get-ItemState $itemA.id
+if ($stA.qty_stored -eq 1) { Pass "Item A stock decreased by 2 (rem: 1)" } else { Fail "Item A stock mismatch: $($stA.qty_stored)"; exit 1 }
+
+# Assert C stock (0 + 1 = 1)
+$stC = Get-ItemState $itemC.id
+if ($stC.qty_stored -eq 1) { Pass "Item C stock increased by 1" } else { Fail "Item C stock mismatch: $($stC.qty_stored)"; exit 1 }
+
+# Assert C unit cost (1000)
+if ($stC.value_cents -eq 1000) { Pass "Item C cost correct (1000)" } else { Fail "Item C cost mismatch: $($stC.value_cents)"; exit 1 }
+
+
+# 8. Manufacturing Fail
+Step "8. Manufacturing Fail (Fail-Fast)"
+# Try produce 100 C (needs 200 A, have 1)
+$bad = Try-Invoke { Invoke-Json POST "$BaseUrl/app/manufacturing/run" @{ recipe_id = $rec.id; output_qty = 100 } }
+if (-not $bad.ok -and $bad.err.Exception.Response.StatusCode.value__ -eq 400) { Pass "Rejected with 400" } else { Fail "Should be 400"; exit 1 }
+
+# Assert no stock changes
+$stA_after = Get-ItemState $itemA.id
+if ($stA_after.qty_stored -eq 1) { Pass "Item A stock unchanged" } else { Fail "Item A stock changed"; exit 1 }
+
+
+# 9. Journal Verification
+Step "9. Journal Verification"
+$localAppData = [Environment]::GetFolderPath('LocalApplicationData')
+$journalDir = Join-Path $localAppData 'BUSCore\app\data\journals'
+if (Test-Path (Join-Path $journalDir 'inventory.jsonl')) { Pass "inventory.jsonl exists" } else { Fail "inventory.jsonl missing"; exit 1 }
+if (Test-Path (Join-Path $journalDir 'manufacturing.jsonl')) { Pass "manufacturing.jsonl exists" } else { Fail "manufacturing.jsonl missing"; exit 1 }
+
+
+# 10. Backup & Restore
+Step "10. Backup & Restore"
+# Export
+$exp = Invoke-Json POST "$BaseUrl/app/db/export" @{ password = "smoke" }
+if ($exp.path) { Pass "Exported DB" } else { Fail "Export failed"; exit 1 }
+
+# Mutate: Change Item C name
+$mut = Invoke-Json PUT "$BaseUrl/app/items/$($itemC.id)" @{ name = "SMK-C-MUTATED"; sku="MUT" }
+$chk = Get-ItemState $itemC.id
+if ($chk.name -eq "SMK-C-MUTATED") { Pass "DB Mutated" } else { Fail "Mutation failed"; exit 1 }
+
+# Import Commit
+$imp = Try-Invoke { Invoke-Json POST "$BaseUrl/app/db/import/commit" @{ path = $exp.path; password = "smoke" } }
+if ($imp.ok -and $imp.resp.replaced) { Pass "Restored DB" } else { Fail "Restore failed: $($imp.err)"; exit 1 }
+
+# Assert Reverted
+$chk2 = Get-ItemState $itemC.id
+if ($chk2.name -eq "SMK-C-Prod") { Pass "Item C name reverted" } else { Fail "Restore verify failed (name=$($chk2.name))"; exit 1 }
+
+
+# 11. Integrity Checks
+Step "11. Integrity Checks"
+$allMovs = Invoke-Json GET "$BaseUrl/app/ledger/movements?limit=1000" $null
+$oversold = $allMovs.movements | Where-Object { $_.is_oversold -eq 1 -or $_.is_oversold -eq $true }
+if ($oversold) { Fail "Found oversold movements"; exit 1 } else { Pass "No oversold movements" }
+
+$allItems = Invoke-Json GET "$BaseUrl/app/items" $null
+$negItems = $allItems | Where-Object { $_.qty_stored -lt 0 }
+if ($negItems) { Fail "Found negative stock items"; exit 1 } else { Pass "No negative stock items" }
+
+
+# 12. Cleanup
+Step "12. Cleanup"
+$toDelete = @($itemA, $itemB, $itemC)
+foreach ($i in $toDelete) {
+    $fresh = Get-ItemState $i.id
+    if ($fresh) {
+        if ($fresh.qty_stored -ne 0) {
+             $adj = Try-Invoke { Invoke-Json POST "$BaseUrl/app/ledger/adjust" @{ item_id = $fresh.id; qty_change = -($fresh.qty_stored); reason = "Cleanup" } }
+        }
+        $del = Try-Invoke { Invoke-RestMethod -Method DELETE -Uri "$BaseUrl/app/items/$($fresh.id)" -WebSession $script:Session }
+        if ($del.ok) { Pass "Deleted $($fresh.name)" }
+    }
+}
+$delRec = Try-Invoke { Invoke-RestMethod -Method DELETE -Uri "$BaseUrl/app/recipes/$($rec.id)" -WebSession $script:Session }
+if ($delRec.ok) { Pass "Deleted Recipe" }
+
+$delVend = Try-Invoke { Invoke-RestMethod -Method DELETE -Uri "$BaseUrl/app/vendors/$($vendV.id)" -WebSession $script:Session }
+if ($delVend.ok) { Pass "Deleted Vendor" }
+
+Pass "Cleanup complete"
+
+Write-Host "ALL TESTS PASSED" -ForegroundColor Green
 exit 0

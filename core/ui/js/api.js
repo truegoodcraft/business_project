@@ -18,6 +18,7 @@
 // along with TGC BUS Core.  If not, see <https://www.gnu.org/licenses/>.
 
 import { request, ensureToken } from './token.js';
+import { parseApiError } from './utils/parser.js';
 
 export { ensureToken };
 
@@ -31,37 +32,63 @@ async function parseBody(response) {
   }
 }
 
-function buildError(status, body, statusText) {
-  const message =
-    (body && typeof body === 'object' && (body.error || body.message)) ||
-    (typeof body === 'string' && body) ||
-    statusText ||
-    `Request failed with status ${status}`;
-  const error = new Error(message);
-  error.status = status;
-  if (body && typeof body === 'object') {
-    Object.assign(error, body);
-  } else if (typeof body === 'string') {
-    error.error = message;
-  }
-  return error;
+function logError(message, url, payload) {
+  // SoT §5.4.7 Console Logging Standard
+  console.error(`BUSCORE_ERROR: ${message}, endpoint=${url}, payload=`, payload);
 }
 
-async function handleResponse(response) {
+function showErrorBanner(msg) {
+  const banner = document.getElementById('error-banner');
+  if (banner) {
+    banner.textContent = msg;
+    banner.classList.remove('hidden');
+  } else {
+    console.error('CRITICAL UI ERROR: Missing #error-banner container.');
+    // Fallback alerts are annoying but better than silent failure if banner is missing
+    // But per instructions we expect the banner.
+  }
+}
+
+async function handleResponse(response, url, payload) {
   const body = await parseBody(response);
+
   if (response.ok) {
     return body;
   }
-  throw buildError(response.status, body, response.statusText);
-}
 
-export async function apiGet(url, init) {
-  const response = await request(url, { method: 'GET', ...(init || {}) });
-  return handleResponse(response);
-}
+  // Unified Error Parsing
+  const parsed = parseApiError(body);
+  const msg = parsed.message;
 
-export async function apiGetJson(url, init) {
-  return apiGet(url, init);
+  logError(msg, url, payload);
+
+  // 400 Bad Request (and 422 Validation)
+  if (response.status === 400 || response.status === 422) {
+    const err = new Error(msg);
+    err.status = response.status;
+    err.fields = parsed.fields;
+    err.detail = msg;
+    // Contract: Do not close dialog. Display error inside form/toast.
+    // We throw so the caller (form handler) receives it.
+    throw err;
+  }
+
+  // 401/403 Auth
+  if (response.status === 401 || response.status === 403) {
+    // Redirect to login or show Session Expired
+    window.location.hash = '/login';
+    throw new Error('Session Expired');
+  }
+
+  // 5xx / Network (Operational)
+  if (response.status >= 500) {
+    const bannerMsg = "An unexpected error occurred. No changes were made.";
+    showErrorBanner(bannerMsg);
+    throw new Error(bannerMsg);
+  }
+
+  // Fallback
+  throw new Error(msg);
 }
 
 function createJsonInit(method, data, init) {
@@ -71,23 +98,45 @@ function createJsonInit(method, data, init) {
   return { method, body, ...init, headers };
 }
 
+async function execRequest(method, url, data, init) {
+  let response;
+  const jsonInit = (method === 'GET' || (method === 'DELETE' && data === undefined))
+    ? { method, ...(init || {}) }
+    : createJsonInit(method, data, init);
+
+  try {
+    response = await request(url, jsonInit);
+  } catch (err) {
+    // Network Error (fetch failed)
+    const msg = "Request timed out. Check server status.";
+    logError(err.message, url, data);
+    showErrorBanner(msg);
+    throw new Error(msg);
+  }
+
+  return handleResponse(response, url, data);
+}
+
+export async function apiGet(url, init) {
+  return execRequest('GET', url, undefined, init);
+}
+
+export async function apiGetJson(url, init) {
+  return apiGet(url, init);
+}
+
 export async function apiPost(url, data, init) {
-  const response = await request(url, createJsonInit('POST', data, init));
-  return handleResponse(response);
+  return execRequest('POST', url, data, init);
 }
 
 export async function apiPut(url, data, init) {
-  const response = await request(url, createJsonInit('PUT', data, init));
-  return handleResponse(response);
+  return execRequest('PUT', url, data, init);
 }
 
 export async function apiPatch(url, data, init) {
-  const response = await request(url, createJsonInit('PATCH', data, init));
-  return handleResponse(response);
+  return execRequest('PATCH', url, data, init);
 }
 
 export async function apiDelete(url, data, init) {
-  const jsonInit = data === undefined ? { method: 'DELETE', ...(init || {}) } : createJsonInit('DELETE', data, init);
-  const response = await request(url, jsonInit);
-  return handleResponse(response);
+  return execRequest('DELETE', url, data, init);
 }

@@ -257,3 +257,19 @@ table tr:hover { background: #1e2530; }
   .btn { padding: 6px 8px; font-size: 12px; }
   .modal-card { max-width: 94vw; }
 }
+
+/* Error Banner (Milestone 0.8.7) */
+.error-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: #ef4444;
+  color: #fff;
+  text-align: center;
+  padding: 12px;
+  font-weight: 600;
+  z-index: 9999;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+.error-banner.hidden { display: none; }
