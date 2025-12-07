@@ -4,14 +4,11 @@
   <meta charset="utf-8">
   <title>BUS Core</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="icon" type="image/svg+xml" href="favicon.svg?v=buscore-8">
+  <link rel="icon" type="image/png" href="/Icon.png">
   <link rel="stylesheet" href="/ui/css/app.css">
   <script>
   (function(){
-    const href = "favicon.svg?v=buscore-8";
-    let link = document.querySelector('link[rel="icon"]');
-    if(!link){ link=document.createElement('link'); link.rel='icon'; document.head.appendChild(link); }
-    link.type = 'image/svg+xml'; link.href = href;
+    // Remove old icon references to ensure clean slate
     document.querySelectorAll('link[rel="shortcut icon"],link[rel="apple-touch-icon"],link[rel="mask-icon"]').forEach(x=>x.remove());
   })();
   </script>
@@ -22,7 +19,7 @@
 
   <nav id="sidebar">
     <a href="#/home" class="brand-header">
-      <img src="favicon.svg" alt="Logo" class="brand-logo">
+      <img src="/Icon.png" alt="BUS Core" class="brand-logo">
       <span class="brand-name">BUS Core</span>
     </a>
 
@@ -32,7 +29,9 @@
       <a href="#/manufacturing" class="nav-item" data-role="nav-link" data-route="manufacturing">Manufacturing</a>
       <a href="#/contacts" class="nav-item" data-role="nav-link" data-route="contacts">Contacts</a>
       <a href="#/recipes" class="nav-item" data-role="nav-link" data-route="recipes">Recipes</a>
+
       <div class="nav-spacer"></div>
+
       <a href="#/settings" class="nav-item" data-role="nav-link" data-route="settings">Settings</a>
     </div>
   </nav>
@@ -66,7 +65,6 @@
             <thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Notes</th></tr></thead>
             <tbody></tbody>
           </table>
-          <!-- View All link intentionally removed until full table + donut shipped -->
         </div>
       </div>
 
@@ -163,32 +161,6 @@
             <li><a href="#/contacts">Contacts</a></li>
           </ul>
         </div>
-
-        <!-- Keep legacy Tools section but force hidden so its tabs/Contacts never show -->
-        <section data-route="tools" class="hidden">
-          <!-- Tools page header tabs (scoped to Tools page only) -->
-          <div data-role="tools-tabs-root" class="hidden">
-            <!-- Tabs header -->
-            <div data-role="main-tabs" class="tabs">
-              <button type="button" data-tab="manufacturing">Manufacturing</button>
-              <button type="button" data-tab="tasks">Tasks</button>
-              <button type="button" data-tab="backup">Backup</button>
-            </div>
-
-            <!-- Tabs panels (kept empty here; JS shows/hides) -->
-            <section data-tab-panel="manufacturing" class="tab-panel hidden">
-              <!-- Manufacturing stub form lives in JS or existing markup -->
-            </section>
-            <section data-tab-panel="tasks" class="tab-panel hidden">
-              <!-- Local tasks table lives in JS or existing markup -->
-            </section>
-            <section data-tab-panel="backup" class="tab-panel hidden">
-              <!-- Backup export button already present elsewhere; JS will wire -->
-              <button data-action="export-backup" class="btn btn-primary btn-block">Export</button>
-              <p>Downloads current app.db (or fallback endpoint).</p>
-            </section>
-          </div>
-        </section>
       </div>
     </div>
   </main>
