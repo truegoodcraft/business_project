@@ -184,6 +184,26 @@ def show_console(icon=None, item=None):
         except Exception:
             pass
 
+def open_dashboard(url: str):
+    """Attempts to open URL in 'App Mode' (no address bar) using Edge/Chrome."""
+    if os.name == 'nt':
+        # Try Edge first (standard on Windows)
+        try:
+            subprocess.Popen(f'start msedge --app="{url}"', shell=True)
+            return
+        except Exception:
+            pass
+    # Fallback to standard browser
+    webbrowser.open(url)
+
+def restart_program():
+    """Restarts the current program."""
+    try:
+        python = sys.executable
+        os.execv(python, [python] + sys.argv)
+    except Exception as e:
+        print(f"Failed to restart: {e}")
+
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="TGC Controller launcher")
     parser.add_argument("--port", type=int, help="Override listen port", default=None)
@@ -243,7 +263,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         def check_and_open():
             if _wait_for_health(port, session_token):
                 if not config_data.launcher.auto_start_in_tray:
-                    webbrowser.open(f"http://127.0.0.1:{port}/ui/#/writes")
+                    open_dashboard(f"http://127.0.0.1:{port}/ui/shell.html#/home")
 
         threading.Thread(target=check_and_open, daemon=True).start()
 
@@ -266,6 +286,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         except Exception:
              # Fallback
              image = Image.new('RGB', (64, 64), color=(30, 31, 34))
+             from PIL import ImageDraw
              d = ImageDraw.Draw(image)
              d.text((10, 10), "BUS", fill=(255, 255, 255))
 
@@ -275,11 +296,16 @@ def main(argv: Optional[list[str]] = None) -> int:
             os._exit(0)
 
         def open_dash(icon, item):
-             webbrowser.open(f"http://127.0.0.1:{port}/ui/#/writes")
+             open_dashboard(f"http://127.0.0.1:{port}/ui/shell.html#/home")
+
+        def restart_app(icon, item):
+            icon.stop()
+            restart_program()
 
         menu = pystray.Menu(
             pystray.MenuItem("Open Dashboard", open_dash, default=True),
             pystray.MenuItem("Show Console", show_console),
+            pystray.MenuItem("Restart", restart_app),
             pystray.MenuItem("Quit", quit_app)
         )
 
