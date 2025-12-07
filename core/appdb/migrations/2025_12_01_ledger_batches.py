@@ -1,3 +1,6 @@
+# Copyright (C) 2025 BUS Core Authors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # core/appdb/migrations/2025_12_01_ledger_batches.py
 from contextlib import contextmanager
 from typing import Set

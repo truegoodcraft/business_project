@@ -1,3 +1,6 @@
+# Copyright (C) 2025 BUS Core Authors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # core/ledger/service.py
 from dataclasses import dataclass
 from typing import Optional, List, Tuple, Dict

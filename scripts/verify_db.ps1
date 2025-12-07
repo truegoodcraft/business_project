@@ -1,3 +1,6 @@
+# Copyright (C) 2025 BUS Core Authors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 param(
   [string]$Base = "http://127.0.0.1:8765"
 )

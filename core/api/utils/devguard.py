@@ -1,3 +1,6 @@
+# Copyright (C) 2025 BUS Core Authors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Development-only guard helpers."""
 import os
 from fastapi import HTTPException

@@ -1,3 +1,6 @@
+// Copyright (C) 2025 BUS Core Authors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // core/ui/js/utils/measurement.js
 // "Iron Core" integer measurement helpers — metric base units ×100, half-away-from-zero rounding
 

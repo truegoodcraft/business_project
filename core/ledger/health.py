@@ -1,3 +1,6 @@
+# Copyright (C) 2025 BUS Core Authors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # core/ledger/health.py
 import sqlite3
 from core.appdb.paths import resolve_db_path
