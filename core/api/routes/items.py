@@ -83,6 +83,8 @@ def _row(it: Item, vendor_name: Optional[str] = None) -> Dict[str, Any]:
         "unit": unit,
         "price": it.price,
         "notes": it.notes,
+        # ADDED: Essential for UI binding and testing
+        "vendor_id": it.vendor_id,
         # UI reads these (optional):
         "vendor": vendor_name,          # derived from vendor_id
         "location": getattr(it, "location", None),
