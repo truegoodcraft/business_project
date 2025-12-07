@@ -122,13 +122,43 @@ def _crud_routes(prefix: str, facade: str):
         _writes: None = Depends(require_write_access),
         _token: str = Depends(require_token_ctx),
     ):
+        """
+        Create a new vendor or contact.
+        SoT §9: Duplicate name POST merges into existing vendor.
+        """
         require_owner_commit(request)
+
+        # 1. Check for existing vendor by name (exact match)
+        existing = db.query(VendorModel).filter(VendorModel.name == payload.name).first()
+
+        if existing:
+            # MERGE LOGIC
+            # Calculate intended role for the new request
+            data_preview = _apply_defaults(payload.model_dump(exclude_unset=True), facade)
+            intended_role = data_preview.get("role")
+
+            # If roles differ, promote to 'both'
+            if existing.role != 'both' and intended_role != existing.role:
+                existing.role = 'both'
+                existing.is_vendor = 1
+
+            # (Optional: Merge meta fields here if needed, for now we just secure the ID)
+
+            db.commit()
+            db.refresh(existing)
+            return existing
+
+        # 2. Create New
         data = _apply_defaults(payload.model_dump(exclude_unset=True), facade)
         v = VendorModel(**data)
         db.add(v)
-        db.commit()
-        db.refresh(v)
-        return v
+        try:
+            db.commit()
+            db.refresh(v)
+            return v
+        except Exception as e:
+            db.rollback()
+            raise e
 
     @router.put(f"{prefix}" + "/{id}", response_model=VendorOut)
     def update_vendor(
