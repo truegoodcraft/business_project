@@ -1,3 +1,6 @@
+# Copyright (C) 2025 BUS Core Authors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Route package exports.
 
 Ledger routes live in ``ledger_api.py`` to avoid a name collision with

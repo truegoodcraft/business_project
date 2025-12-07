@@ -1,3 +1,6 @@
+// Copyright (C) 2025 BUS Core Authors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // core/ui/js/routes/inventory.js
 import { registerRoute } from '../router.js';
 

@@ -390,13 +390,7 @@ if DEV_MODE:
 
     dev_dbinfo_router.dependencies = [Depends(require_token_ctx), Depends(require_dev)]
     app.include_router(dev_dbinfo_router)
-try:
-    from core.api.routes.wave_sync import router as wave_router
-    wave_router.dependencies = [Depends(require_token_ctx)]
-    app.include_router(wave_router)
-except Exception as e:
-    # Wave backend is optional; log to console and continue
-    print(f"[wave] disabled: {e}")
+
 app.include_router(health_router)
 
 

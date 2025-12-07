@@ -1,3 +1,6 @@
+# Copyright (C) 2025 BUS Core Authors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 from fastapi import APIRouter, Depends, Body
 from typing import Dict, Any
 
