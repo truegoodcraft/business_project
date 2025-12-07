@@ -21,26 +21,22 @@
   <div id="global-error-banner" class="hidden"></div>
 
   <nav id="sidebar">
-    <div class="brand">
-      <a class="app-home" href="#/home" data-link="brand-home">
-        <img src="/brand/Flat-Dark.png?v=buscore-2" alt="BUS Core" class="app-logo">
-        <span class="app-title">BUS Core</span>
-      </a>
+    <a href="#/home" class="brand-header">
+      <img src="favicon.svg" alt="Logo" class="brand-logo">
+      <span class="brand-name">BUS Core</span>
+    </a>
+
+    <div class="nav-menu">
+      <div class="nav-category">Tools</div>
+      <a href="#/inventory" class="nav-item" data-role="nav-link" data-route="inventory">Inventory</a>
+      <a href="#/manufacturing" class="nav-item" data-role="nav-link" data-route="manufacturing">Manufacturing</a>
+      <a href="#/contacts" class="nav-item" data-role="nav-link" data-route="contacts">Contacts</a>
+      <a href="#/recipes" class="nav-item" data-role="nav-link" data-route="recipes">Recipes</a>
+      <div class="nav-spacer"></div>
+      <a href="#/settings" class="nav-item" data-role="nav-link" data-route="settings">Settings</a>
     </div>
-    <ul class="nav">
-      <li data-role="nav-tools">
-        <a href="#" data-link="tools" data-action="toggle-tools">Tools</a>
-        <ul data-role="tools-subnav" class="nav-group">
-          <li><a href="#/inventory" data-link="tools-inventory">Inventory</a></li>
-          <li><a href="#/runs" data-link="tools-manufacturing" data-role="nav-link" data-route="runs">Manufacturing</a></li>
-          <li><a href="#/recipes" data-link="tools-recipes" data-role="nav-link" data-route="recipes">Recipes</a></li>
-          <li><a href="#/contacts" data-link="tools-contacts">Contacts</a></li>
-        </ul>
-      </li>
-      <li><a href="#/admin" data-role="nav-link" data-route="admin">Admin</a></li>
-      <li><a href="#/settings" data-role="nav-link" data-route="settings">Settings</a></li>
-    </ul>
   </nav>
+
   <main id="main">
     <div id="app">
 
@@ -227,7 +223,7 @@
     <div class="modal-backdrop" aria-hidden="true"></div>
     <div class="modal-dialog modal-content">
       <header class="modal-header">
-        <h2 id="contacts-modal-title">Add Contact</h2>
+        <h2 id="contacts-modal-title" class="modal-title">Add Contact</h2>
         <button type="button" data-action="close-contacts-modal" aria-label="Close">×</button>
       </header>
 

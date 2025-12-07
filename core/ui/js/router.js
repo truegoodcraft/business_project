@@ -5,6 +5,9 @@
 const routes = {};
 
 export function registerRoute(path, render) {
+  // Store exact path matches.
+  // Path can be a string or regex logic in future, but for now we store by string key for direct lookups
+  // and handle regex manually in render for deep links.
   routes[path] = render;
 }
 
@@ -19,47 +22,53 @@ function render() {
   let path = hash.replace(/\/$/, '');
   if (!path) path = '/inventory';
 
+  const target = document.getElementById('app');
+
   // 1. Exact Match
   if (routes[path]) {
-    routes[path](null, null); // Invoke handler, no DOM clearing
+    // If route handler accepts args (target, id), we pass them.
+    // For standard routes, it might be just (target) or nothing.
+    routes[path](target, null);
     return;
   }
 
   // 2. Regex / Deep Link Match
+  // We manually check known deep link patterns and invoke the registered base handler with the extracted ID.
+
   const inventoryMatch = path.match(/^\/inventory\/(.+)$/);
   if (inventoryMatch && routes['/inventory']) {
-    routes['/inventory'](null, inventoryMatch[1]);
+    routes['/inventory'](target, inventoryMatch[1]);
     return;
   }
 
   const contactsMatch = path.match(/^\/contacts\/(.+)$/);
   if (contactsMatch && routes['/contacts']) {
-    routes['/contacts'](null, contactsMatch[1]);
+    routes['/contacts'](target, contactsMatch[1]);
     return;
   }
 
   const recipesMatch = path.match(/^\/recipes\/(.+)$/);
   if (recipesMatch && routes['/recipes']) {
-    routes['/recipes'](null, recipesMatch[1]);
+    routes['/recipes'](target, recipesMatch[1]);
     return;
   }
 
   const runsMatch = path.match(/^\/runs\/(.+)$/);
   if (runsMatch && routes['/runs']) {
-    routes['/runs'](null, runsMatch[1]);
+    routes['/runs'](target, runsMatch[1]);
     return;
   }
 
   const mfgMatch = path.match(/^\/manufacturing\/(.+)$/);
   if (mfgMatch && routes['/manufacturing']) {
-    routes['/manufacturing'](null, mfgMatch[1]);
+    routes['/manufacturing'](target, mfgMatch[1]);
     return;
   }
 
   // Fallback / 404
   console.warn('Route not found:', path);
   if (routes['/inventory']) {
-     routes['/inventory']();
+     routes['/inventory'](target);
   }
 }
 

@@ -51,72 +51,69 @@ a:hover { text-decoration: underline; }
   flex-shrink: 0;
 }
 
-#sidebar .brand {
-  margin-bottom: 16px;
-  padding: 0 16px;
+.brand-header {
   display: flex;
   align-items: center;
+  padding: 15px;
+  color: white;
+  font-weight: bold;
+  text-decoration: none;
+  cursor: pointer;
+  gap: 10px;
 }
+.brand-header:hover { text-decoration: none; }
 
-#sidebar .app-logo {
-  height: 28px;
+.brand-logo {
+  height: 24px;
   width: auto;
-  margin-right: 8px;
+}
+.brand-name {
+  font-size: 16px;
 }
 
-#sidebar .app-title {
-  font-weight: 600;
-  color: var(--text);
-}
-
-#sidebar .nav {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-/* Nav Links - make them look like buttons/tabs */
-#sidebar .nav > li > a,
-#sidebar .nav-link {
-  display: block;
-  text-align: center;
-  padding: 8px 12px;
-  margin: 0 10px 4px;
-  border-radius: 8px;
-  color: inherit;
-  text-decoration: none;
-}
-
-#sidebar .nav > li > a:hover,
-#sidebar .nav > li > a.active,
-#sidebar .nav-link:hover,
-#sidebar .nav-link.active {
-  background: #2a2a2a;
-}
-
-#sidebar .nav-group {
-  display: none;
+.nav-menu {
+  display: flex;
   flex-direction: column;
-  padding-left: 0;
-  margin-top: 4px;
+  flex: 1;
 }
-#sidebar .nav-group.open { display: flex; }
 
-#sidebar .nav-sublink {
+.nav-category {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  color: #888;
+  padding: 0 15px;
+  margin-top: 20px;
+  margin-bottom: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+.nav-item {
   display: block;
-  text-align: center;
-  padding: 6px 10px;
-  margin: 0 10px 2px;
-  border-radius: 6px;
   color: #ccc;
-  font-size: 13px;
+  text-decoration: none;
+  padding: 10px 15px;
+  margin: 2px 10px;
+  border-radius: 8px;
+  font-size: 14px;
+  transition: background 0.2s, color 0.2s;
+}
+
+.nav-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: white;
   text-decoration: none;
 }
 
-#sidebar .nav-sublink:hover,
-#sidebar .nav-sublink.active {
-  background: #2a2a2a;
-  color: #fff;
+.nav-item.active {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  /* border-left: 3px solid var(--accent); Optional */
+  /* padding-left: 12px; */
+}
+
+.nav-spacer {
+  flex: 1;
 }
 
 /* Main Content */
