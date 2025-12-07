@@ -60,8 +60,8 @@ function Get-ItemValue {
     param($id)
     try {
         $v = Invoke-Json GET "$BaseUrl/app/ledger/valuation?item_id=$id" $null
-        # Ledger API returns { "item_id": X, "total_value_cents": Y }
-        return [int]$v.total_value_cents
+        # Ledger API returns { "item_id": X, "cents": Y, "display": "..." }
+        return [int]$v.cents
     } catch {
         return 0
     }
