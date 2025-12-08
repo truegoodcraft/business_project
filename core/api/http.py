@@ -483,6 +483,7 @@ INDEX_STOP_EVENT = threading.Event()
 INDEX_PAUSE_EVENT = threading.Event()
 INDEX_IDLE_EVENT = threading.Event()
 INDEX_IDLE_EVENT.set()
+INDEX_LOOP: asyncio.AbstractEventLoop | None = None
 
 
 def log(msg: str) -> None:
@@ -518,12 +519,79 @@ def pause_indexer(timeout: float = 5.0) -> bool:
                 break
             if INDEX_IDLE_EVENT.wait(0.25):
                 break
-    return INDEX_IDLE_EVENT.is_set()
+    INDEX_IDLE_EVENT.set()
+    return True
 
 
 def resume_indexer() -> None:
     INDEX_STOP_EVENT.clear()
     INDEX_PAUSE_EVENT.clear()
+
+
+def stop_indexer(timeout: float = 10.0) -> bool:
+    """Signal background indexer to stop and release DB handles."""
+    global BACKGROUND_INDEX_TASK
+    INDEX_STOP_EVENT.set()
+    INDEX_PAUSE_EVENT.set()
+    task = BACKGROUND_INDEX_TASK
+    loop = INDEX_LOOP
+    if task and not task.done() and loop and loop.is_running():
+        try:
+            loop.call_soon_threadsafe(task.cancel)
+        except Exception:
+            pass
+    _dispose_index_handles()
+    deadline = time.time() + max(timeout, 0)
+    while time.time() < deadline:
+        if INDEX_IDLE_EVENT.wait(0.25):
+            break
+    INDEX_IDLE_EVENT.set()
+    if task and task.done():
+        BACKGROUND_INDEX_TASK = None
+    return True
+
+
+def start_indexer(initial_status: Optional[Dict[str, Any]] | None = None) -> None:
+    """Start the background indexer task if not already running."""
+    global BACKGROUND_INDEX_TASK, INDEX_LOOP
+    INDEX_STOP_EVENT.clear()
+    INDEX_PAUSE_EVENT.clear()
+    if BACKGROUND_INDEX_TASK and BACKGROUND_INDEX_TASK.done():
+        BACKGROUND_INDEX_TASK = None
+    if BACKGROUND_INDEX_TASK and not BACKGROUND_INDEX_TASK.done():
+        return
+
+    loop = INDEX_LOOP
+    if loop is None:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            try:
+                loop = asyncio.get_event_loop()
+            except Exception:
+                loop = None
+        INDEX_LOOP = loop
+    if loop is None or not loop.is_running():
+        return
+
+    status = initial_status
+    if status is None:
+        try:
+            status = _index_status_payload(_broker())
+        except Exception as exc:
+            if is_dev():
+                log(f"[index] start failed: error={type(exc).__name__}")
+            return
+
+    def _spawn() -> None:
+        global BACKGROUND_INDEX_TASK
+        BACKGROUND_INDEX_TASK = asyncio.create_task(_run_background_index(status))
+
+    try:
+        loop.call_soon_threadsafe(_spawn)
+    except Exception as exc:
+        if is_dev():
+            log(f"[index] start scheduling failed: error={type(exc).__name__}")
 
 
 PLUGIN_UI_BASES = [
@@ -757,17 +825,13 @@ def app_import_commit(req: ImportReq, request: Request, _w: None = Depends(requi
     app.state.maintenance = True
     _log("starting")
     try:
-        _log("pausing indexer")
-        pause_ok = False
-        try:
-            pause_fn = getattr(app.state, "pause_indexer", None) or pause_indexer
-            pause_ok = bool(pause_fn(timeout=5.0))
-        except Exception:
-            pause_ok = False
-        if not pause_ok and dev:
-            _log("warn: indexer pause did not confirm idle")
+        _log("stopping indexer")
+        stop_fn = getattr(app.state, "stop_indexer", None) or stop_indexer
+        stop_fn(timeout=10.0)
+        _log("indexer stopped")
     except Exception:
-        pass
+        if dev:
+            _log("warn: stop_indexer raised (ignored)")
 
     def _dispose_all():
         state = getattr(request.app, "state", None)
@@ -802,8 +866,8 @@ def app_import_commit(req: ImportReq, request: Request, _w: None = Depends(requi
     finally:
         app.state.maintenance = False
         try:
-            resume_fn = getattr(app.state, "resume_indexer", None) or resume_indexer
-            resume_fn()
+            start_fn = getattr(app.state, "start_indexer", None) or start_indexer
+            start_fn()
         except Exception:
             pass
         try:
@@ -1483,7 +1547,8 @@ def index_status():
 
 @app.on_event("startup")
 async def _auto_index_if_stale() -> None:
-    global BACKGROUND_INDEX_TASK
+    global BACKGROUND_INDEX_TASK, INDEX_LOOP
+    INDEX_LOOP = asyncio.get_running_loop()
     try:
         status = _index_status_payload(_broker())
     except Exception as exc:
@@ -1979,6 +2044,8 @@ def create_app():
     init_app_state(app)
     app.state.pause_indexer = pause_indexer
     app.state.resume_indexer = resume_indexer
+    app.state.stop_indexer = stop_indexer
+    app.state.start_indexer = start_indexer
     if not getattr(app.state, "_domain_routes_registered", False):
         app.include_router(items_router, prefix="/app")
         app.include_router(vendors_router, prefix="/app")
