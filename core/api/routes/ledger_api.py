@@ -142,6 +142,7 @@ def consume(body: ConsumeIn):
 class AdjustmentInput(BaseModel):
     item_id: int
     qty_change: float = Field(..., ne=0)
+    unit_cost_cents: int = 0  # Default to 0 if not specified
     note: str | None = None
 
 
@@ -160,7 +161,7 @@ def _format_shortages(shortages: list[dict]) -> list[dict]:
 def adjust_stock(body: AdjustmentInput, db: Session = Depends(get_session)):
     """
     Positive adjustment:
-      - create a new batch with qty_remaining=+N and unit_cost_cents=0 (SoT silent on costing)
+      - create a new batch with specified unit_cost_cents (default 0)
       - write a matching positive movement
     Negative adjustment:
       - consume FIFO from existing batches
@@ -171,7 +172,7 @@ def adjust_stock(body: AdjustmentInput, db: Session = Depends(get_session)):
             db,
             body.item_id,
             body.qty_change,
-            unit_cost_cents=0,
+            unit_cost_cents=body.unit_cost_cents, # FIX: Use provided cost
             source_kind="adjustment",
             source_id=None,
         )
@@ -183,6 +184,7 @@ def adjust_stock(body: AdjustmentInput, db: Session = Depends(get_session)):
                 "item_id": body.item_id,
                 "qty_delta": float(body.qty_change),
                 "reason": body.note,
+                "unit_cost_cents": body.unit_cost_cents,
             }
         )
         return {"ok": True}
