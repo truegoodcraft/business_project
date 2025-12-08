@@ -168,13 +168,15 @@ $tokResp = Invoke-RestMethod -Method Get -Uri ($BaseUrl + "/session/token") -Web
 if ($tokResp) {
   Write-Host "  [INFO] Session token acquired" -ForegroundColor DarkCyan
   # Build headers with the session cookie for use in job-based REST calls
-  $script:Headers = @{ "Accept" = "application/json" }
+  $cookiePairs = @()
   try {
-    $cookieHeader = $script:Session.Cookies.GetCookieHeader([Uri]$BaseUrl)
-    if (-not [string]::IsNullOrWhiteSpace($cookieHeader)) {
-      $script:Headers["Cookie"] = $cookieHeader
+    $uri = [Uri]$BaseUrl
+    foreach ($c in $script:Session.Cookies.GetCookies($uri)) {
+      $cookiePairs += ("{0}={1}" -f $c.Name, $c.Value)
     }
   } catch { }
+  $cookieHeader = ($cookiePairs -join "; ")
+  $script:Headers = @{ "Cookie" = $cookieHeader; "Accept" = "application/json" }
 } else {
   Write-Host "  [FAIL] No session token returned from /session/token" -ForegroundColor Red
   exit 1
