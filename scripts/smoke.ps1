@@ -72,7 +72,7 @@ function Try-Invoke {
 }
 
 function Parse-ErrorDetail {
-  param([Parameter(Mandatory=$true)]$Json)
+  param([Parameter()]$Json)
   if ($null -eq $Json) { return @{ kind = "none"; message = "" } }
   if (-not $Json.PSObject.Properties.Name.Contains("detail")) { return @{ kind = "none"; message = "" } }
 
@@ -299,14 +299,28 @@ try {
 if ($resp.StatusCode -ne 400) {
   Fail "Expected 400 on insufficient stock, got $($resp.StatusCode)"
 } else {
+  # Robust JSON parse: tolerate empty/non-JSON error bodies
   $json = $null
-  try { $json = $resp.Content | ConvertFrom-Json -ErrorAction Stop } catch { $json = $null }
+  try {
+    if ($resp.PSObject.Properties.Name -contains 'Content' -and -not [string]::IsNullOrWhiteSpace($resp.Content)) {
+      $json = $resp.Content | ConvertFrom-Json -ErrorAction Stop
+    } elseif ($resp.PSObject.Properties.Name -contains 'RawContent') {
+      # Fallback: try to strip headers from RawContent and parse
+      $raw = $resp.RawContent
+      if ($null -ne $raw) {
+        $body = $raw -replace '^\s*HTTP/1\.\d\s+\d+\s+.*?\r?\n(?:.*?\r?\n)*?\r?\n',''
+        if (-not [string]::IsNullOrWhiteSpace($body)) {
+          $json = $body | ConvertFrom-Json -ErrorAction Stop
+        }
+      }
+    }
+  } catch { $json = $null }
   $err = Parse-ErrorDetail -Json $json
   if ($err.kind -in @("string","list","object")) {
     Pass "Run with insufficient stock rejected (400)"
     Pass "Error detail parsed ($($err.kind)): $($err.message)"
   } else {
-    Fail "Error detail missing/unknown shape"
+    Fail "Error detail missing/unknown shape (content empty or not JSON)"
   }
 
   $shortOK = $false
