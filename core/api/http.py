@@ -643,7 +643,7 @@ from core.api.routes.items import router as items_router
 from core.api.routes.vendors import router as vendors_router
 from core.api.routes.recipes import router as recipes_router
 from core.api.routes.manufacturing import router as manufacturing_router
-from core.api.routes.ledger_api import router as ledger_router
+from core.api.routes.ledger_api import public_router as ledger_public_router, router as ledger_router
 
 oauth = APIRouter()
 
@@ -1899,6 +1899,7 @@ def create_app():
         app.include_router(vendors_router, prefix="/app")
         app.include_router(recipes_router, prefix="/app")
         app.include_router(manufacturing_router, prefix="/app")
+        app.include_router(ledger_public_router, prefix="/app")
         app.include_router(ledger_router, prefix="/app")
         app.include_router(transactions_routes.router, prefix="/app")
         app.include_router(config_routes.router, prefix="/app")

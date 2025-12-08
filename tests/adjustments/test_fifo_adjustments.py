@@ -74,7 +74,7 @@ def test_positive_adjustment_creates_new_batch(ledger_setup):
     models = ledger_setup["models"]
 
     resp = client.post(
-        "/app/ledger/adjust",
+        "/app/adjust",
         json={"item_id": ledger_setup["item_id"], "qty_change": 5, "note": "count"},
     )
 
@@ -116,7 +116,7 @@ def test_negative_adjustment_fifo_consume_and_400_on_insufficient(ledger_setup):
         db.commit()
 
     resp = client.post(
-        "/app/ledger/adjust",
+        "/app/adjust",
         json={"item_id": item_id, "qty_change": -4, "note": "shrink"},
     )
 
@@ -143,7 +143,7 @@ def test_negative_adjustment_fifo_consume_and_400_on_insufficient(ledger_setup):
         assert all(mv.is_oversold is False for mv in adjustments)
 
     resp = client.post(
-        "/app/ledger/adjust",
+        "/app/adjust",
         json={"item_id": item_id, "qty_change": -3},
     )
 

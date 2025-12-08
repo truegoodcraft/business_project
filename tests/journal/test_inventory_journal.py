@@ -86,7 +86,7 @@ def test_purchase_appends_journal(inventory_journal_setup):
     journal_path = inventory_journal_setup["journal_path"]
 
     resp = client.post(
-        "/app/ledger/purchase",
+        "/app/purchase",
         json={
             "item_id": inventory_journal_setup["item_id"],
             "qty": 3,
@@ -127,7 +127,7 @@ def test_journal_failure_does_not_block_adjustment(inventory_journal_setup, monk
     monkeypatch.setattr("core.api.routes.ledger_api.append_inventory", boom)
 
     resp = client.post(
-        "/app/ledger/adjust",
+        "/app/adjust",
         json={"item_id": inventory_journal_setup["item_id"], "qty_change": 2},
     )
 
