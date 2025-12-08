@@ -570,12 +570,53 @@ if ($hasVersion) { Pass "Preview returned schema/user version" } else { Pass "Pr
 
 # D) Restore Commit (atomic replace)
 Info "Committing restore (atomic replace)..."
+# Direct call using the authenticated WebSession; if it errors, fall back to a bounded .NET request with the same cookies.
+$commitBody = @{ path = $export.path; password = $pw }
+$commitResp = $null
+$commitErr  = $null
 try {
-  $commitResp = Invoke-RestJsonWithTimeout -Uri ($BaseUrl + "/app/db/import/commit") -Method POST -Body @{ path = $export.path; password = $pw } -TimeoutSec 120 -Headers $script:Headers
+  $commitResp = Invoke-RestMethod -Method POST -Uri ($BaseUrl + "/app/db/import/commit") `
+                 -WebSession $script:Session `
+                 -ContentType "application/json" `
+                 -Body ($commitBody | ConvertTo-Json -Depth 10) `
+                 -ErrorAction Stop
+} catch {
+  $commitErr = $_
+}
+if ($null -eq $commitResp) {
+  # Fallback with explicit timeout (120s) reusing cookies from WebSession
+  try {
+    $uri = [Uri]($BaseUrl + "/app/db/import/commit")
+    $req = [System.Net.HttpWebRequest]::Create($uri)
+    $req.Method = "POST"
+    $req.ContentType = "application/json"
+    $req.Accept = "application/json"
+    $req.Timeout = 120000
+    $req.ReadWriteTimeout = 120000
+    $cc = New-Object System.Net.CookieContainer
+    foreach ($c in $script:Session.Cookies.GetCookies($uri)) { $cc.Add($c) }
+    $req.CookieContainer = $cc
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes(($commitBody | ConvertTo-Json -Depth 10))
+    $req.ContentLength = $bytes.Length
+    $stream = $req.GetRequestStream()
+    $stream.Write($bytes,0,$bytes.Length)
+    $stream.Close()
+    $resp = $req.GetResponse()
+    $rs = $resp.GetResponseStream()
+    $sr = New-Object System.IO.StreamReader($rs,[System.Text.Encoding]::UTF8)
+    $txt = $sr.ReadToEnd()
+    $sr.Close(); $resp.Close()
+    $commitResp = $txt | ConvertFrom-Json
+  } catch {
+    $commitErr = $_
+  }
+}
+if ($null -ne $commitResp) {
   Pass "Restore commit replaced database"
   if ($commitResp.restart_required -eq $true) { Pass "Restart required flag set" } else { Fail "Expected restart_required=true"; exit 1 }
-} catch {
-  Fail "Restore commit failed or timed out: $($_.Exception.Message)"
+} else {
+  $msg = if ($commitErr) { $commitErr.Exception.Message } else { "unknown error" }
+  Fail "Restore commit failed or timed out: $msg"
   exit 1
 }
 
