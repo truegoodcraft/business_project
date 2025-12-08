@@ -479,6 +479,7 @@ SESSION_TOKEN: str = ""
 LOG_FILE: Path | None = None
 _OAUTH_STATES: Dict[str, Dict[str, Any]] = {}
 BACKGROUND_INDEX_TASK: asyncio.Task | None = None
+INDEX_STOP_EVENT = threading.Event()
 
 
 def log(msg: str) -> None:
@@ -491,6 +492,22 @@ def log(msg: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(line + "\n")
+
+
+def pause_indexer(timeout: float = 5.0) -> None:
+    global BACKGROUND_INDEX_TASK
+    INDEX_STOP_EVENT.set()
+    task = BACKGROUND_INDEX_TASK
+    if task and not task.done():
+        deadline = time.time() + max(timeout, 0)
+        while time.time() < deadline:
+            if task.done():
+                break
+            time.sleep(0.25)
+
+
+def resume_indexer() -> None:
+    INDEX_STOP_EVENT.clear()
 
 
 PLUGIN_UI_BASES = [
@@ -721,6 +738,10 @@ def app_import_commit(req: ImportReq, request: Request, _w: None = Depends(requi
         raise HTTPException(status_code=409, detail={"error": "restore_in_progress"})
 
     app.state.maintenance = True
+    try:
+        pause_indexer(timeout=5.0)
+    except Exception:
+        pass
 
     def _dispose_all():
         state = getattr(request.app, "state", None)
@@ -748,6 +769,10 @@ def app_import_commit(req: ImportReq, request: Request, _w: None = Depends(requi
         return res
     finally:
         app.state.maintenance = False
+        try:
+            resume_indexer()
+        except Exception:
+            pass
         try:
             if lock is not None and lock.locked():
                 lock.release()
@@ -1030,6 +1055,9 @@ def _catalog_background_scan(broker, source: str, scope: str, label: str) -> boo
             return False
         total = 0
         while True:
+            if INDEX_STOP_EVENT.is_set():
+                log(f"[index] {label}: stop requested")
+                return False
             page = broker.catalog_next(stream_id, 500, 700)
             if not isinstance(page, dict):
                 break
@@ -1056,6 +1084,10 @@ def _background_index_worker(initial_status: Optional[Dict[str, Any]] = None) ->
         broker = _broker()
     except Exception as exc:
         log(f"[index] background: broker_unavailable error={type(exc).__name__}")
+        return
+
+    if INDEX_STOP_EVENT.is_set():
+        log("[index] background: stop requested (pre-start)")
         return
 
     status = initial_status or _index_status_payload(broker)
@@ -1111,6 +1143,9 @@ def _background_index_worker(initial_status: Optional[Dict[str, Any]] = None) ->
 
 
 async def _run_background_index(initial_status: Optional[Dict[str, Any]] = None) -> None:
+    if INDEX_STOP_EVENT.is_set():
+        log("[index] background: paused; skipping run")
+        return
     try:
         await asyncio.to_thread(_background_index_worker, initial_status)
     except Exception as exc:
@@ -1408,6 +1443,9 @@ async def _auto_index_if_stale() -> None:
         status = _index_status_payload(_broker())
     except Exception as exc:
         log(f"[index] background: status_check_failed error={type(exc).__name__}")
+        return
+    if INDEX_STOP_EVENT.is_set():
+        log("[index] background: startup skip (paused)")
         return
     if status.get("overall_up_to_date"):
         log("[index] background: startup skip (up-to-date)")

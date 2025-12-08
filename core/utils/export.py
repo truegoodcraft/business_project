@@ -32,6 +32,7 @@ from core.appdb.engine import ENGINE
 from core.backup.restore_commit import (
     archive_journals,
     atomic_replace_with_retries,
+    cleanup_sidecars,
     close_all_db_handles,
     same_dir_temp,
     wal_checkpoint,
@@ -303,6 +304,8 @@ def import_commit(
         close_all_db_handles(dispose_fn)
         # Second sweep right before replace to ensure handles are gone
         close_all_db_handles(None)
+
+        cleanup_sidecars(APP_DB)
 
         atomic_replace_with_retries(tmp_db_path, APP_DB)
 
