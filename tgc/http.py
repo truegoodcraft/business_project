@@ -25,7 +25,7 @@ from core.api.routes.manufacturing import router as manufacturing_router
 from core.api.routes.recipes import router as recipes_router
 from core.api.routes.ledger_api import router as ledger_router
 from core.api.utils.devguard import require_dev
-from core.appdb.engine import DB_PATH as DB_FILE, ENGINE, SessionLocal
+from core.appdb.engine import DB_PATH as DB_FILE, get_engine, get_session
 from core.appdb.ensure import DB_PATH as ACTIVE_DB_PATH, ensure_schema
 from core.appdb.paths import ui_dir
 from core.appdb.migrate import ensure_vendors_flags
@@ -241,8 +241,8 @@ def _ensure_schema_upgrades(db: Session) -> None:
 
 
 def _run_startup_migrations() -> None:
-    ensure_vendors_flags(ENGINE)
-    db = SessionLocal()
+    ensure_vendors_flags(get_engine())
+    db = next(get_session())
     try:
         _ensure_schema_upgrades(db)
     finally:
@@ -250,7 +250,8 @@ def _run_startup_migrations() -> None:
 
 
 def get_db() -> Generator[Session, None, None]:
-    db = SessionLocal()
+    db_gen = get_session()
+    db = next(db_gen)
     try:
         yield db
     finally:

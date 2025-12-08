@@ -28,7 +28,7 @@ import time
 from pathlib import Path
 from typing import Callable, Dict, Optional
 
-from core.appdb.engine import ENGINE
+from core.appdb.engine import dispose_engine
 from core.backup.restore_commit import (
     archive_journals,
     cleanup_sidecars,
@@ -306,7 +306,7 @@ def import_commit(
         APP_DB.parent.mkdir(parents=True, exist_ok=True)
         JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
 
-        dispose_fn = dispose_call or ENGINE.dispose
+        dispose_fn = dispose_call or dispose_engine
 
         # First sweep: dispose engines/pools and close stray connections
         _log("disposing db handles")
@@ -318,12 +318,12 @@ def import_commit(
 
         cleanup_sidecars(APP_DB)
         _log("waiting for exclusive handle on dest")
-        ok, err = wait_for_exclusive(APP_DB, attempts=120, sleep_s=0.5)
+        ok, err = wait_for_exclusive(APP_DB, attempts=8, sleep_s=0.25)
         if not ok:
             raise RuntimeError(f"exclusive_timeout:win32={err}")
 
         _log("replacing database file")
-        ok, err = robust_replace(tmp_db_path, APP_DB, attempts=120, sleep_s=0.5)
+        ok, err = robust_replace(tmp_db_path, APP_DB, attempts=20, sleep_s=0.25)
         if not ok:
             raise RuntimeError(f"replace_failed:win32={err}")
         _log("replace complete")

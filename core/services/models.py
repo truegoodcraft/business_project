@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from sqlalchemy import Column, Date, DateTime, ForeignKey, Integer, String, Text, func
 
-from core.appdb.engine import ENGINE, SessionLocal, get_session
+from core.appdb.engine import SessionLocal, dispose_engine, get_engine, get_session
 from core.appdb.models import Base, Item, Recipe, RecipeItem, Vendor
 
 
@@ -52,6 +52,7 @@ class Attachment(Base):
 
 
 # Ensure tables exist AFTER all models are defined
+ENGINE = get_engine()
 Base.metadata.create_all(bind=ENGINE)
 
 

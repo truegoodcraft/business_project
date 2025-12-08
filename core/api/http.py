@@ -63,7 +63,7 @@ from starlette.status import HTTP_401_UNAUTHORIZED
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from core.appdb.engine import get_session
+from core.appdb.engine import DB_PATH as DB_FILE, dispose_engine, get_engine, get_session
 
 from core.services.capabilities import registry
 from core.services.capabilities.registry import MANIFEST_PATH
@@ -116,7 +116,6 @@ from core.config.paths import (
     IMPORTS_DIR,
     DB_URL,
 )
-from core.appdb.engine import ENGINE, DB_PATH as DB_FILE, SessionLocal
 from core.appdb.migrate import ensure_vendors_flags
 from core.appdb.paths import ui_dir
 
@@ -311,8 +310,8 @@ def _ensure_schema_upgrades(db: Session) -> None:
 
 @app.on_event("startup")
 def startup_migrations():
-    ensure_vendors_flags(ENGINE)
-    db = SessionLocal()
+    ensure_vendors_flags(get_engine())
+    db = next(get_session())
     try:
         _ensure_schema_upgrades(db)
     finally:
@@ -323,7 +322,8 @@ def get_db(request: Request) -> Generator[Session, None, None]:
     if getattr(request.app.state, "maintenance", False):
         raise HTTPException(status_code=503, detail={"error": "maintenance"})
 
-    db = SessionLocal()
+    db_gen = get_session()
+    db = next(db_gen)
     try:
         yield db
     finally:
@@ -500,7 +500,7 @@ def log(msg: str) -> None:
 
 def _dispose_index_handles() -> None:
     try:
-        ENGINE.dispose()
+        dispose_engine()
     except Exception:
         if is_dev():
             log("[index] pause: engine dispose failed (ignored)")
@@ -839,10 +839,13 @@ def app_import_commit(req: ImportReq, request: Request, _w: None = Depends(requi
         if state is not None:
             state_db = getattr(state, "db", None)
             eng = getattr(state_db, "engine", None) or getattr(state, "engine", None)
-        if eng is None:
-            eng = ENGINE
         try:
-            eng.dispose()
+            if eng is not None and hasattr(eng, "dispose"):
+                eng.dispose()
+        except Exception:
+            pass
+        try:
+            dispose_engine()
         except Exception:
             pass
 
@@ -2046,6 +2049,23 @@ def create_app():
     app.state.resume_indexer = resume_indexer
     app.state.stop_indexer = stop_indexer
     app.state.start_indexer = start_indexer
+
+    @app.on_event("startup")
+    async def _start_indexer_event():
+        try:
+            app.state.start_indexer()
+            if is_dev():
+                log("[index] control: started in worker")
+        except Exception:
+            if is_dev():
+                log("[index] control: start failed (ignored)")
+
+    @app.on_event("shutdown")
+    async def _stop_indexer_event():
+        try:
+            app.state.stop_indexer()
+        except Exception:
+            pass
     if not getattr(app.state, "_domain_routes_registered", False):
         app.include_router(items_router, prefix="/app")
         app.include_router(vendors_router, prefix="/app")
