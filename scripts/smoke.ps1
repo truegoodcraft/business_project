@@ -76,22 +76,28 @@ function Invoke-RestJsonWithTimeout {
     [Parameter(Mandatory=$true)][string]$Uri,
     [Parameter(Mandatory=$true)][string]$Method,
     [Parameter()]$Body = $null,
-    [int]$TimeoutSec = 120
+    [int]$TimeoutSec = 120,
+    [hashtable]$Headers = $null
   )
   $job = Start-Job -InitializationScript {
     $ProgressPreference = 'SilentlyContinue'
   } -ScriptBlock {
-    param($Uri,$Method,$Body)
+    param($Uri,$Method,$Body,$Headers)
     try {
+      $hdr = $null
+      if ($Headers -ne $null) {
+        $hdr = @{}
+        foreach ($k in $Headers.Keys) { $hdr[$k] = $Headers[$k] }
+      }
       if ($Body -ne $null) {
-        return Invoke-RestMethod -Method $Method -Uri $Uri -Body ($Body | ConvertTo-Json -Depth 10) -ContentType "application/json" -MaximumRedirection 0 -ErrorAction Stop
+        return Invoke-RestMethod -Method $Method -Uri $Uri -Headers $hdr -Body ($Body | ConvertTo-Json -Depth 10) -ContentType "application/json" -MaximumRedirection 0 -ErrorAction Stop
       } else {
-        return Invoke-RestMethod -Method $Method -Uri $Uri -MaximumRedirection 0 -ErrorAction Stop
+        return Invoke-RestMethod -Method $Method -Uri $Uri -Headers $hdr -MaximumRedirection 0 -ErrorAction Stop
       }
     } catch {
       throw
     }
-  } -ArgumentList $Uri,$Method,$Body
+  } -ArgumentList $Uri,$Method,$Body,$Headers
   if (-not (Wait-Job $job -Timeout $TimeoutSec)) {
     Stop-Job $job -Force | Out-Null
     Remove-Job $job -Force | Out-Null
@@ -161,6 +167,14 @@ $localAppData = [Environment]::GetFolderPath('LocalApplicationData')
 $tokResp = Invoke-RestMethod -Method Get -Uri ($BaseUrl + "/session/token") -WebSession $script:Session
 if ($tokResp) {
   Write-Host "  [INFO] Session token acquired" -ForegroundColor DarkCyan
+  # Build headers with the session cookie for use in job-based REST calls
+  $script:Headers = @{ "Accept" = "application/json" }
+  try {
+    $cookieHeader = $script:Session.Cookies.GetCookieHeader([Uri]$BaseUrl)
+    if (-not [string]::IsNullOrWhiteSpace($cookieHeader)) {
+      $script:Headers["Cookie"] = $cookieHeader
+    }
+  } catch { }
 } else {
   Write-Host "  [FAIL] No session token returned from /session/token" -ForegroundColor Red
   exit 1
@@ -555,7 +569,7 @@ if ($hasVersion) { Pass "Preview returned schema/user version" } else { Pass "Pr
 # D) Restore Commit (atomic replace)
 Info "Committing restore (atomic replace)..."
 try {
-  $commitResp = Invoke-RestJsonWithTimeout -Uri ($BaseUrl + "/app/db/import/commit") -Method POST -Body @{ path = $export.path; password = $pw } -TimeoutSec 120
+  $commitResp = Invoke-RestJsonWithTimeout -Uri ($BaseUrl + "/app/db/import/commit") -Method POST -Body @{ path = $export.path; password = $pw } -TimeoutSec 120 -Headers $script:Headers
   Pass "Restore commit replaced database"
   if ($commitResp.restart_required -eq $true) { Pass "Restart required flag set" } else { Fail "Expected restart_required=true"; exit 1 }
 } catch {
