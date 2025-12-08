@@ -99,19 +99,21 @@ def test_shortage_returns_400_and_no_movements(manufacturing_setup):
     )
 
     assert resp.status_code == 400
-    assert resp.json() == {
-        "detail": {
-            "shortages": [
-                {
-                    "item_id": manufacturing_setup["input_item_id"],
-                    "required": 5.0,
-                    "available": 0.0,
-                }
-            ]
+    payload = resp.json()["detail"]
+    assert payload["error"] == "insufficient_stock"
+    assert payload["message"] == "Insufficient stock for required components."
+    assert payload["shortages"] == [
+        {
+            "component": manufacturing_setup["input_item_id"],
+            "required": 5.0,
+            "available": 0.0,
         }
-    }
+    ]
+    assert payload["run_id"]
 
     with engine.SessionLocal() as db:
-        assert db.query(recipes.ManufacturingRun).count() == 0
+        runs = db.query(recipes.ManufacturingRun).all()
+        assert len(runs) == 1
+        assert runs[0].status == "failed_insufficient_stock"
         assert db.query(models.ItemMovement).count() == 0
         assert db.query(models.ItemBatch).count() == 0

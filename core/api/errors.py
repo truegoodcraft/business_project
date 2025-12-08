@@ -13,10 +13,14 @@ def error_envelope(code: str, message: str | None = None, fields: dict | list | 
 
 def normalize_http_exc(detail) -> dict:
     if isinstance(detail, str):
-        return error_envelope("bad_request", detail)
-    if isinstance(detail, dict) and "error" in detail:
-        return error_envelope(detail["error"], detail.get("message"), detail.get("fields") or detail.get("errors"))
-    return error_envelope("bad_request")
+        return {"detail": {"error": "bad_request", "message": detail}}
+    if isinstance(detail, dict):
+        merged = dict(detail)
+        merged.setdefault("error", "bad_request")
+        if "message" not in merged and "error" in merged:
+            merged["message"] = None
+        return {"detail": merged}
+    return {"detail": {"error": "bad_request"}}
 
 
 def normalize_validation_err(err) -> dict:

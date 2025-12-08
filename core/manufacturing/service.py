@@ -103,8 +103,14 @@ def format_shortages(shortages: List[dict]) -> List[dict]:
     return formatted
 
 
-def validate_run(session: Session, body: ManufacturingRunRequest) -> Tuple[int, list[dict], float]:
-    """Validate a manufacturing run request before any writes occur."""
+def validate_run(
+    session: Session, body: ManufacturingRunRequest
+) -> Tuple[int, list[dict], float, list[dict]]:
+    """Validate a manufacturing run request before any writes occur.
+
+    Returns a tuple of (output_item_id, required_components, scale_k, shortages).
+    Shortages are returned formatted but do not raise; caller decides how to respond.
+    """
     if isinstance(body, RecipeRunRequest):
         recipe = session.get(Recipe, body.recipe_id)
         if not recipe:
@@ -146,10 +152,9 @@ def validate_run(session: Session, body: ManufacturingRunRequest) -> Tuple[int, 
         if on_hand + 1e-9 < r["qty"]:
             shortages.append({"item_id": r["item_id"], "required": r["qty"], "available": on_hand})
 
-    if shortages:
-        raise HTTPException(status_code=400, detail={"shortages": format_shortages(shortages)})
+    formatted_shortages = format_shortages(shortages)
 
-    return output_item_id, required, k
+    return output_item_id, required, k, formatted_shortages
 
 
 @transactional
