@@ -71,6 +71,32 @@ function Try-Invoke {
   catch { return @{ ok=$false; err=$_ } }
 }
 
+function Get-WebErrorBody {
+  param($TryResult)
+
+  # 1) Prefer ErrorDetails.Message when present
+  if ($TryResult -and $TryResult.err -and $TryResult.err.ErrorDetails) {
+    $m = [string]$TryResult.err.ErrorDetails.Message
+    if (-not [string]::IsNullOrWhiteSpace($m)) { return $m }
+  }
+
+  # 2) Fallback: read raw response stream (PS 5.1 WebRequest exception)
+  try {
+    $resp = $TryResult.err.Exception.Response
+    if ($null -ne $resp -and $resp.GetResponseStream) {
+      $stream = $resp.GetResponseStream()
+      if ($stream) {
+        $reader = New-Object System.IO.StreamReader($stream, [System.Text.Encoding]::UTF8, $true)
+        $text = $reader.ReadToEnd()
+        $reader.Dispose()
+        return [string]$text
+      }
+    }
+  } catch { }
+
+  return ""
+}
+
 function Parse-ErrorDetail {
   param([Parameter()]$Json)
   if ($null -eq $Json) { return @{ kind = "none"; message = "" } }
@@ -278,44 +304,25 @@ if (Test-Path $mfgJournal) {
 Pass "Run completed successfully"
 
 Info "Validation checks..."
-$badRunBody = @{ recipe_id = $rec.id; output_qty = 999 }
-$resp = $null
-try {
-  $resp = Invoke-WebRequest -Method Post -Uri ($BaseUrl + "/app/manufacturing/run") -Body ($badRunBody | ConvertTo-Json -Depth 12) -ContentType 'application/json' -WebSession $script:Session -ErrorAction Stop
-} catch {
-  $ex = $_.Exception
-  $content = ""
-  try {
-    $reader = New-Object System.IO.StreamReader($ex.Response.GetResponseStream())
-    $content = $reader.ReadToEnd()
-    $reader.Dispose()
-  } catch { }
-  $status = 0
-  try { $status = [int]$ex.Response.StatusCode } catch { }
-  $resp = [pscustomobject]@{ StatusCode = $status; Content = $content }
+$badRun = Try-Invoke {
+  Invoke-Json POST ($BaseUrl + "/app/manufacturing/run") @{ recipe_id = $rec.id; output_qty = 999 }
+}
+$badStatus = 0
+if ($badRun.ok) { $badStatus = 200 }
+else {
+  try { $badStatus = $badRun.err.Exception.Response.StatusCode.value__ } catch { $badStatus = 0 }
 }
 
 # Expect 400 for insufficient stock
-if ($resp.StatusCode -ne 400) {
-  Fail "Expected 400 on insufficient stock, got $($resp.StatusCode)"
+if ($badStatus -ne 400) {
+  Fail "Expected 400 on insufficient stock, got $badStatus"
 } else {
-  # Robust JSON parse: tolerate empty/non-JSON error bodies
-  $json = $null
-  try {
-    if ($resp.PSObject.Properties.Name -contains 'Content' -and -not [string]::IsNullOrWhiteSpace($resp.Content)) {
-      $json = $resp.Content | ConvertFrom-Json -ErrorAction Stop
-    } elseif ($resp.PSObject.Properties.Name -contains 'RawContent') {
-      # Fallback: try to strip headers from RawContent and parse
-      $raw = $resp.RawContent
-      if ($null -ne $raw) {
-        $body = $raw -replace '^\s*HTTP/1\.\d\s+\d+\s+.*?\r?\n(?:.*?\r?\n)*?\r?\n',''
-        if (-not [string]::IsNullOrWhiteSpace($body)) {
-          $json = $body | ConvertFrom-Json -ErrorAction Stop
-        }
-      }
-    }
-  } catch { $json = $null }
-  $err = Parse-ErrorDetail -Json $json
+  $errBody = Get-WebErrorBody $badRun
+  $obj = $null
+  if (-not [string]::IsNullOrWhiteSpace($errBody)) {
+    try { $obj = $errBody | ConvertFrom-Json } catch { $obj = $null }
+  }
+  $err = Parse-ErrorDetail -Json $obj
   if ($err.kind -in @("string","list","object")) {
     Pass "Run with insufficient stock rejected (400)"
     Pass "Error detail parsed ($($err.kind)): $($err.message)"
@@ -323,11 +330,18 @@ if ($resp.StatusCode -ne 400) {
     Fail "Error detail missing/unknown shape (content empty or not JSON)"
   }
 
+  # confirm shortages present in error payload
   $shortOK = $false
-  if ($json -and $json.detail -and $json.detail.shortages) { $shortOK = $true }
-  elseif ($json -and $json.shortages) { $shortOK = $true }
-  elseif ($resp.Content -match "shortages") { $shortOK = $true }
-  if ($shortOK) { Pass "Error payload contains 'shortages' details" } else { Fail "No 'shortages' detail found"; exit 1 }
+  if ($obj -and $obj.detail -and $obj.detail.shortages) { $shortOK = $true }
+  elseif ($obj -and $obj.shortages) { $shortOK = $true }
+  elseif ($errBody -match '"shortages"') { $shortOK = $true }
+
+  if ($shortOK) {
+    Pass "Error payload contains 'shortages' details"
+  } else {
+    Fail "No 'shortages' detail found"
+    exit 1
+  }
 }
 
 # ad-hoc shortage
@@ -338,7 +352,34 @@ $adhocShort = Try-Invoke {
     components     = @(@{ item_id = $itemB.id; qty_required = 999 })
   }
 }
-if (-not $adhocShort.ok -and $adhocShort.err.Exception.Response.StatusCode.value__ -eq 400) { Pass "Ad-hoc run with insufficient stock rejected (400)" } else { Fail "Ad-hoc shortage should be 400"; exit 1 }
+$adhocStatus = 0
+if ($adhocShort.ok) { $adhocStatus = 200 }
+else {
+  try { $adhocStatus = $adhocShort.err.Exception.Response.StatusCode.value__ } catch { $adhocStatus = 0 }
+}
+if (-not $adhocShort.ok -and $adhocStatus -eq 400) {
+  Pass "Ad-hoc run with insufficient stock rejected (400)"
+
+  $errBody = Get-WebErrorBody $adhocShort
+  $obj = $null
+  if (-not [string]::IsNullOrWhiteSpace($errBody)) {
+    try { $obj = $errBody | ConvertFrom-Json } catch { $obj = $null }
+  }
+  $shortOK = $false
+  if ($obj -and $obj.detail -and $obj.detail.shortages) { $shortOK = $true }
+  elseif ($obj -and $obj.shortages) { $shortOK = $true }
+  elseif ($errBody -match '"shortages"') { $shortOK = $true }
+
+  if ($shortOK) {
+    Pass "Ad-hoc shortage payload contains 'shortages' details"
+  } else {
+    Fail "Ad-hoc shortage missing 'shortages' detail"
+    exit 1
+  }
+} else {
+  Fail "Ad-hoc shortage should be 400"
+  exit 1
+}
 
 # --------------------------------------
 # 7) Advanced Invariants (0.8.2)
