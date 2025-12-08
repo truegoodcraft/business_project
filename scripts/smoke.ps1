@@ -71,6 +71,32 @@ function Try-Invoke {
   catch { return @{ ok=$false; err=$_ } }
 }
 
+function Parse-ErrorDetail {
+  param([Parameter(Mandatory=$true)]$Json)
+  if ($null -eq $Json) { return @{ kind = "none"; message = "" } }
+  if (-not $Json.PSObject.Properties.Name.Contains("detail")) { return @{ kind = "none"; message = "" } }
+
+  $d = $Json.detail
+  if ($d -is [string]) {
+    return @{ kind = "string"; message = $d }
+  } elseif ($d -is [System.Collections.IEnumerable] -and -not ($d -is [string])) {
+    # FastAPI validation list
+    $msgs = @()
+    foreach ($e in $d) {
+      if ($null -ne $e.msg) { $msgs += [string]$e.msg }
+    }
+    $msg = if ($msgs.Count -gt 0) { ($msgs -join "; ") } else { "Validation error" }
+    return @{ kind = "list"; message = $msg }
+  } elseif ($d -is [pscustomobject] -or $d -is [hashtable]) {
+    $msg = ""
+    if ($d.PSObject.Properties.Name -contains "message") { $msg = [string]$d.message }
+    elseif ($d.PSObject.Properties.Name -contains "error") { $msg = [string]$d.error }
+    return @{ kind = "object"; message = $msg }
+  } else {
+    return @{ kind = "unknown"; message = "" }
+  }
+}
+
 $script:RunLabel = (Get-Date -Format "yyyyMMddHHmmss")
 $localAppData = [Environment]::GetFolderPath('LocalApplicationData')
 
@@ -252,21 +278,43 @@ if (Test-Path $mfgJournal) {
 Pass "Run completed successfully"
 
 Info "Validation checks..."
-$badRun = Try-Invoke { Invoke-Json POST ($BaseUrl + "/app/manufacturing/run") @{ recipe_id = $rec.id; output_qty = 999 } }
-if (-not $badRun.ok -and $badRun.err.Exception.Response.StatusCode.value__ -eq 400) { Pass "Run with insufficient stock rejected (400)" } else { Fail "Expected 400 on shortage"; exit 1 }
-
-# confirm shortages present in error payload
-$shortOK = $false
+$badRunBody = @{ recipe_id = $rec.id; output_qty = 999 }
+$resp = $null
 try {
-  $errBody = $badRun.err.ErrorDetails.Message
-  $obj = $null
-  try { $obj = $errBody | ConvertFrom-Json } catch { $obj = $null }
-  if ($obj -and $obj.detail -and $obj.detail.error) { Pass "Error envelope present on failure" } else { Fail "Missing error envelope"; exit 1 }
-  if ($obj -and $obj.detail -and $obj.detail.shortages) { $shortOK = $true }
-  elseif ($obj -and $obj.shortages) { $shortOK = $true }
-  elseif ($errBody -match "shortages") { $shortOK = $true }
-} catch { }
-if ($shortOK) { Pass "Error payload contains 'shortages' details" } else { Fail "No 'shortages' detail found"; exit 1 }
+  $resp = Invoke-WebRequest -Method Post -Uri ($BaseUrl + "/app/manufacturing/run") -Body ($badRunBody | ConvertTo-Json -Depth 12) -ContentType 'application/json' -WebSession $script:Session -ErrorAction Stop
+} catch {
+  $ex = $_.Exception
+  $content = ""
+  try {
+    $reader = New-Object System.IO.StreamReader($ex.Response.GetResponseStream())
+    $content = $reader.ReadToEnd()
+    $reader.Dispose()
+  } catch { }
+  $status = 0
+  try { $status = [int]$ex.Response.StatusCode } catch { }
+  $resp = [pscustomobject]@{ StatusCode = $status; Content = $content }
+}
+
+# Expect 400 for insufficient stock
+if ($resp.StatusCode -ne 400) {
+  Fail "Expected 400 on insufficient stock, got $($resp.StatusCode)"
+} else {
+  $json = $null
+  try { $json = $resp.Content | ConvertFrom-Json -ErrorAction Stop } catch { $json = $null }
+  $err = Parse-ErrorDetail -Json $json
+  if ($err.kind -in @("string","list","object")) {
+    Pass "Run with insufficient stock rejected (400)"
+    Pass "Error detail parsed ($($err.kind)): $($err.message)"
+  } else {
+    Fail "Error detail missing/unknown shape"
+  }
+
+  $shortOK = $false
+  if ($json -and $json.detail -and $json.detail.shortages) { $shortOK = $true }
+  elseif ($json -and $json.shortages) { $shortOK = $true }
+  elseif ($resp.Content -match "shortages") { $shortOK = $true }
+  if ($shortOK) { Pass "Error payload contains 'shortages' details" } else { Fail "No 'shortages' detail found"; exit 1 }
+}
 
 # ad-hoc shortage
 $adhocShort = Try-Invoke {
