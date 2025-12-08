@@ -51,6 +51,7 @@ from fastapi import (
     Request,
     UploadFile,
 )
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.staticfiles import StaticFiles
 from starlette.responses import RedirectResponse, Response
@@ -106,6 +107,7 @@ from core.api.routes import dev as dev_routes
 from core.api.routes import transactions as transactions_routes
 from core.api.routes import config as config_routes
 from core.api.security import _calc_default_allow_writes
+from core.api.errors import error_envelope, normalize_http_exc, normalize_validation_err
 from core.config.paths import (
     APP_DIR,
     BUS_ROOT,
@@ -182,20 +184,38 @@ async def _http_exc_handler(request: Request, exc: HTTPException):
     if is_dev():
         return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
     # Prod: sanitize.
-    detail = exc.detail
-    safe = {"error": "bad_request"}
-    if isinstance(detail, dict) and "error" in detail and isinstance(detail["error"], str):
-        safe = {"error": detail["error"]}
-    return JSONResponse(status_code=exc.status_code, content={"detail": safe})
+    return JSONResponse(status_code=exc.status_code, content=normalize_http_exc(exc.detail))
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_exc_handler(request: Request, exc: RequestValidationError):
+    if is_dev():
+        return JSONResponse(status_code=400, content={"detail": exc.errors()})
+    return JSONResponse(status_code=400, content=normalize_validation_err(exc))
 
 
 @app.exception_handler(Exception)
 async def _unhandled_exc_handler(request: Request, exc: Exception):
     try:
-        log(f'[error] unhandled: path="{request.url.path}" class="{exc.__class__.__name__}"')
+        log(
+            f'[error] req="{getattr(request.state, "req_id", "-")}" '
+            f'path="{request.url.path}" class="{exc.__class__.__name__}"'
+        )
     except Exception:
         pass
-    return JSONResponse(status_code=500, content={"detail": {"error": "internal_error"}})
+    return JSONResponse(status_code=500, content=error_envelope("internal_error"))
+
+
+CORRELATION_HEADER = "X-Request-ID"
+
+
+@app.middleware("http")
+async def _correlation(request: Request, call_next):
+    req_id = request.headers.get(CORRELATION_HEADER) or uuid.uuid4().hex[:12]
+    request.state.req_id = req_id
+    response = await call_next(request)
+    response.headers[CORRELATION_HEADER] = req_id
+    return response
 
 
 @app.middleware("http")
@@ -462,10 +482,15 @@ BACKGROUND_INDEX_TASK: asyncio.Task | None = None
 
 
 def log(msg: str) -> None:
+    line = msg.rstrip()
+    try:
+        print(line, flush=True)
+    except Exception:
+        pass
     path = LOG_FILE or (LOGS / "core.log")
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
-        handle.write(msg.rstrip() + "\n")
+        handle.write(line + "\n")
 
 
 PLUGIN_UI_BASES = [
