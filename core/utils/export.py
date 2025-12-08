@@ -255,7 +255,16 @@ def import_commit(
     password: str,
     dispose_call: Optional[Callable[[], None]] = None,
     dev_mode: bool = False,
+    log_func: Optional[Callable[[str], None]] = None,
 ) -> Dict[str, object]:
+    def _log(msg: str) -> None:
+        if log_func is None:
+            return
+        try:
+            log_func(msg)
+        except Exception:
+            pass
+
     try:
         plaintext, header = _load_and_decrypt(Path(path), password)
     except (PermissionError, FileNotFoundError, ValueError) as exc:
@@ -296,21 +305,26 @@ def import_commit(
         ts = time.strftime("%Y%m%d-%H%M%S", time.localtime())
         APP_DB.parent.mkdir(parents=True, exist_ok=True)
         JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
-        wal_checkpoint(APP_DB)
 
         dispose_fn = dispose_call or ENGINE.dispose
 
         # First sweep: dispose engines/pools and close stray connections
+        _log("disposing db handles")
         close_all_db_handles(dispose_fn)
+        _log("checkpoint wal")
+        wal_checkpoint(APP_DB)
         # Second sweep right before replace to ensure handles are gone
         close_all_db_handles(None)
 
         cleanup_sidecars(APP_DB)
 
+        _log("replacing database file")
         atomic_replace_with_retries(tmp_db_path, APP_DB)
+        _log("replace complete")
 
         ts_str = ts
         archive_journals(JOURNAL_DIR, ts_str)
+        _log("journals archived")
 
         audit_path = JOURNAL_DIR / "plugin_audit.jsonl"
         audit_entry = {

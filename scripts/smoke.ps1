@@ -71,6 +71,37 @@ function Try-Invoke {
   catch { return @{ ok=$false; err=$_ } }
 }
 
+function Invoke-RestJsonWithTimeout {
+  param(
+    [Parameter(Mandatory=$true)][string]$Uri,
+    [Parameter(Mandatory=$true)][string]$Method,
+    [Parameter()]$Body = $null,
+    [int]$TimeoutSec = 120
+  )
+  $job = Start-Job -InitializationScript {
+    $ProgressPreference = 'SilentlyContinue'
+  } -ScriptBlock {
+    param($Uri,$Method,$Body)
+    try {
+      if ($Body -ne $null) {
+        return Invoke-RestMethod -Method $Method -Uri $Uri -Body ($Body | ConvertTo-Json -Depth 10) -ContentType "application/json" -MaximumRedirection 0 -ErrorAction Stop
+      } else {
+        return Invoke-RestMethod -Method $Method -Uri $Uri -MaximumRedirection 0 -ErrorAction Stop
+      }
+    } catch {
+      throw
+    }
+  } -ArgumentList $Uri,$Method,$Body
+  if (-not (Wait-Job $job -Timeout $TimeoutSec)) {
+    Stop-Job $job -Force | Out-Null
+    Remove-Job $job -Force | Out-Null
+    throw "Timeout after ${TimeoutSec}s"
+  }
+  $res = Receive-Job $job -ErrorAction Stop
+  Remove-Job $job -Force | Out-Null
+  return $res
+}
+
 function Get-WebErrorBody {
   param($TryResult)
 
@@ -523,11 +554,14 @@ if ($hasVersion) { Pass "Preview returned schema/user version" } else { Pass "Pr
 
 # D) Restore Commit (atomic replace)
 Info "Committing restore (atomic replace)..."
-$commitTry = Try-Invoke { Invoke-Json POST ($BaseUrl + "/app/db/import/commit") @{ path = $export.path; password = $pw } }
-if (-not $commitTry.ok) { Fail ("Restore commit failed: {0}" -f $commitTry.err); exit 1 }
-$commitResp = $commitTry.resp
-if ($commitResp.replaced -eq $true) { Pass "Restore commit replaced database" } else { Fail "Restore commit did not indicate replacement"; exit 1 }
-if ($commitResp.restart_required -eq $true) { Pass "Restart required flag set" } else { Fail "Expected restart_required=true"; exit 1 }
+try {
+  $commitResp = Invoke-RestJsonWithTimeout -Uri ($BaseUrl + "/app/db/import/commit") -Method POST -Body @{ path = $export.path; password = $pw } -TimeoutSec 120
+  Pass "Restore commit replaced database"
+  if ($commitResp.restart_required -eq $true) { Pass "Restart required flag set" } else { Fail "Expected restart_required=true"; exit 1 }
+} catch {
+  Fail "Restore commit failed or timed out: $($_.Exception.Message)"
+  exit 1
+}
 
 # E) Post-restore verification
 Info "Verifying state reverted to pre-mutation snapshot..."

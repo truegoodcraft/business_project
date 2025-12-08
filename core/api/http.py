@@ -732,12 +732,14 @@ def app_import_preview(req: ImportReq, _w: None = Depends(require_writes)):
 def app_import_commit(req: ImportReq, request: Request, _w: None = Depends(require_writes)):
     app = request.app
     dev = os.environ.get("BUS_DEV") in {"1", "true", "True"}
+    _log = lambda s: log(f"[restore] commit: {s}")
 
     lock = getattr(app.state, "restore_lock", None)
     if lock is not None and not lock.acquire(blocking=False):
         raise HTTPException(status_code=409, detail={"error": "restore_in_progress"})
 
     app.state.maintenance = True
+    _log("starting")
     try:
         pause_indexer(timeout=5.0)
     except Exception:
@@ -757,7 +759,13 @@ def app_import_commit(req: ImportReq, request: Request, _w: None = Depends(requi
             pass
 
     try:
-        res = _import_commit(req.path, req.password, dispose_call=_dispose_all, dev_mode=dev)
+        res = _import_commit(
+            req.path,
+            req.password,
+            dispose_call=_dispose_all,
+            dev_mode=dev,
+            log_func=_log,
+        )
         if not res.get("ok"):
             err = res.get("error", "commit_failed")
             if err in IMPORT_ERROR_CODES:
