@@ -31,7 +31,6 @@ from typing import Callable, Dict, Optional
 from core.appdb.engine import ENGINE
 from core.backup.restore_commit import (
     archive_journals,
-    atomic_replace_with_retries,
     cleanup_sidecars,
     close_all_db_handles,
     same_dir_temp,
@@ -45,6 +44,7 @@ from core.backup.crypto import (
     encrypt_bytes,
 )
 from core.config.paths import DB_PATH
+from core.platform.winfile import robust_replace, wait_for_exclusive
 
 APP_DB = DB_PATH
 APP_DIR = DB_PATH.parent
@@ -317,9 +317,15 @@ def import_commit(
         close_all_db_handles(None)
 
         cleanup_sidecars(APP_DB)
+        _log("waiting for exclusive handle on dest")
+        ok, err = wait_for_exclusive(APP_DB, attempts=120, sleep_s=0.5)
+        if not ok:
+            raise RuntimeError(f"exclusive_timeout:win32={err}")
 
         _log("replacing database file")
-        atomic_replace_with_retries(tmp_db_path, APP_DB)
+        ok, err = robust_replace(tmp_db_path, APP_DB, attempts=120, sleep_s=0.5)
+        if not ok:
+            raise RuntimeError(f"replace_failed:win32={err}")
         _log("replace complete")
 
         ts_str = ts
@@ -342,6 +348,7 @@ def import_commit(
         with audit_path.open("a", encoding="utf-8") as audit_file:
             audit_file.write(json.dumps(audit_entry, separators=(',', ':')) + "\n")
     except Exception as exc:
+        _log(f"error: {exc}")
         if tmp_db_path is not None:
             _retry_unlink(tmp_db_path)
         err_res: Dict[str, object] = {"ok": False, "error": "commit_failed"}
