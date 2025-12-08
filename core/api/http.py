@@ -480,6 +480,9 @@ LOG_FILE: Path | None = None
 _OAUTH_STATES: Dict[str, Dict[str, Any]] = {}
 BACKGROUND_INDEX_TASK: asyncio.Task | None = None
 INDEX_STOP_EVENT = threading.Event()
+INDEX_PAUSE_EVENT = threading.Event()
+INDEX_IDLE_EVENT = threading.Event()
+INDEX_IDLE_EVENT.set()
 
 
 def log(msg: str) -> None:
@@ -494,20 +497,33 @@ def log(msg: str) -> None:
         handle.write(line + "\n")
 
 
-def pause_indexer(timeout: float = 5.0) -> None:
+def _dispose_index_handles() -> None:
+    try:
+        ENGINE.dispose()
+    except Exception:
+        if is_dev():
+            log("[index] pause: engine dispose failed (ignored)")
+
+
+def pause_indexer(timeout: float = 5.0) -> bool:
     global BACKGROUND_INDEX_TASK
     INDEX_STOP_EVENT.set()
+    INDEX_PAUSE_EVENT.set()
+    _dispose_index_handles()
     task = BACKGROUND_INDEX_TASK
     if task and not task.done():
         deadline = time.time() + max(timeout, 0)
         while time.time() < deadline:
             if task.done():
                 break
-            time.sleep(0.25)
+            if INDEX_IDLE_EVENT.wait(0.25):
+                break
+    return INDEX_IDLE_EVENT.is_set()
 
 
 def resume_indexer() -> None:
     INDEX_STOP_EVENT.clear()
+    INDEX_PAUSE_EVENT.clear()
 
 
 PLUGIN_UI_BASES = [
@@ -741,7 +757,15 @@ def app_import_commit(req: ImportReq, request: Request, _w: None = Depends(requi
     app.state.maintenance = True
     _log("starting")
     try:
-        pause_indexer(timeout=5.0)
+        _log("pausing indexer")
+        pause_ok = False
+        try:
+            pause_fn = getattr(app.state, "pause_indexer", None) or pause_indexer
+            pause_ok = bool(pause_fn(timeout=5.0))
+        except Exception:
+            pause_ok = False
+        if not pause_ok and dev:
+            _log("warn: indexer pause did not confirm idle")
     except Exception:
         pass
 
@@ -778,7 +802,8 @@ def app_import_commit(req: ImportReq, request: Request, _w: None = Depends(requi
     finally:
         app.state.maintenance = False
         try:
-            resume_indexer()
+            resume_fn = getattr(app.state, "resume_indexer", None) or resume_indexer
+            resume_fn()
         except Exception:
             pass
         try:
@@ -1063,7 +1088,7 @@ def _catalog_background_scan(broker, source: str, scope: str, label: str) -> boo
             return False
         total = 0
         while True:
-            if INDEX_STOP_EVENT.is_set():
+            if INDEX_STOP_EVENT.is_set() or INDEX_PAUSE_EVENT.is_set():
                 log(f"[index] {label}: stop requested")
                 return False
             page = broker.catalog_next(stream_id, 500, 700)
@@ -1088,70 +1113,82 @@ def _catalog_background_scan(broker, source: str, scope: str, label: str) -> boo
 
 
 def _background_index_worker(initial_status: Optional[Dict[str, Any]] = None) -> None:
+    INDEX_IDLE_EVENT.clear()
     try:
-        broker = _broker()
-    except Exception as exc:
-        log(f"[index] background: broker_unavailable error={type(exc).__name__}")
-        return
+        if INDEX_PAUSE_EVENT.is_set() or INDEX_STOP_EVENT.is_set():
+            log("[index] background: pause requested (pre-start)")
+            _dispose_index_handles()
+            return
 
-    if INDEX_STOP_EVENT.is_set():
-        log("[index] background: stop requested (pre-start)")
-        return
+        try:
+            broker = _broker()
+        except Exception as exc:
+            log(f"[index] background: broker_unavailable error={type(exc).__name__}")
+            return
 
-    status = initial_status or _index_status_payload(broker)
-    drive_needed = not bool(status.get("drive", {}).get("up_to_date"))
-    local_needed = not bool(status.get("local", {}).get("up_to_date"))
-    if not drive_needed and not local_needed:
-        log("[index] background: already up-to-date")
-        return
+        if INDEX_STOP_EVENT.is_set() or INDEX_PAUSE_EVENT.is_set():
+            log("[index] background: stop requested (pre-start)")
+            _dispose_index_handles()
+            return
 
-    log(
-        f"[index] background: start drive_needed={drive_needed} local_needed={local_needed}"
-    )
+        status = initial_status or _index_status_payload(broker)
+        drive_needed = not bool(status.get("drive", {}).get("up_to_date"))
+        local_needed = not bool(status.get("local", {}).get("up_to_date"))
+        if not drive_needed and not local_needed:
+            log("[index] background: already up-to-date")
+            return
 
-    drive_success = True
-    local_success = True
-
-    if drive_needed:
-        drive_success = _catalog_background_scan(
-            broker, "google_drive", "allDrives", "Drive"
-        )
-    if local_needed:
-        local_success = _catalog_background_scan(
-            broker, "local_fs", "local_roots", "Local"
-        )
-
-    if drive_success and local_success:
-        updated = _index_status_payload(broker)
-        state = _load_index_state()
-        if not isinstance(state, dict):
-            state = {"drive": {}, "local": {}}
-        changed = False
-        drive_token = updated.get("drive", {}).get("current_token")
-        local_sig = updated.get("local", {}).get("current_sig")
-        if drive_token:
-            state.setdefault("drive", {})["token"] = drive_token
-            changed = True
-        if local_sig:
-            state.setdefault("local", {})["roots_sig"] = local_sig
-            changed = True
-        if changed:
-            state["updated_at"] = int(time.time())
-            try:
-                _save_index_state(state)
-                log("[index] background: state persisted")
-            except Exception as exc:
-                log(f"[index] background: persist_failed error={type(exc).__name__}")
-        else:
-            log("[index] background: nothing to persist")
-    else:
         log(
-            f"[index] background: incomplete drive_ok={drive_success} local_ok={local_success}"
+            f"[index] background: start drive_needed={drive_needed} local_needed={local_needed}"
         )
+
+        drive_success = True
+        local_success = True
+
+        if drive_needed:
+            drive_success = _catalog_background_scan(
+                broker, "google_drive", "allDrives", "Drive"
+            )
+        if local_needed:
+            local_success = _catalog_background_scan(
+                broker, "local_fs", "local_roots", "Local"
+            )
+
+        if drive_success and local_success:
+            updated = _index_status_payload(broker)
+            state = _load_index_state()
+            if not isinstance(state, dict):
+                state = {"drive": {}, "local": {}}
+            changed = False
+            drive_token = updated.get("drive", {}).get("current_token")
+            local_sig = updated.get("local", {}).get("current_sig")
+            if drive_token:
+                state.setdefault("drive", {})["token"] = drive_token
+                changed = True
+            if local_sig:
+                state.setdefault("local", {})["roots_sig"] = local_sig
+                changed = True
+            if changed:
+                state["updated_at"] = int(time.time())
+                try:
+                    _save_index_state(state)
+                    log("[index] background: state persisted")
+                except Exception as exc:
+                    log(f"[index] background: persist_failed error={type(exc).__name__}")
+            else:
+                log("[index] background: nothing to persist")
+        else:
+            log(
+                f"[index] background: incomplete drive_ok={drive_success} local_ok={local_success}"
+            )
+    finally:
+        _dispose_index_handles()
+        INDEX_IDLE_EVENT.set()
 
 
 async def _run_background_index(initial_status: Optional[Dict[str, Any]] = None) -> None:
-    if INDEX_STOP_EVENT.is_set():
+    if INDEX_STOP_EVENT.is_set() or INDEX_PAUSE_EVENT.is_set():
+        INDEX_IDLE_EVENT.set()
         log("[index] background: paused; skipping run")
         return
     try:
@@ -1452,7 +1489,7 @@ async def _auto_index_if_stale() -> None:
     except Exception as exc:
         log(f"[index] background: status_check_failed error={type(exc).__name__}")
         return
-    if INDEX_STOP_EVENT.is_set():
+    if INDEX_STOP_EVENT.is_set() or INDEX_PAUSE_EVENT.is_set():
         log("[index] background: startup skip (paused)")
         return
     if status.get("overall_up_to_date"):
@@ -1940,6 +1977,8 @@ app.include_router(protected)
 
 def create_app():
     init_app_state(app)
+    app.state.pause_indexer = pause_indexer
+    app.state.resume_indexer = resume_indexer
     if not getattr(app.state, "_domain_routes_registered", False):
         app.include_router(items_router, prefix="/app")
         app.include_router(vendors_router, prefix="/app")
