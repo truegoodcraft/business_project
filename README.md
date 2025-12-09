@@ -18,6 +18,8 @@
 2.  Clone Repo.
 3.  Run `scripts/launch.ps1` (or `python launcher.py`).
 
+#(if windows blocks scripts use this command: PowerShell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\launch.ps1" )
+
 ## Dev Mode
 
 Run `python launcher.py --dev` for console access.
