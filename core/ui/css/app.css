@@ -257,3 +257,28 @@ table tr:hover { background: #1e2530; }
   .btn { padding: 6px 8px; font-size: 12px; }
   .modal-card { max-width: 94vw; }
 }
+
+/* BUS Core brand */
+.tgc-brand {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.05;
+}
+
+.tgc-brand-title {
+  color: #fff;
+  font-weight: 800;           /* thick, soft bold */
+  letter-spacing: 0.3px;
+  text-shadow: 0 0 6px rgba(255,255,255,0.10); /* soft glow */
+}
+
+.tgc-brand-beta {
+  margin-top: 2px;
+  color: #fff;
+  opacity: 0.7;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+}
