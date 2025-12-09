@@ -298,18 +298,30 @@ table tr:hover { background: #1e2530; }
 
 /* Sidebar section header (Tools) */
 .nav-section {
-  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;   /* center horizontally */
+  width: 100%;
+  text-align: center;
+  padding: 10px 12px;
+  margin: 8px 12px 12px;
   color: #fff;
-  font-weight: 800;       /* bold header */
+  font-weight: 800;
   letter-spacing: 0.2px;
-  cursor: default;        /* non-interactive */
+  border-radius: 10px;
+  background: rgba(255,255,255,0.04);                 /* subtle box */
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.05) inset,             /* soft top bevel */
+    0 8px 16px rgba(0,0,0,0.28);                      /* shadow under */
+  cursor: default;
   user-select: none;
+  text-transform: none;
 }
 
 /* Ensure no hover/active highlight applies */
 .nav-section:hover,
 .nav-section:active,
 .nav-section:focus {
-  background: transparent !important;
+  background: rgba(255,255,255,0.04) !important;
   outline: none;
 }
