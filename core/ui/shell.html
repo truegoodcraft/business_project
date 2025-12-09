@@ -121,18 +121,15 @@
       </a>
     </div>
     <ul class="nav">
-      <li data-role="nav-tools">
-        <!-- Sidebar section header -->
-        <div class="nav-section" role="heading" aria-level="2">Tools</div>
-        <ul data-role="tools-subnav" class="nav-group">
-          <li><a href="#/inventory" data-link="tools-inventory">Inventory</a></li>
-          <li><a href="#/manufacturing" data-link="tools-manufacturing" data-role="nav-link" data-route="manufacturing">Manufacturing</a></li>
-          <li><a href="#/recipes" data-link="tools-recipes" data-role="nav-link" data-route="recipes">Recipes</a></li>
-          <li><a href="#/contacts" data-link="tools-contacts">Contacts</a></li>
-        </ul>
-      </li>
-      <li><a href="#/admin" data-role="nav-link" data-route="admin">Admin</a></li>
-      <li><a href="#/settings" data-role="nav-link" data-route="settings">Settings</a></li>
+      <li><div class="nav-section" role="heading" aria-level="2">Tools</div></li>
+      <li><a class="nav-link" href="#/inventory" data-role="nav-link" data-route="inventory">Inventory</a></li>
+      <li><a class="nav-link" href="#/manufacturing" data-role="nav-link" data-route="manufacturing">Manufacturing</a></li>
+      <li><a class="nav-link" href="#/recipes" data-role="nav-link" data-route="recipes">Recipes</a></li>
+      <li><a class="nav-link" href="#/contacts" data-role="nav-link" data-route="contacts">Contacts</a></li>
+
+      <li><div class="nav-section" role="heading" aria-level="2">System</div></li>
+      <li><a class="nav-link" href="#/settings" id="nav-settings" data-role="nav-link" data-route="settings">Settings</a></li>
+      <li><a class="nav-link" href="#/logs" id="nav-logs" data-role="nav-link" data-route="logs">Logs</a></li>
     </ul>
   </nav>
   <main id="main">
@@ -214,8 +211,8 @@
         <div data-role="settings-root"></div>
       </div>
 
-      <div data-role="admin-screen" class="hidden">
-        <div data-role="admin-root"></div>
+      <div data-role="logs-screen" class="hidden">
+        <div data-role="logs-root"></div>
       </div>
 
 <!-- Expense modal — locked MVP fields -->

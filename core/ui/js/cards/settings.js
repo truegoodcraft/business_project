@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { apiGet, apiPost, ensureToken } from '../api.js';
+import { mountAdmin } from './admin.js';
 
 export async function settingsCard(el) {
   el.innerHTML = '<div style="padding:20px;">Loading settings...</div>';
@@ -68,6 +69,20 @@ export async function settingsCard(el) {
   `;
 
   el.appendChild(root);
+
+  const adminSection = document.createElement('section');
+  adminSection.style.marginTop = '16px';
+  adminSection.innerHTML = `
+    <h2 style="margin:0 0 12px;font-size:1.15em;font-weight:700;">Administration</h2>
+    <div data-role="admin-section"></div>
+  `;
+
+  el.appendChild(adminSection);
+
+  const adminHost = adminSection.querySelector('[data-role="admin-section"]');
+  if (adminHost) {
+    mountAdmin(adminHost);
+  }
 
   // Populate
   const themeSelect = root.querySelector('#setting-theme');
