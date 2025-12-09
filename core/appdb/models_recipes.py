@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import relationship
 
 from core.appdb.models import Base
@@ -12,7 +12,7 @@ class Recipe(Base):
     name = Column(String, nullable=False)
     code = Column(String, nullable=True, unique=True)
     output_item_id = Column(Integer, ForeignKey("items.id"), nullable=True)
-    output_qty = Column(Float, nullable=False, default=1.0)
+    output_qty = Column(Integer, nullable=False, default=0)
     is_archived = Column(Boolean, nullable=False, default=False)
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
@@ -27,7 +27,7 @@ class RecipeItem(Base):
     id = Column(Integer, primary_key=True)
     recipe_id = Column(Integer, ForeignKey("recipes.id"), nullable=False, index=True)
     item_id = Column(Integer, ForeignKey("items.id"), nullable=False, index=True)
-    qty_required = Column(Float, nullable=False)
+    qty_required = Column(Integer, nullable=False)
     is_optional = Column(Boolean, nullable=False, default=False)
     sort_order = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
@@ -42,7 +42,7 @@ class ManufacturingRun(Base):
     id = Column(Integer, primary_key=True)
     recipe_id = Column(Integer, ForeignKey("recipes.id"), nullable=True)
     output_item_id = Column(Integer, ForeignKey("items.id"), nullable=False)
-    output_qty = Column(Float, nullable=False)
+    output_qty = Column(Integer, nullable=False)
     status = Column(String, nullable=False)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
     executed_at = Column(DateTime, nullable=True)
