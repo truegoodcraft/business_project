@@ -612,7 +612,7 @@ export function openItemModal(item = null) {
       quantity_decimal: qtyVal,
     };
 
-    const url = isEdit ? `/api/items/${item.id}` : '/api/items';
+    const url = isEdit ? `/items/${item.id}` : '/items';
     const method = isEdit ? apiPut : apiPost;
     try {
       await ensureToken();
