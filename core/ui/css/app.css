@@ -345,3 +345,13 @@ table tr:hover { background: #1e2530; }
   font-size: 0.9em;
   opacity: 0.8;
 }
+
+.error-banner {
+  background: rgba(255, 64, 64, 0.12);
+  border: 1px solid rgba(255, 64, 64, 0.35);
+  color: #ffd6d6;
+  padding: 8px 10px;
+  border-radius: 8px;
+  margin: 8px 0 12px;
+  font-size: 0.9em;
+}

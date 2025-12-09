@@ -19,6 +19,23 @@ const BASE_UNIT_LABEL = {
   count: 'milli-units',
 };
 
+const UNIT_LABEL = {
+  mm: 'mm',
+  cm: 'cm',
+  m: 'm',
+  mm2: 'mm²',
+  cm2: 'cm²',
+  m2: 'm²',
+  mm3: 'mm³',
+  cm3: 'cm³',
+  m3: 'm³',
+  ml: 'ml',
+  mg: 'mg',
+  g: 'g',
+  kg: 'kg',
+  unit: 'unit',
+};
+
 const MULT = {
   length: { mm: 1, cm: 10, m: 1000 },
   area: { mm2: 1, cm2: 100, m2: 1_000_000 },
@@ -254,6 +271,12 @@ export function openItemModal(item = null) {
   title.textContent = (isEdit ? 'Edit' : 'Add') + ' Item';
   card.appendChild(title);
 
+  const errorBanner = document.createElement('div');
+  errorBanner.id = 'add-item-error';
+  errorBanner.className = 'error-banner';
+  errorBanner.hidden = true;
+  card.appendChild(errorBanner);
+
   // FORM state
   let expanded = !!(item?.sku || item?.vendor_id || item?.notes);
 
@@ -402,7 +425,7 @@ export function openItemModal(item = null) {
   function populateUnits(presetUnit = null) {
     const dim = dimensionSelect.value;
     const opts = UNIT_OPTIONS[dim] || [];
-    unitSelect.innerHTML = opts.map((u) => `<option value="${u}">${u}</option>`).join('');
+    unitSelect.innerHTML = opts.map((u) => `<option value="${u}">${UNIT_LABEL[u] || u}</option>`).join('');
     const targetUnit = (presetUnit && opts.includes(presetUnit)) ? presetUnit : opts[0];
     if (targetUnit) unitSelect.value = targetUnit;
     updatePreview();
@@ -554,6 +577,11 @@ export function openItemModal(item = null) {
     e.preventDefault();
     const name = fieldValue(fName).trim();
 
+    if (errorBanner) {
+      errorBanner.hidden = true;
+      errorBanner.textContent = '';
+    }
+
     // Client-side validation
     if (!name) return markInvalid(fName.querySelector('input'));
 
@@ -579,18 +607,24 @@ export function openItemModal(item = null) {
       type: (expanded ? fieldValue(typeRow) : 'Product') || 'Product',
       notes: expanded ? (notes.value.trim() || undefined) : undefined,
       dimension: dimensionVal,
+      uom: unitVal,
       unit: unitVal,
       quantity_decimal: qtyVal,
     };
 
-    const url = isEdit ? `/app/items/${item.id}` : '/app/items';
+    const url = isEdit ? `/api/items/${item.id}` : '/api/items';
     const method = isEdit ? apiPut : apiPost;
     try {
       await ensureToken();
       await method(url, payload, { headers: { 'Content-Type': 'application/json' } });
       closeModalSafely();
       reloadInventory?.(); // existing function in this module to refresh table
-    } catch (_) {
+    } catch (err) {
+      const serverMsg = err?.detail?.message || err?.error || err?.message || 'Save failed.';
+      if (errorBanner) {
+        errorBanner.textContent = serverMsg;
+        errorBanner.hidden = false;
+      }
       markInvalid(saveBtn);
     }
   });
