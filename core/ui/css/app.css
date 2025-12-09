@@ -258,18 +258,23 @@ table tr:hover { background: #1e2530; }
   .modal-card { max-width: 94vw; }
 }
 
-/* BUS Core brand */
+/* BUS Core brand link */
 .tgc-brand {
   display: flex;
   flex-direction: column;
-  line-height: 1.05;
+  align-items: center;     /* center horizontally */
+  justify-content: center;
+  width: 100%;
+  text-align: center;
+  gap: 2px;
+  text-decoration: none;   /* remove underline on <a> */
 }
 
 .tgc-brand-title {
   color: #fff;
-  font-weight: 800;           /* thick, soft bold */
+  font-weight: 800;
   letter-spacing: 0.3px;
-  text-shadow: 0 0 6px rgba(255,255,255,0.10); /* soft glow */
+  text-shadow: 0 0 6px rgba(255,255,255,0.10);
 }
 
 .tgc-brand-beta {
@@ -281,4 +286,12 @@ table tr:hover { background: #1e2530; }
   letter-spacing: 0.08em;
   line-height: 1;
   text-transform: uppercase;
+}
+
+/* optional a11y/feedback */
+.tgc-brand:hover .tgc-brand-title { opacity: 0.95; }
+.tgc-brand:focus-visible {
+  outline: 2px solid rgba(255,255,255,.3);
+  outline-offset: 2px;
+  border-radius: 6px;
 }
