@@ -15,8 +15,7 @@
     .tab{padding:10px 16px;cursor:pointer;border-left:4px solid transparent}
     .tab.active{background:#333;border-left-color:var(--accent);font-weight:600}
     .tab:hover:not(.active){background:#2a2a2a}
-    .nav-group{display:none;flex-direction:column;padding-left:16px;gap:4px;margin-top:4px}
-    .nav-group.open{display:flex}
+    .nav-group{display:flex;flex-direction:column;padding-left:16px;gap:4px;margin-top:4px}
     .nav-group .nav-item{padding:8px 16px;border-left:4px solid transparent;color:inherit;text-decoration:none;display:block;border-radius:4px}
     .nav-group .nav-item:hover{background:#2a2a2a}
     .nav-group .nav-item.nav-subitem{font-size:13px;color:#ccc}
@@ -123,7 +122,8 @@
     </div>
     <ul class="nav">
       <li data-role="nav-tools">
-        <a href="#" data-link="tools" data-action="toggle-tools">Tools</a>
+        <!-- Sidebar section header -->
+        <div class="nav-section" role="heading" aria-level="2">Tools</div>
         <ul data-role="tools-subnav" class="nav-group">
           <li><a href="#/inventory" data-link="tools-inventory">Inventory</a></li>
           <li><a href="#/manufacturing" data-link="tools-manufacturing" data-role="nav-link" data-route="manufacturing">Manufacturing</a></li>

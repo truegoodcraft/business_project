@@ -295,3 +295,21 @@ table tr:hover { background: #1e2530; }
   outline-offset: 2px;
   border-radius: 6px;
 }
+
+/* Sidebar section header (Tools) */
+.nav-section {
+  padding: 10px 16px;
+  color: #fff;
+  font-weight: 800;       /* bold header */
+  letter-spacing: 0.2px;
+  cursor: default;        /* non-interactive */
+  user-select: none;
+}
+
+/* Ensure no hover/active highlight applies */
+.nav-section:hover,
+.nav-section:active,
+.nav-section:focus {
+  background: transparent !important;
+  outline: none;
+}

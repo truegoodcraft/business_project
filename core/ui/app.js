@@ -221,44 +221,12 @@ async function showRecipes() {
   await mountRecipes();
 }
 
-// Tools drawer: open on hover, click locks/unlocks
+// Tools drawer: keep submenu visible
 (function initToolsDrawer() {
-  const navTools     = document.querySelector('[data-role="nav-tools"]');
-  const toolsToggle  = document.querySelector('[data-action="toggle-tools"]');
-  const drawer       = document.querySelector('[data-role="tools-subnav"]');
-  const inventoryLink= document.querySelector('[data-link="tools-inventory"]');
-  const manufacturingLink = document.querySelector('[data-link="tools-manufacturing"]');
-  const recipesLink = document.querySelector('[data-link="tools-recipes"]');
-  const contactsLink = document.querySelector('[data-link="tools-contacts"], a[href="#/contacts"]');
+  const drawer = document.querySelector('[data-role="tools-subnav"]');
+  if (!drawer) return;
 
-  if (!navTools || !drawer) return;
-
-  let locked = false;
-
-  // Hover behavior
-  navTools.addEventListener('mouseenter', () => {
-    drawer.classList.add('open');
-  });
-  navTools.addEventListener('mouseleave', () => {
-    if (!locked) drawer.classList.remove('open');
-  });
-
-  // Click to lock/unlock (SoT-compatible)
-  if (toolsToggle) {
-    toolsToggle.addEventListener('click', (e) => {
-      e.preventDefault();
-      locked = !locked;
-      drawer.classList.toggle('open', locked);
-    });
-  }
-
-  // Navigating away always closes + unlocks
-  const closeAndUnlock = () => { locked = false; drawer.classList.remove('open'); };
-  if (inventoryLink) inventoryLink.addEventListener('click', closeAndUnlock);
-  if (manufacturingLink) manufacturingLink.addEventListener('click', closeAndUnlock);
-  if (recipesLink) recipesLink.addEventListener('click', closeAndUnlock);
-  if (contactsLink)  contactsLink.addEventListener('click', closeAndUnlock);
-  window.addEventListener('hashchange', closeAndUnlock);
+  drawer.classList.add('open');
 })();
 
 function initManufacturing() {
