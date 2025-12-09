@@ -7,10 +7,12 @@ import os
 import re
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Generator
+from typing import Generator, Optional
 
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import NullPool
 
 from core.appdata.paths import resolve_db_path, legacy_repo_db  # SoT helpers
 
@@ -57,12 +59,37 @@ DB_URL = _sqlite_url(DB_PATH)
 
 # --- Engine & Session -------------------------------------------------------
 
-ENGINE = create_engine(DB_URL, future=True, connect_args={"check_same_thread": False})
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=ENGINE, future=True)
+ENGINE: Optional[Engine] = None
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, future=True)
+
+
+def get_engine() -> Engine:
+    """Create the global engine lazily so the reloader does not open the DB."""
+
+    global ENGINE
+    if ENGINE is None:
+        ENGINE = create_engine(
+            DB_URL,
+            future=True,
+            connect_args={"check_same_thread": False},
+            poolclass=NullPool,
+        )
+    return ENGINE
+
+
+def dispose_engine() -> None:
+    """Dispose and clear the global engine so handles drop immediately."""
+
+    global ENGINE
+    if ENGINE is not None:
+        try:
+            ENGINE.dispose()
+        finally:
+            ENGINE = None
 
 
 def get_session() -> Generator:
-    db = SessionLocal()
+    db = SessionLocal(bind=get_engine())
     try:
         yield db
     finally:
@@ -75,7 +102,7 @@ def get_session() -> Generator:
 def debug_db_where() -> dict:
     resolved = str(DB_PATH.resolve())
     pragma = []
-    with ENGINE.connect() as conn:
+    with get_engine().connect() as conn:
         try:
             pragma = list(conn.execute(text("PRAGMA database_list")))
         except Exception:

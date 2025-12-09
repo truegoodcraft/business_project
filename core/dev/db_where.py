@@ -4,7 +4,7 @@
 from __future__ import annotations
 from fastapi import APIRouter
 from sqlalchemy import text
-from core.appdb.engine import ENGINE, DB_PATH
+from core.appdb.engine import DB_PATH, get_engine
 
 router = APIRouter(prefix="/dev", tags=["dev"])
 
@@ -12,13 +12,14 @@ router = APIRouter(prefix="/dev", tags=["dev"])
 def dev_db_where():
     pragma = []
     try:
-        with ENGINE.connect() as conn:
+        engine = get_engine()
+        with engine.connect() as conn:
             rows = conn.execute(text("PRAGMA database_list;")).all()
             pragma = [[str(c) for c in r] for r in rows]
     except Exception as e:
         pragma = [["error", str(e)]]
     return {
-        "engine_url": str(ENGINE.url),
+        "engine_url": str(get_engine().url),
         "db_path": str(DB_PATH),
         "exists": DB_PATH.exists(),
         "pragma_database_list": pragma,

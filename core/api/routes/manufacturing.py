@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
+import json
 import logging
 import time
-from typing import Any
+from typing import Any, Iterable
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
@@ -20,6 +21,45 @@ router = APIRouter(prefix="/manufacturing", tags=["manufacturing"])
 logger = logging.getLogger(__name__)
 
 
+def _map_shortages(shortages: Iterable[dict]) -> list[dict]:
+    return [
+        {
+            "component": int(s.get("item_id")) if s.get("item_id") is not None else None,
+            "required": float(s.get("required", 0.0)),
+            "available": float(s.get("available", s.get("on_hand", 0.0))),
+        }
+        for s in shortages
+    ]
+
+
+def _record_failed_run(
+    db: Session, body: ManufacturingRunRequest, output_item_id: int | None, shortages: list[dict]
+):
+    from core.appdb.models_recipes import ManufacturingRun
+
+    run = ManufacturingRun(
+        recipe_id=getattr(body, "recipe_id", None),
+        output_item_id=output_item_id or getattr(body, "output_item_id", None),
+        output_qty=getattr(body, "output_qty", 0.0),
+        status="failed_insufficient_stock",
+        notes=getattr(body, "notes", None),
+        meta=json.dumps({"shortages": shortages}),
+    )
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+    return run
+
+
+def _shortage_detail(shortages: list[dict], run_id: int | None) -> dict:
+    return {
+        "error": "insufficient_stock",
+        "message": "Insufficient stock for required components.",
+        "shortages": _map_shortages(shortages),
+        "run_id": run_id,
+    }
+
+
 @router.post("/run")
 async def run_manufacturing(
     req: Request,
@@ -32,9 +72,23 @@ async def run_manufacturing(
     require_owner_commit(req)
 
     body: ManufacturingRunRequest = parse_run_request(raw_body)
+    output_item_id: int | None = getattr(body, "output_item_id", None)
 
     try:
-        output_item_id, required, k = validate_run(db, body)
+        output_item_id, required, k, shortages = validate_run(db, body)
+        if shortages:
+            run = _record_failed_run(db, body, output_item_id, shortages)
+            _append_journal(
+                {
+                    "ts": int(time.time()),
+                    "type": "manufacturing_run",
+                    "run_id": run.id,
+                    "recipe_id": getattr(body, "recipe_id", None),
+                    "status": "failed_insufficient_stock",
+                    "shortages": shortages,
+                }
+            )
+            raise HTTPException(status_code=400, detail=_shortage_detail(shortages, run.id))
         result = execute_run_txn(db, body, output_item_id, required, k)
         _append_journal(
             {
@@ -55,19 +109,43 @@ async def run_manufacturing(
     except InsufficientStock as exc:
         db.rollback()
         shortages = format_shortages(exc.shortages)
+        run = _record_failed_run(db, body, output_item_id, shortages)
         _append_journal(
             {
                 "ts": int(time.time()),
                 "type": "manufacturing_run",
-                "run_id": None,
+                "run_id": run.id,
                 "recipe_id": getattr(body, "recipe_id", None),
-                "status": "failed",
+                "status": "failed_insufficient_stock",
                 "shortages": shortages,
             }
         )
-        raise HTTPException(status_code=400, detail={"shortages": shortages})
-    except HTTPException:
+        raise HTTPException(status_code=400, detail=_shortage_detail(shortages, run.id))
+    except HTTPException as exc:
         db.rollback()
+        detail = exc.detail
+
+        if isinstance(detail, dict) and detail.get("error") == "insufficient_stock":
+            raise
+
+        shortages: list[dict] | None = None
+        if isinstance(detail, dict) and detail.get("shortages"):
+            shortages = format_shortages(detail.get("shortages", []))
+
+        if shortages is not None:
+            run = _record_failed_run(db, body, output_item_id, shortages)
+            _append_journal(
+                {
+                    "ts": int(time.time()),
+                    "type": "manufacturing_run",
+                    "run_id": run.id,
+                    "recipe_id": getattr(body, "recipe_id", None),
+                    "status": "failed_insufficient_stock",
+                    "shortages": shortages,
+                }
+            )
+            raise HTTPException(status_code=400, detail=_shortage_detail(shortages, run.id))
+
         _append_journal(
             {
                 "ts": int(time.time()),

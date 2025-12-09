@@ -51,6 +51,7 @@ from fastapi import (
     Request,
     UploadFile,
 )
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.staticfiles import StaticFiles
 from starlette.responses import RedirectResponse, Response
@@ -62,7 +63,7 @@ from starlette.status import HTTP_401_UNAUTHORIZED
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from core.appdb.engine import get_session
+from core.appdb.engine import DB_PATH as DB_FILE, dispose_engine, get_engine, get_session
 
 from core.services.capabilities import registry
 from core.services.capabilities.registry import MANIFEST_PATH
@@ -106,6 +107,7 @@ from core.api.routes import dev as dev_routes
 from core.api.routes import transactions as transactions_routes
 from core.api.routes import config as config_routes
 from core.api.security import _calc_default_allow_writes
+from core.api.errors import error_envelope, normalize_http_exc, normalize_validation_err
 from core.config.paths import (
     APP_DIR,
     BUS_ROOT,
@@ -114,7 +116,6 @@ from core.config.paths import (
     IMPORTS_DIR,
     DB_URL,
 )
-from core.appdb.engine import ENGINE, DB_PATH as DB_FILE, SessionLocal
 from core.appdb.migrate import ensure_vendors_flags
 from core.appdb.paths import ui_dir
 
@@ -182,20 +183,38 @@ async def _http_exc_handler(request: Request, exc: HTTPException):
     if is_dev():
         return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
     # Prod: sanitize.
-    detail = exc.detail
-    safe = {"error": "bad_request"}
-    if isinstance(detail, dict) and "error" in detail and isinstance(detail["error"], str):
-        safe = {"error": detail["error"]}
-    return JSONResponse(status_code=exc.status_code, content={"detail": safe})
+    return JSONResponse(status_code=exc.status_code, content=normalize_http_exc(exc.detail))
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_exc_handler(request: Request, exc: RequestValidationError):
+    if is_dev():
+        return JSONResponse(status_code=400, content={"detail": exc.errors()})
+    return JSONResponse(status_code=400, content=normalize_validation_err(exc))
 
 
 @app.exception_handler(Exception)
 async def _unhandled_exc_handler(request: Request, exc: Exception):
     try:
-        log(f'[error] unhandled: path="{request.url.path}" class="{exc.__class__.__name__}"')
+        log(
+            f'[error] req="{getattr(request.state, "req_id", "-")}" '
+            f'path="{request.url.path}" class="{exc.__class__.__name__}"'
+        )
     except Exception:
         pass
-    return JSONResponse(status_code=500, content={"detail": {"error": "internal_error"}})
+    return JSONResponse(status_code=500, content=error_envelope("internal_error"))
+
+
+CORRELATION_HEADER = "X-Request-ID"
+
+
+@app.middleware("http")
+async def _correlation(request: Request, call_next):
+    req_id = request.headers.get(CORRELATION_HEADER) or uuid.uuid4().hex[:12]
+    request.state.req_id = req_id
+    response = await call_next(request)
+    response.headers[CORRELATION_HEADER] = req_id
+    return response
 
 
 @app.middleware("http")
@@ -291,8 +310,8 @@ def _ensure_schema_upgrades(db: Session) -> None:
 
 @app.on_event("startup")
 def startup_migrations():
-    ensure_vendors_flags(ENGINE)
-    db = SessionLocal()
+    ensure_vendors_flags(get_engine())
+    db = next(get_session())
     try:
         _ensure_schema_upgrades(db)
     finally:
@@ -303,7 +322,8 @@ def get_db(request: Request) -> Generator[Session, None, None]:
     if getattr(request.app.state, "maintenance", False):
         raise HTTPException(status_code=503, detail={"error": "maintenance"})
 
-    db = SessionLocal()
+    db_gen = get_session()
+    db = next(db_gen)
     try:
         yield db
     finally:
@@ -459,13 +479,119 @@ SESSION_TOKEN: str = ""
 LOG_FILE: Path | None = None
 _OAUTH_STATES: Dict[str, Dict[str, Any]] = {}
 BACKGROUND_INDEX_TASK: asyncio.Task | None = None
+INDEX_STOP_EVENT = threading.Event()
+INDEX_PAUSE_EVENT = threading.Event()
+INDEX_IDLE_EVENT = threading.Event()
+INDEX_IDLE_EVENT.set()
+INDEX_LOOP: asyncio.AbstractEventLoop | None = None
 
 
 def log(msg: str) -> None:
+    line = msg.rstrip()
+    try:
+        print(line, flush=True)
+    except Exception:
+        pass
     path = LOG_FILE or (LOGS / "core.log")
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
-        handle.write(msg.rstrip() + "\n")
+        handle.write(line + "\n")
+
+
+def _dispose_index_handles() -> None:
+    try:
+        dispose_engine()
+    except Exception:
+        if is_dev():
+            log("[index] pause: engine dispose failed (ignored)")
+
+
+def pause_indexer(timeout: float = 5.0) -> bool:
+    global BACKGROUND_INDEX_TASK
+    INDEX_STOP_EVENT.set()
+    INDEX_PAUSE_EVENT.set()
+    _dispose_index_handles()
+    task = BACKGROUND_INDEX_TASK
+    if task and not task.done():
+        deadline = time.time() + max(timeout, 0)
+        while time.time() < deadline:
+            if task.done():
+                break
+            if INDEX_IDLE_EVENT.wait(0.25):
+                break
+    INDEX_IDLE_EVENT.set()
+    return True
+
+
+def resume_indexer() -> None:
+    INDEX_STOP_EVENT.clear()
+    INDEX_PAUSE_EVENT.clear()
+
+
+def stop_indexer(timeout: float = 10.0) -> bool:
+    """Signal background indexer to stop and release DB handles."""
+    global BACKGROUND_INDEX_TASK
+    INDEX_STOP_EVENT.set()
+    INDEX_PAUSE_EVENT.set()
+    task = BACKGROUND_INDEX_TASK
+    loop = INDEX_LOOP
+    if task and not task.done() and loop and loop.is_running():
+        try:
+            loop.call_soon_threadsafe(task.cancel)
+        except Exception:
+            pass
+    _dispose_index_handles()
+    deadline = time.time() + max(timeout, 0)
+    while time.time() < deadline:
+        if INDEX_IDLE_EVENT.wait(0.25):
+            break
+    INDEX_IDLE_EVENT.set()
+    if task and task.done():
+        BACKGROUND_INDEX_TASK = None
+    return True
+
+
+def start_indexer(initial_status: Optional[Dict[str, Any]] | None = None) -> None:
+    """Start the background indexer task if not already running."""
+    global BACKGROUND_INDEX_TASK, INDEX_LOOP
+    INDEX_STOP_EVENT.clear()
+    INDEX_PAUSE_EVENT.clear()
+    if BACKGROUND_INDEX_TASK and BACKGROUND_INDEX_TASK.done():
+        BACKGROUND_INDEX_TASK = None
+    if BACKGROUND_INDEX_TASK and not BACKGROUND_INDEX_TASK.done():
+        return
+
+    loop = INDEX_LOOP
+    if loop is None:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            try:
+                loop = asyncio.get_event_loop()
+            except Exception:
+                loop = None
+        INDEX_LOOP = loop
+    if loop is None or not loop.is_running():
+        return
+
+    status = initial_status
+    if status is None:
+        try:
+            status = _index_status_payload(_broker())
+        except Exception as exc:
+            if is_dev():
+                log(f"[index] start failed: error={type(exc).__name__}")
+            return
+
+    def _spawn() -> None:
+        global BACKGROUND_INDEX_TASK
+        BACKGROUND_INDEX_TASK = asyncio.create_task(_run_background_index(status))
+
+    try:
+        loop.call_soon_threadsafe(_spawn)
+    except Exception as exc:
+        if is_dev():
+            log(f"[index] start scheduling failed: error={type(exc).__name__}")
 
 
 PLUGIN_UI_BASES = [
@@ -618,7 +744,7 @@ from core.api.routes.items import router as items_router
 from core.api.routes.vendors import router as vendors_router
 from core.api.routes.recipes import router as recipes_router
 from core.api.routes.manufacturing import router as manufacturing_router
-from core.api.routes.ledger_api import router as ledger_router
+from core.api.routes.ledger_api import public_router as ledger_public_router, router as ledger_router
 
 oauth = APIRouter()
 
@@ -690,12 +816,22 @@ def app_import_preview(req: ImportReq, _w: None = Depends(require_writes)):
 def app_import_commit(req: ImportReq, request: Request, _w: None = Depends(require_writes)):
     app = request.app
     dev = os.environ.get("BUS_DEV") in {"1", "true", "True"}
+    _log = lambda s: log(f"[restore] commit: {s}")
 
     lock = getattr(app.state, "restore_lock", None)
     if lock is not None and not lock.acquire(blocking=False):
         raise HTTPException(status_code=409, detail={"error": "restore_in_progress"})
 
     app.state.maintenance = True
+    _log("starting")
+    try:
+        _log("stopping indexer")
+        stop_fn = getattr(app.state, "stop_indexer", None) or stop_indexer
+        stop_fn(timeout=10.0)
+        _log("indexer stopped")
+    except Exception:
+        if dev:
+            _log("warn: stop_indexer raised (ignored)")
 
     def _dispose_all():
         state = getattr(request.app, "state", None)
@@ -703,15 +839,24 @@ def app_import_commit(req: ImportReq, request: Request, _w: None = Depends(requi
         if state is not None:
             state_db = getattr(state, "db", None)
             eng = getattr(state_db, "engine", None) or getattr(state, "engine", None)
-        if eng is None:
-            eng = ENGINE
         try:
-            eng.dispose()
+            if eng is not None and hasattr(eng, "dispose"):
+                eng.dispose()
+        except Exception:
+            pass
+        try:
+            dispose_engine()
         except Exception:
             pass
 
     try:
-        res = _import_commit(req.path, req.password, dispose_call=_dispose_all, dev_mode=dev)
+        res = _import_commit(
+            req.path,
+            req.password,
+            dispose_call=_dispose_all,
+            dev_mode=dev,
+            log_func=_log,
+        )
         if not res.get("ok"):
             err = res.get("error", "commit_failed")
             if err in IMPORT_ERROR_CODES:
@@ -723,6 +868,11 @@ def app_import_commit(req: ImportReq, request: Request, _w: None = Depends(requi
         return res
     finally:
         app.state.maintenance = False
+        try:
+            start_fn = getattr(app.state, "start_indexer", None) or start_indexer
+            start_fn()
+        except Exception:
+            pass
         try:
             if lock is not None and lock.locked():
                 lock.release()
@@ -1005,6 +1155,9 @@ def _catalog_background_scan(broker, source: str, scope: str, label: str) -> boo
             return False
         total = 0
         while True:
+            if INDEX_STOP_EVENT.is_set() or INDEX_PAUSE_EVENT.is_set():
+                log(f"[index] {label}: stop requested")
+                return False
             page = broker.catalog_next(stream_id, 500, 700)
             if not isinstance(page, dict):
                 break
@@ -1027,65 +1180,84 @@ def _catalog_background_scan(broker, source: str, scope: str, label: str) -> boo
 
 
 def _background_index_worker(initial_status: Optional[Dict[str, Any]] = None) -> None:
+    INDEX_IDLE_EVENT.clear()
     try:
-        broker = _broker()
-    except Exception as exc:
-        log(f"[index] background: broker_unavailable error={type(exc).__name__}")
-        return
+        if INDEX_PAUSE_EVENT.is_set() or INDEX_STOP_EVENT.is_set():
+            log("[index] background: pause requested (pre-start)")
+            _dispose_index_handles()
+            return
 
-    status = initial_status or _index_status_payload(broker)
-    drive_needed = not bool(status.get("drive", {}).get("up_to_date"))
-    local_needed = not bool(status.get("local", {}).get("up_to_date"))
-    if not drive_needed and not local_needed:
-        log("[index] background: already up-to-date")
-        return
+        try:
+            broker = _broker()
+        except Exception as exc:
+            log(f"[index] background: broker_unavailable error={type(exc).__name__}")
+            return
 
-    log(
-        f"[index] background: start drive_needed={drive_needed} local_needed={local_needed}"
-    )
+        if INDEX_STOP_EVENT.is_set() or INDEX_PAUSE_EVENT.is_set():
+            log("[index] background: stop requested (pre-start)")
+            _dispose_index_handles()
+            return
 
-    drive_success = True
-    local_success = True
+        status = initial_status or _index_status_payload(broker)
+        drive_needed = not bool(status.get("drive", {}).get("up_to_date"))
+        local_needed = not bool(status.get("local", {}).get("up_to_date"))
+        if not drive_needed and not local_needed:
+            log("[index] background: already up-to-date")
+            return
 
-    if drive_needed:
-        drive_success = _catalog_background_scan(
-            broker, "google_drive", "allDrives", "Drive"
-        )
-    if local_needed:
-        local_success = _catalog_background_scan(
-            broker, "local_fs", "local_roots", "Local"
-        )
-
-    if drive_success and local_success:
-        updated = _index_status_payload(broker)
-        state = _load_index_state()
-        if not isinstance(state, dict):
-            state = {"drive": {}, "local": {}}
-        changed = False
-        drive_token = updated.get("drive", {}).get("current_token")
-        local_sig = updated.get("local", {}).get("current_sig")
-        if drive_token:
-            state.setdefault("drive", {})["token"] = drive_token
-            changed = True
-        if local_sig:
-            state.setdefault("local", {})["roots_sig"] = local_sig
-            changed = True
-        if changed:
-            state["updated_at"] = int(time.time())
-            try:
-                _save_index_state(state)
-                log("[index] background: state persisted")
-            except Exception as exc:
-                log(f"[index] background: persist_failed error={type(exc).__name__}")
-        else:
-            log("[index] background: nothing to persist")
-    else:
         log(
-            f"[index] background: incomplete drive_ok={drive_success} local_ok={local_success}"
+            f"[index] background: start drive_needed={drive_needed} local_needed={local_needed}"
         )
+
+        drive_success = True
+        local_success = True
+
+        if drive_needed:
+            drive_success = _catalog_background_scan(
+                broker, "google_drive", "allDrives", "Drive"
+            )
+        if local_needed:
+            local_success = _catalog_background_scan(
+                broker, "local_fs", "local_roots", "Local"
+            )
+
+        if drive_success and local_success:
+            updated = _index_status_payload(broker)
+            state = _load_index_state()
+            if not isinstance(state, dict):
+                state = {"drive": {}, "local": {}}
+            changed = False
+            drive_token = updated.get("drive", {}).get("current_token")
+            local_sig = updated.get("local", {}).get("current_sig")
+            if drive_token:
+                state.setdefault("drive", {})["token"] = drive_token
+                changed = True
+            if local_sig:
+                state.setdefault("local", {})["roots_sig"] = local_sig
+                changed = True
+            if changed:
+                state["updated_at"] = int(time.time())
+                try:
+                    _save_index_state(state)
+                    log("[index] background: state persisted")
+                except Exception as exc:
+                    log(f"[index] background: persist_failed error={type(exc).__name__}")
+            else:
+                log("[index] background: nothing to persist")
+        else:
+            log(
+                f"[index] background: incomplete drive_ok={drive_success} local_ok={local_success}"
+            )
+    finally:
+        _dispose_index_handles()
+        INDEX_IDLE_EVENT.set()
 
 
 async def _run_background_index(initial_status: Optional[Dict[str, Any]] = None) -> None:
+    if INDEX_STOP_EVENT.is_set() or INDEX_PAUSE_EVENT.is_set():
+        INDEX_IDLE_EVENT.set()
+        log("[index] background: paused; skipping run")
+        return
     try:
         await asyncio.to_thread(_background_index_worker, initial_status)
     except Exception as exc:
@@ -1378,11 +1550,15 @@ def index_status():
 
 @app.on_event("startup")
 async def _auto_index_if_stale() -> None:
-    global BACKGROUND_INDEX_TASK
+    global BACKGROUND_INDEX_TASK, INDEX_LOOP
+    INDEX_LOOP = asyncio.get_running_loop()
     try:
         status = _index_status_payload(_broker())
     except Exception as exc:
         log(f"[index] background: status_check_failed error={type(exc).__name__}")
+        return
+    if INDEX_STOP_EVENT.is_set() or INDEX_PAUSE_EVENT.is_set():
+        log("[index] background: startup skip (paused)")
         return
     if status.get("overall_up_to_date"):
         log("[index] background: startup skip (up-to-date)")
@@ -1869,11 +2045,33 @@ app.include_router(protected)
 
 def create_app():
     init_app_state(app)
+    app.state.pause_indexer = pause_indexer
+    app.state.resume_indexer = resume_indexer
+    app.state.stop_indexer = stop_indexer
+    app.state.start_indexer = start_indexer
+
+    @app.on_event("startup")
+    async def _start_indexer_event():
+        try:
+            app.state.start_indexer()
+            if is_dev():
+                log("[index] control: started in worker")
+        except Exception:
+            if is_dev():
+                log("[index] control: start failed (ignored)")
+
+    @app.on_event("shutdown")
+    async def _stop_indexer_event():
+        try:
+            app.state.stop_indexer()
+        except Exception:
+            pass
     if not getattr(app.state, "_domain_routes_registered", False):
         app.include_router(items_router, prefix="/app")
         app.include_router(vendors_router, prefix="/app")
         app.include_router(recipes_router, prefix="/app")
         app.include_router(manufacturing_router, prefix="/app")
+        app.include_router(ledger_public_router, prefix="/app")
         app.include_router(ledger_router, prefix="/app")
         app.include_router(transactions_routes.router, prefix="/app")
         app.include_router(config_routes.router, prefix="/app")

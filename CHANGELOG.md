@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.8.8] — 2025-12-08
+### Changed
+- Windows restore: reliable on SQLite/Windows via lazy SQLAlchemy engine (NullPool), indexer worker-only, explicit stop around restore, WAL checkpoint + handle disposal, bounded exclusive check, atomic replace (MoveFileEx), and journal archive/recreate. Returns `{ "restart_required": true }` on success.
+- Smoke harness: commit uses authenticated WebSession (no background job cookie loss); fast fail for restore lock contention; deterministic end-to-end run now green.
+- Logging: clear `[restore] …` breadcrumbs; consistent request log lines.
+
+### Fixed
+- Restore 401 during `/app/db/import/commit` when executed from background jobs (cookies lost). Smoke now maintains session and validates error envelope shapes.
+
+### Removed
+- Redundant/stale dev scripts and assets (see repo pruning below).
+
+## [0.8.7] — 2025-12-08
+### Changed
+- Error UX: all non-2xx responses are visible; `400` keeps dialogs open (field errors), `5xx/timeout` shows persistent banner; unified error parsing for string/object/list variants.
+
+## [0.8.6] — deferred
+- Routing/deep-links polish moved to last pre-0.9 batch (UI).
+
 ## v0.8.3
 - Journals append only after database commits; restore archives and recreates journals.
 - Password-based AES-GCM exports to `%LOCALAPPDATA%/BUSCore/exports` with preview/commit restore flow.

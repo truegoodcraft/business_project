@@ -183,18 +183,21 @@ def test_fail_fast_has_zero_new_movements_and_batches(manufacturing_failfast_env
     )
 
     assert resp.status_code == 400
-    assert resp.json()["detail"]["shortages"] == [
+    detail = resp.json()["detail"]
+    assert detail["error"] == "insufficient_stock"
+    assert detail["shortages"] == [
         {
-            "item_id": manufacturing_failfast_env["input_item_id"],
+            "component": manufacturing_failfast_env["input_item_id"],
             "required": 5.0,
             "available": 0.0,
         }
     ]
+    assert detail["run_id"]
 
     with engine.SessionLocal() as db:
         after = snapshot_counts(db, models, recipes)
 
-    assert_counts_delta(before, after, runs=0, movements=0, batches=0)
+    assert_counts_delta(before, after, runs=1, movements=0, batches=0)
 
 
 def test_success_has_expected_negative_moves_and_one_output_positive(manufacturing_success_env):

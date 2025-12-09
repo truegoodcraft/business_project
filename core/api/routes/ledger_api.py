@@ -19,9 +19,10 @@ from core.appdb.ledger import (
 )
 from core.journal.inventory import append_inventory
 
-# NOTE: Router prefix is "/ledger"; child paths must not repeat "/ledger" to avoid
-# duplicate segments (e.g., /app/ledger/adjust).
+# NOTE: Primary router uses legacy "/ledger" prefix; public_router exposes routes without it
+# (e.g., /app/adjust) to match current app paths.
 router = APIRouter(prefix="/ledger", tags=["ledger"])
+public_router = APIRouter(tags=["ledger"])
 DB_PATH = resolve_db_path()
 logger = logging.getLogger(__name__)
 
@@ -106,6 +107,7 @@ class PurchaseIn(BaseModel):
 
 
 @router.post("/purchase")
+@public_router.post("/purchase")
 def purchase(body: PurchaseIn):
     try:
         return fifo_purchase(body.item_id, body.qty, body.unit_cost_cents, body.source_kind, body.source_id)
@@ -125,6 +127,7 @@ class ConsumeIn(BaseModel):
 
 
 @router.post("/consume")
+@public_router.post("/consume")
 def consume(body: ConsumeIn):
     try:
         return fifo_consume(body.item_id, body.qty, body.source_kind, body.source_id)
@@ -157,6 +160,7 @@ def _format_shortages(shortages: list[dict]) -> list[dict]:
 
 
 @router.post("/adjust")
+@public_router.post("/adjust")
 def adjust_stock(body: AdjustmentInput, db: Session = Depends(get_session)):
     """
     Positive adjustment:
@@ -224,11 +228,13 @@ def adjust_stock(body: AdjustmentInput, db: Session = Depends(get_session)):
 
 
 @router.get("/valuation")
+@public_router.get("/valuation")
 def valuation(item_id: Optional[int] = None):
     return fifo_valuation(item_id)
 
 
 @router.get("/movements")
+@public_router.get("/movements")
 def movements(item_id: Optional[int] = None, limit: int = 100):
     return fifo_list(item_id, limit)
 
@@ -257,3 +263,6 @@ def _append_inventory(entry: dict) -> None:
         append_inventory(entry)
     except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to append inventory journal entry")
+
+
+__all__ = ["router", "public_router"]

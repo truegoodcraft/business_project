@@ -123,7 +123,8 @@ def test_atomic_multiple_input_batches_one_output_batch(manufacturing_success_se
 
     with engine.SessionLocal() as db:
         body = RecipeRunRequest(recipe_id=manufacturing_success_setup["recipe_id"], output_qty=1)
-        output_item_id, required, k = validate_run(db, body)
+        output_item_id, required, k, shortages = validate_run(db, body)
+        assert shortages == []
         with pytest.raises(RuntimeError):
             execute_run_txn(
                 db,
