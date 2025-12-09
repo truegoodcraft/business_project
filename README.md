@@ -19,6 +19,7 @@
 3.  Run `scripts/launch.ps1` (or `python launcher.py`).
 
 #(if windows blocks scripts use this command: PowerShell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\launch.ps1" )
+
 #(SMOKE: PowerShell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\smoke.ps1" )
 
 ## Dev Mode
