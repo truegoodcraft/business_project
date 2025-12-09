@@ -2,7 +2,30 @@
 // Inventory card with smart input parsing.
 
 import { apiGetJson, apiPost, apiPut, apiDelete, ensureToken } from '../api.js';
-import { parseSmartInput } from '../utils/parser.js';
+
+const UNIT_OPTIONS = {
+  length: ['mm', 'cm', 'm'],
+  area: ['mm2', 'cm2', 'm2'],
+  volume: ['mm3', 'cm3', 'm3', 'ml'],
+  weight: ['mg', 'g', 'kg'],
+  count: ['unit'],
+};
+
+const BASE_UNIT_LABEL = {
+  length: 'mm',
+  area: 'mm²',
+  volume: 'mm³',
+  weight: 'mg',
+  count: 'milli-units',
+};
+
+const MULT = {
+  length: { mm: 1, cm: 10, m: 1000 },
+  area: { mm2: 1, cm2: 100, m2: 1_000_000 },
+  volume: { mm3: 1, cm3: 1_000, m3: 1_000_000_000, ml: 1_000 },
+  weight: { mg: 1, g: 1_000, kg: 1_000_000 },
+  count: { unit: 1_000 },
+};
 
 // Keep delegated handler binding stable across route changes
 let _rootEl = null;
@@ -69,10 +92,13 @@ function renderTable(state) {
   tbody.innerHTML = '';
   state.items.forEach((item) => {
     const row = el('tr', { 'data-role': 'item-row', 'data-id': item.id });
+    const qtyText = (item.quantity_display?.value && item.quantity_display?.unit)
+      ? `${item.quantity_display.value} ${item.quantity_display.unit}`
+      : `${item.qty ?? 0} ${item.unit || ''}`.trim();
     row.append(
       el('td', { text: item.name || 'Item' }),
       el('td', { text: item.sku || '—' }),
-      el('td', { text: `${item.qty ?? 0} ${item.unit || ''}`.trim() }),
+      el('td', { text: qtyText }),
       el('td', { text: item.vendor || '—' }),
       el('td', { text: item.price != null ? `$${Number(item.price).toFixed(2)}` : '—' }),
       el('td', { text: item.location || '—' })
@@ -165,7 +191,9 @@ export async function _mountInventory(container) {
         el('div', { class: 'details' }, [
           el('div', { class: 'grid' }, [
             kv('SKU', item.sku || '—'),
-            kv('Quantity', `${item.qty ?? 0} ${item.unit || ''}`.trim()),
+            kv('Quantity', (item.quantity_display?.value && item.quantity_display?.unit)
+              ? `${item.quantity_display.value} ${item.quantity_display.unit}`
+              : `${item.qty ?? 0} ${item.unit || ''}`.trim()),
             kv('Vendor', item.vendor || '—'),
             kv('Price', item.price != null ? `$${Number(item.price).toFixed(2)}` : '—'),
             kv('Location', item.location || '—'),
@@ -231,18 +259,29 @@ export function openItemModal(item = null) {
 
   // Elements – Speed Surface
   const fName = inputRow('Name', 'text', item?.name ?? '', { autofocus: true });
-  const qtyWrap = inputRow('Smart Qty', 'text', '', { placeholder: 'e.g. 10 kg or 5\'' });
-  const qtyInput = qtyWrap.querySelector('input');
-  const qtyBadge = document.createElement('span');
-  qtyBadge.style.display = 'inline-block';
-  qtyBadge.style.marginLeft = '8px';
-  qtyBadge.style.padding = '2px 8px';
-  qtyBadge.style.border = '1px solid var(--border)';
-  qtyBadge.style.borderRadius = '8px';
-  qtyBadge.style.opacity = '0.8';
-  qtyBadge.style.fontSize = '12px';
-  qtyBadge.textContent = 'Waiting for input…';
-  qtyWrap.querySelector('.field-input').appendChild(qtyBadge);
+  const dimensionSelect = createSelect('item-dimension', [
+    ['length', 'Length'],
+    ['area', 'Area'],
+    ['volume', 'Volume'],
+    ['weight', 'Weight'],
+    ['count', 'Count'],
+  ]);
+  const dimensionRow = fieldRowWithElement('Dimension', dimensionSelect);
+
+  const unitSelect = createSelect('item-unit');
+  const unitRow = fieldRowWithElement('Unit', unitSelect);
+
+  const qtyInput = document.createElement('input');
+  qtyInput.type = 'number';
+  qtyInput.id = 'item-qty-dec';
+  qtyInput.setAttribute('step', '0.001');
+  qtyInput.setAttribute('min', '0');
+  qtyInput.required = true;
+  const qtyRow = fieldRowWithElement('Quantity', qtyInput);
+
+  const qtyPreview = document.createElement('div');
+  qtyPreview.id = 'item-qty-preview';
+  qtyPreview.className = 'muted';
 
   const fPrice = inputRow('Price', 'number', item?.price ?? '', { step: '0.01' });
   const fLocation = inputRow('Location', 'text', item?.location ?? '');
@@ -317,17 +356,14 @@ export function openItemModal(item = null) {
   // Assemble card
   const content = document.createElement('div');
   content.className = 'modal-body';
-  content.append(fName, qtyWrap, fPrice, fLocation, hinge, ledger, footer);
+  content.append(fName, dimensionRow, unitRow, qtyRow, qtyPreview, fPrice, fLocation, hinge, ledger, footer);
   card.appendChild(content);
   overlay.appendChild(card);
   document.body.appendChild(overlay);
 
   // Auto-focus and prefill qty badge if editing
   fName.querySelector('input')?.focus();
-  if (item?.qty || item?.unit) {
-    qtyInput.value = [item.qty ?? '', item.unit ?? ''].filter(Boolean).join(' ');
-  }
-  updateBadge();
+  initAddItemFormDefaults();
 
   const populateVendors = (vendorsList, selectedId = null) => {
     vendorSelect.innerHTML = '<option value="">—</option>';
@@ -362,6 +398,44 @@ export function openItemModal(item = null) {
       vendorSelect.value = '';
     }
   });
+
+  function populateUnits(presetUnit = null) {
+    const dim = dimensionSelect.value;
+    const opts = UNIT_OPTIONS[dim] || [];
+    unitSelect.innerHTML = opts.map((u) => `<option value="${u}">${u}</option>`).join('');
+    const targetUnit = (presetUnit && opts.includes(presetUnit)) ? presetUnit : opts[0];
+    if (targetUnit) unitSelect.value = targetUnit;
+    updatePreview();
+  }
+
+  function toBaseIntForPreview(value, unit, dim) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return 0;
+    const mult = MULT[dim]?.[unit];
+    if (!mult) return 0;
+    return Math.floor(n * mult + 0.5);
+  }
+
+  function updatePreview() {
+    const dim = dimensionSelect.value;
+    const unit = unitSelect.value;
+    const val = qtyInput.value;
+    if (!dim || !unit || val === '') {
+      qtyPreview.textContent = '';
+      return;
+    }
+    const baseInt = toBaseIntForPreview(val, unit, dim);
+    qtyPreview.textContent = `Will store: ${baseInt} ${BASE_UNIT_LABEL[dim]}`;
+  }
+
+  function initAddItemFormDefaults() {
+    const defaultDim = item?.dimension || dimensionSelect.value || 'count';
+    dimensionSelect.value = defaultDim;
+    populateUnits(item?.quantity_display?.unit || item?.unit);
+    const qtyVal = item?.quantity_display?.value ?? (item?.qty ?? '');
+    if (qtyVal !== undefined && qtyVal !== null) qtyInput.value = qtyVal;
+    updatePreview();
+  }
 
   // Load vendors (async)
   (async () => {
@@ -413,22 +487,37 @@ export function openItemModal(item = null) {
   }, true);
   card.addEventListener('click', (e) => e.stopPropagation());
 
-  // Live parser feedback
-  qtyInput.addEventListener('input', updateBadge);
-
-  function updateBadge() {
-    const parsed = parseSmartInput(qtyInput.value || '');
-    if (parsed && typeof parsed.qty === 'number' && parsed.qty > 0) {
-      qtyBadge.textContent = `Parsed: ${parsed.qty} | ${parsed.unit ?? ''}`.trim();
-      qtyBadge.style.borderColor = 'var(--border)';
-    } else {
-      qtyBadge.textContent = 'Unrecognized';
-      qtyBadge.style.borderColor = '#ef4444';
-    }
-  }
+  dimensionSelect.addEventListener('change', () => populateUnits());
+  unitSelect.addEventListener('change', () => updatePreview());
+  qtyInput.addEventListener('input', () => updatePreview());
 
   function fieldValue(rowSel) {
     return rowSel.querySelector('input,textarea,select')?.value ?? '';
+  }
+
+  function fieldRowWithElement(labelText, element) {
+    const row = document.createElement('div');
+    row.className = 'field-row';
+    const label = document.createElement('label');
+    label.textContent = labelText;
+    const wrap = document.createElement('div');
+    wrap.className = 'field-input';
+    if (element) wrap.appendChild(element);
+    row.append(label, wrap);
+    return row;
+  }
+
+  function createSelect(id, options = []) {
+    const select = document.createElement('select');
+    if (id) select.id = id;
+    select.required = true;
+    options.forEach(([value, text]) => {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = text;
+      select.appendChild(opt);
+    });
+    return select;
   }
 
   function inputRow(labelText, type, value = '', attrs = {}) {
@@ -468,6 +557,14 @@ export function openItemModal(item = null) {
     // Client-side validation
     if (!name) return markInvalid(fName.querySelector('input'));
 
+    const dimensionVal = dimensionSelect.value;
+    const unitVal = unitSelect.value;
+    const qtyVal = qtyInput.value;
+
+    if (!dimensionVal) return markInvalid(dimensionSelect);
+    if (!unitVal) return markInvalid(unitSelect);
+    if (qtyVal === '') return markInvalid(qtyInput);
+
     const priceVal = (() => {
       const n = parseFloat(fieldValue(fPrice));
       return Number.isFinite(n) ? n : 0;
@@ -481,7 +578,9 @@ export function openItemModal(item = null) {
       price: priceVal,
       type: (expanded ? fieldValue(typeRow) : 'Product') || 'Product',
       notes: expanded ? (notes.value.trim() || undefined) : undefined,
-      // Definition-only: omit any qty/unit derived from Smart Qty. Stock adjustments happen in ledger flows.
+      dimension: dimensionVal,
+      unit: unitVal,
+      quantity_decimal: qtyVal,
     };
 
     const url = isEdit ? `/app/items/${item.id}` : '/app/items';
