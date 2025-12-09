@@ -268,6 +268,7 @@ table tr:hover { background: #1e2530; }
   text-align: center;
   gap: 2px;
   text-decoration: none;   /* remove underline on <a> */
+  margin-bottom: 24px;
 }
 
 .tgc-brand-title {
@@ -275,6 +276,8 @@ table tr:hover { background: #1e2530; }
   font-weight: 800;
   letter-spacing: 0.3px;
   text-shadow: 0 0 6px rgba(255,255,255,0.10);
+  font-size: 2em;
+  line-height: 1.05;
 }
 
 .tgc-brand-beta {
@@ -296,15 +299,22 @@ table tr:hover { background: #1e2530; }
   border-radius: 6px;
 }
 
+/* Sidebar container must allow header shadows to render inside panel */
+.sidebar, .sidebar-container {
+  overflow: visible;
+}
+
 /* Sidebar section header (Tools) */
 .nav-section {
   display: flex;
   align-items: center;
   justify-content: center;   /* center horizontally */
+  box-sizing: border-box;
   width: 100%;
   text-align: center;
   padding: 10px 12px;
-  margin: 8px 12px 12px;
+  margin: 0 12px 12px;
+  max-width: calc(100% - 24px);
   color: #fff;
   font-weight: 800;
   letter-spacing: 0.2px;
@@ -315,7 +325,11 @@ table tr:hover { background: #1e2530; }
     0 8px 16px rgba(0,0,0,0.28);                      /* shadow under */
   cursor: default;
   user-select: none;
-  text-transform: none;
+}
+
+/* Extra bottom buffer after Tools before System */
+.nav-section--tools {
+  margin-bottom: 20px;
 }
 
 /* Ensure no hover/active highlight applies */
