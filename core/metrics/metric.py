@@ -7,7 +7,15 @@ UNIT_MULTIPLIER = {
     "area": {"mm2": 1, "cm2": 100, "m2": 1_000_000},
     "volume": {"mm3": 1, "cm3": 1_000, "m3": 1_000_000_000, "ml": 1_000},
     "weight": {"mg": 1, "g": 1_000, "kg": 1_000_000},
-    "count": {"unit": 1_000},
+    "count": {"unit": 1_000, "ea": 1_000},
+}
+
+DEFAULT_UNIT_FOR = {
+    "length": "mm",
+    "area": "mm2",
+    "volume": "mm3",
+    "weight": "mg",
+    "count": "ea",
 }
 
 BASE_UNIT_LABEL = {
@@ -17,6 +25,10 @@ BASE_UNIT_LABEL = {
     "weight": "mg",
     "count": "milli-units",
 }
+
+
+def default_unit_for(dimension: str) -> str:
+    return DEFAULT_UNIT_FOR.get(dimension, "ea")
 
 
 def to_base(value_decimal: str | float | Decimal, unit: str, dimension: str) -> int:
@@ -48,7 +60,9 @@ def allowed_units_for(dimension: str) -> list[str]:
 __all__ = [
     "allowed_units_for",
     "BASE_UNIT_LABEL",
+    "DEFAULT_UNIT_FOR",
     "DIMENSIONS",
+    "default_unit_for",
     "from_base",
     "to_base",
     "UNIT_MULTIPLIER",

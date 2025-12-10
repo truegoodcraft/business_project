@@ -3,12 +3,14 @@
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from core.appdb.engine import get_session
 from core.config.writes import require_writes
 from core.policy.guard import require_owner_commit
-from core.services.models import Item, Vendor
+from core.appdb.models import Item, ItemBatch, Vendor
+from core.metrics.metric import UNIT_MULTIPLIER, default_unit_for, from_base
 from tgc.security import require_token_ctx
 from tgc.state import AppState, get_state
 
@@ -68,12 +70,45 @@ def _apply_qty_fields(it: Item, payload: Dict[str, Any], resp: Optional[Response
     if used_legacy and resp is not None:
         resp.headers["X-BUS-Deprecation"] = "qty/unit"
 
-def _row(it: Item, vendor_name: Optional[str] = None) -> Dict[str, Any]:
+def _items_with_onhand(db: Session):
+    onhand_sq = (
+        db.query(
+            ItemBatch.item_id.label("item_id"),
+            func.coalesce(func.sum(ItemBatch.qty_remaining), 0).label("on_hand"),
+        )
+        .filter(ItemBatch.qty_remaining > 0)
+        .group_by(ItemBatch.item_id)
+        .subquery()
+    )
+    return (
+        db.query(Item, func.coalesce(onhand_sq.c.on_hand, 0).label("on_hand"))
+        .outerjoin(onhand_sq, onhand_sq.c.item_id == Item.id)
+    )
+
+
+def _on_hand_fields(it: Item, on_hand: int) -> Dict[str, Any]:
+    dimension = it.dimension if getattr(it, "dimension", None) in UNIT_MULTIPLIER else "count"
+    unit = (getattr(it, "uom", None) or default_unit_for(dimension)).lower()
+    if unit not in UNIT_MULTIPLIER.get(dimension, {}):
+        unit = default_unit_for(dimension)
+    try:
+        display_qty = from_base(int(on_hand), unit, dimension)
+    except Exception:
+        dimension = "count"
+        unit = default_unit_for(dimension)
+        display_qty = from_base(int(on_hand), unit, dimension)
+    return {
+        "stock_on_hand_int": int(on_hand),
+        "stock_on_hand_display": {"unit": unit, "value": str(display_qty)},
+    }
+
+
+def _row(it: Item, vendor_name: Optional[str] = None, on_hand: Optional[int] = None) -> Dict[str, Any]:
     """Shape rows the way the UI expects (fields are additive/forgiving)."""
     qty_stored = int(getattr(it, "qty_stored", 0) or 0)
     uom = getattr(it, "uom", "ea") or "ea"
     qty, unit = _derive_qty_and_unit(uom, qty_stored)
-    return {
+    row = {
         "id": it.id,
         "name": it.name,
         "sku": it.sku,
@@ -89,6 +124,9 @@ def _row(it: Item, vendor_name: Optional[str] = None) -> Dict[str, Any]:
         "type": getattr(it, "item_type", None),  # present if column exists
         "created_at": it.created_at,
     }
+    if on_hand is not None:
+        row.update(_on_hand_fields(it, on_hand))
+    return row
 
 @router.get("/items")
 def list_items(
@@ -96,9 +134,9 @@ def list_items(
     _token: str = Depends(require_token_ctx),
     _state: AppState = Depends(get_state),
 ) -> List[Dict[str, Any]]:
-    items = db.query(Item).all()
+    items = _items_with_onhand(db).all()
     vmap = {v.id: v.name for v in db.query(Vendor).all()}
-    return [_row(it, vmap.get(it.vendor_id)) for it in items]
+    return [_row(it, vmap.get(it.vendor_id), on_hand) for it, on_hand in items]
 
 @router.get("/items/{item_id}")
 def get_item(
@@ -107,14 +145,15 @@ def get_item(
     _token: str = Depends(require_token_ctx),
     _state: AppState = Depends(get_state),
 ) -> Dict[str, Any]:
-    it = db.query(Item).get(item_id)
-    if not it:
+    row = _items_with_onhand(db).filter(Item.id == item_id).first()
+    if not row:
         raise HTTPException(status_code=404, detail="item not found")
+    it, on_hand = row
     vname = None
     if it.vendor_id:
         v = db.query(Vendor).get(it.vendor_id)
         vname = v.name if v else None
-    return _row(it, vname)
+    return _row(it, vname, on_hand)
 
 @router.post("/items")
 def create_item(
