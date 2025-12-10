@@ -110,16 +110,24 @@ function formatMoney(n) {
 }
 
 function formatQty(item) {
+  if (item.stock_on_hand_display?.unit && item.stock_on_hand_display?.value != null) {
+    return `${item.stock_on_hand_display.value} ${item.stock_on_hand_display.unit}`;
+  }
+
+  if (typeof item.stock_on_hand_int === 'number') {
+    const unit = item.dimension === 'length' ? 'mm'
+      : item.dimension === 'area' ? 'mm²'
+        : item.dimension === 'volume' ? 'mm³'
+          : item.dimension === 'weight' ? 'mg'
+            : 'milli-units';
+    return `${item.stock_on_hand_int} ${unit}`;
+  }
+
   if (item.quantity_display?.value && item.quantity_display?.unit) {
     return `${item.quantity_display.value} ${item.quantity_display.unit}`;
   }
-  const unit = item.dimension === 'length' ? 'mm'
-    : item.dimension === 'area' ? 'mm²'
-      : item.dimension === 'volume' ? 'mm³'
-        : item.dimension === 'weight' ? 'mg'
-          : 'milli-units';
-  const qtyValue = item.quantity_int ?? item.qty ?? 0;
-  return `${qtyValue} ${unit}`;
+
+  return '0';
 }
 
 function renderTable(state) {
