@@ -104,21 +104,36 @@ async function fetchItems(state) {
   return state.items;
 }
 
+function formatMoney(n) {
+  const v = Number(n ?? 0);
+  return v.toLocaleString(undefined, { style: 'currency', currency: 'USD' });
+}
+
+function formatQty(item) {
+  if (item.quantity_display?.value && item.quantity_display?.unit) {
+    return `${item.quantity_display.value} ${item.quantity_display.unit}`;
+  }
+  const unit = item.dimension === 'length' ? 'mm'
+    : item.dimension === 'area' ? 'mm²'
+      : item.dimension === 'volume' ? 'mm³'
+        : item.dimension === 'weight' ? 'mg'
+          : 'milli-units';
+  const qtyValue = item.quantity_int ?? item.qty ?? 0;
+  return `${qtyValue} ${unit}`;
+}
+
 function renderTable(state) {
   const tbody = state.tableBody;
   tbody.innerHTML = '';
   state.items.forEach((item) => {
     const row = el('tr', { 'data-role': 'item-row', 'data-id': item.id });
-    const qtyText = (item.quantity_display?.value && item.quantity_display?.unit)
-      ? `${item.quantity_display.value} ${item.quantity_display.unit}`
-      : `${item.qty ?? 0} ${item.unit || ''}`.trim();
+    const vendorText = item.vendor?.name || item.vendor || '—';
     row.append(
-      el('td', { text: item.name || 'Item' }),
-      el('td', { text: item.sku || '—' }),
-      el('td', { text: qtyText }),
-      el('td', { text: item.vendor || '—' }),
-      el('td', { text: item.price != null ? `$${Number(item.price).toFixed(2)}` : '—' }),
-      el('td', { text: item.location || '—' })
+      el('td', { class: 'c', text: item.name || 'Item' }),
+      el('td', { class: 'c', text: formatQty(item) }),
+      el('td', { class: 'c', text: item.price != null ? formatMoney(item.price) : '—' }),
+      el('td', { class: 'c', text: vendorText }),
+      el('td', { class: 'c', text: item.location || '—' }),
     );
     tbody.append(row);
   });
@@ -141,19 +156,21 @@ export async function _mountInventory(container) {
   const controls = el('div', { class: 'inventory-controls toolbar' }, [
     el('button', { id: 'add-item-btn', class: 'btn', 'data-role': 'btn-add-item' }, '+ Add Item'),
   ]);
-  const table = el('table', { id: 'items-table', class: 'table-clickable' }, [
-    el('thead', {}, [
-      el('tr', {}, [
-        el('th', { text: 'Name' }),
-        el('th', { text: 'SKU' }),
-        el('th', { text: 'Qty' }),
-        el('th', { text: 'Vendor' }),
-        el('th', { text: 'Price' }),
-        el('th', { text: 'Location' })
-      ]),
+  const table = el('table', { id: 'inventory-table', class: 'table-clickable inventory-table' });
+  const colgroup = el('colgroup');
+  ['20%', '20%', '20%', '20%', '20%'].forEach((width) => {
+    colgroup.append(el('col', { style: `width:${width}` }));
+  });
+  const thead = el('thead', {}, [
+    el('tr', {}, [
+      el('th', { text: 'Name' }),
+      el('th', { text: 'Quantity' }),
+      el('th', { text: 'Price' }),
+      el('th', { text: 'Vendor' }),
+      el('th', { text: 'Location' }),
     ]),
-    el('tbody'),
   ]);
+  table.append(colgroup, thead, el('tbody'));
   container.append(controls, table);
   state.tableBody = table.querySelector('tbody');
 

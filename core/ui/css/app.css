@@ -355,3 +355,21 @@ table tr:hover { background: #1e2530; }
   margin: 8px 0 12px;
   font-size: 0.9em;
 }
+
+/* Inventory table layout */
+.inventory-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.inventory-table th,
+.inventory-table td {
+  text-align: center;
+  vertical-align: middle;
+  padding: 10px 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
