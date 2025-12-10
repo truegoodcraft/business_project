@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException, Depends
 import logging
 import time
 import sqlite3
+from datetime import datetime
 from pydantic import BaseModel, Field
 from typing import Optional
 
@@ -17,7 +18,10 @@ from core.appdb.ledger import (
     fifo_consume as sa_fifo_consume,
     on_hand_qty,
 )
+from core.appdb.models import Item, ItemBatch, ItemMovement
+from core.metrics.metric import UNIT_MULTIPLIER, default_unit_for, from_base, to_base
 from core.journal.inventory import append_inventory
+from core.api.schemas_ledger import QtyDisplay, StockInReq, StockInResp
 
 # NOTE: Primary router uses legacy "/ledger" prefix; public_router exposes routes without it
 # (e.g., /app/adjust) to match current app paths.
@@ -263,6 +267,118 @@ def _append_inventory(entry: dict) -> None:
         append_inventory(entry)
     except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to append inventory journal entry")
+
+
+def _cents_to_display(cents: int) -> str:
+    return f"${cents / 100:,.2f}"
+
+
+def _fifo_unit_cost_display(db: Session, item_id: int, unit: str) -> Optional[str]:
+    batch = (
+        db.query(ItemBatch)
+        .filter(ItemBatch.item_id == item_id, ItemBatch.qty_remaining > 0)
+        .order_by(asc(ItemBatch.created_at), asc(ItemBatch.id))
+        .first()
+    )
+    if not batch:
+        return None
+    cents = getattr(batch, "unit_cost_cents", None)
+    if cents is None:
+        try:
+            unit_cost = getattr(batch, "unit_cost", None)
+            cents = int(round(float(unit_cost) * 100)) if unit_cost is not None else None
+        except Exception:
+            cents = None
+    if cents is None:
+        try:
+            total_cents = getattr(batch, "total_cost_cents", None)
+            qty_init = getattr(batch, "qty_initial", None) or 0
+            cents = int(total_cents) // int(qty_init) if total_cents is not None and qty_init else None
+        except Exception:
+            cents = None
+    if cents is None:
+        return None
+    return f"{_cents_to_display(int(cents))} / {unit}"
+
+
+@router.post("/stock_in", response_model=StockInResp)
+@public_router.post("/stock_in", response_model=StockInResp)
+def stock_in(payload: StockInReq, db: Session = Depends(get_session)):
+    item = db.get(Item, payload.item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="item_not_found")
+
+    if item.dimension not in UNIT_MULTIPLIER or payload.uom not in UNIT_MULTIPLIER[item.dimension]:
+        raise HTTPException(status_code=400, detail="unsupported uom")
+
+    try:
+        qty_int = to_base(payload.quantity_decimal, payload.uom, item.dimension)
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid_quantity")
+    if qty_int <= 0:
+        raise HTTPException(status_code=400, detail="invalid_quantity")
+
+    unit_cost_cents: Optional[int]
+    if payload.unit_cost_decimal is None:
+        unit_cost_cents = 0
+    else:
+        try:
+            unit_cost_cents = int(round(float(payload.unit_cost_decimal) * 100))
+        except Exception:
+            raise HTTPException(status_code=400, detail="invalid_unit_cost")
+
+    batch = ItemBatch(
+        item_id=item.id,
+        qty_initial=qty_int,
+        qty_remaining=qty_int,
+        unit_cost_cents=unit_cost_cents,
+        source_kind="stock_in",
+        source_id=str(payload.vendor_id) if payload.vendor_id is not None else None,
+        is_oversold=False,
+        created_at=datetime.utcnow(),
+    )
+    db.add(batch)
+
+    movement = ItemMovement(
+        item_id=item.id,
+        batch_id=None,
+        qty_change=qty_int,
+        unit_cost_cents=unit_cost_cents,
+        source_kind="stock_in",
+        source_id=str(payload.vendor_id) if payload.vendor_id is not None else None,
+        is_oversold=False,
+        created_at=datetime.utcnow(),
+    )
+    db.add(movement)
+    db.flush()
+    if hasattr(movement, "batch_id"):
+        movement.batch_id = batch.id
+
+    if hasattr(item, "qty_stored"):
+        item.qty_stored = int((getattr(item, "qty_stored", 0) or 0) + qty_int)
+
+    db.commit()
+    db.refresh(batch)
+
+    on_hand = (
+        db.query(func.coalesce(func.sum(ItemBatch.qty_remaining), 0))
+        .filter(ItemBatch.item_id == item.id, ItemBatch.qty_remaining > 0)
+        .scalar()
+        or 0
+    )
+
+    display_unit = item.uom or default_unit_for(getattr(item, "dimension", "count") or "count")
+    if item.dimension not in UNIT_MULTIPLIER or display_unit not in UNIT_MULTIPLIER[item.dimension]:
+        display_unit = default_unit_for(getattr(item, "dimension", "count") or "count")
+    display_qty = from_base(int(on_hand), display_unit, item.dimension)
+
+    return StockInResp(
+        batch_id=batch.id,
+        qty_added_int=qty_int,
+        stock_on_hand_int=int(on_hand),
+        stock_on_hand_display=QtyDisplay(unit=display_unit, value=str(display_qty)),
+        fifo_unit_cost_display=_fifo_unit_cost_display(db, item.id, display_unit),
+    )
 
 
 __all__ = ["router", "public_router"]
