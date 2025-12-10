@@ -24,6 +24,12 @@ def ensure_vendors_schema(engine: Engine) -> None:
     """
 
     with engine.begin() as conn:
+        exists = conn.exec_driver_sql(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='vendors'"
+        ).first()
+        if not exists:
+            return
+
         cols = _vendor_columns(conn)
 
         def _add(col: str, ddl: str) -> None:
