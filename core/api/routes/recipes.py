@@ -201,9 +201,9 @@ async def update_recipe(
     return _serialize_recipe_detail(db, recipe)
 
 
-@router.delete("/{rid}")
+@router.delete("/{recipe_id}")
 async def delete_recipe(
-    rid: int,
+    recipe_id: int,
     req: Request,
     db: Session = Depends(get_session),
     _writes: None = Depends(require_writes),
@@ -211,9 +211,9 @@ async def delete_recipe(
     _state: AppState = Depends(get_state),
 ):
     require_owner_commit(req)
-    r = db.get(Recipe, rid)
+    r = db.get(Recipe, recipe_id)
     if not r:
-        return {"ok": True}
+        raise HTTPException(status_code=404, detail="Not Found")
     db.delete(r)
     db.commit()
     return {"ok": True}

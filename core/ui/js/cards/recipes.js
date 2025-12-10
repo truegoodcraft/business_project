@@ -417,8 +417,10 @@ function renderEditor(editor, leftPanel) {
       _draft = null;
       renderList(leftPanel, editor);
       renderEmpty(editor);
+      status.textContent = 'Deleted';
+      status.style.color = '#4caf50';
     } catch (e) {
-      status.textContent = (e?.data?.detail?.message || e?.message || 'Delete failed');
+      status.textContent = (e?.detail?.message || e?.detail || e?.message || 'Delete failed');
       status.style.color = '#ff6666';
     }
   };
