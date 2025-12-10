@@ -109,18 +109,36 @@ function formatMoney(n) {
   return v.toLocaleString(undefined, { style: 'currency', currency: 'USD' });
 }
 
-function formatQty(item) {
-  if (item.stock_on_hand_display?.unit && item.stock_on_hand_display?.value != null) {
-    return `${item.stock_on_hand_display.value} ${item.stock_on_hand_display.unit}`;
+// Shared on-hand quantity formatter used by main table and (previously) details.
+// Order of preference:
+// 1) server-provided on-hand display (unit + value),
+// 2) server-provided on-hand int + dimension-aware fallback,
+// 3) legacy quantity_display or final zero fallback.
+function formatOnHandDisplay(item) {
+  const sod = item.stock_on_hand_display;
+  if (sod && sod.unit && sod.value != null) {
+    return `${sod.value} ${sod.unit}`;
   }
 
-  if (typeof item.stock_on_hand_int === 'number') {
-    const unit = item.dimension === 'length' ? 'mm'
-      : item.dimension === 'area' ? 'mm²'
-        : item.dimension === 'volume' ? 'mm³'
-          : item.dimension === 'weight' ? 'mg'
-            : 'milli-units';
-    return `${item.stock_on_hand_int} ${unit}`;
+  const v = (typeof item.stock_on_hand_int === 'number')
+    ? item.stock_on_hand_int
+    : (typeof item.quantity_int === 'number' ? item.quantity_int : 0);
+
+  switch (item.dimension) {
+    case 'count': {
+      const ea = (v / 1000).toFixed(3);
+      return `${ea} ea`;
+    }
+    case 'length':
+      return `${v} mm`;
+    case 'area':
+      return `${v} mm²`;
+    case 'volume':
+      return `${v} mm³`;
+    case 'weight':
+      return `${v} mg`;
+    default:
+      break;
   }
 
   if (item.quantity_display?.value && item.quantity_display?.unit) {
@@ -138,7 +156,7 @@ function renderTable(state) {
     const vendorText = item.vendor?.name || item.vendor || '—';
     row.append(
       el('td', { class: 'c', text: item.name || 'Item' }),
-      el('td', { class: 'c', text: formatQty(item) }),
+      el('td', { class: 'c', text: formatOnHandDisplay(item) }),
       el('td', { class: 'c', text: item.price != null ? formatMoney(item.price) : '—' }),
       el('td', { class: 'c', text: vendorText }),
       el('td', { class: 'c', text: item.location || '—' }),
@@ -233,9 +251,6 @@ export async function _mountInventory(container) {
         el('div', { class: 'details' }, [
           el('div', { class: 'grid' }, [
             kv('SKU', item.sku || '—'),
-            kv('Quantity', (item.quantity_display?.value && item.quantity_display?.unit)
-              ? `${item.quantity_display.value} ${item.quantity_display.unit}`
-              : `${item.qty ?? 0} ${item.unit || ''}`.trim()),
             kv('Vendor', item.vendor || '—'),
             kv('Price', item.price != null ? `$${Number(item.price).toFixed(2)}` : '—'),
             kv('Location', item.location || '—'),
