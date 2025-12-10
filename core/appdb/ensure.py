@@ -133,29 +133,34 @@ def ensure_schema() -> Dict[str, Any]:
             CREATE TABLE recipes (
                 id INTEGER PRIMARY KEY,
                 name TEXT NOT NULL,
-                code TEXT UNIQUE,
-                output_item_id INTEGER,
-                output_qty INTEGER NOT NULL DEFAULT 0,
-                is_archived BOOLEAN NOT NULL DEFAULT 0,
+                code TEXT,
+                output_item_id INTEGER NOT NULL,
+                output_qty INTEGER NOT NULL DEFAULT 1,
+                archived BOOLEAN NOT NULL DEFAULT 0,
                 notes TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
-            """
+                """
             )
             created["recipes"] = True
         else:
             for col, ddl in [
                 ("code", "ALTER TABLE recipes ADD COLUMN code TEXT"),
-                ("output_item_id", "ALTER TABLE recipes ADD COLUMN output_item_id INTEGER"),
-                ("output_qty", "ALTER TABLE recipes ADD COLUMN output_qty INTEGER NOT NULL DEFAULT 0"),
-                ("is_archived", "ALTER TABLE recipes ADD COLUMN is_archived BOOLEAN NOT NULL DEFAULT 0"),
+                ("output_item_id", "ALTER TABLE recipes ADD COLUMN output_item_id INTEGER NOT NULL DEFAULT 0"),
+                ("output_qty", "ALTER TABLE recipes ADD COLUMN output_qty INTEGER NOT NULL DEFAULT 1"),
+                (
+                    "archived",
+                    "ALTER TABLE recipes ADD COLUMN archived BOOLEAN NOT NULL DEFAULT 0",
+                ),
                 ("created_at", "ALTER TABLE recipes ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP"),
                 ("updated_at", "ALTER TABLE recipes ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP"),
             ]:
-                if not col_exists("recipes", col):
+                if not col_exists("recipes", col) and not (
+                    col == "archived" and col_exists("recipes", "is_archived")
+                ):
                     cur.execute(ddl)
-            cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_recipes_code ON recipes(code)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_recipes_code ON recipes(code)")
 
         # RECIPE ITEMS
         cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='recipe_items'")

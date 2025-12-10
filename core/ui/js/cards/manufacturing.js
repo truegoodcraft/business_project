@@ -61,7 +61,7 @@ async function renderNewRunForm(parent) {
   // Fetch recipes
   try {
     const list = await RecipesAPI.list();
-    _state.recipes = (list || []).filter(r => !r.is_archived);
+    _state.recipes = (list || []).filter(r => !r.archived);
   } catch (err) {
     parent.append(el('div', { class: 'error' }, 'Failed to load recipes.'));
     return;
@@ -134,7 +134,7 @@ async function renderNewRunForm(parent) {
     try {
       // Fetch full details (items + current stock)
       const fullRecipe = await RecipesAPI.get(rid);
-      if (fullRecipe?.is_archived) {
+      if (fullRecipe?.archived) {
         statusMsg.textContent = 'This recipe is archived and cannot be run.';
         statusMsg.style.color = '#ff4444';
         tbody.innerHTML = '';
@@ -205,7 +205,7 @@ async function renderNewRunForm(parent) {
 
   runBtn.addEventListener('click', async () => {
     if (!_state.selectedRecipe) return;
-    if (_state.selectedRecipe.is_archived) {
+    if (_state.selectedRecipe.archived) {
       statusMsg.textContent = 'This recipe is archived and cannot be run.';
       statusMsg.style.color = '#ff4444';
       return;
@@ -238,7 +238,7 @@ async function renderNewRunForm(parent) {
         const s = e.data.detail.shortages.map(x => `#${x.item_id}: need ${x.required}, have ${x.on_hand}, missing ${x.missing}`).join(' | ');
         statusMsg.textContent = `Insufficient stock → ${s}`;
       } else {
-        statusMsg.textContent = e?.data?.detail?.message || e?.message || 'Run failed.';
+        statusMsg.textContent = e?.detail || e?.data?.detail || e?.data?.detail?.message || e?.message || 'Run failed.';
       }
       statusMsg.style.color = '#ff4444';
       runBtn.disabled = false;

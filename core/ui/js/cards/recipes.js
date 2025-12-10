@@ -28,7 +28,7 @@ function normalizeRecipe(data) {
     code: data.code || '',
     output_item_id: data.output_item_id ?? null,
     output_qty: data.output_qty || 1,
-    is_archived: Boolean(data.is_archived ?? data.archived),
+    archived: Boolean(data.archived ?? data.is_archived),
     notes: data.notes || '',
     items: (data.items || []).map((it, idx) => ({
       item_id: it.item_id,
@@ -150,9 +150,21 @@ function renderCreateForm(editor, leftPanel) {
       status.style.color = '#ff6666';
       return;
     }
+    const defaultOutput = _items[0]?.id;
+    if (!defaultOutput) {
+      status.textContent = 'Add an item first to use as the output.';
+      status.style.color = '#ff6666';
+      return;
+    }
     try {
       await ensureToken();
-      const created = await RecipesAPI.create({ name: name.value.trim() });
+      const created = await RecipesAPI.create({
+        name: name.value.trim(),
+        output_item_id: defaultOutput,
+        output_qty: 1,
+        archived: false,
+        items: [],
+      });
       await refreshData();
       const found = _recipes.find(r => r.id === (created?.id ?? null) || r.name === name.value.trim());
       if (found) {
@@ -224,8 +236,8 @@ function renderEditor(editor, leftPanel) {
   );
 
   const flagsRow = el('div', { style: 'display:flex;gap:16px;align-items:center;margin-bottom:10px' });
-  const archivedToggle = el('input', { type: 'checkbox', checked: _draft.is_archived ? 'checked' : undefined });
-  archivedToggle.addEventListener('change', () => { _draft.is_archived = archivedToggle.checked; });
+  const archivedToggle = el('input', { type: 'checkbox', checked: _draft.archived ? 'checked' : undefined });
+  archivedToggle.addEventListener('change', () => { _draft.archived = archivedToggle.checked; });
   flagsRow.append(archivedToggle, el('span', { text: 'Archived', style: 'color:#cdd1dc' }));
 
   const notes = el('textarea', {
@@ -332,8 +344,8 @@ function renderEditor(editor, leftPanel) {
       name: (_draft.name || '').trim(),
       code: _draft.code || null,
       output_item_id: _draft.output_item_id || null,
-      output_qty: Number(_draft.output_qty) || 0,
-      is_archived: Boolean(_draft.is_archived),
+      output_qty: Number(_draft.output_qty) || 1,
+      archived: Boolean(_draft.archived),
       notes: _draft.notes || null,
       items: (_draft.items || []).map((it, idx) => ({
         item_id: it.item_id ? Number(it.item_id) : null,
