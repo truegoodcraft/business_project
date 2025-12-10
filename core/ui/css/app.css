@@ -346,6 +346,24 @@ table tr:hover { background: #1e2530; }
   opacity: 0.8;
 }
 
+.inline-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #e6e6e6;
+}
+
+.inline-row > label:first-child {
+  visibility: hidden;
+}
+
+hr.thin {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 10px 0;
+  opacity: 0.6;
+}
+
 .error-banner {
   background: rgba(255, 64, 64, 0.12);
   border: 1px solid rgba(255, 64, 64, 0.35);

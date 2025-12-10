@@ -16,7 +16,7 @@ from tgc.state import AppState, get_state
 
 router = APIRouter(tags=["items"])
 
-UOMS = {"ea", "g", "mm", "mm2", "mm3"}
+UOMS = {"ea", "g", "kg", "mg", "mm", "cm", "m", "mm2", "cm2", "m2", "mm3", "cm3", "m3", "ml"}
 MAX_INT64 = 2**63 - 1
 
 
@@ -155,6 +155,7 @@ def _row(it: Item, vendor_name: Optional[str] = None, on_hand: Optional[int] = N
         "qty": qty,
         "unit": unit,
         "price": it.price,
+        "is_product": bool(getattr(it, "is_product", False)),
         "notes": it.notes,
         # UI reads these (optional):
         "vendor": vendor_name,          # derived from vendor_id
@@ -262,6 +263,19 @@ def create_item(
 
     location = (payload.get("location") or "").strip() or None
     item_type = payload.get("item_type") or payload.get("type")
+    dimension = (payload.get("dimension") or "count").lower()
+    uom = (payload.get("uom") or payload.get("unit") or default_unit_for(dimension)).lower()
+    if dimension not in UNIT_MULTIPLIER:
+        raise HTTPException(status_code=400, detail="unsupported dimension")
+    if uom not in UNIT_MULTIPLIER.get(dimension, {}):
+        raise HTTPException(status_code=400, detail="unsupported uom")
+    is_product = bool(payload.get("is_product"))
+    price_val = payload.get("price")
+    if payload.get("price_decimal") is not None:
+        try:
+            price_val = float(payload.get("price_decimal") or 0)
+        except Exception:
+            price_val = price_val
 
     # Fallback upsert path used by the UI when adjusting non-existing items:
     item_id = payload.get("id")
@@ -271,9 +285,17 @@ def create_item(
             it = Item(id=item_id)
             db.add(it)
         # Apply provided fields
-        for f in ("name", "sku", "price", "notes", "vendor_id"):
+        for f in ("name", "sku", "notes", "vendor_id"):
             if f in payload:
                 setattr(it, f, payload[f])
+        if ("price" in payload) or ("price_decimal" in payload) or is_product:
+            if price_val is not None:
+                it.price = price_val
+            elif is_product:
+                it.price = 0
+        it.dimension = dimension
+        it.uom = uom
+        it.is_product = is_product
         if "location" in payload:
             it.location = location
         # Optional item_type if model/column exists
@@ -289,17 +311,20 @@ def create_item(
         it = Item(
             name=payload.get("name") or "Unnamed Item",
             sku=payload.get("sku"),
-            price=payload.get("price"),
+            price=price_val if price_val is not None else (0 if is_product else None),
             notes=payload.get("notes"),
             vendor_id=payload.get("vendor_id"),
             location=location,
+            dimension=dimension,
+            uom=uom,
+            qty_stored=0,
+            is_product=is_product,
         )
         if item_type is not None:
             try:
                 setattr(it, "item_type", item_type)
             except Exception:
                 pass
-        _apply_qty_fields(it, payload, resp)
         db.add(it)
 
     db.commit()
@@ -329,13 +354,34 @@ def update_item(
 
     location = (payload.get("location") or "").strip() or None
     item_type = payload.get("item_type") or payload.get("type")
+    dimension = (payload.get("dimension") or getattr(it, "dimension", "count") or "count").lower()
+    uom = (payload.get("uom") or payload.get("unit") or getattr(it, "uom", None) or default_unit_for(dimension)).lower()
+    if dimension not in UNIT_MULTIPLIER:
+        raise HTTPException(status_code=400, detail="unsupported dimension")
+    if uom not in UNIT_MULTIPLIER.get(dimension, {}):
+        raise HTTPException(status_code=400, detail="unsupported uom")
+    price_val = payload.get("price")
+    if payload.get("price_decimal") is not None:
+        try:
+            price_val = float(payload.get("price_decimal") or 0)
+        except Exception:
+            price_val = price_val
 
-    for f in ("name", "sku", "price", "notes", "vendor_id"):
+    for f in ("name", "sku", "notes", "vendor_id"):
         if f in payload:
             try:
                 setattr(it, f, payload[f])
             except Exception:
                 pass
+    if ("price" in payload) or ("price_decimal" in payload) or ("is_product" in payload):
+        if price_val is not None:
+            it.price = price_val
+        elif payload.get("is_product"):
+            it.price = 0
+    if "is_product" in payload:
+        it.is_product = bool(payload.get("is_product"))
+    it.dimension = dimension
+    it.uom = uom
     if "location" in payload:
         it.location = location
     if item_type is not None:
@@ -344,6 +390,7 @@ def update_item(
         except Exception:
             pass
 
+    payload = {**payload, "uom": uom}
     _apply_qty_fields(it, payload, resp)
     db.commit()
     db.refresh(it)

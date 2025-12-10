@@ -109,6 +109,13 @@ function formatMoney(n) {
   return v.toLocaleString(undefined, { style: 'currency', currency: 'USD' });
 }
 
+function formatItemPrice(item) {
+  if (item?.is_product) {
+    return item?.price != null ? formatMoney(item.price) : '—';
+  }
+  return item?.fifo_unit_cost_display || (item?.price != null ? formatMoney(item.price) : '—');
+}
+
 // Shared on-hand quantity formatter used by main table and (previously) details.
 // Order of preference:
 // 1) server-provided on-hand display (unit + value),
@@ -154,7 +161,7 @@ function renderTable(state) {
   state.items.forEach((item) => {
     const row = el('tr', { 'data-role': 'item-row', 'data-id': item.id });
     const vendorText = item.vendor?.name || item.vendor || '—';
-    const priceText = item.fifo_unit_cost_display || (item.price != null ? formatMoney(item.price) : '—');
+    const priceText = formatItemPrice(item);
     row.append(
       el('td', { class: 'c', text: item.name || 'Item' }),
       el('td', { class: 'c', text: formatOnHandDisplay(item) }),
@@ -257,7 +264,7 @@ export async function _mountInventory(container) {
     }
 
     const colCount = tableEl.querySelector('thead tr').children.length || rowEl.children.length;
-    const priceText = detail.fifo_unit_cost_display || (detail.price != null ? formatMoney(detail.price) : '—');
+    const priceText = formatItemPrice(detail);
     const kvNodes = [
       detail.sku ? kv('SKU', detail.sku) : null,
       kv('Vendor', detail.vendor || '—'),
@@ -382,11 +389,54 @@ export function openItemModal(item = null) {
   qtyPreview.id = 'item-qty-preview';
   qtyPreview.className = 'muted';
 
-  let addBatchRow = null;
+  const costInput = document.createElement('input');
+  costInput.type = 'number';
+  costInput.id = 'item-cost-dec';
+  costInput.setAttribute('step', '0.01');
+  costInput.setAttribute('min', '0');
+  const costRow = fieldRowWithElement('Unit Cost', costInput);
+
+  const isProductInput = document.createElement('input');
+  isProductInput.type = 'checkbox';
+  isProductInput.id = 'item-is-product';
+  const productLabel = document.createElement('label');
+  productLabel.className = 'inline-check';
+  productLabel.htmlFor = 'item-is-product';
+  productLabel.append(isProductInput, document.createTextNode('This is a product (use fixed price)'));
+  const productRow = fieldRowWithElement('', productLabel);
+  productRow.classList.add('inline-row');
+
+  const fPrice = inputRow('Price', 'number', item?.price ?? '', { step: '0.01', min: '0' });
+  const priceInput = fPrice.querySelector('input');
+  if (priceInput) priceInput.id = 'item-price-dec';
+  const fLocation = inputRow('Location', 'text', item?.location ?? '');
+
+  let addBatchToggleRow = null;
+  let addBatchToggle = null;
+  let batchFields = null;
+  let addBatchBtnRow = null;
   let addBatchBtn = null;
+
+  if (!isEdit) {
+    addBatchToggle = document.createElement('input');
+    addBatchToggle.type = 'checkbox';
+    addBatchToggle.id = 'item-add-batch';
+    addBatchToggle.checked = true;
+    const addBatchLabel = document.createElement('label');
+    addBatchLabel.className = 'inline-check';
+    addBatchLabel.htmlFor = 'item-add-batch';
+    addBatchLabel.append(addBatchToggle, document.createTextNode('Add opening batch now'));
+    addBatchToggleRow = fieldRowWithElement('', addBatchLabel);
+    addBatchToggleRow.classList.add('inline-row');
+
+    batchFields = document.createElement('div');
+    batchFields.id = 'field-batch';
+    batchFields.append(qtyRow, costRow, qtyPreview);
+  }
+
   if (isEdit && item?.id) {
-    addBatchRow = document.createElement('div');
-    addBatchRow.className = 'field-row';
+    addBatchBtnRow = document.createElement('div');
+    addBatchBtnRow.className = 'field-row';
     const spacer = document.createElement('label');
     spacer.textContent = '';
     const wrap = document.createElement('div');
@@ -396,11 +446,8 @@ export function openItemModal(item = null) {
     addBatchBtn.className = 'btn';
     addBatchBtn.textContent = 'Add Batch';
     wrap.appendChild(addBatchBtn);
-    addBatchRow.append(spacer, wrap);
+    addBatchBtnRow.append(spacer, wrap);
   }
-
-  const fPrice = inputRow('Price', 'number', item?.price ?? '', { step: '0.01' });
-  const fLocation = inputRow('Location', 'text', item?.location ?? '');
 
   // Elements – Hinge
   const hinge = document.createElement('button');
@@ -472,9 +519,18 @@ export function openItemModal(item = null) {
   // Assemble card
   const content = document.createElement('div');
   content.className = 'modal-body';
-  content.append(fName, dimensionRow, unitRow, qtyRow, qtyPreview);
-  if (addBatchRow) content.append(addBatchRow);
-  content.append(fPrice, fLocation, hinge, ledger, footer);
+  const divider = document.createElement('hr');
+  divider.className = 'thin';
+
+  content.append(fName, dimensionRow, unitRow, productRow, fPrice, divider);
+  if (addBatchToggleRow) content.append(addBatchToggleRow);
+  if (batchFields) {
+    content.append(batchFields);
+  } else {
+    content.append(qtyRow, qtyPreview);
+  }
+  if (addBatchBtnRow) content.append(addBatchBtnRow);
+  content.append(fLocation, hinge, ledger, footer);
   card.appendChild(content);
   overlay.appendChild(card);
   document.body.appendChild(overlay);
@@ -535,6 +591,10 @@ export function openItemModal(item = null) {
   }
 
   function updatePreview() {
+    if (addBatchToggle && !addBatchToggle.checked) {
+      qtyPreview.textContent = '';
+      return;
+    }
     const dim = dimensionSelect.value;
     const unit = unitSelect.value;
     const val = qtyInput.value;
@@ -546,12 +606,39 @@ export function openItemModal(item = null) {
     qtyPreview.textContent = `Will store: ${baseInt} ${BASE_UNIT_LABEL[dim]}`;
   }
 
+  function syncProductPriceVisibility() {
+    if (!priceInput) return;
+    const showPrice = isProductInput.checked;
+    fPrice.hidden = !showPrice;
+    priceInput.disabled = !showPrice;
+    priceInput.required = showPrice;
+  }
+
+  function syncBatchVisibility() {
+    const showBatch = addBatchToggle ? addBatchToggle.checked : true;
+    if (batchFields) batchFields.hidden = !showBatch;
+    qtyRow.hidden = batchFields ? !showBatch : false;
+    if (costRow && batchFields) costRow.hidden = !showBatch;
+    qtyPreview.style.display = showBatch ? 'block' : 'none';
+    qtyInput.required = isEdit ? true : showBatch;
+  }
+
   function initAddItemFormDefaults() {
     const defaultDim = item?.dimension || dimensionSelect.value || 'count';
     dimensionSelect.value = defaultDim;
     populateUnits(item?.quantity_display?.unit || item?.unit);
     const qtyVal = item?.quantity_display?.value ?? (item?.qty ?? '');
     if (qtyVal !== undefined && qtyVal !== null) qtyInput.value = qtyVal;
+    if (isProductInput) {
+      isProductInput.checked = !!item?.is_product;
+      if (priceInput && item?.price != null) priceInput.value = item.price;
+      syncProductPriceVisibility();
+    }
+    if (addBatchToggle) {
+      addBatchToggle.checked = true;
+      if (costInput) costInput.value = '';
+    }
+    syncBatchVisibility();
     updatePreview();
   }
 
@@ -609,6 +696,8 @@ export function openItemModal(item = null) {
   dimensionSelect.addEventListener('change', () => populateUnits());
   unitSelect.addEventListener('change', () => updatePreview());
   qtyInput.addEventListener('input', () => updatePreview());
+  if (addBatchToggle) addBatchToggle.addEventListener('change', () => { syncBatchVisibility(); updatePreview(); });
+  isProductInput.addEventListener('change', () => syncProductPriceVisibility());
   if (addBatchBtn) addBatchBtn.addEventListener('click', () => openStockInModal());
 
   function fieldValue(rowSel) {
@@ -810,14 +899,17 @@ export function openItemModal(item = null) {
     const dimensionVal = dimensionSelect.value;
     const unitVal = unitSelect.value;
     const qtyVal = qtyInput.value;
+    const addOpeningBatch = addBatchToggle ? addBatchToggle.checked : false;
 
     if (!dimensionVal) return markInvalid(dimensionSelect);
     if (!unitVal) return markInvalid(unitSelect);
-    if (qtyVal === '') return markInvalid(qtyInput);
+    if ((isEdit || addOpeningBatch) && qtyVal === '') return markInvalid(qtyInput);
 
     const priceVal = (() => {
-      const n = parseFloat(fieldValue(fPrice));
-      return Number.isFinite(n) ? n : 0;
+      const parsed = priceInput ? parseFloat(priceInput.value) : parseFloat(fieldValue(fPrice));
+      if (Number.isFinite(parsed)) return parsed;
+      if (item?.price != null) return item.price;
+      return 0;
     })();
 
     const payload = {
@@ -825,20 +917,58 @@ export function openItemModal(item = null) {
       sku: (fieldValue(fSku) || '').trim() || undefined,
       vendor_id: vendorSelect && vendorSelect.tagName === 'SELECT' ? (vendorSelect.value || undefined) : undefined,
       location: (fieldValue(fLocation) || '').trim() || undefined,
-      price: priceVal,
       type: (expanded ? fieldValue(typeRow) : 'Product') || 'Product',
       notes: expanded ? (notes.value.trim() || undefined) : undefined,
       dimension: dimensionVal,
       uom: unitVal,
       unit: unitVal,
-      quantity_decimal: qtyVal,
+      is_product: isProductInput.checked,
+      quantity_decimal: isEdit ? qtyVal : '0',
     };
+
+    if (isProductInput.checked) {
+      payload.price_decimal = priceInput?.value ?? String(priceVal ?? 0);
+      payload.price = priceVal;
+    }
 
     const url = isEdit ? `/items/${item.id}` : '/items';
     const method = isEdit ? apiPut : apiPost;
     try {
       await ensureToken();
-      await method(url, payload, { headers: { 'Content-Type': 'application/json' } });
+      const savedItem = await method(url, payload, { headers: { 'Content-Type': 'application/json' } });
+
+      if (!isEdit && addOpeningBatch) {
+        if (!qtyVal || Number(qtyVal) <= 0) {
+          const msg = 'Quantity required for opening batch.';
+          if (errorBanner) {
+            errorBanner.textContent = msg;
+            errorBanner.hidden = false;
+          }
+          return;
+        }
+
+        const stockPayload = {
+          item_id: savedItem?.id,
+          uom: unitVal,
+          unit: unitVal,
+          quantity_decimal: qtyVal,
+          unit_cost_decimal: costInput?.value || '0',
+        };
+
+        try {
+          await ensureToken();
+          await apiPost('/ledger/stock_in', stockPayload, { headers: { 'Content-Type': 'application/json' } });
+        } catch (err) {
+          const msg = err?.detail?.message || err?.error || err?.message || 'Stock-in failed.';
+          if (errorBanner) {
+            errorBanner.textContent = msg;
+            errorBanner.hidden = false;
+          }
+          markInvalid(saveBtn);
+          return;
+        }
+      }
+
       closeModalSafely();
       reloadInventory?.(); // existing function in this module to refresh table
     } catch (err) {

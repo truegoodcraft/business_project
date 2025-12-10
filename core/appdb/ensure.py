@@ -56,6 +56,7 @@ def ensure_schema() -> Dict[str, Any]:
                 dimension TEXT NOT NULL DEFAULT 'count',
                 qty_stored INTEGER NOT NULL DEFAULT 0,   -- canonical on-hand (int)
                 price REAL DEFAULT 0,
+                is_product BOOLEAN NOT NULL DEFAULT 0,
                 notes TEXT,
                 item_type TEXT,
                 location TEXT,
@@ -69,6 +70,10 @@ def ensure_schema() -> Dict[str, Any]:
                 (
                     "dimension",
                     "ALTER TABLE items ADD COLUMN dimension TEXT NOT NULL DEFAULT 'count'",
+                ),
+                (
+                    "is_product",
+                    "ALTER TABLE items ADD COLUMN is_product BOOLEAN NOT NULL DEFAULT 0",
                 ),
             ]:
                 if not col_exists("items", col):
