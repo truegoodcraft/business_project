@@ -21,6 +21,19 @@ let _recipes = [];
 let _activeId = null;
 let _draft = null;
 
+function newRecipeDraft() {
+  return {
+    id: null,
+    name: '',
+    code: '',
+    output_item_id: null,
+    output_qty: 1,
+    archived: false,
+    notes: '',
+    items: [],
+  };
+}
+
 function normalizeRecipe(data) {
   return {
     id: data.id,
@@ -132,7 +145,7 @@ function renderEmpty(editor) {
 
 function renderCreateForm(editor, leftPanel) {
   _activeId = null;
-  _draft = null;
+  _draft = newRecipeDraft();
   editor.innerHTML = '';
 
   const title = el('h2', { text: 'Create New Recipe', style: 'margin-top:0' });
@@ -236,7 +249,8 @@ function renderEditor(editor, leftPanel) {
   );
 
   const flagsRow = el('div', { style: 'display:flex;gap:16px;align-items:center;margin-bottom:10px' });
-  const archivedToggle = el('input', { type: 'checkbox', checked: _draft.archived ? 'checked' : undefined });
+  const archivedToggle = el('input', { type: 'checkbox' });
+  archivedToggle.checked = !!_draft.archived;
   archivedToggle.addEventListener('change', () => { _draft.archived = archivedToggle.checked; });
   flagsRow.append(archivedToggle, el('span', { text: 'Archived', style: 'color:#cdd1dc' }));
 
@@ -339,13 +353,16 @@ function renderEditor(editor, leftPanel) {
     status.textContent = '';
     status.style.color = '#9ca3af';
 
+    const archivedValue = !!archivedToggle.checked;
+    _draft.archived = archivedValue;
+
     const payload = {
       id: _draft.id,
       name: (_draft.name || '').trim(),
       code: _draft.code || null,
       output_item_id: _draft.output_item_id || null,
       output_qty: Number(_draft.output_qty) || 1,
-      archived: Boolean(_draft.archived),
+      archived: archivedValue,
       notes: _draft.notes || null,
       items: (_draft.items || []).map((it, idx) => ({
         item_id: it.item_id ? Number(it.item_id) : null,

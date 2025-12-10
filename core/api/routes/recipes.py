@@ -24,20 +24,20 @@ class RecipeItemIn(BaseModel):
 class RecipeCreate(BaseModel):
     name: str
     code: str | None = None
-    notes: str | None = None
     output_item_id: int
     output_qty: int = 1
     archived: bool = False
+    notes: str | None = None
     items: list[RecipeItemIn] = []
 
 
 class RecipeUpdate(BaseModel):
-    name: str
+    name: str | None = None
     code: str | None = None
+    output_item_id: int | None = None
+    output_qty: int | None = None
+    archived: bool | None = None
     notes: str | None = None
-    output_item_id: int
-    output_qty: int = 1
-    archived: bool = False
     items: list[RecipeItemIn] = []
 
 
@@ -135,7 +135,7 @@ async def create_recipe(
         code=payload.code,
         output_item_id=payload.output_item_id,
         output_qty=payload.output_qty,
-        archived=payload.archived or False,
+        archived=bool(payload.archived),
         notes=payload.notes,
     )
     db.add(recipe)
@@ -171,12 +171,18 @@ async def update_recipe(
     recipe = db.get(Recipe, rid)
     if not recipe:
         raise HTTPException(404, "recipe not found")
-    recipe.name = payload.name
-    recipe.code = payload.code
-    recipe.output_item_id = payload.output_item_id
-    recipe.output_qty = payload.output_qty
-    recipe.archived = payload.archived or False
-    recipe.notes = payload.notes
+    if payload.name is not None:
+        recipe.name = payload.name
+    if payload.code is not None:
+        recipe.code = payload.code
+    if payload.output_item_id is not None:
+        recipe.output_item_id = payload.output_item_id
+    if payload.output_qty is not None:
+        recipe.output_qty = payload.output_qty
+    if payload.archived is not None:
+        recipe.archived = bool(payload.archived)
+    if payload.notes is not None:
+        recipe.notes = payload.notes
     db.query(RecipeItem).filter(RecipeItem.recipe_id == rid).delete()
     for idx, it in enumerate(payload.items or []):
         if it.qty_required <= 0:

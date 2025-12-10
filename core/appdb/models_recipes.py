@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship, synonym
-from sqlalchemy.sql import func as sa_func
+from sqlalchemy.sql import func as sa_func, text
 
 from core.appdb.models import Base
 
@@ -14,7 +14,7 @@ class Recipe(Base):
     code = Column(String, nullable=True)
     output_item_id = Column(Integer, ForeignKey("items.id"), nullable=False)
     output_qty = Column(Integer, nullable=False, default=1)
-    archived = Column(Boolean, nullable=False, default=False, server_default="0")
+    archived = Column(Boolean, nullable=False, default=False, server_default=text("0"))
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime, server_default=sa_func.now(), nullable=False)
     updated_at = Column(DateTime, server_default=sa_func.now(), onupdate=sa_func.now(), nullable=False)
