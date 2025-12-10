@@ -28,7 +28,7 @@ function normalizeRecipe(data) {
     code: data.code || '',
     output_item_id: data.output_item_id ?? null,
     output_qty: data.output_qty || 1,
-    is_archived: Boolean(data.is_archived),
+    is_archived: Boolean(data.is_archived ?? data.archived),
     notes: data.notes || '',
     items: (data.items || []).map((it, idx) => ({
       item_id: it.item_id,
@@ -314,8 +314,14 @@ function renderEditor(editor, leftPanel) {
   renderItemRows();
   itemsBox.append(itemsHeader, table);
 
-  const actions = el('div', { style: 'display:flex;justify-content:flex-end;gap:10px;align-items:center' });
+  const actions = el('div', { style: 'display:flex;justify-content:space-between;gap:10px;align-items:center;margin-top:6px' });
   const saveBtn = el('button', { class: 'btn primary', text: 'Save Recipe', style: 'border-radius:10px;padding:10px 14px;' });
+  const deleteBtn = el('button', {
+    class: 'btn',
+    text: 'Delete',
+    style: 'border-radius:10px;padding:10px 14px;background:#3a3d43;color:#e6e6e6;border:1px solid #2f3136',
+    disabled: !_draft.id ? 'disabled' : undefined,
+  });
 
   saveBtn.onclick = async () => {
     status.textContent = '';
@@ -356,8 +362,9 @@ function renderEditor(editor, leftPanel) {
 
     try {
       await ensureToken();
-      await RecipesAPI.update(_draft.id, payload);
-      _draft = normalizeRecipe(await RecipesAPI.get(_draft.id));
+      const saved = await RecipesAPI.update(_draft.id, payload);
+      _draft = normalizeRecipe(saved || await RecipesAPI.get(_draft.id));
+      _activeId = _draft.id;
       await refreshData();
       renderList(leftPanel, editor);
       status.textContent = 'Saved';
@@ -368,7 +375,26 @@ function renderEditor(editor, leftPanel) {
     }
   };
 
-  actions.append(status, saveBtn);
+  deleteBtn.onclick = async () => {
+    if (!_draft?.id) return;
+    if (!confirm('Delete this recipe? This cannot be undone.')) return;
+    status.textContent = '';
+    status.style.color = '#9ca3af';
+    try {
+      await ensureToken();
+      await RecipesAPI.delete(_draft.id);
+      await refreshData();
+      _activeId = null;
+      _draft = null;
+      renderList(leftPanel, editor);
+      renderEmpty(editor);
+    } catch (e) {
+      status.textContent = (e?.data?.detail?.message || e?.message || 'Delete failed');
+      status.style.color = '#ff6666';
+    }
+  };
+
+  actions.append(status, el('div', { style: 'display:flex;gap:8px;align-items:center' }, [deleteBtn, saveBtn]));
 
   editor.append(
     el('h2', { text: 'Edit Recipe', style: 'margin-top:0' }),

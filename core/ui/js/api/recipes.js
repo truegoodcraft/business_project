@@ -16,6 +16,9 @@ export const RecipesAPI = {
     // Full document
     return apiPut(`/app/recipes/${encodeURIComponent(id)}`, payload);
   },
+  async delete(id) {
+    return apiDelete(`/app/recipes/${encodeURIComponent(id)}`);
+  },
   async run(payload) {
     // { recipe_id?, output_item_id?, output_qty, components? }
     return apiPost('/app/manufacturing/run', payload);

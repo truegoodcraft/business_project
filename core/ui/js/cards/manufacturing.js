@@ -60,7 +60,8 @@ export function unmountManufacturing() {
 async function renderNewRunForm(parent) {
   // Fetch recipes
   try {
-    _state.recipes = await RecipesAPI.list();
+    const list = await RecipesAPI.list();
+    _state.recipes = (list || []).filter(r => !r.is_archived);
   } catch (err) {
     parent.append(el('div', { class: 'error' }, 'Failed to load recipes.'));
     return;
@@ -133,6 +134,16 @@ async function renderNewRunForm(parent) {
     try {
       // Fetch full details (items + current stock)
       const fullRecipe = await RecipesAPI.get(rid);
+      if (fullRecipe?.is_archived) {
+        statusMsg.textContent = 'This recipe is archived and cannot be run.';
+        statusMsg.style.color = '#ff4444';
+        tbody.innerHTML = '';
+        table.style.display = 'none';
+        emptyMsg.style.display = 'block';
+        runBtn.disabled = true;
+        _state.selectedRecipe = null;
+        return;
+      }
       _state.selectedRecipe = fullRecipe;
       _state.multiplier = mult;
 
@@ -194,7 +205,12 @@ async function renderNewRunForm(parent) {
 
   runBtn.addEventListener('click', async () => {
     if (!_state.selectedRecipe) return;
-    
+    if (_state.selectedRecipe.is_archived) {
+      statusMsg.textContent = 'This recipe is archived and cannot be run.';
+      statusMsg.style.color = '#ff4444';
+      return;
+    }
+
     runBtn.disabled = true;
     runBtn.textContent = 'Processing...';
     statusMsg.textContent = '';
@@ -222,7 +238,7 @@ async function renderNewRunForm(parent) {
         const s = e.data.detail.shortages.map(x => `#${x.item_id}: need ${x.required}, have ${x.on_hand}, missing ${x.missing}`).join(' | ');
         statusMsg.textContent = `Insufficient stock → ${s}`;
       } else {
-        statusMsg.textContent = e.message || 'Run failed.';
+        statusMsg.textContent = e?.data?.detail?.message || e?.message || 'Run failed.';
       }
       statusMsg.style.color = '#ff4444';
       runBtn.disabled = false;
