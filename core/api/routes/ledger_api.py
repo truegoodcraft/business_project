@@ -19,6 +19,7 @@ from core.appdb.ledger import (
     on_hand_qty,
 )
 from core.appdb.models import Item, ItemBatch, ItemMovement
+from sqlalchemy import func, asc
 from core.metrics.metric import UNIT_MULTIPLIER, default_unit_for, from_base, to_base
 from core.journal.inventory import append_inventory
 from core.api.schemas_ledger import QtyDisplay, StockInReq, StockInResp
@@ -357,27 +358,44 @@ def stock_in(payload: StockInReq, db: Session = Depends(get_session)):
     if hasattr(item, "qty_stored"):
         item.qty_stored = int((getattr(item, "qty_stored", 0) or 0) + qty_int)
 
-    db.commit()
-    db.refresh(batch)
+    on_hand = 0
+    oldest = None
+    try:
+        on_hand = (
+            db.query(func.coalesce(func.sum(ItemBatch.qty_remaining), 0))
+            .filter(ItemBatch.item_id == item.id, ItemBatch.qty_remaining > 0)
+            .scalar()
+            or 0
+        )
 
-    on_hand = (
-        db.query(func.coalesce(func.sum(ItemBatch.qty_remaining), 0))
-        .filter(ItemBatch.item_id == item.id, ItemBatch.qty_remaining > 0)
-        .scalar()
-        or 0
-    )
+        oldest = (
+            db.query(ItemBatch)
+            .filter(ItemBatch.item_id == item.id, ItemBatch.qty_remaining > 0)
+            .order_by(asc(ItemBatch.created_at), asc(ItemBatch.id))
+            .first()
+        )
+
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
     display_unit = item.uom or default_unit_for(getattr(item, "dimension", "count") or "count")
     if item.dimension not in UNIT_MULTIPLIER or display_unit not in UNIT_MULTIPLIER[item.dimension]:
         display_unit = default_unit_for(getattr(item, "dimension", "count") or "count")
     display_qty = from_base(int(on_hand), display_unit, item.dimension)
+    fifo_disp = (
+        f"{_cents_to_display(oldest.unit_cost_cents)} / {display_unit}"
+        if oldest and getattr(oldest, "unit_cost_cents", None) is not None
+        else None
+    )
 
     return StockInResp(
         batch_id=batch.id,
         qty_added_int=qty_int,
         stock_on_hand_int=int(on_hand),
         stock_on_hand_display=QtyDisplay(unit=display_unit, value=str(display_qty)),
-        fifo_unit_cost_display=_fifo_unit_cost_display(db, item.id, display_unit),
+        fifo_unit_cost_display=fifo_disp,
     )
 
 
