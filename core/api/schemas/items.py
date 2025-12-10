@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import BaseModel
 
@@ -12,6 +12,13 @@ from pydantic import BaseModel
 class QuantityDisplay(BaseModel):
     unit: str
     value: str
+
+
+class BatchSummary(BaseModel):
+    entered: str
+    remaining_int: int
+    original_int: int
+    unit_cost_display: str
 
 
 class ItemOut(BaseModel):
@@ -30,9 +37,15 @@ class ItemOut(BaseModel):
     created_at: Optional[datetime] = None
     stock_on_hand_int: int
     stock_on_hand_display: QuantityDisplay
+    fifo_unit_cost_cents: Optional[int] = None
+    fifo_unit_cost_display: Optional[str] = None
 
     class Config:
         orm_mode = True
 
 
-__all__ = ["ItemOut", "QuantityDisplay"]
+class ItemDetailOut(ItemOut):
+    batches_summary: List[BatchSummary] = []
+
+
+__all__ = ["BatchSummary", "ItemOut", "ItemDetailOut", "QuantityDisplay"]

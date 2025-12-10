@@ -154,10 +154,11 @@ function renderTable(state) {
   state.items.forEach((item) => {
     const row = el('tr', { 'data-role': 'item-row', 'data-id': item.id });
     const vendorText = item.vendor?.name || item.vendor || '—';
+    const priceText = item.fifo_unit_cost_display || (item.price != null ? formatMoney(item.price) : '—');
     row.append(
       el('td', { class: 'c', text: item.name || 'Item' }),
       el('td', { class: 'c', text: formatOnHandDisplay(item) }),
-      el('td', { class: 'c', text: item.price != null ? formatMoney(item.price) : '—' }),
+      el('td', { class: 'c', text: priceText }),
       el('td', { class: 'c', text: vendorText }),
       el('td', { class: 'c', text: item.location || '—' }),
     );
@@ -213,7 +214,7 @@ export async function _mountInventory(container) {
       const id = Number(row.getAttribute('data-id'));
       const item = state.items.find((it) => it.id === id);
       if (!item) return;
-      toggleDetailsRow(table, row, item);
+      await toggleDetailsRow(table, row, item);
       return;
     }
     if (!btn) return;
@@ -237,25 +238,59 @@ export async function _mountInventory(container) {
     return el('div', { class: 'kv' }, [ el('div', { class: 'k', text: label }), el('div', { class: 'v', text: value }) ]);
   }
 
-  function toggleDetailsRow(tableEl, rowEl, item) {
-    // Collapse if already open
+  async function toggleDetailsRow(tableEl, rowEl, item) {
     if (rowEl.nextElementSibling && rowEl.nextElementSibling.classList.contains('row-details')) {
       rowEl.nextElementSibling.remove();
       return;
     }
-    // Close any other open details
+
     tableEl.querySelectorAll('.row-details').forEach((r) => r.remove());
+
+    let detail = item;
+    try {
+      detail = await apiGetJson(`/app/items/${item.id}`);
+      if (detail && typeof detail === 'object') {
+        state.items = state.items.map((it) => (it.id === item.id ? { ...it, ...detail } : it));
+      }
+    } catch (err) {
+      detail = { ...item, _error: err?.message || 'Unable to load details' };
+    }
+
     const colCount = tableEl.querySelector('thead tr').children.length || rowEl.children.length;
+    const priceText = detail.fifo_unit_cost_display || (detail.price != null ? formatMoney(detail.price) : '—');
+    const kvNodes = [
+      detail.sku ? kv('SKU', detail.sku) : null,
+      kv('Vendor', detail.vendor || '—'),
+      kv('Price', priceText),
+      kv('Location', detail.location || '—'),
+    ].filter(Boolean);
+
+    const batchRows = (detail.batches_summary && detail.batches_summary.length)
+      ? detail.batches_summary.map((b) => el('tr', {}, [
+          el('td', { text: b.entered ? new Date(b.entered).toLocaleDateString() : '—' }),
+          el('td', { text: `${b.remaining_int} / ${b.original_int}` }),
+          el('td', { text: b.unit_cost_display || '—' }),
+        ]))
+      : [el('tr', {}, [el('td', { class: 'c', colspan: '3', text: 'No batches' })])];
+
+    const batchTable = el('table', { class: 'subtable' }, [
+      el('thead', {}, [
+        el('tr', {}, [
+          el('th', { text: 'Entered' }),
+          el('th', { text: 'Remaining / Original' }),
+          el('th', { text: 'Unit Cost' }),
+        ]),
+      ]),
+      el('tbody', {}, batchRows),
+    ]);
+
     const details = el('tr', { class: 'row-details' }, [
       el('td', { colspan: String(colCount) }, [
         el('div', { class: 'details' }, [
-          el('div', { class: 'grid' }, [
-            kv('SKU', item.sku || '—'),
-            kv('Vendor', item.vendor || '—'),
-            kv('Price', item.price != null ? `$${Number(item.price).toFixed(2)}` : '—'),
-            kv('Location', item.location || '—'),
-          ]),
-          item.notes ? el('div', { class: 'notes', text: item.notes }) : null,
+          kvNodes.length ? el('div', { class: 'grid' }, kvNodes) : null,
+          detail.notes ? el('div', { class: 'notes', text: detail.notes }) : null,
+          batchTable,
+          detail._error ? el('div', { class: 'notes', text: detail._error }) : null,
           el('div', { class: 'row-actions' }, [
             el('button', { type: 'button', 'data-action': 'edit', 'data-id': item.id }, 'Edit'),
             el('button', { type: 'button', 'data-action': 'delete', 'data-id': item.id, class: 'danger' }, 'Delete'),
@@ -263,6 +298,7 @@ export async function _mountInventory(container) {
         ]),
       ]),
     ]);
+
     rowEl.after(details);
   }
 
@@ -346,6 +382,23 @@ export function openItemModal(item = null) {
   qtyPreview.id = 'item-qty-preview';
   qtyPreview.className = 'muted';
 
+  let addBatchRow = null;
+  let addBatchBtn = null;
+  if (isEdit && item?.id) {
+    addBatchRow = document.createElement('div');
+    addBatchRow.className = 'field-row';
+    const spacer = document.createElement('label');
+    spacer.textContent = '';
+    const wrap = document.createElement('div');
+    wrap.className = 'field-input';
+    addBatchBtn = document.createElement('button');
+    addBatchBtn.type = 'button';
+    addBatchBtn.className = 'btn';
+    addBatchBtn.textContent = 'Add Batch';
+    wrap.appendChild(addBatchBtn);
+    addBatchRow.append(spacer, wrap);
+  }
+
   const fPrice = inputRow('Price', 'number', item?.price ?? '', { step: '0.01' });
   const fLocation = inputRow('Location', 'text', item?.location ?? '');
 
@@ -419,7 +472,9 @@ export function openItemModal(item = null) {
   // Assemble card
   const content = document.createElement('div');
   content.className = 'modal-body';
-  content.append(fName, dimensionRow, unitRow, qtyRow, qtyPreview, fPrice, fLocation, hinge, ledger, footer);
+  content.append(fName, dimensionRow, unitRow, qtyRow, qtyPreview);
+  if (addBatchRow) content.append(addBatchRow);
+  content.append(fPrice, fLocation, hinge, ledger, footer);
   card.appendChild(content);
   overlay.appendChild(card);
   document.body.appendChild(overlay);
@@ -534,6 +589,7 @@ export function openItemModal(item = null) {
 
   const closeModalSafely = () => {
     cleanup();
+    closeStockInModal();
     overlay.remove();
   };
 
@@ -553,6 +609,7 @@ export function openItemModal(item = null) {
   dimensionSelect.addEventListener('change', () => populateUnits());
   unitSelect.addEventListener('change', () => updatePreview());
   qtyInput.addEventListener('input', () => updatePreview());
+  if (addBatchBtn) addBatchBtn.addEventListener('click', () => openStockInModal());
 
   function fieldValue(rowSel) {
     return rowSel.querySelector('input,textarea,select')?.value ?? '';
@@ -605,6 +662,131 @@ export function openItemModal(item = null) {
     a.textContent = 'No vendors found. Go to Vendors.';
     a.className = 'link';
     return a;
+  }
+
+  let stockInOverlay = null;
+
+  function closeStockInModal() {
+    if (stockInOverlay) {
+      stockInOverlay.remove();
+      stockInOverlay = null;
+    }
+  }
+
+  function openStockInModal() {
+    if (!item?.id) return;
+    closeStockInModal();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    const card = document.createElement('div');
+    card.className = 'modal-card';
+    card.style.maxWidth = '420px';
+    card.style.background = 'var(--surface)';
+    card.style.border = '1px solid var(--border)';
+    card.style.borderRadius = '10px';
+
+    const title = document.createElement('div');
+    title.className = 'modal-title';
+    title.textContent = 'Add Batch';
+    card.appendChild(title);
+
+    const stockError = document.createElement('div');
+    stockError.className = 'error-banner';
+    stockError.hidden = true;
+    card.appendChild(stockError);
+
+    const body = document.createElement('div');
+    body.className = 'modal-body';
+
+    const stockUnitSelect = createSelect('stockin-unit');
+    const dim = item.dimension || 'count';
+    const unitOptions = [...(UNIT_OPTIONS[dim] || ['ea'])];
+    if (item.uom && !unitOptions.includes(item.uom)) unitOptions.push(item.uom);
+    stockUnitSelect.innerHTML = unitOptions.map((u) => `<option value="${u}">${UNIT_LABEL[u] || u}</option>`).join('');
+    stockUnitSelect.value = item.uom && unitOptions.includes(item.uom) ? item.uom : unitOptions[0];
+    const stockUnitRow = fieldRowWithElement('Unit', stockUnitSelect);
+
+    const stockQtyInput = document.createElement('input');
+    stockQtyInput.type = 'number';
+    stockQtyInput.setAttribute('step', '0.001');
+    stockQtyInput.setAttribute('min', '0');
+    const stockQtyRow = fieldRowWithElement('Quantity', stockQtyInput);
+
+    const stockCostInput = document.createElement('input');
+    stockCostInput.type = 'number';
+    stockCostInput.setAttribute('step', '0.01');
+    stockCostInput.setAttribute('min', '0');
+    const stockCostRow = fieldRowWithElement('Unit Cost', stockCostInput);
+
+    const stockActions = document.createElement('div');
+    stockActions.className = 'modal-actions';
+    const stockSave = document.createElement('button');
+    stockSave.type = 'button';
+    stockSave.className = 'btn primary';
+    stockSave.textContent = 'Save Batch';
+    const stockCancel = document.createElement('button');
+    stockCancel.type = 'button';
+    stockCancel.className = 'btn';
+    stockCancel.textContent = 'Cancel';
+    stockActions.append(stockSave, stockCancel);
+
+    body.append(stockUnitRow, stockQtyRow, stockCostRow, stockActions);
+    card.appendChild(body);
+    overlay.appendChild(card);
+    overlay._inventoryCleanup = closeStockInModal;
+    document.body.appendChild(overlay);
+
+    overlay.addEventListener('click', (ev) => {
+      if (ev.target === overlay) closeStockInModal();
+    });
+    card.addEventListener('click', (ev) => ev.stopPropagation());
+
+    stockCancel.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      closeStockInModal();
+    });
+
+    async function submitStockIn() {
+      if (stockError) {
+        stockError.hidden = true;
+        stockError.textContent = '';
+      }
+
+      if (stockQtyInput.value === '') {
+        stockError.textContent = 'Enter a quantity to stock in.';
+        stockError.hidden = false;
+        return;
+      }
+
+      const payload = {
+        item_id: item.id,
+        uom: stockUnitSelect.value,
+        unit: stockUnitSelect.value,
+        quantity_decimal: stockQtyInput.value,
+        unit_cost_decimal: stockCostInput.value || undefined,
+      };
+
+      try {
+        await ensureToken();
+        await apiPost('/ledger/stock_in', payload, { headers: { 'Content-Type': 'application/json' } });
+        closeStockInModal();
+        await reloadInventory?.();
+      } catch (err) {
+        const msg = err?.detail?.message || err?.message || 'Stock-in failed.';
+        if (stockError) {
+          stockError.textContent = msg;
+          stockError.hidden = false;
+        }
+      }
+    }
+
+    stockSave.addEventListener('click', async (ev) => {
+      ev.preventDefault();
+      await submitStockIn();
+    });
+
+    stockInOverlay = overlay;
   }
 
   function markInvalid(el) {

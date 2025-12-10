@@ -373,3 +373,16 @@ table tr:hover { background: #1e2530; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+.subtable {
+  width: 100%;
+  table-layout: fixed;
+  margin-top: 8px;
+  border-collapse: separate;
+}
+
+.subtable th,
+.subtable td {
+  text-align: center;
+  padding: 6px 8px;
+}

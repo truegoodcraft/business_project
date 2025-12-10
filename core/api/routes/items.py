@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # core/api/routes/items.py
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response
-from sqlalchemy import func
+from sqlalchemy import asc, func
 from sqlalchemy.orm import Session
 
 from core.appdb.engine import get_session
@@ -43,6 +43,43 @@ def _to_stored(qty: float, uom: str) -> int:
         stored = _round_half_away_from_zero(qty * 100)
     _guard_int_bounds(stored)
     return stored
+
+
+def _cents_to_display(cents: int) -> str:
+    return f"${cents / 100:,.2f}"
+
+
+def _fifo_unit_cost(db: Session, item_id: int, unit_label: str) -> Tuple[Optional[int], Optional[str]]:
+    batch = (
+        db.query(ItemBatch)
+        .filter(ItemBatch.item_id == item_id, ItemBatch.qty_remaining > 0)
+        .order_by(asc(ItemBatch.created_at), asc(ItemBatch.id))
+        .first()
+    )
+    if not batch:
+        return None, None
+
+    cents: Optional[int] = getattr(batch, "unit_cost_cents", None)
+    if cents is None:
+        unit_cost = getattr(batch, "unit_cost", None)
+        if unit_cost is not None:
+            try:
+                cents = int(round(float(unit_cost) * 100))
+            except Exception:
+                cents = None
+    if cents is None:
+        total_cost_cents = getattr(batch, "total_cost_cents", None)
+        qty_initial = getattr(batch, "qty_initial", None)
+        if total_cost_cents is not None and qty_initial:
+            try:
+                cents = int(total_cost_cents) // int(qty_initial)
+            except Exception:
+                cents = None
+    if cents is None:
+        return None, None
+
+    cents_int = int(cents)
+    return cents_int, f"{_cents_to_display(cents_int)} / {unit_label}"
 
 
 def _apply_qty_fields(it: Item, payload: Dict[str, Any], resp: Optional[Response] = None):
@@ -112,6 +149,7 @@ def _row(it: Item, vendor_name: Optional[str] = None, on_hand: Optional[int] = N
         "id": it.id,
         "name": it.name,
         "sku": it.sku,
+        "dimension": getattr(it, "dimension", None),
         "uom": uom,
         "qty_stored": qty_stored,
         "qty": qty,
@@ -126,6 +164,14 @@ def _row(it: Item, vendor_name: Optional[str] = None, on_hand: Optional[int] = N
     }
     if on_hand is not None:
         row.update(_on_hand_fields(it, on_hand))
+    else:
+        row.setdefault("stock_on_hand_int", 0)
+        row.setdefault(
+            "stock_on_hand_display",
+            {"unit": default_unit_for(getattr(it, "dimension", "count") or "count"), "value": "0.000"},
+        )
+    row.setdefault("fifo_unit_cost_cents", None)
+    row.setdefault("fifo_unit_cost_display", None)
     return row
 
 @router.get("/items")
@@ -136,7 +182,17 @@ def list_items(
 ) -> List[Dict[str, Any]]:
     items = _items_with_onhand(db).all()
     vmap = {v.id: v.name for v in db.query(Vendor).all()}
-    return [_row(it, vmap.get(it.vendor_id), on_hand) for it, on_hand in items]
+    rows: List[Dict[str, Any]] = []
+    for it, on_hand in items:
+        row = _row(it, vmap.get(it.vendor_id), on_hand)
+        display_unit = row.get("stock_on_hand_display", {}).get("unit") or default_unit_for(
+            getattr(it, "dimension", "count") or "count"
+        )
+        fifo_cents, fifo_display = _fifo_unit_cost(db, it.id, display_unit)
+        row["fifo_unit_cost_cents"] = fifo_cents
+        row["fifo_unit_cost_display"] = fifo_display
+        rows.append(row)
+    return rows
 
 @router.get("/items/{item_id}")
 def get_item(
@@ -153,7 +209,44 @@ def get_item(
     if it.vendor_id:
         v = db.query(Vendor).get(it.vendor_id)
         vname = v.name if v else None
-    return _row(it, vname, on_hand)
+
+    base_row = _row(it, vname, on_hand)
+    display_unit = base_row.get("stock_on_hand_display", {}).get("unit") or default_unit_for(
+        getattr(it, "dimension", "count") or "count"
+    )
+    fifo_cents, fifo_display = _fifo_unit_cost(db, it.id, display_unit)
+    base_row["fifo_unit_cost_cents"] = fifo_cents
+    base_row["fifo_unit_cost_display"] = fifo_display
+
+    batches = (
+        db.query(ItemBatch)
+        .filter(ItemBatch.item_id == item_id)
+        .order_by(asc(ItemBatch.created_at), asc(ItemBatch.id))
+        .all()
+    )
+    summary: List[Dict[str, Any]] = []
+    for b in batches:
+        unit_cost_cents = getattr(b, "unit_cost_cents", None)
+        if unit_cost_cents is None:
+            unit_cost = getattr(b, "unit_cost", None)
+            if unit_cost is not None:
+                try:
+                    unit_cost_cents = int(round(float(unit_cost) * 100))
+                except Exception:
+                    unit_cost_cents = None
+        if unit_cost_cents is None:
+            unit_cost_cents = 0
+        summary.append(
+            {
+                "entered": b.created_at.isoformat() if getattr(b, "created_at", None) else "",
+                "remaining_int": int(getattr(b, "qty_remaining", 0) or 0),
+                "original_int": int(getattr(b, "qty_initial", getattr(b, "qty_remaining", 0)) or 0),
+                "unit_cost_display": f"{_cents_to_display(int(unit_cost_cents))} / {display_unit}",
+            }
+        )
+
+    base_row["batches_summary"] = summary
+    return base_row
 
 @router.post("/items")
 def create_item(
