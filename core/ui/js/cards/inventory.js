@@ -8,7 +8,7 @@ const UNIT_OPTIONS = {
   area: ['mm2', 'cm2', 'm2'],
   volume: ['mm3', 'cm3', 'm3', 'ml'],
   weight: ['mg', 'g', 'kg'],
-  count: ['unit'],
+  count: ['ea'],
 };
 
 const BASE_UNIT_LABEL = {
@@ -33,7 +33,7 @@ const UNIT_LABEL = {
   mg: 'mg',
   g: 'g',
   kg: 'kg',
-  unit: 'unit',
+  ea: 'ea',
 };
 
 const MULT = {
@@ -41,7 +41,7 @@ const MULT = {
   area: { mm2: 1, cm2: 100, m2: 1_000_000 },
   volume: { mm3: 1, cm3: 1_000, m3: 1_000_000_000, ml: 1_000 },
   weight: { mg: 1, g: 1_000, kg: 1_000_000 },
-  count: { unit: 1_000 },
+  count: { ea: 1_000 },
 };
 
 // Keep delegated handler binding stable across route changes
