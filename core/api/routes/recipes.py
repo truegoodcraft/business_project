@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 import json
 import os
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -20,7 +21,10 @@ router = APIRouter(prefix="/recipes", tags=["recipes"])
 
 
 def _journals_dir() -> Path:
-    root = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~/.local/share")
+    root = os.environ.get("LOCALAPPDATA")
+    if not root:
+        # Linux/macOS fallback
+        root = os.path.expanduser("~/.local/share")
     d = Path(root) / "BUSCore" / "app" / "data" / "journals"
     d.mkdir(parents=True, exist_ok=True)
     return d

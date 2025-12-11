@@ -96,5 +96,10 @@ export function mountLogsPage(root) {
   _cursor = null;
   const body = document.getElementById("logs-body");
   if (body) body.innerHTML = "";
-  fetchMore();
+  fetchMore().catch(() => {
+    const firstLoadBody = document.getElementById("logs-body");
+    if (firstLoadBody && !firstLoadBody.children.length) {
+      firstLoadBody.innerHTML = `<div class="logs-empty">Failed to load logs (endpoint unavailable).</div>`;
+    }
+  });
 }

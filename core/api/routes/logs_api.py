@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterator
@@ -13,8 +14,13 @@ public_router = APIRouter(prefix="/app", tags=["logs"])
 
 
 def _journals_dir() -> Path:
-    root = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~/.local/share")
-    return Path(root) / "BUSCore" / "app" / "data" / "journals"
+    root = os.environ.get("LOCALAPPDATA")
+    if not root:
+        # Linux/macOS fallback
+        root = os.path.expanduser("~/.local/share")
+    d = Path(root) / "BUSCore" / "app" / "data" / "journals"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 
 
 def _read_jsonl(path: Path, source: str) -> Iterator[dict]:

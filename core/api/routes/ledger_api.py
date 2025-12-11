@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import sqlite3
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -33,7 +34,10 @@ logger = logging.getLogger(__name__)
 
 
 def _journals_dir() -> Path:
-    root = os.environ.get("LOCALAPPDATA") or ""
+    root = os.environ.get("LOCALAPPDATA")
+    if not root:
+        # Linux/macOS fallback
+        root = os.path.expanduser("~/.local/share")
     d = Path(root) / "BUSCore" / "app" / "data" / "journals"
     d.mkdir(parents=True, exist_ok=True)
     return d
