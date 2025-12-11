@@ -136,8 +136,6 @@ async def run_manufacturing(
     body: ManufacturingRunRequest = parse_run_request(raw_body)
     output_item_id: int | None = getattr(body, "output_item_id", None)
 
-    recipe_name: str | None = None
-
     recipe: Recipe | None = None
     if getattr(body, "recipe_id", None) is not None:
         recipe = db.get(Recipe, body.recipe_id)
@@ -150,8 +148,15 @@ async def run_manufacturing(
         if recipe.output_qty <= 0:
             raise HTTPException(status_code=400, detail="Recipe has invalid output quantity")
         output_item_id = recipe.output_item_id
-        if getattr(recipe, "name", None):
-            recipe_name = recipe.name
+
+    def _recipe_name_for_journal() -> str | None:
+        rid = getattr(body, "recipe_id", None)
+        if rid is None:
+            return None
+        rec = db.get(Recipe, int(rid))
+        if rec is not None and getattr(rec, "name", None):
+            return rec.name
+        return None
 
     try:
         output_item_id, required, k, shortages = validate_run(db, body)
@@ -163,13 +168,14 @@ async def run_manufacturing(
                     "type": "manufacturing_run",
                     "run_id": run.id,
                     "recipe_id": getattr(body, "recipe_id", None),
-                    "recipe_name": recipe_name,
+                    "recipe_name": _recipe_name_for_journal(),
                     "status": "failed_insufficient_stock",
                     "shortages": shortages,
                 }
             )
             raise HTTPException(status_code=400, detail=_shortage_detail(shortages, run.id))
         result = execute_run_txn(db, body, output_item_id, required, k)
+        recipe_name = _recipe_name_for_journal()
         _append_journal(
             {
                 "ts": int(time.time()),
@@ -197,7 +203,7 @@ async def run_manufacturing(
                 "type": "manufacturing_run",
                 "run_id": run.id,
                 "recipe_id": getattr(body, "recipe_id", None),
-                "recipe_name": recipe_name,
+                "recipe_name": _recipe_name_for_journal(),
                 "status": "failed_insufficient_stock",
                 "shortages": shortages,
             }
@@ -222,7 +228,7 @@ async def run_manufacturing(
                     "type": "manufacturing_run",
                     "run_id": run.id,
                     "recipe_id": getattr(body, "recipe_id", None),
-                    "recipe_name": recipe_name,
+                    "recipe_name": _recipe_name_for_journal(),
                     "status": "failed_insufficient_stock",
                     "shortages": shortages,
                 }
@@ -235,7 +241,7 @@ async def run_manufacturing(
                 "type": "manufacturing_run",
                 "run_id": None,
                 "recipe_id": getattr(body, "recipe_id", None),
-                "recipe_name": recipe_name,
+                "recipe_name": _recipe_name_for_journal(),
                 "status": "failed",
             }
         )
