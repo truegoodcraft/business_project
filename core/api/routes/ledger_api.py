@@ -19,7 +19,7 @@ from core.appdb.ledger import (
     add_batch,
     fifo_consume as sa_fifo_consume,
 )
-from core.appdb.models import ItemBatch, ItemMovement
+from core.appdb.models import Item, ItemBatch, ItemMovement
 from core.appdb.paths import resolve_db_path
 from core.api.schemas_ledger import QtyDisplay, StockInReq, StockInResp
 from core.metrics.metric import UNIT_MULTIPLIER, default_unit_for, from_base, to_base
