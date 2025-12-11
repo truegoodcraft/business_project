@@ -1214,3 +1214,227 @@ SCOPE: launcher, config, ui, dependencies
 
 (6) OPEN QUESTIONS / UNRESOLVED / UNCERTAIN
 - Uncertain: Handling of `Flat-Dark.png` path resolution in frozen/PyInstaller environments vs raw script execution (fallback generation logic added as safeguard).
+
+[DELTA HEADER]
+SOT_VERSION_AT_START: v0.8.2 "Manufacturing Locked" 
+SESSION_LABEL: Error-UX & Windows restore reliability hardening – 2025-12-08 PM
+DATE: 2025-12-08
+SCOPE: backend, api, smoke, windows, restore, ui-error
+[/DELTA HEADER]
+
+(1) SESSION FACTS / NOTES (EXHAUSTIVE)
+
+* Smoke harness: all stages pass locally; Stage 8 (encrypted backup/restore) completes with `{ ok:true, replaced:true, restart_required:true }`. 
+* Manufacturing 400-failure payloads are now parsed by smoke; payload includes message `"Insufficient stock for required components."` and a `shortages` object; ad-hoc runs follow the same rule.
+* `/app/db/import/commit` requires the cookie session; attempting without the cookie yields `401 Unauthorized`. Smoke now reuses the same cookie it obtained from `GET /session/token`. 
+* Windows restore reliability: commit sequence instrumented and enforced to (a) stop/pause background indexer, (b) WAL checkpoint, (c) dispose/GC DB handles, (d) atomic replace with retries, (e) archive/recreate journals; failure mode `exclusive_timeout:win32=32` is surfaced as 400 when exclusive handle cannot be obtained. 
+* Maintenance window: during restore commit the app enters maintenance and only an allowlist is reachable; DB session creation is blocked by dependency guard while in maintenance. 
+* Error-UX intent: non-2xx responses must be visible in UI; 400 keeps dialogs open with field errors when possible; 5xx/timeout shows persistent banner; UI error parser supports string and list shapes. (Validated by smoke behavior and server payloads.)  
+* Journals: on successful commit, existing journals are archived with timestamp suffix and primaries recreated empty. 
+
+(2) NEW FACTS / DECISIONS vs SoT
+
+* Restore commit explicitly **stops/pauses the background indexer** before handle disposal and file replace; indexer is resumed after commit or failure. (SoT listed maintenance guard and DB handle disposal but did not specify indexer pause.)
+* Commit failure codes are **standardized** to include `exclusive_timeout` (with OS code, e.g., `win32=32`) in the `detail.info` string for diagnostics.
+
+(3) CHANGES TO EXISTING FACTS (SoT → session)
+
+* Old (SoT): Commit route sequence flushes WAL, disposes engine, atomically replaces DB, archives journals; maintenance guard blocks non-allowlisted routes. 
+  New (session): Same as SoT **plus**: explicit **indexer stop/pause** around commit to reduce lock contention and avoid `WinError 32` stalls.
+
+(4) CLARIFICATIONS / TIGHTENING
+
+* SoT vague on **auth during maintenance** → clarified as: allowlisted endpoints remain **auth-protected**; `/app/db/import/commit` still requires the **cookie** session set via `GET /session/token` (no custom header).  
+* SoT ambiguous about **manufacturing 400 message** → clarified as: canonical message string used by server is `"Insufficient stock for required components."`, and payload includes `shortages` per component (UI shows required vs available). 
+
+(5) CONFIRMED / RESTATED (NO CHANGE)
+
+* SoT says: **Cookie-based session via `GET /session/token`**, no custom header; `/openapi.json` is not gated. Session: exercised by smoke; cookie is required for protected routes. 
+* SoT says: **Restore preview** returns `table_counts`; absence of a `version` field is tolerated. Session: exercised and confirmed. 
+* SoT says: On **restore commit**, perform WAL checkpoint, dispose DB handles, atomic replace with retries, **archive journals** and recreate primaries; response signals `restart_required:true`. Session: exercised and confirmed end-to-end. 
+* SoT says: **UI error contract** – all non-2xx surface visible errors; 400 vs 5xx rules; error shapes accepted. Session: validated by smoke and API behavior. 
+
+(6) OPEN QUESTIONS / UNRESOLVED / UNCERTAIN
+
+* Question: Should the **indexer pause/resume** be exposed as an app-level state for UI (e.g., maintenance banner) or remain server-internal only?
+  Needs: Decision on UX signal during commit.
+* Uncertain: Do we want to **bound** the overall commit attempt duration (e.g., ≤ N seconds) and return a consistent `exclusive_timeout` envelope, or retain extended backoff under heavy IO?
+  Needs: Target SLO for restore commit latency on Windows HDD vs SSD.
+
+[DELTA HEADER]
+SOT_VERSION_AT_START: v0.8.8
+SESSION_LABEL: Integer metric inventory + recipes/manufacturing UI and smoke hardening
+DATE: 2025-12-11
+SCOPE: db, api, inventory, recipes, manufacturing, ui, smoke, ops
+[/DELTA HEADER]
+
+(1) SESSION FACTS / NOTES (EXHAUSTIVE)
+
+* DB / Schema (fresh-create only)
+
+  * All inventory-related quantities are stored as INTEGER base units (no floats).
+  * `items.dimension` added: one of `length|area|volume|weight|count` (required).
+  * Base units: length=mm, area=mm², volume=mm³ (ml==cm³), weight=mg, count=milli-units (1 ea == 1000).
+  * Fresh-DB bootstrap only; migrations disabled for this work. Developer deletes AppData between schema changes.
+  * `recipes.archived` exists; default false.
+* Metric Core
+
+  * Central conversion map for each dimension; UI and API use it.
+  * Rounding uses Decimal with ROUND_HALF_UP when converting user decimals → base ints.
+  * Default count unit label = `ea` (maps to milli-counts).
+* API behaviors
+
+  * Item create/update requires `dimension` and accepts `{dimension, unit, quantity_decimal}`; server stores base `quantity_int`.
+  * Movements/ledger quantities are ints; negative allowed where appropriate.
+  * Recipe payload shape uses `items[].optional` (boolean) and **does not** use `output_qty`.
+  * Recipe delete endpoint returns success and is now wired in UI with confirm→delete→refresh.
+* Inventory UI
+
+  * Table columns (ordered, centered, evenly spaced): `Name | Quantity | Price | Vendor | Location`.
+  * `Quantity` shows **sum of active batches** (active := `qty_remaining > 0`) rendered in the item’s chosen unit (not base units).
+  * Expanded item view shows batches (remaining/created-at) without duplicating the quantity summary.
+  * Item edit dialog includes **Add Batch** flow; initial item add no longer fakes a batch.
+* FIFO & Pricing
+
+  * FIFO price shown in list is the unit cost of the **next** quantity to be consumed (oldest active batch).
+* Recipes UI
+
+  * Output item selection persists correctly; no “output count” input (single-run UI).
+  * New recipe defaults: `archived = false`; input item `optional = false`.
+  * “Add input item” dropdown starts blank; selections persist on reload.
+  * “Items” section retitled **“Input Items”**; `sort` column removed.
+  * “Remove” per input item is a small red “X”.
+  * `code` field removed from the form; reserved for future use (no functional effect now).
+  * Delete button fixed: confirm dialog → DELETE call → row removed / list refreshed.
+* Manufacturing
+
+  * UI triggers a single-output run for the selected recipe (no user-entered output quantity).
+  * Backend semantics unchanged (atomicity, FIFO, validations).
+* Smoke test harness
+
+  * Kept all original steps/prints/checks.
+  * Updated recipe payload shape (no `output_qty`; use `optional`).
+  * If manufacturing returns `insufficient_stock` (400), smoke auto top-ups missing quantities via `/app/adjust` and retries once; otherwise fails.
+  * End-to-end smoke passed with all sections green (including backup/restore, journals, invariants).
+* Ops / runtime
+
+  * Fresh DB on each run; bootstrap creates schema with new fields/types.
+  * Prior errors encountered and addressed during dev: missing columns (e.g., `is_product`, `archived`), NameError for `func` import, and 404s for old ledger endpoints; resolved in-session.
+  * Non-blocking: indexer logs “Drive/Local AttributeError” remain; not in current scope.
+
+(2) NEW FACTS / DECISIONS vs SoT
+
+* All inventory quantities are stored as INTEGER base units with explicit `dimension` on items.
+* Count dimension uses milli-units for fractional counts; UI label `ea` maps to base=1000.
+* UI Inventory table shows aggregated on-hand per item (sum of active batches) in the item’s unit, plus FIFO price.
+* Recipes: remove `output_qty` concept from UI/API payloads; recipe has a single `output_item_id`.
+* Recipes UI: default `archived=false`, input `optional=false`, blank default selectors, “Input Items” title, no `sort` column, red “X” remove, working Delete with confirm.
+* Manufacturing UI: single-output run (no output multiplier input).
+* Smoke harness: introduces automatic top-up-on-400-INSUFFICIENT_STOCK with a single retry; otherwise identical flow.
+
+(3) CHANGES TO EXISTING FACTS (SoT → session)
+
+* Old (SoT): Inventory quantities stored as REAL (floats) without enforced base units; `dimension` not required.
+  New (session): All quantities are INTEGER base units; `items.dimension` is required (length/area/volume/weight/count).
+* Old (SoT): Recipes included `output_qty` and ambiguous optional flags/sort semantics.
+  New (session): `output_qty` removed; input rows use `optional` only; `sort` removed from UI; `archived` explicitly managed and defaults to false.
+* Old (SoT): Inventory list did not guarantee aggregated quantity from active batches nor FIFO price surface.
+  New (session): List shows sum of active batches and FIFO price (next-to-consume unit cost) per item.
+* Old (SoT): Manufacturing UI allowed specifying output quantity.
+  New (session): Manufacturing UI enforces single-run output per execution (no numeric output input).
+
+(4) CLARIFICATIONS / TIGHTENING
+
+* “Active batch” is defined as `qty_remaining > 0` for aggregation and FIFO pricing.
+* Display unit per item: use the unit selected at item creation/edit for UI display; storage remains base ints.
+* Count unit label standardized to `ea`; conversion = 1000 base units per 1 ea.
+* Recipe delete UX: requires user confirm; success removes the recipe from the list without page reload.
+* `code` field in recipes is reserved (hidden in UI); no current functional semantics.
+
+(5) CONFIRMED / RESTATED (NO CHANGE)
+
+* FIFO consumption and pricing semantics remain unchanged; confirmed during consume and manufacturing tests.
+* Manufacturing validations (fail-fast on insufficient stock, atomic movement creation) remain as specified; verified by smoke invariants.
+* Encrypted backup/restore flow (export, preview, commit, journal archiving/recreate) operates as previously specified; reconfirmed via smoke.
+
+(6) OPEN QUESTIONS / UNRESOLVED / UNCERTAIN
+
+* Indexer warnings (`Drive`/`Local` AttributeError) at startup: out of scope; needs triage to confirm if any feature depends on the indexer.
+* Persisting a preferred **display unit** per item: currently implied by last selection; consider explicit `items.display_unit` to avoid ambiguity.
+* Logs page (System → Logs) and “available later” `code` field semantics for recipes: define future behavior and constraints when scheduled.
+
+[DELTA HEADER]
+SOT_VERSION_AT_START: v0.8.8
+SESSION_LABEL: INT FIFO, UI polish, Logs (ledger-only) & Stock-Out – 2025-12-11
+DATE: 2025-12-11
+SCOPE: backend, api, db, ui, logs
+[/DELTA HEADER]
+
+(1) SESSION FACTS / NOTES (EXHAUSTIVE)
+
+* Ledger & quantities
+
+  * Canonical ledger path is SQLAlchemy/ORM with base-unit **INT** quantities; consumption is **FIFO**.
+  * Legacy sqlite/REAL FIFO codepaths removed; no REAL-typed tables remain.
+  * Linux crash fixed by importing `Item` in `ledger_api.py` for `db.get(Item, ...)`.
+* Inventory endpoints (INT + FIFO)
+
+  * `/app/purchase`: creates FIFO batch; after commit appends inventory journal line.
+  * `/app/consume`: FIFO consume; returns batch breakdown; after commit appends journal (aggregate).
+  * `/app/adjust`: positive = add batch 0-cost; negative = FIFO consume; journals on success only.
+* Manufacturing
+
+  * Manufacturing run works against INT+FIFO; journaling added to include `recipe_id` and `recipe_name`.
+  * UI shows **Recent Runs (30d)** with columns `Recipe | Date | Time`; defaults to ~10 rows, panel is resizable; maps names via `recipe_name` (journal) with dropdown/GET fallbacks.
+  * Manufacturing UI changes: removed top “Manufacturing” H1, renamed card to **New Manufacturing Run**, removed **Multiplier**, confirmation dialog before “Run Production”.
+* Logs (beta scope = stock changes only)
+
+  * New **/app/logs** endpoint implemented to **read from `item_movements`** only (ledger-as-truth), newest-first; supports cursor pagination via `cursor_id`.
+  * Logs UI calls `/app/logs`, renders `Date/Time | Domain | Summary`; no journal reading required.
+  * Cross-platform journals dir helpers standardized (still used for receipts), but **Logs page** does not depend on JSONL.
+* Stock Out (new capability)
+
+  * New endpoint `/app/stock/out` to remove stock via FIFO with reason enum `{sold, loss, theft, other}` and optional note; persists via FIFO consume; journals aggregate line; appears in Logs as inventory event with `kind = reason`.
+* Misc UI/UX
+
+  * Recent runs and logs pages refresh after actions; error handling surfaces server 400 payloads (e.g., shortages).
+
+(2) NEW FACTS / DECISIONS vs SoT
+
+* Added endpoint: `POST /app/stock/out` with fields `{item_id:int, qty:int>0, reason: 'sold'|'loss'|'theft'|'other', note?:string}`; performs FIFO consume; returns lines and journals aggregate entry.
+* Implemented `/app/logs` (ledger-driven): returns `events[]` from `item_movements` with `{id, ts, domain:'inventory', kind:source_kind, item_id, item_name, qty_change, unit_cost_cents, batch_id, is_oversold}` and `next_cursor_id`.
+* Manufacturing UI: removed H1, renamed card to **New Manufacturing Run**, removed **Multiplier**, added run confirmation.
+* Recent Runs UI: right panel titled **Recent Runs (30d)**; shows columns `Recipe | Date | Time`; default ~10 visible rows; resizable.
+* Manufacturing journal lines now include `recipe_name` along with `recipe_id`.
+* Fixed missing import of `Item` in `ledger_api.py` for Linux branch.
+
+(3) CHANGES TO EXISTING FACTS (SoT → session)
+
+* Old (SoT): Journals are the receipt mechanism; Logs page behavior unspecified.
+  New (session): **Logs page** uses **ledger-only** (`item_movements`) for history in beta; journals remain as receipts but are not required for Logs rendering.
+* Old (SoT): Legacy FIFO code existed alongside ORM.
+  New (session): Legacy sqlite/REAL FIFO path **removed**; ORM INT path is sole authority.
+
+(4) CLARIFICATIONS / TIGHTENING
+
+* SoT vague on cross-OS paths → clarified as: journals dir resolves to `%LOCALAPPDATA%\BUSCore\app\data\journals` on Windows and `~/.local/share/BUSCore/app/data/journals` on Linux/macOS.
+* SoT ambiguous about consumption reasons → clarified as: stock-out reasons are limited to `{sold, loss, theft, other}` and are written as `source_kind` (and journal `type`) for traceability.
+* SoT vague on Logs pagination → clarified as: ledger-based Logs paginate with `cursor_id` (movement id), returning items with `id < cursor_id`.
+
+(5) CONFIRMED / RESTATED (NO CHANGE)
+
+* SoT says: Quantities stored as INT in base units; consumption is FIFO.
+  Session: explicitly confirmed and exercised via smoke and new endpoints.
+* SoT says: Commit DB changes before journaling; journals are non-blocking.
+  Session: confirmed in inventory/consume/adjust/stock-out flows.
+* SoT says: Manufacturing uses base units and should not oversell outputs.
+  Session: confirmed via smoke invariants (no oversold; output unit cost 0).
+
+(6) OPEN QUESTIONS / UNRESOLVED / UNCERTAIN
+
+* Question: Should recipe CRUD history be visible in Logs post-beta?
+  Context: Logs now show stock changes only; recipe events would need either a recipe_audit table or to continue using a recipes journal for UI.
+* Uncertain: Standardized list and localization of stock-out reasons.
+  Needs: Decision on final reason set and where to centralize labels (backend enum vs UI map).
+* Question: Background indexer `AttributeError` seen during startup.
+  Context: Non-blocking; not part of inventory/manufacturing scope but persists in logs.
