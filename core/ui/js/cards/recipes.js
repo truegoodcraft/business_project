@@ -25,7 +25,6 @@ function newRecipeDraft() {
   return {
     id: null,
     name: '',
-    code: '',
     output_item_id: null,
     output_qty: 1,
     archived: false,
@@ -47,7 +46,6 @@ function normalizeRecipe(data) {
   return {
     id: data.id,
     name: data.name || '',
-    code: data.code || '',
     output_item_id: data.output_item_id ?? null,
     output_qty: data.output_qty || 1,
     archived: data.archived === true || data.is_archived === true,
@@ -200,17 +198,7 @@ function renderEditor(editor, leftPanel) {
   });
   nameInput.addEventListener('input', () => { _draft.name = nameInput.value; });
   nameRow.append(el('label', { text: 'Name', style: 'width:90px;color:#cdd1dc' }), nameInput);
-
-  const codeRow = el('div', { style: 'display:flex;gap:10px;align-items:center;margin-bottom:10px' });
-  const codeInput = el('input', {
-    type: 'text',
-    value: _draft.code,
-    placeholder: 'Optional code',
-    style: 'flex:1;padding:10px 12px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6'
-  });
-  codeInput.addEventListener('input', () => { _draft.code = codeInput.value; });
-  codeRow.append(el('label', { text: 'Code', style: 'width:90px;color:#cdd1dc' }), codeInput);
-
+  // (reserved) Code field intentionally not rendered; kept for future features and omitted from payloads.
   const outputRow = el('div', { style: 'display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap' });
   const outSel = el('select', {
     id: 'recipe-output',
@@ -338,7 +326,6 @@ function renderEditor(editor, leftPanel) {
 
   function serializeDraft() {
     const nameVal = (_draft.name || '').trim();
-    const codeVal = (_draft.code || '').trim();
     const notesVal = (_draft.notes || '').trim();
     const selectedOutput = (() => {
       const sel = document.getElementById('recipe-output');
@@ -369,7 +356,6 @@ function renderEditor(editor, leftPanel) {
     return {
       id: _draft.id,
       name: nameVal,
-      code: codeVal || null,
       output_item_id: Number(selectedOutput),
       output_qty: 1,
       archived: !!_draft.archived,
@@ -447,7 +433,6 @@ function renderEditor(editor, leftPanel) {
   editor.append(
     el('h2', { text: 'Edit Recipe', style: 'margin-top:0' }),
     nameRow,
-    codeRow,
     outputRow,
     flagsRow,
     notes,
