@@ -134,7 +134,7 @@ async def create_recipe(
         name=payload.name,
         code=payload.code,
         output_item_id=payload.output_item_id,
-        output_qty=payload.output_qty,
+        output_qty=1,
         archived=bool(payload.archived),
         notes=payload.notes,
     )
@@ -177,8 +177,7 @@ async def update_recipe(
         recipe.code = payload.code
     if payload.output_item_id is not None:
         recipe.output_item_id = payload.output_item_id
-    if payload.output_qty is not None:
-        recipe.output_qty = payload.output_qty
+    recipe.output_qty = 1
     if payload.archived is not None:
         recipe.archived = bool(payload.archived)
     if payload.notes is not None:

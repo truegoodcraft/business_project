@@ -158,38 +158,15 @@ function renderCreateForm(editor, leftPanel) {
   const status = el('div', { style: 'min-height:18px;font-size:13px;color:#aaa;margin-top:6px;' });
 
   save.onclick = async () => {
-    if (!name.value.trim()) {
+    const trimmed = name.value.trim();
+    if (!trimmed) {
       status.textContent = 'Name is required.';
       status.style.color = '#ff6666';
       return;
     }
-    const defaultOutput = _items[0]?.id;
-    if (!defaultOutput) {
-      status.textContent = 'Add an item first to use as the output.';
-      status.style.color = '#ff6666';
-      return;
-    }
-    try {
-      await ensureToken();
-      const created = await RecipesAPI.create({
-        name: name.value.trim(),
-        output_item_id: defaultOutput,
-        output_qty: 1,
-        archived: false,
-        items: [],
-      });
-      await refreshData();
-      const found = _recipes.find(r => r.id === (created?.id ?? null) || r.name === name.value.trim());
-      if (found) {
-        _activeId = found.id;
-        _draft = normalizeRecipe(await RecipesAPI.get(found.id));
-        renderList(leftPanel, editor);
-        renderEditor(editor, leftPanel);
-      }
-    } catch (e) {
-      status.textContent = e?.message || 'Failed to create recipe';
-      status.style.color = '#ff6666';
-    }
+    _draft = newRecipeDraft();
+    _draft.name = trimmed;
+    renderEditor(editor, leftPanel);
   };
 
   editor.append(title, name, save, status);
@@ -241,24 +218,9 @@ function renderEditor(editor, leftPanel) {
     const parsed = parseInt(outSel.value, 10);
     _draft.output_item_id = Number.isFinite(parsed) ? parsed : null;
   });
-
-  const outQty = el('input', {
-    type: 'number',
-    min: '0.0001',
-    step: '0.01',
-    value: _draft.output_qty,
-    id: 'recipe-output-qty',
-    style: 'width:140px;padding:10px 12px;text-align:right;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6'
-  });
-  outQty.addEventListener('input', () => {
-    const parsed = parseFloat(outQty.value);
-    _draft.output_qty = Number.isFinite(parsed) ? parsed : 1;
-  });
   outputRow.append(
     el('label', { text: 'Output Item', style: 'width:90px;color:#cdd1dc' }),
     outSel,
-    el('label', { text: 'Qty', style: 'color:#cdd1dc' }),
-    outQty
   );
 
   const flagsRow = el('div', { style: 'display:flex;gap:16px;align-items:center;margin-bottom:10px' });
@@ -298,7 +260,7 @@ function renderEditor(editor, leftPanel) {
       .forEach((ri, idx) => {
         const row = el('tr', { style: 'border-bottom:1px solid #2f3136' });
         const itemSel = el('select', { style: 'width:100%;padding:8px 10px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6' });
-        itemSel.append(el('option', { value: '' }, '— Select —'));
+        itemSel.append(el('option', { value: '', disabled: 'true', selected: ri.item_id == null ? 'selected' : undefined }, '— Select —'));
         _items.forEach(i => itemSel.append(el('option', { value: i.id, selected: String(i.id) === String(ri.item_id) ? 'selected' : undefined }, i.name)));
         itemSel.addEventListener('change', () => {
           ri.item_id = itemSel.value ? Number(itemSel.value) : null;
@@ -308,10 +270,13 @@ function renderEditor(editor, leftPanel) {
           type: 'number',
           min: '0.0001',
           step: '0.01',
-          value: ri.qty_required,
+          value: ri.qty_required ?? '',
           style: 'width:120px;text-align:right;padding:8px 10px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6'
         });
-        qtyInput.addEventListener('input', () => { ri.qty_required = parseFloat(qtyInput.value) || 0; });
+        qtyInput.addEventListener('input', () => {
+          const parsed = parseFloat(qtyInput.value);
+          ri.qty_required = Number.isFinite(parsed) ? parsed : null;
+        });
 
         const optBox = el('input', { type: 'checkbox', checked: ri.optional ? 'checked' : undefined });
         optBox.addEventListener('change', () => { ri.optional = optBox.checked; });
@@ -342,8 +307,8 @@ function renderEditor(editor, leftPanel) {
 
   itemsHeader.lastChild.onclick = () => {
     _draft.items.push({
-      item_id: _items[0]?.id ?? null,
-      qty_required: 1,
+      item_id: null,
+      qty_required: null,
       optional: false,
       sort: _draft.items.length,
     });
@@ -363,60 +328,73 @@ function renderEditor(editor, leftPanel) {
   });
   deleteBtn.disabled = !_draft.id;
 
+  function serializeDraft() {
+    const nameVal = (_draft.name || '').trim();
+    const codeVal = (_draft.code || '').trim();
+    const notesVal = (_draft.notes || '').trim();
+    const selectedOutput = (() => {
+      const sel = document.getElementById('recipe-output');
+      if (sel && sel.value) {
+        const parsed = parseInt(sel.value, 10);
+        _draft.output_item_id = Number.isFinite(parsed) ? parsed : null;
+      }
+      return _draft.output_item_id;
+    })();
+
+    const cleanedItems = (_draft.items || [])
+      .map((it, idx) => ({
+        item_id: it.item_id,
+        qty_required: it.qty_required,
+        optional: Boolean(it.optional ?? it.is_optional),
+        sort: (it.sort ?? it.sort_order ?? idx)
+      }))
+      .filter(it => it.item_id && it.qty_required !== null && it.qty_required !== '' && Number(it.qty_required) > 0);
+
+    const errors = [];
+    if (!nameVal) errors.push('Name is required.');
+    if (!selectedOutput) errors.push('Choose an output item.');
+    if (cleanedItems.length === 0) errors.push('Add at least one input item with quantity.');
+    if (errors.length) {
+      throw new Error(errors.join(' '));
+    }
+
+    return {
+      id: _draft.id,
+      name: nameVal,
+      code: codeVal || null,
+      output_item_id: Number(selectedOutput),
+      output_qty: 1,
+      archived: !!_draft.archived,
+      notes: notesVal || null,
+      items: cleanedItems.map((it, idx) => ({
+        item_id: Number(it.item_id),
+        qty_required: Number(it.qty_required),
+        optional: Boolean(it.optional),
+        sort: Number.isFinite(it.sort) ? it.sort : idx,
+      })),
+    };
+  }
+
   saveBtn.onclick = async () => {
     status.textContent = '';
     status.style.color = '#9ca3af';
 
     const archivedValue = !!archivedToggle.checked;
     _draft.archived = archivedValue;
-
-    const payload = {
-      id: _draft.id,
-      name: (_draft.name || '').trim(),
-      code: _draft.code || null,
-      output_item_id: (() => {
-        const sel = document.getElementById('recipe-output');
-        const selected = sel ? parseInt(sel.value, 10) : _draft.output_item_id;
-        return Number.isFinite(selected) ? selected : null;
-      })(),
-      output_qty: (() => {
-        const qtyInput = document.getElementById('recipe-output-qty');
-        if (qtyInput) {
-          const parsed = parseFloat(qtyInput.value);
-          return Number.isFinite(parsed) ? parsed : 1;
-        }
-        return Number(_draft.output_qty) || 1;
-      })(),
-      archived: archivedValue,
-      notes: _draft.notes || null,
-      items: (_draft.items || []).map((it, idx) => ({
-        item_id: it.item_id ? Number(it.item_id) : null,
-        qty_required: Number(it.qty_required) || 0,
-        optional: Boolean(it.optional ?? it.is_optional),
-        sort: (it.sort ?? it.sort_order ?? idx),
-      })),
-    };
-
-    if (!payload.name) {
-      status.textContent = 'Name is required.';
-      status.style.color = '#ff6666';
-      return;
-    }
-    if (payload.output_qty <= 0) {
-      status.textContent = 'Output quantity must be > 0';
-      status.style.color = '#ff6666';
-      return;
-    }
-    const badLine = payload.items.find((it) => !it.item_id || !(it.qty_required > 0));
-    if (badLine) {
-      status.textContent = 'Each item needs an item and qty > 0.';
+    let payload;
+    try {
+      payload = serializeDraft();
+    } catch (err) {
+      status.textContent = err?.message || 'Please complete required fields.';
       status.style.color = '#ff6666';
       return;
     }
 
     try {
       await ensureToken();
-      const saved = await RecipesAPI.update(_draft.id, payload);
+      const saved = _draft.id
+        ? await RecipesAPI.update(_draft.id, payload)
+        : await RecipesAPI.create(payload);
       _draft = normalizeRecipe(saved || await RecipesAPI.get(_draft.id));
       _activeId = _draft.id;
       await refreshData();

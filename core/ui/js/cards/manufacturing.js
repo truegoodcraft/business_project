@@ -178,14 +178,15 @@ async function renderNewRunForm(parent) {
         tbody.append(row);
       });
 
-      if (fullRecipe.output_item) {
-        const outCurrent = fullRecipe.output_item.qty_stored || 0;
+      if (fullRecipe.output_item_id) {
+        const outItem = fullRecipe.output_item;
+        const outCurrent = outItem?.qty_stored || 0;
         const outChange = outputQty;
         const outFuture = outCurrent + outChange;
-        const uom = fullRecipe.output_item.uom || '';
+        const uom = outItem?.uom || '';
         const row = el('tr', { style: 'border-bottom:1px solid #2a2a2a' });
         row.append(
-          el('td', { style:'padding:8px', text: fullRecipe.output_item.name }),
+          el('td', { style:'padding:8px', text: outItem?.name || `Item #${fullRecipe.output_item_id}` }),
           el('td', { style:'padding:8px;color:#4caf50', text: 'Output' }),
           el('td', { style:'padding:8px;text-align:right', text: `${outCurrent} ${uom}` }),
           el('td', { style:'padding:8px;text-align:right', text: `+${outChange}` }),
