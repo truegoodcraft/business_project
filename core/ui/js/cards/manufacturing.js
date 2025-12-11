@@ -4,6 +4,44 @@
 import { apiGet, ensureToken } from '../api.js';
 import { RecipesAPI } from '../api/recipes.js';
 
+(function injectRunsCssOnce() {
+  if (document.getElementById('mf-runs-css')) return;
+  const css = `
+  #mf-recent-panel {
+    overflow: auto;
+    resize: vertical;        /* user can drag to extend */
+    height: 340px;           /* ~ header + 10 rows by default */
+    min-height: 160px;
+    max-height: 80vh;
+  }
+  .mf-runs-grid {
+    display: grid;
+    grid-template-columns: 1fr 120px 100px; /* Recipe | Date | Time */
+    gap: 8px;
+    align-items: center;
+    padding: 6px 8px;
+    font-size: 12.5px;
+    line-height: 1.25rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .mf-runs-head {
+    font-weight: 600;
+    opacity: 0.85;
+    position: sticky;
+    top: 0;
+    backdrop-filter: blur(2px);
+  }
+  .mf-runs-row:nth-child(odd) { opacity: 0.95; }
+  .mf-runs-empty { padding: 8px; opacity: 0.7; }
+  `;
+  const style = document.createElement('style');
+  style.id = 'mf-runs-css';
+  style.textContent = css;
+  document.head.appendChild(style);
+})();
+
 // DOM Helpers matching your other cards
 function el(tag, attrs = {}, children = []) {
   const node = document.createElement(tag);
@@ -265,45 +303,48 @@ async function loadRecentRuns30d() {
   const panel = document.getElementById('mf-recent-panel');
   if (!panel) return;
 
-  panel.innerHTML = '<div style="color:#666;font-size:12px">Loading...</div>';
+  panel.innerHTML = `
+    <div class="mf-runs-grid mf-runs-head">
+      <div>Recipe</div><div>Date</div><div>Time</div>
+    </div>
+    <div id="mf-runs-body"></div>
+  `;
+  const body = panel.querySelector('#mf-runs-body');
 
   try {
-    const data = await apiGet('/app/manufacturing/runs?days=30');
-    const runs = data?.runs || [];
+    const [{ runs }, recipesRes] = await Promise.all([
+      apiGet('/app/manufacturing/runs?days=30'),
+      apiGet('/app/recipes').catch(() => ({ recipes: [] })),
+    ]);
 
-    if (!runs.length) {
-      panel.innerHTML = '<div style="color:#666;font-size:13px">No runs in the last 30 days.</div>';
+    const recMap = Object.create(null);
+    (recipesRes.recipes || []).forEach(r => { recMap[r.id] = r.name || `Recipe #${r.id}`; });
+
+    if (!runs || !runs.length) {
+      body.innerHTML = '<div class="mf-runs-empty">No runs in the last 30 days.</div>';
       return;
     }
 
-    const ul = document.createElement('ul');
-    ul.style.listStyle = 'none';
-    ul.style.margin = '0';
-    ul.style.padding = '0';
-    ul.className = 'space-y-2';
-
+    const frag = document.createDocumentFragment();
     runs.forEach(r => {
-      const ts = r.timestamp || r._ts || r.ts || '';
-      const when = ts ? new Date(ts).toLocaleString() : '(no time)';
-      const parts = [];
-      if (r.recipe_id != null) parts.push(`Recipe #${r.recipe_id}`);
-      if (r.output_item_id != null) parts.push(`Item #${r.output_item_id}`);
-      if (r.output_qty != null) parts.push(`x${r.output_qty}`);
-      const summary = parts.join(' ') || 'Manufacturing run';
-      const note = r.note || r.notes;
-
-      const li = document.createElement('li');
-      li.className = 'text-sm';
-      li.style.padding = '8px';
-      li.style.background = '#2a2a2a';
-      li.style.borderRadius = '8px';
-      li.textContent = `${when}: ${summary}${note ? ` — ${String(note)}` : ''}`;
-      ul.append(li);
+      const ts = r.timestamp || r._ts || '';
+      const d = ts ? new Date(ts) : null;
+      const dateStr = d ? d.toLocaleDateString() : '';
+      const timeStr = d ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+      const isRecipe = Number.isInteger(r.recipe_id);
+      const recipeName = isRecipe ? (recMap[r.recipe_id] || `Recipe #${r.recipe_id}`) : '(ad-hoc)';
+      const row = document.createElement('div');
+      row.className = 'mf-runs-grid mf-runs-row';
+      row.innerHTML = `<div title="${recipeName}">${recipeName}</div><div>${dateStr}</div><div>${timeStr}</div>`;
+      frag.appendChild(row);
     });
+    body.replaceChildren(frag);
 
-    panel.innerHTML = '';
-    panel.append(ul);
+    const rows = body.querySelectorAll('.mf-runs-row').length;
+    if (rows <= 10) {
+      panel.style.height = 'auto';
+    }
   } catch (e) {
-    panel.innerHTML = '<div style="color:gold;font-size:12px">Failed to load recent runs.</div>';
+    body.innerHTML = '<div class="mf-runs-empty">Failed to load recent runs.</div>';
   }
 }
