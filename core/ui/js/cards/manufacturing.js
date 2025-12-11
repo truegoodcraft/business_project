@@ -65,6 +65,13 @@ let _state = {
 
 const recipeNameCache = (window._recipeNameCache = window._recipeNameCache || Object.create(null));
 
+function _runConfirmText({ recipeName, outputQty, adhoc }) {
+  const title = adhoc ? 'Confirm Ad-hoc Manufacturing Run' : 'Confirm Manufacturing Run';
+  const name = recipeName ? `Recipe: ${recipeName}` : 'Recipe: (unknown)';
+  const qty = `Output Qty: ${outputQty}`;
+  return `${title}\n\n${name}\n${qty}\n\nThis will update stock (FIFO). Proceed?`;
+}
+
 export async function mountManufacturing() {
   await ensureToken();
   _state = { recipes: [], selectedRecipe: null, movements: [] };
@@ -249,10 +256,6 @@ async function renderNewRunForm(parent) {
       return;
     }
 
-    runBtn.disabled = true;
-    runBtn.textContent = 'Processing...';
-    statusMsg.textContent = '';
-
     try {
       const recipeId = Number(_state.selectedRecipe.id);
 
@@ -260,10 +263,26 @@ async function renderNewRunForm(parent) {
         throw new Error('Select a valid recipe.');
       }
 
-      await RecipesAPI.run({
+      const payload = {
         recipe_id: recipeId,
         output_qty: 1
-      });
+      };
+
+      const recipeName = (
+        _state.selectedRecipe.name ||
+        _state.selectedRecipe.title ||
+        _state.selectedRecipe.label ||
+        document.querySelector('#run-recipe option:checked')?.textContent ||
+        ''
+      );
+      const ok = window.confirm(_runConfirmText({ recipeName, outputQty: 1, adhoc: false }));
+      if (!ok) return;
+
+      runBtn.disabled = true;
+      runBtn.textContent = 'Processing...';
+      statusMsg.textContent = '';
+
+      await RecipesAPI.run(payload);
 
       statusMsg.textContent = 'Run Complete!';
       statusMsg.style.color = '#4caf50';
@@ -273,7 +292,7 @@ async function renderNewRunForm(parent) {
       await loadRecentRuns30d();
       runBtn.textContent = 'Run Production';
       runBtn.disabled = false;
-      
+
     } catch (e) {
       const payload = e?.payload || e?.data || {};
       const shortages = payload?.shortages || payload?.detail?.shortages;
