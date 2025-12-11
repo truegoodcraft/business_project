@@ -186,10 +186,156 @@ export async function _mountInventory(container) {
   await ensureToken();
   const state = { items: [], tableBody: null };
 
+  function openStockOutModal(prefill) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    const card = document.createElement('div');
+    card.className = 'modal-card';
+    card.style.maxWidth = '420px';
+    card.style.background = 'var(--surface)';
+    card.style.border = '1px solid var(--border)';
+    card.style.borderRadius = '10px';
+
+    const title = document.createElement('div');
+    title.className = 'modal-title';
+    title.textContent = 'Stock Out (FIFO)';
+    card.appendChild(title);
+
+    const errorBanner = document.createElement('div');
+    errorBanner.className = 'error-banner';
+    errorBanner.hidden = true;
+    card.appendChild(errorBanner);
+
+    const body = document.createElement('div');
+    body.className = 'modal-body';
+
+    const itemRow = document.createElement('div');
+    itemRow.className = 'field-row';
+    const itemLabel = document.createElement('label');
+    itemLabel.textContent = 'Item';
+    const itemWrap = document.createElement('div');
+    itemWrap.className = 'field-input';
+    const itemSelect = document.createElement('select');
+    itemSelect.required = true;
+    (state.items || []).forEach((it) => {
+      const opt = document.createElement('option');
+      opt.value = it.id;
+      opt.textContent = it.name || `Item #${it.id}`;
+      itemSelect.appendChild(opt);
+    });
+    if (prefill?.item_id) itemSelect.value = String(prefill.item_id);
+    itemWrap.appendChild(itemSelect);
+    itemRow.append(itemLabel, itemWrap);
+
+    const qtyRow = document.createElement('div');
+    qtyRow.className = 'field-row';
+    const qtyLabel = document.createElement('label');
+    qtyLabel.textContent = 'Quantity (units)';
+    const qtyWrap = document.createElement('div');
+    qtyWrap.className = 'field-input';
+    const qtyInput = document.createElement('input');
+    qtyInput.type = 'number';
+    qtyInput.min = '1';
+    qtyInput.step = '1';
+    qtyInput.value = prefill?.qty ? String(prefill.qty) : '1';
+    qtyWrap.appendChild(qtyInput);
+    qtyRow.append(qtyLabel, qtyWrap);
+
+    const reasonRow = document.createElement('div');
+    reasonRow.className = 'field-row';
+    const reasonLabel = document.createElement('label');
+    reasonLabel.textContent = 'Reason';
+    const reasonWrap = document.createElement('div');
+    reasonWrap.className = 'field-input';
+    const reasonSelect = document.createElement('select');
+    ['sold', 'loss', 'theft', 'other'].forEach((v) => {
+      const opt = document.createElement('option');
+      opt.value = v;
+      opt.textContent = v.charAt(0).toUpperCase() + v.slice(1);
+      reasonSelect.appendChild(opt);
+    });
+    reasonSelect.value = prefill?.reason || 'sold';
+    reasonWrap.appendChild(reasonSelect);
+    reasonRow.append(reasonLabel, reasonWrap);
+
+    const noteRow = document.createElement('div');
+    noteRow.className = 'field-row';
+    const noteLabel = document.createElement('label');
+    noteLabel.textContent = 'Note (optional)';
+    const noteWrap = document.createElement('div');
+    noteWrap.className = 'field-input';
+    const noteInput = document.createElement('input');
+    noteInput.type = 'text';
+    noteInput.placeholder = 'Order #, comment…';
+    if (prefill?.note) noteInput.value = prefill.note;
+    noteWrap.appendChild(noteInput);
+    noteRow.append(noteLabel, noteWrap);
+
+    const actions = document.createElement('div');
+    actions.className = 'modal-actions';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'btn';
+    cancelBtn.textContent = 'Cancel';
+    const submitBtn = document.createElement('button');
+    submitBtn.type = 'button';
+    submitBtn.className = 'btn primary';
+    submitBtn.textContent = 'Confirm Stock Out';
+    actions.append(submitBtn, cancelBtn);
+
+    body.append(itemRow, qtyRow, reasonRow, noteRow, actions);
+    card.appendChild(body);
+    overlay.appendChild(card);
+    overlay._inventoryCleanup = () => overlay.remove();
+    document.body.appendChild(overlay);
+
+    const close = () => overlay.remove();
+    overlay.addEventListener('click', (ev) => {
+      if (ev.target === overlay) close();
+    });
+    card.addEventListener('click', (ev) => ev.stopPropagation());
+    cancelBtn.addEventListener('click', (ev) => { ev.preventDefault(); close(); });
+
+    submitBtn.addEventListener('click', async (ev) => {
+      ev.preventDefault();
+      errorBanner.hidden = true;
+      errorBanner.textContent = '';
+
+      const itemId = Number(itemSelect.value);
+      const qtyVal = Math.trunc(Number(qtyInput.value));
+      const reason = String(reasonSelect.value || 'sold');
+      const note = noteInput.value ? noteInput.value : null;
+
+      if (!Number.isInteger(itemId) || !Number.isInteger(qtyVal) || qtyVal <= 0) {
+        errorBanner.textContent = 'Select an item and enter a positive integer quantity.';
+        errorBanner.hidden = false;
+        return;
+      }
+
+      try {
+        await ensureToken();
+        await apiPost('/app/stock/out', { item_id: itemId, qty: qtyVal, reason, note });
+        close();
+        await reloadInventory?.();
+        alert('Stock out recorded.');
+      } catch (e) {
+        const detail = e?.payload?.detail;
+        const shortages = detail?.shortages;
+        const message = shortages ? `Insufficient stock:\n${JSON.stringify(shortages)}` : (detail || e?.message || 'Stock out failed');
+        errorBanner.textContent = message;
+        errorBanner.hidden = false;
+      }
+    });
+  }
+
   container.innerHTML = '';
+  const addBtn = el('button', { id: 'add-item-btn', class: 'btn', 'data-role': 'btn-add-item' }, '+ Add Item');
+  const stockOutBtn = el('button', { class: 'btn secondary', type: 'button' }, '− Stock Out');
   const controls = el('div', { class: 'inventory-controls toolbar' }, [
-    el('button', { id: 'add-item-btn', class: 'btn', 'data-role': 'btn-add-item' }, '+ Add Item'),
+    addBtn,
+    stockOutBtn,
   ]);
+  stockOutBtn.addEventListener('click', () => openStockOutModal());
   const table = el('table', { id: 'inventory-table', class: 'table-clickable inventory-table' });
   const colgroup = el('colgroup');
   ['20%', '20%', '20%', '20%', '20%'].forEach((width) => {

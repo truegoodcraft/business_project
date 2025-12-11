@@ -1,28 +1,29 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-from fastapi import APIRouter, HTTPException, Depends
+import json
 import logging
-import time
+import os
 import sqlite3
+import sys
 from datetime import datetime
-from pydantic import BaseModel, Field
-from typing import Optional
+from pathlib import Path
+from typing import Literal, Optional
 
-from core.ledger.fifo import purchase as fifo_purchase, consume as fifo_consume, valuation as fifo_valuation, list_movements as fifo_list
-from core.appdb.paths import resolve_db_path
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+from sqlalchemy import asc, func
+from sqlalchemy.orm import Session
+
 from core.api.utils.devguard import require_dev
 from core.appdb.engine import get_session
-from sqlalchemy.orm import Session
 from core.appdb.ledger import (
     InsufficientStock,
     add_batch,
     fifo_consume as sa_fifo_consume,
-    on_hand_qty,
 )
 from core.appdb.models import Item, ItemBatch, ItemMovement
-from sqlalchemy import func, asc
-from core.metrics.metric import UNIT_MULTIPLIER, default_unit_for, from_base, to_base
-from core.journal.inventory import append_inventory
+from core.appdb.paths import resolve_db_path
 from core.api.schemas_ledger import QtyDisplay, StockInReq, StockInResp
+from core.metrics.metric import UNIT_MULTIPLIER, default_unit_for, from_base, to_base
 
 # NOTE: Primary router uses legacy "/ledger" prefix; public_router exposes routes without it
 # (e.g., /app/adjust) to match current app paths.
@@ -30,6 +31,28 @@ router = APIRouter(prefix="/ledger", tags=["ledger"])
 public_router = APIRouter(tags=["ledger"])
 DB_PATH = resolve_db_path()
 logger = logging.getLogger(__name__)
+
+
+def _journals_dir() -> Path:
+    root = os.environ.get("LOCALAPPDATA")
+    if not root:
+        # Linux/macOS fallback
+        root = os.path.expanduser("~/.local/share")
+    d = Path(root) / "BUSCore" / "app" / "data" / "journals"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _append_inventory_journal(entry: dict) -> None:
+    try:
+        entry = dict(entry)
+        entry.setdefault("timestamp", datetime.utcnow().isoformat() + "Z")
+        p = _journals_dir() / "inventory.jsonl"
+        with open(p, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, separators=(",", ":")) + "\n")
+    except Exception:
+        # Journaling must never block core ops.
+        pass
 
 def _has_items_qty_stored() -> bool:
     con = sqlite3.connect(DB_PATH); cur = con.cursor()
@@ -49,63 +72,9 @@ def health():
         return {"desync": True, "problems": [{"reason": "items.qty_stored missing"}]}
     return {"desync": False, "note": "Using items.qty_stored for on-hand checks"}
 
-@router.post("/bootstrap")
-def bootstrap_legacy():
-    if not _has_items_qty_stored():
-        return {"created": 0, "error": "items.qty_stored missing"}
-    con = sqlite3.connect(DB_PATH); cur = con.cursor()
-    try:
-        cur.execute("""
-        CREATE TABLE IF NOT EXISTS item_batches(
-            id INTEGER PRIMARY KEY,
-            item_id INTEGER NOT NULL,
-            qty_initial REAL NOT NULL,
-            qty_remaining REAL NOT NULL,
-            unit_cost_cents INTEGER NOT NULL,
-            source_kind TEXT NOT NULL,
-            source_id TEXT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )""")
-        cur.execute("""
-        CREATE TABLE IF NOT EXISTS item_movements(
-            id INTEGER PRIMARY KEY,
-            item_id INTEGER NOT NULL,
-            batch_id INTEGER,
-            qty_change REAL NOT NULL,
-            unit_cost_cents INTEGER DEFAULT 0,
-            source_kind TEXT NOT NULL,
-            source_id TEXT,
-            is_oversold BOOLEAN DEFAULT 0,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )""")
-
-        cur.execute("SELECT id, qty_stored FROM items WHERE COALESCE(qty_stored,0) > 0")
-        rows = cur.fetchall()
-        created = 0
-        for item_id, onhand in rows:
-            cur.execute("SELECT 1 FROM item_batches WHERE item_id=? AND source_kind='legacy_migration' LIMIT 1", (item_id,))
-            if cur.fetchone():
-                continue
-            cur.execute("""
-                INSERT INTO item_batches(item_id, qty_initial, qty_remaining, unit_cost_cents, source_kind, source_id)
-                VALUES (?, ?, ?, 0, 'legacy_migration', ?)
-            """, (item_id, float(onhand), float(onhand), f"legacy:{item_id}"))
-            batch_id = cur.lastrowid
-            cur.execute("""
-                INSERT INTO item_movements(item_id, batch_id, qty_change, unit_cost_cents, source_kind, source_id, is_oversold)
-                VALUES (?, ?, ?, 0, 'legacy_migration', ?, 0)
-            """, (item_id, batch_id, float(onhand), f"legacy:{item_id}"))
-            created += 1
-
-        con.commit()
-        return {"created": created, "using": "qty_stored"}
-    finally:
-        con.close()
-
-
 class PurchaseIn(BaseModel):
     item_id: int
-    qty: float = Field(gt=0)
+    qty: int = Field(gt=0)
     unit_cost_cents: int = Field(ge=0)
     source_kind: str = "purchase"
     source_id: Optional[str] = None
@@ -113,35 +82,70 @@ class PurchaseIn(BaseModel):
 
 @router.post("/purchase")
 @public_router.post("/purchase")
-def purchase(body: PurchaseIn):
-    try:
-        return fifo_purchase(body.item_id, body.qty, body.unit_cost_cents, body.source_kind, body.source_id)
-    except ValueError as e:
-        msg = str(e)
-        if msg.startswith("item_not_found:"):
-            _, item_id, path = msg.split(":", 2)
-            raise HTTPException(status_code=404, detail={"reason": "item_not_found", "item_id": int(item_id), "db_path": path})
-        raise
+def purchase(body: PurchaseIn, db: Session = Depends(get_session)):
+    batch_id = add_batch(
+        db,
+        int(body.item_id),
+        int(body.qty),
+        int(body.unit_cost_cents),
+        body.source_kind,
+        body.source_id,
+    )
+    db.commit()
+    _append_inventory_journal(
+        {
+            "type": "purchase",
+            "item_id": int(body.item_id),
+            "qty_change": int(body.qty),
+            "unit_cost_cents": int(body.unit_cost_cents),
+            "source_kind": body.source_kind,
+            "source_id": body.source_id,
+            "batch_id": int(batch_id),
+        }
+    )
+    return {"ok": True, "batch_id": int(batch_id)}
 
 
 class ConsumeIn(BaseModel):
     item_id: int
-    qty: float = Field(gt=0)
+    qty: int = Field(gt=0)
     source_kind: str = "consume"
     source_id: Optional[str] = None
 
 
+class StockOutIn(BaseModel):
+    item_id: int
+    qty: int = Field(gt=0)
+    reason: Literal["sold", "loss", "theft", "other"] = "sold"
+    note: Optional[str] = None
+
+
 @router.post("/consume")
 @public_router.post("/consume")
-def consume(body: ConsumeIn):
+def consume(body: ConsumeIn, db: Session = Depends(get_session)):
     try:
-        return fifo_consume(body.item_id, body.qty, body.source_kind, body.source_id)
-    except ValueError as e:
-        msg = str(e)
-        if msg.startswith("item_not_found:"):
-            _, item_id, path = msg.split(":", 2)
-            raise HTTPException(status_code=404, detail={"reason": "item_not_found", "item_id": int(item_id), "db_path": path})
-        raise
+        moves = sa_fifo_consume(db, int(body.item_id), int(body.qty), body.source_kind, body.source_id)
+        db.commit()
+        lines = [
+            {
+                "batch_id": int(m.batch_id),
+                "qty": -int(m.qty_change),
+                "unit_cost_cents": int(m.unit_cost_cents or 0),
+            }
+            for m in moves
+        ]
+        _append_inventory_journal(
+            {
+                "type": "consume",
+                "item_id": int(body.item_id),
+                "qty_change": -int(body.qty),
+                "source_kind": body.source_kind,
+                "source_id": body.source_id,
+            }
+        )
+        return {"ok": True, "lines": lines}
+    except InsufficientStock as e:
+        raise HTTPException(status_code=400, detail={"shortages": e.shortages})
 
 
 # -------------------------
@@ -149,19 +153,8 @@ def consume(body: ConsumeIn):
 # -------------------------
 class AdjustmentInput(BaseModel):
     item_id: int
-    qty_change: float = Field(..., ne=0)
+    qty_change: int = Field(..., ne=0)
     note: str | None = None
-
-
-def _format_shortages(shortages: list[dict]) -> list[dict]:
-    return [
-        {
-            "item_id": s.get("item_id"),
-            "required": float(s.get("required", 0.0)),
-            "available": float(s.get("available", s.get("on_hand", 0.0))),
-        }
-        for s in shortages
-    ]
 
 
 @router.post("/adjust")
@@ -176,72 +169,115 @@ def adjust_stock(body: AdjustmentInput, db: Session = Depends(get_session)):
       - 400 if insufficient on-hand; no partials
     """
     if body.qty_change > 0:
-        add_batch(
-            db,
-            body.item_id,
-            body.qty_change,
-            unit_cost_cents=0,
-            source_kind="adjustment",
-            source_id=None,
-        )
+        add_batch(db, int(body.item_id), int(body.qty_change), 0, "adjustment", body.note)
         db.commit()
-        _append_inventory(
+        _append_inventory_journal(
             {
-                "ts": int(time.time()),
-                "op": "adjust",
-                "item_id": body.item_id,
-                "qty_delta": float(body.qty_change),
-                "reason": body.note,
+                "type": "adjustment",
+                "item_id": int(body.item_id),
+                "qty_change": int(body.qty_change),
+                "unit_cost_cents": 0,
+                "source_kind": "adjustment",
+                "source_id": body.note or None,
             }
         )
         return {"ok": True}
+    else:
+        try:
+            sa_fifo_consume(db, int(body.item_id), -int(body.qty_change), "adjustment", body.note)
+            db.commit()
+            _append_inventory_journal(
+                {
+                    "type": "adjustment",
+                    "item_id": int(body.item_id),
+                    "qty_change": int(body.qty_change),
+                    "source_kind": "adjustment",
+                    "source_id": body.note or None,
+                }
+            )
+            return {"ok": True}
+        except InsufficientStock as e:
+            raise HTTPException(status_code=400, detail={"shortages": e.shortages})
 
-    need = abs(body.qty_change)
-    on_hand = on_hand_qty(db, body.item_id)
-    if on_hand + 1e-9 < need:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "shortages": _format_shortages(
-                    [{"item_id": body.item_id, "required": need, "available": on_hand}]
-                )
-            },
-        )
 
+@router.post("/stock/out")
+@public_router.post("/stock/out")
+def stock_out(body: StockOutIn, db: Session = Depends(get_session)):
     try:
-        sa_fifo_consume(db, body.item_id, need, source_kind="adjustment", source_id=None)
+        moves = sa_fifo_consume(
+            db,
+            int(body.item_id),
+            int(body.qty),
+            body.reason,
+            body.note,
+        )
         db.commit()
-        _append_inventory(
+        lines = [
             {
-                "ts": int(time.time()),
-                "op": "adjust",
-                "item_id": body.item_id,
-                "qty_delta": float(body.qty_change),
-                "reason": body.note,
+                "batch_id": int(m.batch_id),
+                "qty": -int(m.qty_change),
+                "unit_cost_cents": int(m.unit_cost_cents or 0),
+            }
+            for m in moves
+        ]
+        _append_inventory_journal(
+            {
+                "type": body.reason,
+                "item_id": int(body.item_id),
+                "qty_change": -int(body.qty),
+                "unit_cost_cents": 0,
+                "source_kind": body.reason,
+                "source_id": body.note or None,
             }
         )
-        return {"ok": True}
-    except InsufficientStock as exc:
-        db.rollback()
-        raise HTTPException(status_code=400, detail={"shortages": _format_shortages(exc.shortages)})
-    except HTTPException:
-        db.rollback()
-        raise
-    except Exception:
-        db.rollback()
-        raise
+        return {"ok": True, "lines": lines}
+    except InsufficientStock as e:
+        raise HTTPException(status_code=400, detail={"shortages": e.shortages})
 
 
 @router.get("/valuation")
 @public_router.get("/valuation")
-def valuation(item_id: Optional[int] = None):
-    return fifo_valuation(item_id)
+def valuation(item_id: Optional[int] = None, db: Session = Depends(get_session)):
+    if item_id is not None:
+        total = (
+            db.query(func.coalesce(func.sum(ItemBatch.qty_remaining * ItemBatch.unit_cost_cents), 0))
+            .filter(ItemBatch.item_id == int(item_id))
+            .scalar()
+        )
+        return {"item_id": int(item_id), "total_value_cents": int(total or 0)}
+    rows = (
+        db.query(
+            ItemBatch.item_id.label("item_id"),
+            func.coalesce(func.sum(ItemBatch.qty_remaining * ItemBatch.unit_cost_cents), 0).label("total"),
+        )
+        .group_by(ItemBatch.item_id)
+        .all()
+    )
+    return {"totals": [{"item_id": r.item_id, "total_value_cents": int(r.total or 0)} for r in rows]}
 
 
 @router.get("/movements")
 @public_router.get("/movements")
-def movements(item_id: Optional[int] = None, limit: int = 100):
-    return fifo_list(item_id, limit)
+def movements(item_id: Optional[int] = None, limit: int = 100, db: Session = Depends(get_session)):
+    q = db.query(ItemMovement)
+    if item_id is not None:
+        q = q.filter(ItemMovement.item_id == int(item_id))
+    rows = q.order_by(ItemMovement.id.desc()).limit(int(limit)).all()
+
+    def to_dict(m: ItemMovement) -> dict:
+        return {
+            "id": int(m.id),
+            "item_id": int(m.item_id),
+            "batch_id": int(m.batch_id) if m.batch_id is not None else None,
+            "qty_change": int(m.qty_change),
+            "unit_cost_cents": int(m.unit_cost_cents or 0),
+            "source_kind": m.source_kind,
+            "source_id": m.source_id,
+            "is_oversold": bool(m.is_oversold),
+            "created_at": getattr(m.created_at, "isoformat", lambda: None)(),
+        }
+
+    return {"movements": [to_dict(m) for m in rows]}
 
 
 @router.get("/debug/db")
@@ -261,13 +297,6 @@ def ledger_debug(item_id: int | None = None):
                 cur.execute("SELECT id,name,sku,uom,qty_stored FROM items WHERE id=?", (int(item_id),))
                 item_row = cur.fetchone()
     return {"db_path": path, "has_items": has_items, "items_count": items_count, "item_row": item_row}
-
-
-def _append_inventory(entry: dict) -> None:
-    try:
-        append_inventory(entry)
-    except Exception:  # pragma: no cover - defensive
-        logger.exception("Failed to append inventory journal entry")
 
 
 def _cents_to_display(cents: int) -> str:

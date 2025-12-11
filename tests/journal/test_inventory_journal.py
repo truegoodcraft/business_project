@@ -23,7 +23,6 @@ def inventory_journal_setup(tmp_path, monkeypatch):
         "core.appdb.ledger",
         "core.appdb.models",
         "core.journal.inventory",
-        "core.ledger.fifo",
         "core.services.models",
     ]:
         sys.modules.pop(module_name, None)
@@ -34,7 +33,6 @@ def inventory_journal_setup(tmp_path, monkeypatch):
     import core.api.http as api_http
     import core.api.routes.ledger_api as ledger_api
     import core.journal.inventory as inventory_journal
-    import core.ledger.fifo as fifo_module
     import core.services.models as services_models
 
     engine_module = importlib.reload(engine_module)
@@ -43,7 +41,6 @@ def inventory_journal_setup(tmp_path, monkeypatch):
     api_http = importlib.reload(api_http)
     ledger_api = importlib.reload(ledger_api)
     inventory_journal = importlib.reload(inventory_journal)
-    fifo_module = importlib.reload(fifo_module)
     services_models = importlib.reload(services_models)
 
     from tgc.settings import Settings

@@ -4,6 +4,44 @@
 import { apiGet, ensureToken } from '../api.js';
 import { RecipesAPI } from '../api/recipes.js';
 
+(function injectRunsCssOnce() {
+  if (document.getElementById('mf-runs-css')) return;
+  const css = `
+  #mf-recent-panel {
+    overflow: auto;
+    resize: vertical;        /* user can drag to extend */
+    height: 340px;           /* ~ header + 10 rows by default */
+    min-height: 160px;
+    max-height: 80vh;
+  }
+  .mf-runs-grid {
+    display: grid;
+    grid-template-columns: 1fr 120px 100px; /* Recipe | Date | Time */
+    gap: 8px;
+    align-items: center;
+    padding: 6px 8px;
+    font-size: 12.5px;
+    line-height: 1.25rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .mf-runs-head {
+    font-weight: 600;
+    opacity: 0.85;
+    position: sticky;
+    top: 0;
+    backdrop-filter: blur(2px);
+  }
+  .mf-runs-row:nth-child(odd) { opacity: 0.95; }
+  .mf-runs-empty { padding: 8px; opacity: 0.7; }
+  `;
+  const style = document.createElement('style');
+  style.id = 'mf-runs-css';
+  style.textContent = css;
+  document.head.appendChild(style);
+})();
+
 // DOM Helpers matching your other cards
 function el(tag, attrs = {}, children = []) {
   const node = document.createElement(tag);
@@ -22,13 +60,21 @@ function el(tag, attrs = {}, children = []) {
 let _state = {
   recipes: [],
   selectedRecipe: null,
-  multiplier: 1,
   movements: []
 };
 
+const recipeNameCache = (window._recipeNameCache = window._recipeNameCache || Object.create(null));
+
+function _runConfirmText({ recipeName, outputQty, adhoc }) {
+  const title = adhoc ? 'Confirm Ad-hoc Manufacturing Run' : 'Confirm Manufacturing Run';
+  const name = recipeName ? `Recipe: ${recipeName}` : 'Recipe: (unknown)';
+  const qty = `Output Qty: ${outputQty}`;
+  return `${title}\n\n${name}\n${qty}\n\nThis will update stock (FIFO). Proceed?`;
+}
+
 export async function mountManufacturing() {
   await ensureToken();
-  _state = { recipes: [], selectedRecipe: null, multiplier: 1, movements: [] };
+  _state = { recipes: [], selectedRecipe: null, movements: [] };
   const container = document.querySelector('[data-tab-panel="manufacturing"]');
   if (!container) return;
 
@@ -50,7 +96,7 @@ export async function mountManufacturing() {
 }
 
 export function unmountManufacturing() {
-  _state = { recipes: [], selectedRecipe: null, multiplier: 1, movements: [] };
+  _state = { recipes: [], selectedRecipe: null, movements: [] };
   const container = document.querySelector('[data-tab-panel="manufacturing"]');
   if (container) container.innerHTML = '';
 }
@@ -69,24 +115,26 @@ async function renderNewRunForm(parent) {
 
   const card = el('div', { class: 'card' });
   const headerRow = el('div', { style: 'display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;' }, [
-    el('h2', { text: 'New Production Run' }),
+    el('h2', { text: 'New Manufacturing Run' }),
     el('a', { href: '#/recipes', class: 'btn small', style: 'text-decoration:none;border-radius:10px;padding:8px 12px;' }, 'Manage Recipes')
   ]);
-  
+
   // Controls
-  const formGrid = el('div', { class: 'form-grid', style: 'display:grid;grid-template-columns:1fr 110px;gap:12px;align-items:end;margin-bottom:20px;' });
-  
+  const formGrid = el('div', { class: 'form-grid', style: 'display:grid;grid-template-columns:1fr;gap:12px;align-items:end;margin-bottom:20px;' });
+
   const recipeSelect = el('select', { id: 'run-recipe', style: 'width:100%;background:#2a2c30;color:#e6e6e6;border:1px solid #3a3d43;border-radius:10px;padding:10px;' });
   recipeSelect.append(el('option', { value: '' }, '— Select Recipe —'));
   _state.recipes.forEach(r => {
+    const id = r.id ?? r.recipe_id;
+    const nm = r.name ?? r.title ?? r.label ?? r.recipe_name ?? r.slug;
+    if (id != null && nm) {
+      recipeNameCache[String(id)] = String(nm);
+    }
     recipeSelect.append(el('option', { value: r.id }, r.name));
   });
 
-  const multInput = el('input', { type: 'number', value: '1', min: '1', style: 'width:100%;background:#2a2c30;color:#e6e6e6;border:1px solid #3a3d43;border-radius:10px;padding:10px;' });
-  
   formGrid.append(
-    el('label', {}, [el('div', { text: 'Recipe', style:'margin-bottom:4px;font-size:12px;color:#aaa' }), recipeSelect]),
-    el('label', {}, [el('div', { text: 'Multiplier', style:'margin-bottom:4px;font-size:12px;color:#aaa' }), multInput])
+    el('label', {}, [el('div', { text: 'Recipe', style:'margin-bottom:4px;font-size:12px;color:#aaa' }), recipeSelect])
   );
 
   // Projection Table
@@ -120,9 +168,8 @@ async function renderNewRunForm(parent) {
   // Logic
   const updateProjection = async () => {
     const rid = recipeSelect.value;
-    const mult = parseInt(multInput.value, 10) || 0;
-    
-    if (!rid || mult < 1) {
+
+    if (!rid) {
       tbody.innerHTML = '';
       table.style.display = 'none';
       emptyMsg.style.display = 'block';
@@ -145,7 +192,6 @@ async function renderNewRunForm(parent) {
         return;
       }
       _state.selectedRecipe = fullRecipe;
-      _state.multiplier = mult;
 
       tbody.innerHTML = '';
       table.style.display = 'table';
@@ -153,9 +199,8 @@ async function renderNewRunForm(parent) {
       runBtn.disabled = false;
 
       const baseOutput = Number(fullRecipe.output_qty || 1);
-      const multiplier = Number(mult) || 0;
-      const outputQty = baseOutput * multiplier;
-      const scale = outputQty / (baseOutput || 1);
+      const outputQty = baseOutput;
+      const scale = 1;
 
       fullRecipe.items.forEach(ri => {
         const current = (ri.item?.qty_stored ?? 0);
@@ -202,7 +247,6 @@ async function renderNewRunForm(parent) {
   };
 
   recipeSelect.addEventListener('change', updateProjection);
-  multInput.addEventListener('input', updateProjection);
 
   runBtn.addEventListener('click', async () => {
     if (!_state.selectedRecipe) return;
@@ -212,34 +256,54 @@ async function renderNewRunForm(parent) {
       return;
     }
 
-    runBtn.disabled = true;
-    runBtn.textContent = 'Processing...';
-    statusMsg.textContent = '';
-
     try {
-      await RecipesAPI.run({
-        recipe_id: _state.selectedRecipe.id,
-        output_qty: (_state.selectedRecipe.output_qty || 1) * (_state.multiplier || 1)
-      });
-      
+      const recipeId = Number(_state.selectedRecipe.id);
+
+      if (!Number.isInteger(recipeId) || recipeId <= 0) {
+        throw new Error('Select a valid recipe.');
+      }
+
+      const payload = {
+        recipe_id: recipeId,
+        output_qty: 1
+      };
+
+      const recipeName = (
+        _state.selectedRecipe.name ||
+        _state.selectedRecipe.title ||
+        _state.selectedRecipe.label ||
+        document.querySelector('#run-recipe option:checked')?.textContent ||
+        ''
+      );
+      const ok = window.confirm(_runConfirmText({ recipeName, outputQty: 1, adhoc: false }));
+      if (!ok) return;
+
+      runBtn.disabled = true;
+      runBtn.textContent = 'Processing...';
+      statusMsg.textContent = '';
+
+      await RecipesAPI.run(payload);
+
       statusMsg.textContent = 'Run Complete!';
       statusMsg.style.color = '#4caf50';
-      multInput.value = 1;
-      
+
       // Refresh views
       await updateProjection();
-      await refreshHistory(document.querySelector('.history-list'));
+      await loadRecentRuns30d();
       runBtn.textContent = 'Run Production';
       runBtn.disabled = false;
-      
+
     } catch (e) {
+      const payload = e?.payload || e?.data || {};
+      const shortages = payload?.shortages || payload?.detail?.shortages;
       if (e.status === 403) {
         statusMsg.textContent = 'Run blocked: unauthorized.';
-      } else if (e.status === 400 && e.data && e.data.detail && e.data.detail.shortages) {
-        const s = e.data.detail.shortages.map(x => `#${x.item_id}: need ${x.required}, have ${x.on_hand}, missing ${x.missing}`).join(' | ');
+      } else if (Array.isArray(shortages)) {
+        const s = shortages.map(x => `#${x.item_id}: need ${x.required}, have ${x.on_hand}, missing ${x.missing}`).join(' | ');
         statusMsg.textContent = `Insufficient stock → ${s}`;
       } else {
-        statusMsg.textContent = e?.detail || e?.data?.detail || e?.data?.detail?.message || e?.message || 'Run failed.';
+        const detail = payload?.detail?.message || payload?.detail || payload?.error;
+        statusMsg.textContent = detail || e?.message || 'Run failed.';
       }
       statusMsg.style.color = '#ff4444';
       runBtn.disabled = false;
@@ -252,48 +316,73 @@ async function renderNewRunForm(parent) {
 
 async function renderHistoryList(parent) {
   const card = el('div', { class: 'card' });
-  card.append(el('h2', { text: 'Recent Activity' }));
-  
-  const list = el('div', { class: 'history-list', style: 'display:flex;flex-direction:column;gap:8px;' });
+  card.append(el('h2', { text: 'Recent Runs (30d)' }));
+
+  const list = el('div', { id: 'mf-recent-panel', class: 'history-list', style: 'display:flex;flex-direction:column;gap:8px;' });
   card.append(list);
   parent.append(card);
 
-  await refreshHistory(list);
+  await loadRecentRuns30d();
 }
 
-async function refreshHistory(container) {
-  if (!container) return;
-  container.innerHTML = '<div style="color:#666;font-size:12px">Loading...</div>';
+async function loadRecentRuns30d() {
+  const panel = document.getElementById('mf-recent-panel');
+  if (!panel) return;
+
+  panel.innerHTML = `
+    <div class="mf-runs-grid mf-runs-head">
+      <div>Recipe</div><div>Date</div><div>Time</div>
+    </div>
+    <div id="mf-runs-body"></div>
+  `;
+  const body = panel.querySelector('#mf-runs-body');
 
   try {
-    const movements = await apiGet('/app/ledger/movements?limit=15');
-    
-    container.innerHTML = '';
-    if (!movements || movements.length === 0) {
-      container.append(el('div', { style:'color:#666;font-size:13px', text: 'No recent movements.' }));
+    const { runs } = await apiGet('/app/manufacturing/runs?days=30');
+
+    let remoteMap = Object.create(null);
+    try {
+      const recipesRes = await apiGet('/app/recipes');
+      const list = (recipesRes.recipes || recipesRes.rows || recipesRes.items || []);
+      list.forEach(r => {
+        const rid = (r.id ?? r.recipe_id);
+        const nm  = (r.name ?? r.title ?? r.label ?? r.recipe_name ?? r.slug);
+        if (rid != null && nm) remoteMap[String(rid)] = String(nm);
+      });
+    } catch (_) {
+      // ignore; we still have journal name or cache
+    }
+
+    if (!runs || !runs.length) {
+      body.innerHTML = '<div class="mf-runs-empty">No runs in the last 30 days.</div>';
       return;
     }
 
-    movements.forEach(mov => {
-      const isPos = mov.qty_change > 0;
-      const row = el('div', { style: 'background:#2a2a2a;padding:8px;border-radius:8px;font-size:12px;display:flex;justify-content:space-between;' });
-      
-      const left = el('div');
-      left.append(el('div', { style: 'font-weight:600;color:#eee', text: `Item #${mov.item_id}` }));
-      left.append(el('div', { style: 'color:#888;font-size:11px', text: new Date(mov.created_at).toLocaleString() }));
-
-      const right = el('div', { style: 'text-align:right' });
-      right.append(el('div', { 
-        text: `${isPos ? '+' : ''}${mov.qty_change}`, 
-        style: `font-weight:bold;color:${isPos ? '#4caf50' : '#eee'}` 
-      }));
-      right.append(el('div', { style:'color:#666;font-size:10px', text: mov.source_kind || '—' }));
-
-      row.append(left, right);
-      container.append(row);
+    const cache = (window._recipeNameCache || Object.create(null));
+    const frag = document.createDocumentFragment();
+    runs.forEach(r => {
+      const ts = r.timestamp || r._ts || '';
+      const d = ts ? new Date(ts) : null;
+      const dateStr = d ? d.toLocaleDateString() : '';
+      const timeStr = d ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+      const rid = (r.recipe_id != null) ? String(r.recipe_id) : null;
+      const recipeName =
+        (r.recipe_name && String(r.recipe_name).trim()) ||
+        (rid && cache[rid]) ||
+        (rid && remoteMap[rid]) ||
+        (rid ? `Recipe #${rid}` : '(ad-hoc)');
+      const row = document.createElement('div');
+      row.className = 'mf-runs-grid mf-runs-row';
+      row.innerHTML = `<div title="${recipeName}">${recipeName}</div><div>${dateStr}</div><div>${timeStr}</div>`;
+      frag.appendChild(row);
     });
+    body.replaceChildren(frag);
 
+    const rows = body.querySelectorAll('.mf-runs-row').length;
+    if (rows <= 10) {
+      panel.style.height = 'auto';
+    }
   } catch (e) {
-    container.innerHTML = '<div style="color:red;font-size:12px">Failed to load history.</div>';
+    body.innerHTML = '<div class="mf-runs-empty">Failed to load recent runs.</div>';
   }
 }
