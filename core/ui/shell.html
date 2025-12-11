@@ -4,7 +4,9 @@
   <meta charset="utf-8">
   <title>BUS Core</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="icon" type="image/svg+xml" href="favicon.svg?v=buscore-8">
+  <link rel="icon" type="image/png" href="/ui/icon.png">
+  <link rel="shortcut icon" type="image/png" href="/ui/icon.png">
+  <link rel="apple-touch-icon" href="/ui/icon.png">
   <link rel="stylesheet" href="/ui/css/app.css">
   <style>
     :root { --bg:#1a1a1a; --fg:#eee; --accent:#0a84ff; --sidebar:#222; }
@@ -105,15 +107,6 @@
     }
     #sidebar .nav-group a:hover { background: #2a2a2a; }
   </style>
-  <script>
-  (function(){
-    const href = "favicon.svg?v=buscore-8";
-    let link = document.querySelector('link[rel="icon"]');
-    if(!link){ link=document.createElement('link'); link.rel='icon'; document.head.appendChild(link); }
-    link.type = 'image/svg+xml'; link.href = href;
-    document.querySelectorAll('link[rel="shortcut icon"],link[rel="apple-touch-icon"],link[rel="mask-icon"]').forEach(x=>x.remove());
-  })();
-  </script>
 </head>
 <body>
   <nav id="sidebar" class="sidebar">

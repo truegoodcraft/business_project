@@ -42,6 +42,9 @@ except Exception:
     # Ignore runtime errors during import (e.g. X11 missing)
     pystray = None
 
+UI_DIR = Path(__file__).parent / "core" / "ui"
+ICON_PATH = UI_DIR / "icon.png"
+
 def _ensure_runtime_dirs() -> None:
     for path in (DATA, LOGS):
         path.mkdir(parents=True, exist_ok=True)
@@ -108,7 +111,7 @@ def main():
 
     # Icon Fallback
     try:
-        icon_img = Image.open("Flat-Dark.png")
+        icon_img = Image.open(ICON_PATH)
     except Exception:
         icon_img = Image.new('RGB', (64, 64), color=(73, 109, 137))
 
