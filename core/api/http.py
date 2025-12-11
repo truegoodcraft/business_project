@@ -237,9 +237,37 @@ app.mount("/ui", StaticFiles(directory=UI_DIR), name="ui")
 app.mount("/brand", StaticFiles(directory=str(REPO_ROOT)), name="brand")
 
 
-@app.get("/favicon.ico", include_in_schema=False)
-def favicon():
-    return FileResponse(REPO_ROOT / "Flat-Dark.png", media_type="image/png")
+def _resolve_ui_icon() -> Optional[Path]:
+    """Return the first existing icon in common UI paths (handles case/casing)."""
+
+    candidates = [
+        UI_DIR / "icon.png",
+        UI_DIR / "Icon.png",
+        UI_DIR / "favicon.png",
+        UI_DIR / "assets" / "icon.png",
+        UI_DIR / "assets" / "Icon.png",
+        UI_DIR / "assets" / "favicon.png",
+    ]
+    for path in candidates:
+        if path.exists():
+            return path
+    return None
+
+
+@app.get("/icon.png")
+def get_icon_png():
+    path = _resolve_ui_icon()
+    if not path:
+        raise HTTPException(status_code=404, detail="icon not found")
+    return FileResponse(path, media_type="image/png")
+
+
+@app.get("/favicon.ico")
+def get_favicon_ico():
+    path = _resolve_ui_icon()
+    if not path:
+        raise HTTPException(status_code=404, detail="icon not found")
+    return FileResponse(path, media_type="image/png")
 
 
 @app.get("/")
