@@ -1,27 +1,28 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-from fastapi import APIRouter, HTTPException, Depends
+import json
 import logging
-import time
+import os
 import sqlite3
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pathlib import Path
 from typing import Optional
 
-from sqlalchemy import func, asc
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+from sqlalchemy import asc, func
 from sqlalchemy.orm import Session
 
+from core.api.utils.devguard import require_dev
 from core.appdb.engine import get_session
 from core.appdb.ledger import (
     InsufficientStock,
     add_batch,
     fifo_consume as sa_fifo_consume,
 )
-from core.appdb.models import Item, ItemBatch, ItemMovement
+from core.appdb.models import ItemBatch, ItemMovement
 from core.appdb.paths import resolve_db_path
-from core.api.utils.devguard import require_dev
-from core.metrics.metric import UNIT_MULTIPLIER, default_unit_for, from_base, to_base
-from core.journal.inventory import append_inventory
 from core.api.schemas_ledger import QtyDisplay, StockInReq, StockInResp
+from core.metrics.metric import UNIT_MULTIPLIER, default_unit_for, from_base, to_base
 
 # NOTE: Primary router uses legacy "/ledger" prefix; public_router exposes routes without it
 # (e.g., /app/adjust) to match current app paths.
@@ -29,6 +30,25 @@ router = APIRouter(prefix="/ledger", tags=["ledger"])
 public_router = APIRouter(tags=["ledger"])
 DB_PATH = resolve_db_path()
 logger = logging.getLogger(__name__)
+
+
+def _journals_dir() -> Path:
+    root = os.environ.get("LOCALAPPDATA") or ""
+    d = Path(root) / "BUSCore" / "app" / "data" / "journals"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _append_inventory_journal(entry: dict) -> None:
+    try:
+        entry = dict(entry)
+        entry.setdefault("timestamp", datetime.utcnow().isoformat() + "Z")
+        p = _journals_dir() / "inventory.jsonl"
+        with open(p, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, separators=(",", ":")) + "\n")
+    except Exception:
+        # Journaling must never block core ops.
+        pass
 
 def _has_items_qty_stored() -> bool:
     con = sqlite3.connect(DB_PATH); cur = con.cursor()
@@ -61,13 +81,24 @@ class PurchaseIn(BaseModel):
 def purchase(body: PurchaseIn, db: Session = Depends(get_session)):
     batch_id = add_batch(
         db,
-        body.item_id,
+        int(body.item_id),
         int(body.qty),
         int(body.unit_cost_cents),
         body.source_kind,
         body.source_id,
     )
     db.commit()
+    _append_inventory_journal(
+        {
+            "type": "purchase",
+            "item_id": int(body.item_id),
+            "qty_change": int(body.qty),
+            "unit_cost_cents": int(body.unit_cost_cents),
+            "source_kind": body.source_kind,
+            "source_id": body.source_id,
+            "batch_id": int(batch_id),
+        }
+    )
     return {"ok": True, "batch_id": int(batch_id)}
 
 
@@ -82,15 +113,28 @@ class ConsumeIn(BaseModel):
 @public_router.post("/consume")
 def consume(body: ConsumeIn, db: Session = Depends(get_session)):
     try:
-        moves = sa_fifo_consume(db, body.item_id, int(body.qty), body.source_kind, body.source_id)
+        moves = sa_fifo_consume(db, int(body.item_id), int(body.qty), body.source_kind, body.source_id)
         db.commit()
         lines = [
-            {"batch_id": m.batch_id, "qty": -int(m.qty_change), "unit_cost_cents": int(m.unit_cost_cents or 0)}
+            {
+                "batch_id": int(m.batch_id),
+                "qty": -int(m.qty_change),
+                "unit_cost_cents": int(m.unit_cost_cents or 0),
+            }
             for m in moves
         ]
+        _append_inventory_journal(
+            {
+                "type": "consume",
+                "item_id": int(body.item_id),
+                "qty_change": -int(body.qty),
+                "source_kind": body.source_kind,
+                "source_id": body.source_id,
+            }
+        )
         return {"ok": True, "lines": lines}
     except InsufficientStock as e:
-        return {"ok": False, "shortages": _format_shortages(e.shortages)}
+        raise HTTPException(status_code=400, detail={"shortages": e.shortages})
 
 
 # -------------------------
@@ -100,17 +144,6 @@ class AdjustmentInput(BaseModel):
     item_id: int
     qty_change: int = Field(..., ne=0)
     note: str | None = None
-
-
-def _format_shortages(shortages: list[dict]) -> list[dict]:
-    return [
-        {
-            "item_id": s.get("item_id"),
-            "required": float(s.get("required", 0.0)),
-            "available": float(s.get("available", s.get("on_hand", 0.0))),
-        }
-        for s in shortages
-    ]
 
 
 @router.post("/adjust")
@@ -125,16 +158,35 @@ def adjust_stock(body: AdjustmentInput, db: Session = Depends(get_session)):
       - 400 if insufficient on-hand; no partials
     """
     if body.qty_change > 0:
-        add_batch(db, body.item_id, int(body.qty_change), 0, "adjustment", body.note)
+        add_batch(db, int(body.item_id), int(body.qty_change), 0, "adjustment", body.note)
         db.commit()
+        _append_inventory_journal(
+            {
+                "type": "adjustment",
+                "item_id": int(body.item_id),
+                "qty_change": int(body.qty_change),
+                "unit_cost_cents": 0,
+                "source_kind": "adjustment",
+                "source_id": body.note or None,
+            }
+        )
         return {"ok": True}
     else:
         try:
-            sa_fifo_consume(db, body.item_id, -int(body.qty_change), "adjustment", body.note)
+            sa_fifo_consume(db, int(body.item_id), -int(body.qty_change), "adjustment", body.note)
             db.commit()
+            _append_inventory_journal(
+                {
+                    "type": "adjustment",
+                    "item_id": int(body.item_id),
+                    "qty_change": int(body.qty_change),
+                    "source_kind": "adjustment",
+                    "source_id": body.note or None,
+                }
+            )
             return {"ok": True}
         except InsufficientStock as e:
-            raise HTTPException(status_code=400, detail={"shortages": _format_shortages(e.shortages)})
+            raise HTTPException(status_code=400, detail={"shortages": e.shortages})
 
 
 @router.get("/valuation")
@@ -143,10 +195,10 @@ def valuation(item_id: Optional[int] = None, db: Session = Depends(get_session))
     if item_id is not None:
         total = (
             db.query(func.coalesce(func.sum(ItemBatch.qty_remaining * ItemBatch.unit_cost_cents), 0))
-            .filter(ItemBatch.item_id == item_id)
+            .filter(ItemBatch.item_id == int(item_id))
             .scalar()
         )
-        return {"item_id": item_id, "total_value_cents": int(total or 0)}
+        return {"item_id": int(item_id), "total_value_cents": int(total or 0)}
     rows = (
         db.query(
             ItemBatch.item_id.label("item_id"),
@@ -163,7 +215,7 @@ def valuation(item_id: Optional[int] = None, db: Session = Depends(get_session))
 def movements(item_id: Optional[int] = None, limit: int = 100, db: Session = Depends(get_session)):
     q = db.query(ItemMovement)
     if item_id is not None:
-        q = q.filter(ItemMovement.item_id == item_id)
+        q = q.filter(ItemMovement.item_id == int(item_id))
     rows = q.order_by(ItemMovement.id.desc()).limit(int(limit)).all()
 
     def to_dict(m: ItemMovement) -> dict:
@@ -176,7 +228,7 @@ def movements(item_id: Optional[int] = None, limit: int = 100, db: Session = Dep
             "source_kind": m.source_kind,
             "source_id": m.source_id,
             "is_oversold": bool(m.is_oversold),
-            "created_at": m.created_at.isoformat() if getattr(m.created_at, "isoformat", None) else None,
+            "created_at": getattr(m.created_at, "isoformat", lambda: None)(),
         }
 
     return {"movements": [to_dict(m) for m in rows]}
@@ -199,13 +251,6 @@ def ledger_debug(item_id: int | None = None):
                 cur.execute("SELECT id,name,sku,uom,qty_stored FROM items WHERE id=?", (int(item_id),))
                 item_row = cur.fetchone()
     return {"db_path": path, "has_items": has_items, "items_count": items_count, "item_row": item_row}
-
-
-def _append_inventory(entry: dict) -> None:
-    try:
-        append_inventory(entry)
-    except Exception:  # pragma: no cover - defensive
-        logger.exception("Failed to append inventory journal entry")
 
 
 def _cents_to_display(cents: int) -> str:
