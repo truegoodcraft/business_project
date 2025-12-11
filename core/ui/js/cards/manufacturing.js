@@ -68,7 +68,7 @@ async function renderNewRunForm(parent) {
 
   const card = el('div', { class: 'card' });
   const headerRow = el('div', { style: 'display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;' }, [
-    el('h2', { text: 'New Production Run' }),
+    el('h2', { text: 'New Manufacturing Run' }),
     el('a', { href: '#/recipes', class: 'btn small', style: 'text-decoration:none;border-radius:10px;padding:8px 12px;' }, 'Manage Recipes')
   ]);
 
@@ -225,7 +225,7 @@ async function renderNewRunForm(parent) {
 
       // Refresh views
       await updateProjection();
-      await refreshHistory(document.querySelector('.history-list'));
+      await loadRecentRuns30d();
       runBtn.textContent = 'Run Production';
       runBtn.disabled = false;
       
@@ -252,48 +252,58 @@ async function renderNewRunForm(parent) {
 
 async function renderHistoryList(parent) {
   const card = el('div', { class: 'card' });
-  card.append(el('h2', { text: 'Recent Activity' }));
-  
-  const list = el('div', { class: 'history-list', style: 'display:flex;flex-direction:column;gap:8px;' });
+  card.append(el('h2', { text: 'Recent Runs (30d)' }));
+
+  const list = el('div', { id: 'mf-recent-panel', class: 'history-list', style: 'display:flex;flex-direction:column;gap:8px;' });
   card.append(list);
   parent.append(card);
 
-  await refreshHistory(list);
+  await loadRecentRuns30d();
 }
 
-async function refreshHistory(container) {
-  if (!container) return;
-  container.innerHTML = '<div style="color:#666;font-size:12px">Loading...</div>';
+async function loadRecentRuns30d() {
+  const panel = document.getElementById('mf-recent-panel');
+  if (!panel) return;
+
+  panel.innerHTML = '<div style="color:#666;font-size:12px">Loading...</div>';
 
   try {
-    const movements = await apiGet('/app/ledger/movements?limit=15');
-    
-    container.innerHTML = '';
-    if (!movements || movements.length === 0) {
-      container.append(el('div', { style:'color:#666;font-size:13px', text: 'No recent movements.' }));
+    const data = await apiGet('/app/manufacturing/runs?days=30');
+    const runs = data?.runs || [];
+
+    if (!runs.length) {
+      panel.innerHTML = '<div style="color:#666;font-size:13px">No runs in the last 30 days.</div>';
       return;
     }
 
-    movements.forEach(mov => {
-      const isPos = mov.qty_change > 0;
-      const row = el('div', { style: 'background:#2a2a2a;padding:8px;border-radius:8px;font-size:12px;display:flex;justify-content:space-between;' });
-      
-      const left = el('div');
-      left.append(el('div', { style: 'font-weight:600;color:#eee', text: `Item #${mov.item_id}` }));
-      left.append(el('div', { style: 'color:#888;font-size:11px', text: new Date(mov.created_at).toLocaleString() }));
+    const ul = document.createElement('ul');
+    ul.style.listStyle = 'none';
+    ul.style.margin = '0';
+    ul.style.padding = '0';
+    ul.className = 'space-y-2';
 
-      const right = el('div', { style: 'text-align:right' });
-      right.append(el('div', { 
-        text: `${isPos ? '+' : ''}${mov.qty_change}`, 
-        style: `font-weight:bold;color:${isPos ? '#4caf50' : '#eee'}` 
-      }));
-      right.append(el('div', { style:'color:#666;font-size:10px', text: mov.source_kind || '—' }));
+    runs.forEach(r => {
+      const ts = r.timestamp || r._ts || r.ts || '';
+      const when = ts ? new Date(ts).toLocaleString() : '(no time)';
+      const parts = [];
+      if (r.recipe_id != null) parts.push(`Recipe #${r.recipe_id}`);
+      if (r.output_item_id != null) parts.push(`Item #${r.output_item_id}`);
+      if (r.output_qty != null) parts.push(`x${r.output_qty}`);
+      const summary = parts.join(' ') || 'Manufacturing run';
+      const note = r.note || r.notes;
 
-      row.append(left, right);
-      container.append(row);
+      const li = document.createElement('li');
+      li.className = 'text-sm';
+      li.style.padding = '8px';
+      li.style.background = '#2a2a2a';
+      li.style.borderRadius = '8px';
+      li.textContent = `${when}: ${summary}${note ? ` — ${String(note)}` : ''}`;
+      ul.append(li);
     });
 
+    panel.innerHTML = '';
+    panel.append(ul);
   } catch (e) {
-    container.innerHTML = '<div style="color:red;font-size:12px">Failed to load history.</div>';
+    panel.innerHTML = '<div style="color:gold;font-size:12px">Failed to load recent runs.</div>';
   }
 }

@@ -1,10 +1,13 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 import json
 import logging
+import os
 import time
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Iterable
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from sqlalchemy import func as sa_func
 from sqlalchemy.orm import Session
 
@@ -13,7 +16,7 @@ from core.appdb.engine import get_session
 from core.appdb.ledger import InsufficientStock
 from core.appdb.models_recipes import Recipe
 from core.config.writes import require_writes
-from core.journal.manufacturing import append_mfg_journal
+from core.journal.manufacturing import MANUFACTURING_JOURNAL, append_mfg_journal
 from core.manufacturing.service import execute_run_txn, format_shortages, validate_run
 from core.policy.guard import require_owner_commit
 from tgc.security import require_token_ctx
@@ -21,6 +24,63 @@ from tgc.state import AppState, get_state
 
 router = APIRouter(prefix="/manufacturing", tags=["manufacturing"])
 logger = logging.getLogger(__name__)
+
+
+def _mf_journal_path() -> Path:
+    env_path = os.environ.get("BUS_MANUFACTURING_JOURNAL")
+    if env_path:
+        return Path(env_path)
+    return MANUFACTURING_JOURNAL
+
+
+def _parse_iso_utc(ts: str) -> datetime:
+    if ts.endswith("Z"):
+        ts = ts[:-1] + "+00:00"
+    dt = datetime.fromisoformat(ts)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def _load_recent_runs(days: int) -> list[dict]:
+    p = _mf_journal_path()
+    if not p.exists():
+        return []
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=int(days))
+    runs: list[dict] = []
+    with open(p, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except Exception:
+                continue
+
+            ts_val = obj.get("timestamp")
+            dt = None
+            if ts_val is not None:
+                try:
+                    dt = _parse_iso_utc(str(ts_val))
+                except Exception:
+                    dt = None
+            if dt is None and obj.get("ts") is not None:
+                try:
+                    dt = datetime.fromtimestamp(float(obj.get("ts")), tz=timezone.utc)
+                except Exception:
+                    dt = None
+            if dt is None:
+                continue
+
+            if dt >= cutoff:
+                obj.setdefault("timestamp", dt.isoformat())
+                obj["_ts"] = dt.isoformat()
+                runs.append(obj)
+
+    runs.sort(key=lambda x: x.get("_ts", ""), reverse=True)
+    return runs
 
 
 def _map_shortages(shortages: Iterable[dict]) -> list[dict]:
@@ -181,3 +241,13 @@ def _append_journal(entry: dict) -> None:
         append_mfg_journal(entry)
     except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to append manufacturing journal entry")
+
+
+@router.get("/runs")
+async def list_runs(days: int = Query(30, ge=1, le=365)):
+    return {"runs": _load_recent_runs(days)}
+
+
+@router.get("/history")
+async def list_runs_alias(days: int = Query(30, ge=1, le=365)):
+    return {"runs": _load_recent_runs(days)}
