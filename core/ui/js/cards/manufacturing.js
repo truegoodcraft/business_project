@@ -314,11 +314,18 @@ async function loadRecentRuns30d() {
   try {
     const [{ runs }, recipesRes] = await Promise.all([
       apiGet('/app/manufacturing/runs?days=30'),
-      apiGet('/app/recipes').catch(() => ({ recipes: [] })),
+      apiGet('/app/recipes').catch(() => ({})),
     ]);
 
     const recMap = Object.create(null);
-    (recipesRes.recipes || []).forEach(r => { recMap[r.id] = r.name || `Recipe #${r.id}`; });
+    const list =
+      (recipesRes && (recipesRes.recipes || recipesRes.rows || recipesRes.items)) || [];
+    list.forEach(r => {
+      const rid = (r && (r.id ?? r.recipe_id));
+      if (rid == null) return;
+      const nm = (r.name ?? r.title ?? r.label ?? r.recipe_name ?? r.slug);
+      if (nm) recMap[String(rid)] = String(nm);
+    });
 
     if (!runs || !runs.length) {
       body.innerHTML = '<div class="mf-runs-empty">No runs in the last 30 days.</div>';
@@ -331,8 +338,11 @@ async function loadRecentRuns30d() {
       const d = ts ? new Date(ts) : null;
       const dateStr = d ? d.toLocaleDateString() : '';
       const timeStr = d ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
-      const isRecipe = Number.isInteger(r.recipe_id);
-      const recipeName = isRecipe ? (recMap[r.recipe_id] || `Recipe #${r.recipe_id}`) : '(ad-hoc)';
+      const rid = (r.recipe_id != null) ? String(r.recipe_id) : null;
+      const recipeName =
+        (r.recipe_name ? String(r.recipe_name) : null) ||
+        (rid && recMap[rid]) ||
+        (rid ? `Recipe #${rid}` : '(ad-hoc)');
       const row = document.createElement('div');
       row.className = 'mf-runs-grid mf-runs-row';
       row.innerHTML = `<div title="${recipeName}">${recipeName}</div><div>${dateStr}</div><div>${timeStr}</div>`;
