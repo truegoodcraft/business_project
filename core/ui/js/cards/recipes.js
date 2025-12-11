@@ -34,6 +34,15 @@ function newRecipeDraft() {
   };
 }
 
+function blankRecipeItem(sort = 0) {
+  return {
+    item_id: null,
+    qty_required: null,
+    optional: false,
+    sort,
+  };
+}
+
 function normalizeRecipe(data) {
   return {
     id: data.id,
@@ -44,10 +53,12 @@ function normalizeRecipe(data) {
     archived: data.archived === true || data.is_archived === true,
     notes: data.notes || '',
     items: (data.items || []).map((it, idx) => ({
-      item_id: it.item_id,
-      qty_required: Number(it.qty_required || it.qty_stored || 0),
+      item_id: it.item_id ?? null,
+      qty_required: it.qty_required !== undefined && it.qty_required !== null
+        ? Number(it.qty_required)
+        : null,
       optional: it.optional === true || it.is_optional === true,
-      sort: it.sort ?? it.sort_order ?? idx,
+      sort: Number.isFinite(it.sort ?? it.sort_order) ? (it.sort ?? it.sort_order) : idx,
     })),
   };
 }
@@ -279,6 +290,7 @@ function renderEditor(editor, leftPanel) {
         });
 
         const optBox = el('input', { type: 'checkbox', checked: ri.optional === true ? 'checked' : undefined });
+        optBox.checked = ri.optional === true;
         optBox.addEventListener('change', () => { ri.optional = optBox.checked; });
 
         const sortInput = el('input', {
@@ -306,12 +318,7 @@ function renderEditor(editor, leftPanel) {
   }
 
   itemsHeader.lastChild.onclick = () => {
-    _draft.items.push({
-      item_id: null,
-      qty_required: null,
-      optional: false,
-      sort: _draft.items.length,
-    });
+    _draft.items.push(blankRecipeItem(_draft.items.length));
     renderItemRows();
   };
 
