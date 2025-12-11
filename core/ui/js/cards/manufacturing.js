@@ -63,6 +63,8 @@ let _state = {
   movements: []
 };
 
+const recipeNameCache = (window._recipeNameCache = window._recipeNameCache || Object.create(null));
+
 export async function mountManufacturing() {
   await ensureToken();
   _state = { recipes: [], selectedRecipe: null, movements: [] };
@@ -116,6 +118,11 @@ async function renderNewRunForm(parent) {
   const recipeSelect = el('select', { id: 'run-recipe', style: 'width:100%;background:#2a2c30;color:#e6e6e6;border:1px solid #3a3d43;border-radius:10px;padding:10px;' });
   recipeSelect.append(el('option', { value: '' }, '— Select Recipe —'));
   _state.recipes.forEach(r => {
+    const id = r.id ?? r.recipe_id;
+    const nm = r.name ?? r.title ?? r.label ?? r.recipe_name ?? r.slug;
+    if (id != null && nm) {
+      recipeNameCache[String(id)] = String(nm);
+    }
     recipeSelect.append(el('option', { value: r.id }, r.name));
   });
 
@@ -312,26 +319,27 @@ async function loadRecentRuns30d() {
   const body = panel.querySelector('#mf-runs-body');
 
   try {
-    const [{ runs }, recipesRes] = await Promise.all([
-      apiGet('/app/manufacturing/runs?days=30'),
-      apiGet('/app/recipes').catch(() => ({})),
-    ]);
+    const { runs } = await apiGet('/app/manufacturing/runs?days=30');
 
-    const recMap = Object.create(null);
-    const list =
-      (recipesRes && (recipesRes.recipes || recipesRes.rows || recipesRes.items)) || [];
-    list.forEach(r => {
-      const rid = (r && (r.id ?? r.recipe_id));
-      if (rid == null) return;
-      const nm = (r.name ?? r.title ?? r.label ?? r.recipe_name ?? r.slug);
-      if (nm) recMap[String(rid)] = String(nm);
-    });
+    let remoteMap = Object.create(null);
+    try {
+      const recipesRes = await apiGet('/app/recipes');
+      const list = (recipesRes.recipes || recipesRes.rows || recipesRes.items || []);
+      list.forEach(r => {
+        const rid = (r.id ?? r.recipe_id);
+        const nm  = (r.name ?? r.title ?? r.label ?? r.recipe_name ?? r.slug);
+        if (rid != null && nm) remoteMap[String(rid)] = String(nm);
+      });
+    } catch (_) {
+      // ignore; we still have journal name or cache
+    }
 
     if (!runs || !runs.length) {
       body.innerHTML = '<div class="mf-runs-empty">No runs in the last 30 days.</div>';
       return;
     }
 
+    const cache = (window._recipeNameCache || Object.create(null));
     const frag = document.createDocumentFragment();
     runs.forEach(r => {
       const ts = r.timestamp || r._ts || '';
@@ -341,7 +349,8 @@ async function loadRecentRuns30d() {
       const rid = (r.recipe_id != null) ? String(r.recipe_id) : null;
       const recipeName =
         (r.recipe_name && String(r.recipe_name).trim()) ||
-        (rid && recMap[rid]) ||
+        (rid && cache[rid]) ||
+        (rid && remoteMap[rid]) ||
         (rid ? `Recipe #${rid}` : '(ad-hoc)');
       const row = document.createElement('div');
       row.className = 'mf-runs-grid mf-runs-row';
