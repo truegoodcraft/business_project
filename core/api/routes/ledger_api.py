@@ -6,7 +6,7 @@ import sqlite3
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -113,6 +113,13 @@ class ConsumeIn(BaseModel):
     source_id: Optional[str] = None
 
 
+class StockOutIn(BaseModel):
+    item_id: int
+    qty: int = Field(gt=0)
+    reason: Literal["sold", "loss", "theft", "other"] = "sold"
+    note: Optional[str] = None
+
+
 @router.post("/consume")
 @public_router.post("/consume")
 def consume(body: ConsumeIn, db: Session = Depends(get_session)):
@@ -191,6 +198,41 @@ def adjust_stock(body: AdjustmentInput, db: Session = Depends(get_session)):
             return {"ok": True}
         except InsufficientStock as e:
             raise HTTPException(status_code=400, detail={"shortages": e.shortages})
+
+
+@router.post("/stock/out")
+@public_router.post("/stock/out")
+def stock_out(body: StockOutIn, db: Session = Depends(get_session)):
+    try:
+        moves = sa_fifo_consume(
+            db,
+            int(body.item_id),
+            int(body.qty),
+            body.reason,
+            body.note,
+        )
+        db.commit()
+        lines = [
+            {
+                "batch_id": int(m.batch_id),
+                "qty": -int(m.qty_change),
+                "unit_cost_cents": int(m.unit_cost_cents or 0),
+            }
+            for m in moves
+        ]
+        _append_inventory_journal(
+            {
+                "type": body.reason,
+                "item_id": int(body.item_id),
+                "qty_change": -int(body.qty),
+                "unit_cost_cents": 0,
+                "source_kind": body.reason,
+                "source_id": body.note or None,
+            }
+        )
+        return {"ok": True, "lines": lines}
+    except InsufficientStock as e:
+        raise HTTPException(status_code=400, detail={"shortages": e.shortages})
 
 
 @router.get("/valuation")
