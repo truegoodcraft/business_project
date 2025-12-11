@@ -217,9 +217,19 @@ async function renderNewRunForm(parent) {
     statusMsg.textContent = '';
 
     try {
+      const recipeId = Number(_state.selectedRecipe.id);
+      const outputQty = Math.trunc(Number(_state.selectedRecipe.output_qty || 1) * Number(_state.multiplier || 1));
+
+      if (!Number.isInteger(recipeId) || recipeId <= 0) {
+        throw new Error('Select a valid recipe.');
+      }
+      if (!Number.isInteger(outputQty) || outputQty <= 0) {
+        throw new Error('Output quantity must be a positive integer.');
+      }
+
       await RecipesAPI.run({
-        recipe_id: _state.selectedRecipe.id,
-        output_qty: (_state.selectedRecipe.output_qty || 1) * (_state.multiplier || 1)
+        recipe_id: recipeId,
+        output_qty: outputQty
       });
       
       statusMsg.textContent = 'Run Complete!';
@@ -233,13 +243,16 @@ async function renderNewRunForm(parent) {
       runBtn.disabled = false;
       
     } catch (e) {
+      const payload = e?.payload || e?.data || {};
+      const shortages = payload?.shortages || payload?.detail?.shortages;
       if (e.status === 403) {
         statusMsg.textContent = 'Run blocked: unauthorized.';
-      } else if (e.status === 400 && e.data && e.data.detail && e.data.detail.shortages) {
-        const s = e.data.detail.shortages.map(x => `#${x.item_id}: need ${x.required}, have ${x.on_hand}, missing ${x.missing}`).join(' | ');
+      } else if (Array.isArray(shortages)) {
+        const s = shortages.map(x => `#${x.item_id}: need ${x.required}, have ${x.on_hand}, missing ${x.missing}`).join(' | ');
         statusMsg.textContent = `Insufficient stock → ${s}`;
       } else {
-        statusMsg.textContent = e?.detail || e?.data?.detail || e?.data?.detail?.message || e?.message || 'Run failed.';
+        const detail = payload?.detail?.message || payload?.detail || payload?.error;
+        statusMsg.textContent = detail || e?.message || 'Run failed.';
       }
       statusMsg.style.color = '#ff4444';
       runBtn.disabled = false;

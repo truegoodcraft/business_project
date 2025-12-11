@@ -69,12 +69,14 @@ async function parseBody(response) {
 
 function buildError(status, body, statusText) {
   const message =
-    (body && typeof body === 'object' && (body.error || body.message)) ||
+    (body && typeof body === 'object' && (body.error || body.message || body.detail)) ||
     (typeof body === 'string' && body) ||
     statusText ||
     `Request failed with status ${status}`;
   const error = new Error(message);
   error.status = status;
+  error.payload = body;
+  error.data = body;
   if (body && typeof body === 'object') {
     Object.assign(error, body);
   } else if (typeof body === 'string') {
