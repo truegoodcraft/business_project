@@ -41,12 +41,12 @@ function normalizeRecipe(data) {
     code: data.code || '',
     output_item_id: data.output_item_id ?? null,
     output_qty: data.output_qty || 1,
-    archived: Boolean(data.archived ?? data.is_archived),
+    archived: data.archived === true || data.is_archived === true,
     notes: data.notes || '',
     items: (data.items || []).map((it, idx) => ({
       item_id: it.item_id,
       qty_required: Number(it.qty_required || it.qty_stored || 0),
-      optional: Boolean(it.optional ?? it.is_optional),
+      optional: it.optional === true || it.is_optional === true,
       sort: it.sort ?? it.sort_order ?? idx,
     })),
   };
@@ -205,7 +205,7 @@ function renderEditor(editor, leftPanel) {
     id: 'recipe-output',
     style: 'flex:1;min-width:200px;padding:10px 12px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6'
   });
-  outSel.append(el('option', { value: '' }, '— Output Item —'));
+  outSel.append(el('option', { value: '', disabled: 'true', selected: _draft.output_item_id == null ? 'selected' : undefined }, '— Output Item —'));
   _items.forEach((i) => {
     outSel.append(
       el('option', { value: String(i.id) }, i.name)
@@ -225,7 +225,7 @@ function renderEditor(editor, leftPanel) {
 
   const flagsRow = el('div', { style: 'display:flex;gap:16px;align-items:center;margin-bottom:10px' });
   const archivedToggle = el('input', { type: 'checkbox' });
-  archivedToggle.checked = !!_draft.archived;
+  archivedToggle.checked = _draft.archived === true;
   archivedToggle.addEventListener('change', () => { _draft.archived = archivedToggle.checked; });
   flagsRow.append(archivedToggle, el('span', { text: 'Archived', style: 'color:#cdd1dc' }));
 
@@ -278,7 +278,7 @@ function renderEditor(editor, leftPanel) {
           ri.qty_required = Number.isFinite(parsed) ? parsed : null;
         });
 
-        const optBox = el('input', { type: 'checkbox', checked: ri.optional ? 'checked' : undefined });
+        const optBox = el('input', { type: 'checkbox', checked: ri.optional === true ? 'checked' : undefined });
         optBox.addEventListener('change', () => { ri.optional = optBox.checked; });
 
         const sortInput = el('input', {
@@ -345,7 +345,7 @@ function renderEditor(editor, leftPanel) {
       .map((it, idx) => ({
         item_id: it.item_id,
         qty_required: it.qty_required,
-        optional: Boolean(it.optional ?? it.is_optional),
+        optional: it.optional === true || it.is_optional === true,
         sort: (it.sort ?? it.sort_order ?? idx)
       }))
       .filter(it => it.item_id && it.qty_required !== null && it.qty_required !== '' && Number(it.qty_required) > 0);
@@ -369,7 +369,7 @@ function renderEditor(editor, leftPanel) {
       items: cleanedItems.map((it, idx) => ({
         item_id: Number(it.item_id),
         qty_required: Number(it.qty_required),
-        optional: Boolean(it.optional),
+        optional: it.optional === true,
         sort: Number.isFinite(it.sort) ? it.sort : idx,
       })),
     };
