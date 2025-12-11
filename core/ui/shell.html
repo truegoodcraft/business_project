@@ -15,8 +15,7 @@
     .tab{padding:10px 16px;cursor:pointer;border-left:4px solid transparent}
     .tab.active{background:#333;border-left-color:var(--accent);font-weight:600}
     .tab:hover:not(.active){background:#2a2a2a}
-    .nav-group{display:none;flex-direction:column;padding-left:16px;gap:4px;margin-top:4px}
-    .nav-group.open{display:flex}
+    .nav-group{display:flex;flex-direction:column;padding-left:16px;gap:4px;margin-top:4px}
     .nav-group .nav-item{padding:8px 16px;border-left:4px solid transparent;color:inherit;text-decoration:none;display:block;border-radius:4px}
     .nav-group .nav-item:hover{background:#2a2a2a}
     .nav-group .nav-item.nav-subitem{font-size:13px;color:#ccc}
@@ -65,8 +64,10 @@
     .hero-logo{max-width:420px;width:100%;height:auto;display:block;margin:16px auto}
     @media (max-width:480px){.app-logo{height:24px;margin-right:6px}}
     /* === Sidebar primary nav: centered with safe insets === */
-    #sidebar .nav{ list-style:none; margin:0; padding:0; }
-    #sidebar .nav > li > a{
+    #sidebar .nav,
+    #sidebar .sidebar-nav{ list-style:none; margin:0; padding:0; }
+    #sidebar .nav > li > a,
+    #sidebar .sidebar-nav > li > a{
       display:block;
       text-align:center;     /* center the link text */
       padding:8px 12px;      /* internal buffer */
@@ -76,7 +77,9 @@
       color:inherit;
     }
     #sidebar .nav > li > a:hover,
-    #sidebar .nav > li > a.active{
+    #sidebar .nav > li > a.active,
+    #sidebar .sidebar-nav > li > a:hover,
+    #sidebar .sidebar-nav > li > a.active{
       background:#2a2a2a;
     }
     /* Submenu links keep a slight indent but get touch-friendly padding */
@@ -113,25 +116,24 @@
   </script>
 </head>
 <body>
-  <nav id="sidebar">
+  <nav id="sidebar" class="sidebar">
     <div class="brand">
-      <a class="app-home" href="#/home" data-link="brand-home">
-        <img src="/brand/Flat-Dark.png?v=buscore-2" alt="BUS Core" class="app-logo">
-        <span class="app-title">BUS Core</span>
+      <!-- Top-left brand -->
+      <a class="tgc-brand" href="#/home" aria-label="Go to Dashboard/Home">
+        <span class="tgc-brand-title">BUS Core</span>
+        <span class="tgc-brand-beta">BETA</span>
       </a>
     </div>
-    <ul class="nav">
-      <li data-role="nav-tools">
-        <a href="#" data-link="tools" data-action="toggle-tools">Tools</a>
-        <ul data-role="tools-subnav" class="nav-group">
-          <li><a href="#/inventory" data-link="tools-inventory">Inventory</a></li>
-          <li><a href="#/manufacturing" data-link="tools-manufacturing" data-role="nav-link" data-route="manufacturing">Manufacturing</a></li>
-          <li><a href="#/recipes" data-link="tools-recipes" data-role="nav-link" data-route="recipes">Recipes</a></li>
-          <li><a href="#/contacts" data-link="tools-contacts">Contacts</a></li>
-        </ul>
-      </li>
-      <li><a href="#/admin" data-role="nav-link" data-route="admin">Admin</a></li>
-      <li><a href="#/settings" data-role="nav-link" data-route="settings">Settings</a></li>
+    <ul class="sidebar-nav">
+      <li><div class="nav-section nav-section--tools" role="heading" aria-level="2">Tools</div></li>
+      <li><a class="nav-link" href="#/manufacturing" data-role="nav-link" data-route="manufacturing">Manufacturing</a></li>
+      <li><a class="nav-link" href="#/inventory" data-role="nav-link" data-route="inventory">Inventory</a></li>
+      <li><a class="nav-link" href="#/contacts" data-role="nav-link" data-route="contacts">Contacts</a></li>
+      <li><a class="nav-link" href="#/recipes" data-role="nav-link" data-route="recipes">Recipes</a></li>
+
+      <li><div class="nav-section nav-section--system" role="heading" aria-level="2">System</div></li>
+      <li><a class="nav-link" href="#/settings" id="nav-settings" data-role="nav-link" data-route="settings">Settings</a></li>
+      <li><a class="nav-link" href="#/logs" id="nav-logs" data-role="nav-link" data-route="logs">Logs</a></li>
     </ul>
   </nav>
   <main id="main">
@@ -213,8 +215,8 @@
         <div data-role="settings-root"></div>
       </div>
 
-      <div data-role="admin-screen" class="hidden">
-        <div data-role="admin-root"></div>
+      <div data-role="logs-screen" class="hidden">
+        <div data-role="logs-root"></div>
       </div>
 
 <!-- Expense modal — locked MVP fields -->

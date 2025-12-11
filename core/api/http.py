@@ -117,6 +117,7 @@ from core.config.paths import (
     DB_URL,
 )
 from core.appdb.migrate import ensure_vendors_flags
+from core.appdb.models import Base
 from core.appdb.paths import ui_dir
 
 if os.name == "nt":  # pragma: no cover - windows specific
@@ -310,7 +311,10 @@ def _ensure_schema_upgrades(db: Session) -> None:
 
 @app.on_event("startup")
 def startup_migrations():
-    ensure_vendors_flags(get_engine())
+    engine = get_engine()
+    # Ensure all declared tables exist before running additive patches.
+    Base.metadata.create_all(bind=engine)
+    ensure_vendors_flags(engine)
     db = next(get_session())
     try:
         _ensure_schema_upgrades(db)

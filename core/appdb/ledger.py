@@ -7,10 +7,10 @@ from sqlalchemy.orm import Session
 from core.appdb.models import Item, ItemBatch, ItemMovement
 
 
-def on_hand_qty(session: Session, item_id: int) -> float:
-    return float(
+def on_hand_qty(session: Session, item_id: int) -> int:
+    return int(
         session.execute(
-            select(func.coalesce(func.sum(ItemBatch.qty_remaining), 0.0)).where(ItemBatch.item_id == item_id)
+            select(func.coalesce(func.sum(ItemBatch.qty_remaining), 0)).where(ItemBatch.item_id == item_id)
         ).scalar_one()
     )
 
@@ -22,13 +22,13 @@ class InsufficientStock(Exception):
 
 
 def fifo_consume(
-    session: Session, item_id: int, qty_needed: float, source_kind: str, source_id: Optional[int]
+    session: Session, item_id: int, qty_needed: int, source_kind: str, source_id: Optional[int]
 ) -> List[ItemMovement]:
     if qty_needed <= 0:
         return []
 
     avail = on_hand_qty(session, item_id)
-    if avail + 1e-9 < qty_needed:
+    if avail < qty_needed:
         raise InsufficientStock(
             [
                 {
@@ -43,7 +43,7 @@ def fifo_consume(
     batches = (
         session.execute(
             select(ItemBatch)
-            .where(ItemBatch.item_id == item_id, ItemBatch.qty_remaining > 1e-12)
+            .where(ItemBatch.item_id == item_id, ItemBatch.qty_remaining > 0)
             .order_by(asc(ItemBatch.created_at), asc(ItemBatch.id))
         )
         .scalars()
@@ -53,9 +53,9 @@ def fifo_consume(
     moves: List[ItemMovement] = []
     remaining = qty_needed
     for batch in batches:
-        if remaining <= 1e-9:
+        if remaining <= 0:
             break
-        take = min(batch.qty_remaining, remaining)
+        take = int(min(batch.qty_remaining, remaining))
         batch.qty_remaining -= take
         remaining -= take
         mv = ItemMovement(
@@ -70,7 +70,7 @@ def fifo_consume(
         session.add(mv)
         moves.append(mv)
 
-    if remaining > 1e-9:
+    if remaining > 0:
         raise InsufficientStock(
             [
                 {
@@ -83,14 +83,14 @@ def fifo_consume(
         )
     item = session.get(Item, item_id)
     if item:
-        item.qty_stored = (item.qty_stored or 0) - qty_needed
+        item.qty_stored = int((item.qty_stored or 0) - qty_needed)
     return moves
 
 
 def add_batch(
     session: Session,
     item_id: int,
-    qty: float,
+    qty: int,
     unit_cost_cents: int,
     source_kind: str,
     source_id: Optional[int],

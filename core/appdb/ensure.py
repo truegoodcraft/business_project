@@ -52,9 +52,11 @@ def ensure_schema() -> Dict[str, Any]:
                 vendor_id INTEGER,
                 sku TEXT,
                 name TEXT NOT NULL,
-                uom TEXT NOT NULL DEFAULT 'ea',          -- 'ea','g','mm','mm2','mm3'
+                uom TEXT NOT NULL DEFAULT 'ea',          -- display unit (legacy)
+                dimension TEXT NOT NULL DEFAULT 'count',
                 qty_stored INTEGER NOT NULL DEFAULT 0,   -- canonical on-hand (int)
                 price REAL DEFAULT 0,
+                is_product BOOLEAN NOT NULL DEFAULT 0,
                 notes TEXT,
                 item_type TEXT,
                 location TEXT,
@@ -63,6 +65,19 @@ def ensure_schema() -> Dict[str, Any]:
             """
             )
             created["items"] = True
+        else:
+            for col, ddl in [
+                (
+                    "dimension",
+                    "ALTER TABLE items ADD COLUMN dimension TEXT NOT NULL DEFAULT 'count'",
+                ),
+                (
+                    "is_product",
+                    "ALTER TABLE items ADD COLUMN is_product BOOLEAN NOT NULL DEFAULT 0",
+                ),
+            ]:
+                if not col_exists("items", col):
+                    cur.execute(ddl)
 
         # ITEM BATCHES (cost layers)
         cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='item_batches'")
@@ -72,8 +87,8 @@ def ensure_schema() -> Dict[str, Any]:
             CREATE TABLE item_batches (
                 id INTEGER PRIMARY KEY,
                 item_id INTEGER NOT NULL REFERENCES items(id),
-                qty_initial REAL NOT NULL,
-                qty_remaining REAL NOT NULL,
+                qty_initial INTEGER NOT NULL,
+                qty_remaining INTEGER NOT NULL,
                 unit_cost_cents INTEGER NOT NULL,
                 source_kind TEXT NOT NULL,
                 source_id TEXT,
@@ -96,7 +111,7 @@ def ensure_schema() -> Dict[str, Any]:
                 id INTEGER PRIMARY KEY,
                 item_id INTEGER NOT NULL REFERENCES items(id),
                 batch_id INTEGER REFERENCES item_batches(id),
-                qty_change REAL NOT NULL,                  -- +in / -out (physical)
+                qty_change INTEGER NOT NULL,               -- +in / -out (physical)
                 unit_cost_cents INTEGER DEFAULT 0,         -- snapshot
                 source_kind TEXT NOT NULL,
                 source_id TEXT,
@@ -118,29 +133,34 @@ def ensure_schema() -> Dict[str, Any]:
             CREATE TABLE recipes (
                 id INTEGER PRIMARY KEY,
                 name TEXT NOT NULL,
-                code TEXT UNIQUE,
-                output_item_id INTEGER,
-                output_qty REAL NOT NULL DEFAULT 1.0,
-                is_archived BOOLEAN NOT NULL DEFAULT 0,
+                code TEXT,
+                output_item_id INTEGER NOT NULL,
+                output_qty INTEGER NOT NULL DEFAULT 1,
+                archived BOOLEAN NOT NULL DEFAULT 0,
                 notes TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
-            """
+                """
             )
             created["recipes"] = True
         else:
             for col, ddl in [
                 ("code", "ALTER TABLE recipes ADD COLUMN code TEXT"),
-                ("output_item_id", "ALTER TABLE recipes ADD COLUMN output_item_id INTEGER"),
-                ("output_qty", "ALTER TABLE recipes ADD COLUMN output_qty REAL NOT NULL DEFAULT 1.0"),
-                ("is_archived", "ALTER TABLE recipes ADD COLUMN is_archived BOOLEAN NOT NULL DEFAULT 0"),
+                ("output_item_id", "ALTER TABLE recipes ADD COLUMN output_item_id INTEGER NOT NULL DEFAULT 0"),
+                ("output_qty", "ALTER TABLE recipes ADD COLUMN output_qty INTEGER NOT NULL DEFAULT 1"),
+                (
+                    "archived",
+                    "ALTER TABLE recipes ADD COLUMN archived BOOLEAN NOT NULL DEFAULT 0",
+                ),
                 ("created_at", "ALTER TABLE recipes ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP"),
                 ("updated_at", "ALTER TABLE recipes ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP"),
             ]:
-                if not col_exists("recipes", col):
+                if not col_exists("recipes", col) and not (
+                    col == "archived" and col_exists("recipes", "is_archived")
+                ):
                     cur.execute(ddl)
-            cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_recipes_code ON recipes(code)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_recipes_code ON recipes(code)")
 
         # RECIPE ITEMS
         cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='recipe_items'")
@@ -151,7 +171,7 @@ def ensure_schema() -> Dict[str, Any]:
                 id INTEGER PRIMARY KEY,
                 recipe_id INTEGER NOT NULL REFERENCES recipes(id),
                 item_id INTEGER NOT NULL REFERENCES items(id),
-                qty_required REAL NOT NULL,
+                qty_required INTEGER NOT NULL,
                 is_optional BOOLEAN NOT NULL DEFAULT 0,
                 sort_order INTEGER NOT NULL DEFAULT 0,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -162,7 +182,7 @@ def ensure_schema() -> Dict[str, Any]:
             created["recipe_items"] = True
         else:
             for col, ddl in [
-                ("qty_required", "ALTER TABLE recipe_items ADD COLUMN qty_required REAL NOT NULL DEFAULT 0"),
+                ("qty_required", "ALTER TABLE recipe_items ADD COLUMN qty_required INTEGER NOT NULL DEFAULT 0"),
                 ("is_optional", "ALTER TABLE recipe_items ADD COLUMN is_optional BOOLEAN NOT NULL DEFAULT 0"),
                 ("sort_order", "ALTER TABLE recipe_items ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0"),
                 ("created_at", "ALTER TABLE recipe_items ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP"),
@@ -180,7 +200,7 @@ def ensure_schema() -> Dict[str, Any]:
                 id INTEGER PRIMARY KEY,
                 recipe_id INTEGER,
                 output_item_id INTEGER NOT NULL,
-                output_qty REAL NOT NULL,
+                output_qty INTEGER NOT NULL,
                 status TEXT NOT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 executed_at DATETIME,

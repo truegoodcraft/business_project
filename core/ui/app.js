@@ -19,7 +19,6 @@
 
 import { ensureToken } from "./js/token.js";
 import { mountBackupExport } from "./js/cards/backup.js";
-import { mountAdmin } from "./js/cards/admin.js";
 import mountVendors from "./js/cards/vendors.js";
 import { mountHome } from "./js/cards/home.js";
 import "./js/cards/home_donuts.js";
@@ -34,7 +33,7 @@ const ROUTES = {
   '#/recipes': showRecipes,
   '#/contacts': showContacts,
   '#/settings': showSettings,
-  '#/admin': showAdmin,
+  '#/logs': showLogs,
   '#/home': showHome,
   '#/': showInventory,
   '': showInventory,
@@ -79,8 +78,8 @@ function clearCardHost() {
   const settingsHost = document.querySelector('[data-role="settings-root"]');
   const manufacturingHost = document.querySelector('[data-tab-panel="manufacturing"]');
   const recipesHost = document.querySelector('[data-tab-panel="recipes"]');
-  const adminHost = document.querySelector('[data-role="admin-root"]');
-  [root, inventoryHost, contactsHost, settingsHost, manufacturingHost, recipesHost, adminHost].forEach((node) => {
+  const logsHost = document.querySelector('[data-role="logs-root"]');
+  [root, inventoryHost, contactsHost, settingsHost, manufacturingHost, recipesHost, logsHost].forEach((node) => {
     if (node) node.innerHTML = '';
   });
 }
@@ -88,6 +87,12 @@ function clearCardHost() {
 async function onRouteChange() {
   await ensureToken();
   const hash = getHash();
+
+  if (hash === '#/admin') {
+    location.hash = '#/settings';
+    return;
+  }
+
   const route = normalizeRoute(hash);
   setActiveNav(route);
 
@@ -118,7 +123,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 async function showContacts() {
   // Close Tools drawer if open
-  document.querySelector('[data-role="tools-subnav"]')?.classList.remove('open');
   unmountInventory();
   unmountManufacturing();
   unmountRecipes();
@@ -126,7 +130,7 @@ async function showContacts() {
   document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="admin-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
   const contactsScreen = document.querySelector('[data-role="contacts-screen"]');
   contactsScreen?.classList.remove('hidden');
   await ensureContactsMounted();
@@ -138,7 +142,7 @@ async function showInventory() {
   document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="admin-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
   unmountManufacturing();
   unmountRecipes();
   document.querySelector('[data-role="inventory-screen"]')?.classList.remove('hidden');
@@ -151,28 +155,12 @@ async function showManufacturing() {
   document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="admin-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
   const screen = document.querySelector('[data-role="manufacturing-screen"]');
   screen?.classList.remove('hidden');
   unmountInventory();
   unmountRecipes();
   await mountManufacturing();
-}
-
-async function showAdmin() {
-  document.querySelector('[data-role="home-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
-  unmountInventory();
-  unmountManufacturing();
-  unmountRecipes();
-  const adminScreen = document.querySelector('[data-role="admin-screen"]');
-  adminScreen?.classList.remove('hidden');
-  const host = document.querySelector('[data-role="admin-root"]');
-  if (host) mountAdmin(host);
 }
 
 async function showSettings() {
@@ -183,15 +171,36 @@ async function showSettings() {
   showScreen(null);
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="admin-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
   const settingsScreen = document.querySelector('[data-role="settings-screen"]');
   settingsScreen?.classList.remove('hidden');
-  if (!settingsMounted) {
-    const host = document.querySelector('[data-role="settings-root"]');
-    if (host) {
-      settingsCard(host);
-      settingsMounted = true;
-    }
+  const host = document.querySelector('[data-role="settings-root"]');
+  if (host && (!settingsMounted || !host.hasChildNodes())) {
+    settingsCard(host);
+    settingsMounted = true;
+  }
+}
+
+async function showLogs() {
+  unmountInventory();
+  unmountManufacturing();
+  unmountRecipes();
+  document.querySelector('[data-role="home-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
+  const logsScreen = document.querySelector('[data-role="logs-screen"]');
+  logsScreen?.classList.remove('hidden');
+  const host = document.querySelector('[data-role="logs-root"]');
+  if (host && !host.hasChildNodes()) {
+    host.innerHTML = `
+      <section class="card">
+        <h1 style="margin-top:0;margin-bottom:8px;">Logs</h1>
+        <div id="log-feed" aria-live="polite">Log feed coming soon.</div>
+      </section>
+    `;
   }
 }
 
@@ -204,7 +213,7 @@ async function showHome() {
   unmountManufacturing();
   unmountRecipes();
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="admin-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
 }
 
 async function showRecipes() {
@@ -213,53 +222,13 @@ async function showRecipes() {
   document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
-  document.querySelector('[data-role="admin-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
   const recipesScreen = document.querySelector('[data-role="recipes-screen"]');
   recipesScreen?.classList.remove('hidden');
   unmountInventory();
   unmountManufacturing();
   await mountRecipes();
 }
-
-// Tools drawer: open on hover, click locks/unlocks
-(function initToolsDrawer() {
-  const navTools     = document.querySelector('[data-role="nav-tools"]');
-  const toolsToggle  = document.querySelector('[data-action="toggle-tools"]');
-  const drawer       = document.querySelector('[data-role="tools-subnav"]');
-  const inventoryLink= document.querySelector('[data-link="tools-inventory"]');
-  const manufacturingLink = document.querySelector('[data-link="tools-manufacturing"]');
-  const recipesLink = document.querySelector('[data-link="tools-recipes"]');
-  const contactsLink = document.querySelector('[data-link="tools-contacts"], a[href="#/contacts"]');
-
-  if (!navTools || !drawer) return;
-
-  let locked = false;
-
-  // Hover behavior
-  navTools.addEventListener('mouseenter', () => {
-    drawer.classList.add('open');
-  });
-  navTools.addEventListener('mouseleave', () => {
-    if (!locked) drawer.classList.remove('open');
-  });
-
-  // Click to lock/unlock (SoT-compatible)
-  if (toolsToggle) {
-    toolsToggle.addEventListener('click', (e) => {
-      e.preventDefault();
-      locked = !locked;
-      drawer.classList.toggle('open', locked);
-    });
-  }
-
-  // Navigating away always closes + unlocks
-  const closeAndUnlock = () => { locked = false; drawer.classList.remove('open'); };
-  if (inventoryLink) inventoryLink.addEventListener('click', closeAndUnlock);
-  if (manufacturingLink) manufacturingLink.addEventListener('click', closeAndUnlock);
-  if (recipesLink) recipesLink.addEventListener('click', closeAndUnlock);
-  if (contactsLink)  contactsLink.addEventListener('click', closeAndUnlock);
-  window.addEventListener('hashchange', closeAndUnlock);
-})();
 
 function initManufacturing() {
   const form = document.querySelector('[data-role="mfg-run-form"]');

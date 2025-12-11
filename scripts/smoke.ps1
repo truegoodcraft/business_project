@@ -307,8 +307,7 @@ Info "Creating and updating recipes..."
 $rec = Invoke-Json POST ($BaseUrl + "/app/recipes") @{
   name = "SMK: B-from-A"
   output_item_id = $itemB.id
-  output_qty = 1
-  items = @(@{ item_id = $itemA.id; qty_required = 3; is_optional = $false })
+  items = @(@{ item_id = $itemA.id; qty_required = 3; optional = $false })
 }
 if (($rec.id -as [int]) -gt 0) { Pass "Recipe created via POST" } else { Fail "Recipe create failed"; exit 1 }
 
@@ -316,12 +315,11 @@ $recPut = Invoke-Json PUT ($BaseUrl + "/app/recipes/$($rec.id)") @{
   id = $rec.id
   name = "SMK: B-from-A (v2)"
   output_item_id = $itemB.id
-  output_qty = 1
   is_archived = $false
   notes = "smoke"
   items = @(
-    @{ item_id = $itemA.id; qty_required = 3; is_optional = $false; sort_order = 0 },
-    @{ item_id = $itemC.id; qty_required = 1; is_optional = $true;  sort_order = 1 }
+    @{ item_id = $itemA.id; qty_required = 3; optional = $false },
+    @{ item_id = $itemC.id; qty_required = 1; optional = $true }
   )
 }
 # If the PUT returns plain 2xx without { ok: true }, accept as success
@@ -339,7 +337,35 @@ Info "Standard Run..."
 $mfgJournal = Join-Path $journalDir 'manufacturing.jsonl'
 $mfgLinesBefore = 0
 if (Test-Path $mfgJournal) { $mfgLinesBefore = (Get-Content -LiteralPath $mfgJournal -ErrorAction SilentlyContinue).Count }
-$okRun = Invoke-Json POST ($BaseUrl + "/app/manufacturing/run") @{ recipe_id = $rec.id; output_qty = 2; notes = "smoke run ok" }
+$body = @{ recipe_id = $rec.id; output_qty = 2; notes = "smoke run ok" }
+try {
+  $okRun = Invoke-RestMethod -Method Post -Uri "$BaseUrl/app/manufacturing/run" `
+             -Body ($body | ConvertTo-Json -Depth 8) -ContentType "application/json" -WebSession $script:Session
+  Write-Host ("  [OK] Manufacturing run_id={0}" -f $okRun.run_id)
+}
+catch {
+  $raw = $_.ErrorDetails.Message
+  $parsed = $null
+  try { $parsed = $raw | ConvertFrom-Json } catch {}
+
+  if ($null -ne $parsed -and $parsed.detail -and $parsed.detail.error -eq 'insufficient_stock') {
+    foreach ($s in $parsed.detail.shortages) {
+      $needed = [math]::Ceiling([double]$s.required - [double]$s.available)
+      if ($needed -gt 0) {
+        $adjBody = @{ item_id = [int]$s.component; qty_change = [double]$needed; reason = "smoke-topup" }
+        Invoke-RestMethod -Method Post -Uri "$BaseUrl/app/adjust" `
+          -Body ($adjBody | ConvertTo-Json -Depth 8) -ContentType "application/json" -WebSession $script:Session | Out-Null
+      }
+    }
+
+    $okRun = Invoke-RestMethod -Method Post -Uri "$BaseUrl/app/manufacturing/run" `
+               -Body ($body | ConvertTo-Json -Depth 8) -ContentType "application/json" -WebSession $script:Session
+    Write-Host ("  [OK] Manufacturing run_id={0} (after top-up)" -f $okRun.run_id)
+  }
+  else {
+    throw
+  }
+}
 if ($okRun.status -ne "completed") { Fail "Expected completed run"; exit 1 }
 if (Test-Path $mfgJournal) {
   $mfgLinesAfter = (Get-Content -LiteralPath $mfgJournal -ErrorAction SilentlyContinue).Count

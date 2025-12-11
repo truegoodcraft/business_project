@@ -2,7 +2,47 @@
 // Inventory card with smart input parsing.
 
 import { apiGetJson, apiPost, apiPut, apiDelete, ensureToken } from '../api.js';
-import { parseSmartInput } from '../utils/parser.js';
+
+const UNIT_OPTIONS = {
+  length: ['mm', 'cm', 'm'],
+  area: ['mm2', 'cm2', 'm2'],
+  volume: ['mm3', 'cm3', 'm3', 'ml'],
+  weight: ['mg', 'g', 'kg'],
+  count: ['ea'],
+};
+
+const BASE_UNIT_LABEL = {
+  length: 'mm',
+  area: 'mm²',
+  volume: 'mm³',
+  weight: 'mg',
+  count: 'milli-units',
+};
+
+const UNIT_LABEL = {
+  mm: 'mm',
+  cm: 'cm',
+  m: 'm',
+  mm2: 'mm²',
+  cm2: 'cm²',
+  m2: 'm²',
+  mm3: 'mm³',
+  cm3: 'cm³',
+  m3: 'm³',
+  ml: 'ml',
+  mg: 'mg',
+  g: 'g',
+  kg: 'kg',
+  ea: 'ea',
+};
+
+const MULT = {
+  length: { mm: 1, cm: 10, m: 1000 },
+  area: { mm2: 1, cm2: 100, m2: 1_000_000 },
+  volume: { mm3: 1, cm3: 1_000, m3: 1_000_000_000, ml: 1_000 },
+  weight: { mg: 1, g: 1_000, kg: 1_000_000 },
+  count: { ea: 1_000 },
+};
 
 // Keep delegated handler binding stable across route changes
 let _rootEl = null;
@@ -64,18 +104,70 @@ async function fetchItems(state) {
   return state.items;
 }
 
+function formatMoney(n) {
+  const v = Number(n ?? 0);
+  return v.toLocaleString(undefined, { style: 'currency', currency: 'USD' });
+}
+
+function formatItemPrice(item) {
+  if (item?.is_product) {
+    return item?.price != null ? formatMoney(item.price) : '—';
+  }
+  return item?.fifo_unit_cost_display || (item?.price != null ? formatMoney(item.price) : '—');
+}
+
+// Shared on-hand quantity formatter used by main table and (previously) details.
+// Order of preference:
+// 1) server-provided on-hand display (unit + value),
+// 2) server-provided on-hand int + dimension-aware fallback,
+// 3) legacy quantity_display or final zero fallback.
+function formatOnHandDisplay(item) {
+  const sod = item.stock_on_hand_display;
+  if (sod && sod.unit && sod.value != null) {
+    return `${sod.value} ${sod.unit}`;
+  }
+
+  const v = (typeof item.stock_on_hand_int === 'number')
+    ? item.stock_on_hand_int
+    : (typeof item.quantity_int === 'number' ? item.quantity_int : 0);
+
+  switch (item.dimension) {
+    case 'count': {
+      const ea = (v / 1000).toFixed(3);
+      return `${ea} ea`;
+    }
+    case 'length':
+      return `${v} mm`;
+    case 'area':
+      return `${v} mm²`;
+    case 'volume':
+      return `${v} mm³`;
+    case 'weight':
+      return `${v} mg`;
+    default:
+      break;
+  }
+
+  if (item.quantity_display?.value && item.quantity_display?.unit) {
+    return `${item.quantity_display.value} ${item.quantity_display.unit}`;
+  }
+
+  return '0';
+}
+
 function renderTable(state) {
   const tbody = state.tableBody;
   tbody.innerHTML = '';
   state.items.forEach((item) => {
     const row = el('tr', { 'data-role': 'item-row', 'data-id': item.id });
+    const vendorText = item.vendor?.name || item.vendor || '—';
+    const priceText = formatItemPrice(item);
     row.append(
-      el('td', { text: item.name || 'Item' }),
-      el('td', { text: item.sku || '—' }),
-      el('td', { text: `${item.qty ?? 0} ${item.unit || ''}`.trim() }),
-      el('td', { text: item.vendor || '—' }),
-      el('td', { text: item.price != null ? `$${Number(item.price).toFixed(2)}` : '—' }),
-      el('td', { text: item.location || '—' })
+      el('td', { class: 'c', text: item.name || 'Item' }),
+      el('td', { class: 'c', text: formatOnHandDisplay(item) }),
+      el('td', { class: 'c', text: priceText }),
+      el('td', { class: 'c', text: vendorText }),
+      el('td', { class: 'c', text: item.location || '—' }),
     );
     tbody.append(row);
   });
@@ -98,19 +190,21 @@ export async function _mountInventory(container) {
   const controls = el('div', { class: 'inventory-controls toolbar' }, [
     el('button', { id: 'add-item-btn', class: 'btn', 'data-role': 'btn-add-item' }, '+ Add Item'),
   ]);
-  const table = el('table', { id: 'items-table', class: 'table-clickable' }, [
-    el('thead', {}, [
-      el('tr', {}, [
-        el('th', { text: 'Name' }),
-        el('th', { text: 'SKU' }),
-        el('th', { text: 'Qty' }),
-        el('th', { text: 'Vendor' }),
-        el('th', { text: 'Price' }),
-        el('th', { text: 'Location' })
-      ]),
+  const table = el('table', { id: 'inventory-table', class: 'table-clickable inventory-table' });
+  const colgroup = el('colgroup');
+  ['20%', '20%', '20%', '20%', '20%'].forEach((width) => {
+    colgroup.append(el('col', { style: `width:${width}` }));
+  });
+  const thead = el('thead', {}, [
+    el('tr', {}, [
+      el('th', { text: 'Name' }),
+      el('th', { text: 'Quantity' }),
+      el('th', { text: 'Price' }),
+      el('th', { text: 'Vendor' }),
+      el('th', { text: 'Location' }),
     ]),
-    el('tbody'),
   ]);
+  table.append(colgroup, thead, el('tbody'));
   container.append(controls, table);
   state.tableBody = table.querySelector('tbody');
 
@@ -127,7 +221,7 @@ export async function _mountInventory(container) {
       const id = Number(row.getAttribute('data-id'));
       const item = state.items.find((it) => it.id === id);
       if (!item) return;
-      toggleDetailsRow(table, row, item);
+      await toggleDetailsRow(table, row, item);
       return;
     }
     if (!btn) return;
@@ -151,26 +245,59 @@ export async function _mountInventory(container) {
     return el('div', { class: 'kv' }, [ el('div', { class: 'k', text: label }), el('div', { class: 'v', text: value }) ]);
   }
 
-  function toggleDetailsRow(tableEl, rowEl, item) {
-    // Collapse if already open
+  async function toggleDetailsRow(tableEl, rowEl, item) {
     if (rowEl.nextElementSibling && rowEl.nextElementSibling.classList.contains('row-details')) {
       rowEl.nextElementSibling.remove();
       return;
     }
-    // Close any other open details
+
     tableEl.querySelectorAll('.row-details').forEach((r) => r.remove());
+
+    let detail = item;
+    try {
+      detail = await apiGetJson(`/app/items/${item.id}`);
+      if (detail && typeof detail === 'object') {
+        state.items = state.items.map((it) => (it.id === item.id ? { ...it, ...detail } : it));
+      }
+    } catch (err) {
+      detail = { ...item, _error: err?.message || 'Unable to load details' };
+    }
+
     const colCount = tableEl.querySelector('thead tr').children.length || rowEl.children.length;
+    const priceText = formatItemPrice(detail);
+    const kvNodes = [
+      detail.sku ? kv('SKU', detail.sku) : null,
+      kv('Vendor', detail.vendor || '—'),
+      kv('Price', priceText),
+      kv('Location', detail.location || '—'),
+    ].filter(Boolean);
+
+    const batchRows = (detail.batches_summary && detail.batches_summary.length)
+      ? detail.batches_summary.map((b) => el('tr', {}, [
+          el('td', { text: b.entered ? new Date(b.entered).toLocaleDateString() : '—' }),
+          el('td', { text: `${b.remaining_int} / ${b.original_int}` }),
+          el('td', { text: b.unit_cost_display || '—' }),
+        ]))
+      : [el('tr', {}, [el('td', { class: 'c', colspan: '3', text: 'No batches' })])];
+
+    const batchTable = el('table', { class: 'subtable' }, [
+      el('thead', {}, [
+        el('tr', {}, [
+          el('th', { text: 'Entered' }),
+          el('th', { text: 'Remaining / Original' }),
+          el('th', { text: 'Unit Cost' }),
+        ]),
+      ]),
+      el('tbody', {}, batchRows),
+    ]);
+
     const details = el('tr', { class: 'row-details' }, [
       el('td', { colspan: String(colCount) }, [
         el('div', { class: 'details' }, [
-          el('div', { class: 'grid' }, [
-            kv('SKU', item.sku || '—'),
-            kv('Quantity', `${item.qty ?? 0} ${item.unit || ''}`.trim()),
-            kv('Vendor', item.vendor || '—'),
-            kv('Price', item.price != null ? `$${Number(item.price).toFixed(2)}` : '—'),
-            kv('Location', item.location || '—'),
-          ]),
-          item.notes ? el('div', { class: 'notes', text: item.notes }) : null,
+          kvNodes.length ? el('div', { class: 'grid' }, kvNodes) : null,
+          detail.notes ? el('div', { class: 'notes', text: detail.notes }) : null,
+          batchTable,
+          detail._error ? el('div', { class: 'notes', text: detail._error }) : null,
           el('div', { class: 'row-actions' }, [
             el('button', { type: 'button', 'data-action': 'edit', 'data-id': item.id }, 'Edit'),
             el('button', { type: 'button', 'data-action': 'delete', 'data-id': item.id, class: 'danger' }, 'Delete'),
@@ -178,6 +305,7 @@ export async function _mountInventory(container) {
         ]),
       ]),
     ]);
+
     rowEl.after(details);
   }
 
@@ -226,26 +354,100 @@ export function openItemModal(item = null) {
   title.textContent = (isEdit ? 'Edit' : 'Add') + ' Item';
   card.appendChild(title);
 
+  const errorBanner = document.createElement('div');
+  errorBanner.id = 'add-item-error';
+  errorBanner.className = 'error-banner';
+  errorBanner.hidden = true;
+  card.appendChild(errorBanner);
+
   // FORM state
   let expanded = !!(item?.sku || item?.vendor_id || item?.notes);
 
   // Elements – Speed Surface
   const fName = inputRow('Name', 'text', item?.name ?? '', { autofocus: true });
-  const qtyWrap = inputRow('Smart Qty', 'text', '', { placeholder: 'e.g. 10 kg or 5\'' });
-  const qtyInput = qtyWrap.querySelector('input');
-  const qtyBadge = document.createElement('span');
-  qtyBadge.style.display = 'inline-block';
-  qtyBadge.style.marginLeft = '8px';
-  qtyBadge.style.padding = '2px 8px';
-  qtyBadge.style.border = '1px solid var(--border)';
-  qtyBadge.style.borderRadius = '8px';
-  qtyBadge.style.opacity = '0.8';
-  qtyBadge.style.fontSize = '12px';
-  qtyBadge.textContent = 'Waiting for input…';
-  qtyWrap.querySelector('.field-input').appendChild(qtyBadge);
+  const dimensionSelect = createSelect('item-dimension', [
+    ['length', 'Length'],
+    ['area', 'Area'],
+    ['volume', 'Volume'],
+    ['weight', 'Weight'],
+    ['count', 'Count'],
+  ]);
+  const dimensionRow = fieldRowWithElement('Dimension', dimensionSelect);
 
-  const fPrice = inputRow('Price', 'number', item?.price ?? '', { step: '0.01' });
+  const unitSelect = createSelect('item-unit');
+  const unitRow = fieldRowWithElement('Unit', unitSelect);
+
+  const qtyInput = document.createElement('input');
+  qtyInput.type = 'number';
+  qtyInput.id = 'item-qty-dec';
+  qtyInput.setAttribute('step', '0.001');
+  qtyInput.setAttribute('min', '0');
+  qtyInput.required = true;
+  const qtyRow = fieldRowWithElement('Quantity', qtyInput);
+
+  const qtyPreview = document.createElement('div');
+  qtyPreview.id = 'item-qty-preview';
+  qtyPreview.className = 'muted';
+
+  const costInput = document.createElement('input');
+  costInput.type = 'number';
+  costInput.id = 'item-cost-dec';
+  costInput.setAttribute('step', '0.01');
+  costInput.setAttribute('min', '0');
+  const costRow = fieldRowWithElement('Unit Cost', costInput);
+
+  const isProductInput = document.createElement('input');
+  isProductInput.type = 'checkbox';
+  isProductInput.id = 'item-is-product';
+  const productLabel = document.createElement('label');
+  productLabel.className = 'inline-check';
+  productLabel.htmlFor = 'item-is-product';
+  productLabel.append(isProductInput, document.createTextNode('This is a product (use fixed price)'));
+  const productRow = fieldRowWithElement('', productLabel);
+  productRow.classList.add('inline-row');
+
+  const fPrice = inputRow('Price', 'number', item?.price ?? '', { step: '0.01', min: '0' });
+  const priceInput = fPrice.querySelector('input');
+  if (priceInput) priceInput.id = 'item-price-dec';
   const fLocation = inputRow('Location', 'text', item?.location ?? '');
+
+  let addBatchToggleRow = null;
+  let addBatchToggle = null;
+  let batchFields = null;
+  let addBatchBtnRow = null;
+  let addBatchBtn = null;
+
+  if (!isEdit) {
+    addBatchToggle = document.createElement('input');
+    addBatchToggle.type = 'checkbox';
+    addBatchToggle.id = 'item-add-batch';
+    addBatchToggle.checked = true;
+    const addBatchLabel = document.createElement('label');
+    addBatchLabel.className = 'inline-check';
+    addBatchLabel.htmlFor = 'item-add-batch';
+    addBatchLabel.append(addBatchToggle, document.createTextNode('Add opening batch now'));
+    addBatchToggleRow = fieldRowWithElement('', addBatchLabel);
+    addBatchToggleRow.classList.add('inline-row');
+
+    batchFields = document.createElement('div');
+    batchFields.id = 'field-batch';
+    batchFields.append(qtyRow, costRow, qtyPreview);
+  }
+
+  if (isEdit && item?.id) {
+    addBatchBtnRow = document.createElement('div');
+    addBatchBtnRow.className = 'field-row';
+    const spacer = document.createElement('label');
+    spacer.textContent = '';
+    const wrap = document.createElement('div');
+    wrap.className = 'field-input';
+    addBatchBtn = document.createElement('button');
+    addBatchBtn.type = 'button';
+    addBatchBtn.className = 'btn';
+    addBatchBtn.textContent = 'Add Batch';
+    wrap.appendChild(addBatchBtn);
+    addBatchBtnRow.append(spacer, wrap);
+  }
 
   // Elements – Hinge
   const hinge = document.createElement('button');
@@ -317,17 +519,25 @@ export function openItemModal(item = null) {
   // Assemble card
   const content = document.createElement('div');
   content.className = 'modal-body';
-  content.append(fName, qtyWrap, fPrice, fLocation, hinge, ledger, footer);
+  const divider = document.createElement('hr');
+  divider.className = 'thin';
+
+  content.append(fName, dimensionRow, unitRow, productRow, fPrice, divider);
+  if (addBatchToggleRow) content.append(addBatchToggleRow);
+  if (batchFields) {
+    content.append(batchFields);
+  } else {
+    content.append(qtyRow, qtyPreview);
+  }
+  if (addBatchBtnRow) content.append(addBatchBtnRow);
+  content.append(fLocation, hinge, ledger, footer);
   card.appendChild(content);
   overlay.appendChild(card);
   document.body.appendChild(overlay);
 
   // Auto-focus and prefill qty badge if editing
   fName.querySelector('input')?.focus();
-  if (item?.qty || item?.unit) {
-    qtyInput.value = [item.qty ?? '', item.unit ?? ''].filter(Boolean).join(' ');
-  }
-  updateBadge();
+  initAddItemFormDefaults();
 
   const populateVendors = (vendorsList, selectedId = null) => {
     vendorSelect.innerHTML = '<option value="">—</option>';
@@ -363,6 +573,75 @@ export function openItemModal(item = null) {
     }
   });
 
+  function populateUnits(presetUnit = null) {
+    const dim = dimensionSelect.value;
+    const opts = UNIT_OPTIONS[dim] || [];
+    unitSelect.innerHTML = opts.map((u) => `<option value="${u}">${UNIT_LABEL[u] || u}</option>`).join('');
+    const targetUnit = (presetUnit && opts.includes(presetUnit)) ? presetUnit : opts[0];
+    if (targetUnit) unitSelect.value = targetUnit;
+    updatePreview();
+  }
+
+  function toBaseIntForPreview(value, unit, dim) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return 0;
+    const mult = MULT[dim]?.[unit];
+    if (!mult) return 0;
+    return Math.floor(n * mult + 0.5);
+  }
+
+  function updatePreview() {
+    if (addBatchToggle && !addBatchToggle.checked) {
+      qtyPreview.textContent = '';
+      return;
+    }
+    const dim = dimensionSelect.value;
+    const unit = unitSelect.value;
+    const val = qtyInput.value;
+    if (!dim || !unit || val === '') {
+      qtyPreview.textContent = '';
+      return;
+    }
+    const baseInt = toBaseIntForPreview(val, unit, dim);
+    qtyPreview.textContent = `Will store: ${baseInt} ${BASE_UNIT_LABEL[dim]}`;
+  }
+
+  function syncProductPriceVisibility() {
+    if (!priceInput) return;
+    const showPrice = isProductInput.checked;
+    fPrice.hidden = !showPrice;
+    priceInput.disabled = !showPrice;
+    priceInput.required = showPrice;
+  }
+
+  function syncBatchVisibility() {
+    const showBatch = addBatchToggle ? addBatchToggle.checked : true;
+    if (batchFields) batchFields.hidden = !showBatch;
+    qtyRow.hidden = batchFields ? !showBatch : false;
+    if (costRow && batchFields) costRow.hidden = !showBatch;
+    qtyPreview.style.display = showBatch ? 'block' : 'none';
+    qtyInput.required = isEdit ? true : showBatch;
+  }
+
+  function initAddItemFormDefaults() {
+    const defaultDim = item?.dimension || dimensionSelect.value || 'count';
+    dimensionSelect.value = defaultDim;
+    populateUnits(item?.quantity_display?.unit || item?.unit);
+    const qtyVal = item?.quantity_display?.value ?? (item?.qty ?? '');
+    if (qtyVal !== undefined && qtyVal !== null) qtyInput.value = qtyVal;
+    if (isProductInput) {
+      isProductInput.checked = !!item?.is_product;
+      if (priceInput && item?.price != null) priceInput.value = item.price;
+      syncProductPriceVisibility();
+    }
+    if (addBatchToggle) {
+      addBatchToggle.checked = true;
+      if (costInput) costInput.value = '';
+    }
+    syncBatchVisibility();
+    updatePreview();
+  }
+
   // Load vendors (async)
   (async () => {
     const vs = await fetchVendors();
@@ -397,6 +676,7 @@ export function openItemModal(item = null) {
 
   const closeModalSafely = () => {
     cleanup();
+    closeStockInModal();
     overlay.remove();
   };
 
@@ -413,22 +693,40 @@ export function openItemModal(item = null) {
   }, true);
   card.addEventListener('click', (e) => e.stopPropagation());
 
-  // Live parser feedback
-  qtyInput.addEventListener('input', updateBadge);
-
-  function updateBadge() {
-    const parsed = parseSmartInput(qtyInput.value || '');
-    if (parsed && typeof parsed.qty === 'number' && parsed.qty > 0) {
-      qtyBadge.textContent = `Parsed: ${parsed.qty} | ${parsed.unit ?? ''}`.trim();
-      qtyBadge.style.borderColor = 'var(--border)';
-    } else {
-      qtyBadge.textContent = 'Unrecognized';
-      qtyBadge.style.borderColor = '#ef4444';
-    }
-  }
+  dimensionSelect.addEventListener('change', () => populateUnits());
+  unitSelect.addEventListener('change', () => updatePreview());
+  qtyInput.addEventListener('input', () => updatePreview());
+  if (addBatchToggle) addBatchToggle.addEventListener('change', () => { syncBatchVisibility(); updatePreview(); });
+  isProductInput.addEventListener('change', () => syncProductPriceVisibility());
+  if (addBatchBtn) addBatchBtn.addEventListener('click', () => openStockInModal());
 
   function fieldValue(rowSel) {
     return rowSel.querySelector('input,textarea,select')?.value ?? '';
+  }
+
+  function fieldRowWithElement(labelText, element) {
+    const row = document.createElement('div');
+    row.className = 'field-row';
+    const label = document.createElement('label');
+    label.textContent = labelText;
+    const wrap = document.createElement('div');
+    wrap.className = 'field-input';
+    if (element) wrap.appendChild(element);
+    row.append(label, wrap);
+    return row;
+  }
+
+  function createSelect(id, options = []) {
+    const select = document.createElement('select');
+    if (id) select.id = id;
+    select.required = true;
+    options.forEach(([value, text]) => {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = text;
+      select.appendChild(opt);
+    });
+    return select;
   }
 
   function inputRow(labelText, type, value = '', attrs = {}) {
@@ -455,6 +753,131 @@ export function openItemModal(item = null) {
     return a;
   }
 
+  let stockInOverlay = null;
+
+  function closeStockInModal() {
+    if (stockInOverlay) {
+      stockInOverlay.remove();
+      stockInOverlay = null;
+    }
+  }
+
+  function openStockInModal() {
+    if (!item?.id) return;
+    closeStockInModal();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    const card = document.createElement('div');
+    card.className = 'modal-card';
+    card.style.maxWidth = '420px';
+    card.style.background = 'var(--surface)';
+    card.style.border = '1px solid var(--border)';
+    card.style.borderRadius = '10px';
+
+    const title = document.createElement('div');
+    title.className = 'modal-title';
+    title.textContent = 'Add Batch';
+    card.appendChild(title);
+
+    const stockError = document.createElement('div');
+    stockError.className = 'error-banner';
+    stockError.hidden = true;
+    card.appendChild(stockError);
+
+    const body = document.createElement('div');
+    body.className = 'modal-body';
+
+    const stockUnitSelect = createSelect('stockin-unit');
+    const dim = item.dimension || 'count';
+    const unitOptions = [...(UNIT_OPTIONS[dim] || ['ea'])];
+    if (item.uom && !unitOptions.includes(item.uom)) unitOptions.push(item.uom);
+    stockUnitSelect.innerHTML = unitOptions.map((u) => `<option value="${u}">${UNIT_LABEL[u] || u}</option>`).join('');
+    stockUnitSelect.value = item.uom && unitOptions.includes(item.uom) ? item.uom : unitOptions[0];
+    const stockUnitRow = fieldRowWithElement('Unit', stockUnitSelect);
+
+    const stockQtyInput = document.createElement('input');
+    stockQtyInput.type = 'number';
+    stockQtyInput.setAttribute('step', '0.001');
+    stockQtyInput.setAttribute('min', '0');
+    const stockQtyRow = fieldRowWithElement('Quantity', stockQtyInput);
+
+    const stockCostInput = document.createElement('input');
+    stockCostInput.type = 'number';
+    stockCostInput.setAttribute('step', '0.01');
+    stockCostInput.setAttribute('min', '0');
+    const stockCostRow = fieldRowWithElement('Unit Cost', stockCostInput);
+
+    const stockActions = document.createElement('div');
+    stockActions.className = 'modal-actions';
+    const stockSave = document.createElement('button');
+    stockSave.type = 'button';
+    stockSave.className = 'btn primary';
+    stockSave.textContent = 'Save Batch';
+    const stockCancel = document.createElement('button');
+    stockCancel.type = 'button';
+    stockCancel.className = 'btn';
+    stockCancel.textContent = 'Cancel';
+    stockActions.append(stockSave, stockCancel);
+
+    body.append(stockUnitRow, stockQtyRow, stockCostRow, stockActions);
+    card.appendChild(body);
+    overlay.appendChild(card);
+    overlay._inventoryCleanup = closeStockInModal;
+    document.body.appendChild(overlay);
+
+    overlay.addEventListener('click', (ev) => {
+      if (ev.target === overlay) closeStockInModal();
+    });
+    card.addEventListener('click', (ev) => ev.stopPropagation());
+
+    stockCancel.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      closeStockInModal();
+    });
+
+    async function submitStockIn() {
+      if (stockError) {
+        stockError.hidden = true;
+        stockError.textContent = '';
+      }
+
+      if (stockQtyInput.value === '') {
+        stockError.textContent = 'Enter a quantity to stock in.';
+        stockError.hidden = false;
+        return;
+      }
+
+      const payload = {
+        item_id: item.id,
+        uom: stockUnitSelect.value,
+        unit: stockUnitSelect.value,
+        quantity_decimal: stockQtyInput.value,
+        unit_cost_decimal: stockCostInput.value || undefined,
+      };
+
+      try {
+        await ensureToken();
+        await apiPost('/ledger/stock_in', payload, { headers: { 'Content-Type': 'application/json' } });
+        closeStockInModal();
+        await reloadInventory?.();
+      } catch (err) {
+        const msg = err?.detail?.message || err?.message || 'Stock-in failed.';
+        if (stockError) {
+          stockError.textContent = msg;
+          stockError.hidden = false;
+        }
+      }
+    }
+
+    stockSave.addEventListener('click', async (ev) => {
+      ev.preventDefault();
+      await submitStockIn();
+    });
+
+    stockInOverlay = overlay;
+  }
+
   function markInvalid(el) {
     el.style.borderColor = '#ef4444';
     setTimeout(() => { el.style.borderColor = 'var(--border)'; }, 1500);
@@ -465,12 +888,28 @@ export function openItemModal(item = null) {
     e.preventDefault();
     const name = fieldValue(fName).trim();
 
+    if (errorBanner) {
+      errorBanner.hidden = true;
+      errorBanner.textContent = '';
+    }
+
     // Client-side validation
     if (!name) return markInvalid(fName.querySelector('input'));
 
+    const dimensionVal = dimensionSelect.value;
+    const unitVal = unitSelect.value;
+    const qtyVal = qtyInput.value;
+    const addOpeningBatch = addBatchToggle ? addBatchToggle.checked : false;
+
+    if (!dimensionVal) return markInvalid(dimensionSelect);
+    if (!unitVal) return markInvalid(unitSelect);
+    if ((isEdit || addOpeningBatch) && qtyVal === '') return markInvalid(qtyInput);
+
     const priceVal = (() => {
-      const n = parseFloat(fieldValue(fPrice));
-      return Number.isFinite(n) ? n : 0;
+      const parsed = priceInput ? parseFloat(priceInput.value) : parseFloat(fieldValue(fPrice));
+      if (Number.isFinite(parsed)) return parsed;
+      if (item?.price != null) return item.price;
+      return 0;
     })();
 
     const payload = {
@@ -478,20 +917,66 @@ export function openItemModal(item = null) {
       sku: (fieldValue(fSku) || '').trim() || undefined,
       vendor_id: vendorSelect && vendorSelect.tagName === 'SELECT' ? (vendorSelect.value || undefined) : undefined,
       location: (fieldValue(fLocation) || '').trim() || undefined,
-      price: priceVal,
       type: (expanded ? fieldValue(typeRow) : 'Product') || 'Product',
       notes: expanded ? (notes.value.trim() || undefined) : undefined,
-      // Definition-only: omit any qty/unit derived from Smart Qty. Stock adjustments happen in ledger flows.
+      dimension: dimensionVal,
+      uom: unitVal,
+      unit: unitVal,
+      is_product: isProductInput.checked,
+      quantity_decimal: isEdit ? qtyVal : '0',
     };
 
-    const url = isEdit ? `/app/items/${item.id}` : '/app/items';
+    if (isProductInput.checked) {
+      payload.price_decimal = priceInput?.value ?? String(priceVal ?? 0);
+      payload.price = priceVal;
+    }
+
+    const url = isEdit ? `/items/${item.id}` : '/items';
     const method = isEdit ? apiPut : apiPost;
     try {
       await ensureToken();
-      await method(url, payload, { headers: { 'Content-Type': 'application/json' } });
+      const savedItem = await method(url, payload, { headers: { 'Content-Type': 'application/json' } });
+
+      if (!isEdit && addOpeningBatch) {
+        if (!qtyVal || Number(qtyVal) <= 0) {
+          const msg = 'Quantity required for opening batch.';
+          if (errorBanner) {
+            errorBanner.textContent = msg;
+            errorBanner.hidden = false;
+          }
+          return;
+        }
+
+        const stockPayload = {
+          item_id: savedItem?.id,
+          uom: unitVal,
+          unit: unitVal,
+          quantity_decimal: qtyVal,
+          unit_cost_decimal: costInput?.value || '0',
+        };
+
+        try {
+          await ensureToken();
+          await apiPost('/ledger/stock_in', stockPayload, { headers: { 'Content-Type': 'application/json' } });
+        } catch (err) {
+          const msg = err?.detail?.message || err?.error || err?.message || 'Stock-in failed.';
+          if (errorBanner) {
+            errorBanner.textContent = msg;
+            errorBanner.hidden = false;
+          }
+          markInvalid(saveBtn);
+          return;
+        }
+      }
+
       closeModalSafely();
       reloadInventory?.(); // existing function in this module to refresh table
-    } catch (_) {
+    } catch (err) {
+      const serverMsg = err?.detail?.message || err?.error || err?.message || 'Save failed.';
+      if (errorBanner) {
+        errorBanner.textContent = serverMsg;
+        errorBanner.hidden = false;
+      }
       markInvalid(saveBtn);
     }
   });

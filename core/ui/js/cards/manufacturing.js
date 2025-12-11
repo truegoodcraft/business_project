@@ -60,7 +60,8 @@ export function unmountManufacturing() {
 async function renderNewRunForm(parent) {
   // Fetch recipes
   try {
-    _state.recipes = await RecipesAPI.list();
+    const list = await RecipesAPI.list();
+    _state.recipes = (list || []).filter(r => !r.archived);
   } catch (err) {
     parent.append(el('div', { class: 'error' }, 'Failed to load recipes.'));
     return;
@@ -133,6 +134,16 @@ async function renderNewRunForm(parent) {
     try {
       // Fetch full details (items + current stock)
       const fullRecipe = await RecipesAPI.get(rid);
+      if (fullRecipe?.archived) {
+        statusMsg.textContent = 'This recipe is archived and cannot be run.';
+        statusMsg.style.color = '#ff4444';
+        tbody.innerHTML = '';
+        table.style.display = 'none';
+        emptyMsg.style.display = 'block';
+        runBtn.disabled = true;
+        _state.selectedRecipe = null;
+        return;
+      }
       _state.selectedRecipe = fullRecipe;
       _state.multiplier = mult;
 
@@ -159,7 +170,7 @@ async function renderNewRunForm(parent) {
 
         row.append(
           el('td', { style:'padding:8px', text: ri.item?.name || `Item #${ri.item_id}` }),
-          el('td', { style:'padding:8px;color:#aaa', text: ri.is_optional ? 'Optional' : 'Input' }),
+          el('td', { style:'padding:8px;color:#aaa', text: (ri.optional ?? ri.is_optional) ? 'Optional' : 'Input' }),
           el('td', { style:'padding:8px;text-align:right', text: `${current} ${uom}` }),
           el('td', { style:'padding:8px;text-align:right', text: `${change.toFixed(2)}` }),
           el('td', { style:`padding:8px;text-align:right;color:${stockColor}`, text: `${future.toFixed(2)} ${uom}` })
@@ -167,14 +178,15 @@ async function renderNewRunForm(parent) {
         tbody.append(row);
       });
 
-      if (fullRecipe.output_item) {
-        const outCurrent = fullRecipe.output_item.qty_stored || 0;
+      if (fullRecipe.output_item_id) {
+        const outItem = fullRecipe.output_item;
+        const outCurrent = outItem?.qty_stored || 0;
         const outChange = outputQty;
         const outFuture = outCurrent + outChange;
-        const uom = fullRecipe.output_item.uom || '';
+        const uom = outItem?.uom || '';
         const row = el('tr', { style: 'border-bottom:1px solid #2a2a2a' });
         row.append(
-          el('td', { style:'padding:8px', text: fullRecipe.output_item.name }),
+          el('td', { style:'padding:8px', text: outItem?.name || `Item #${fullRecipe.output_item_id}` }),
           el('td', { style:'padding:8px;color:#4caf50', text: 'Output' }),
           el('td', { style:'padding:8px;text-align:right', text: `${outCurrent} ${uom}` }),
           el('td', { style:'padding:8px;text-align:right', text: `+${outChange}` }),
@@ -194,7 +206,12 @@ async function renderNewRunForm(parent) {
 
   runBtn.addEventListener('click', async () => {
     if (!_state.selectedRecipe) return;
-    
+    if (_state.selectedRecipe.archived) {
+      statusMsg.textContent = 'This recipe is archived and cannot be run.';
+      statusMsg.style.color = '#ff4444';
+      return;
+    }
+
     runBtn.disabled = true;
     runBtn.textContent = 'Processing...';
     statusMsg.textContent = '';
@@ -222,7 +239,7 @@ async function renderNewRunForm(parent) {
         const s = e.data.detail.shortages.map(x => `#${x.item_id}: need ${x.required}, have ${x.on_hand}, missing ${x.missing}`).join(' | ');
         statusMsg.textContent = `Insufficient stock → ${s}`;
       } else {
-        statusMsg.textContent = e.message || 'Run failed.';
+        statusMsg.textContent = e?.detail || e?.data?.detail || e?.data?.detail?.message || e?.message || 'Run failed.';
       }
       statusMsg.style.color = '#ff4444';
       runBtn.disabled = false;

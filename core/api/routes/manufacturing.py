@@ -5,11 +5,13 @@ import time
 from typing import Any, Iterable
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
+from sqlalchemy import func as sa_func
 from sqlalchemy.orm import Session
 
 from core.api.schemas.manufacturing import ManufacturingRunRequest, parse_run_request
 from core.appdb.engine import get_session
 from core.appdb.ledger import InsufficientStock
+from core.appdb.models_recipes import Recipe
 from core.config.writes import require_writes
 from core.journal.manufacturing import append_mfg_journal
 from core.manufacturing.service import execute_run_txn, format_shortages, validate_run
@@ -73,6 +75,19 @@ async def run_manufacturing(
 
     body: ManufacturingRunRequest = parse_run_request(raw_body)
     output_item_id: int | None = getattr(body, "output_item_id", None)
+
+    recipe: Recipe | None = None
+    if getattr(body, "recipe_id", None) is not None:
+        recipe = db.get(Recipe, body.recipe_id)
+        if not recipe:
+            raise HTTPException(status_code=404, detail="Recipe not found")
+        if recipe.archived:
+            raise HTTPException(status_code=400, detail="Recipe is archived")
+        if not recipe.output_item_id:
+            raise HTTPException(status_code=400, detail="Recipe has no output item")
+        if recipe.output_qty <= 0:
+            raise HTTPException(status_code=400, detail="Recipe has invalid output quantity")
+        output_item_id = recipe.output_item_id
 
     try:
         output_item_id, required, k, shortages = validate_run(db, body)

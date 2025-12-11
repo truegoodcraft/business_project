@@ -43,14 +43,22 @@ class Vendor(Base):
 
 class Item(Base):
     __tablename__ = "items"
+    __table_args__ = (
+        CheckConstraint(
+            "dimension in ('length','area','volume','weight','count')",
+            name="ck_items_dimension",
+        ),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     vendor_id = Column(Integer, ForeignKey("vendors.id"), nullable=True)
     sku = Column(String, nullable=True)
     name = Column(String, nullable=False)
-    uom = Column(String, nullable=False, default="ea")          # 'ea','g','mm','mm2','mm3'
-    qty_stored = Column(Integer, nullable=False, default=0)      # canonical on-hand
+    uom = Column(String, nullable=False, default="ea")          # display unit (legacy)
+    dimension = Column(String, nullable=False, default="count")
+    qty_stored = Column(Integer, nullable=False, default=0)      # canonical on-hand (base int)
     price = Column(Float, default=0)
+    is_product = Column(Boolean, nullable=False, server_default="0")
     notes = Column(Text, nullable=True)
     item_type = Column(String, nullable=True)
     location = Column(String, nullable=True)
@@ -62,8 +70,8 @@ class ItemBatch(Base):
 
     id = Column(Integer, primary_key=True)
     item_id = Column(Integer, ForeignKey("items.id"), nullable=False, index=True)
-    qty_initial = Column(Float, nullable=False)
-    qty_remaining = Column(Float, nullable=False)
+    qty_initial = Column(Integer, nullable=False)
+    qty_remaining = Column(Integer, nullable=False)
     unit_cost_cents = Column(Integer, nullable=False)
     source_kind = Column(String, nullable=False)
     source_id = Column(String, nullable=True)
@@ -83,7 +91,7 @@ class ItemMovement(Base):
     id = Column(Integer, primary_key=True)
     item_id = Column(Integer, ForeignKey("items.id"), nullable=False, index=True)
     batch_id = Column(Integer, ForeignKey("item_batches.id"), nullable=True)
-    qty_change = Column(Float, nullable=False)
+    qty_change = Column(Integer, nullable=False)
     unit_cost_cents = Column(Integer, nullable=True, default=0)
     source_kind = Column(String, nullable=False)
     source_id = Column(String, nullable=True)

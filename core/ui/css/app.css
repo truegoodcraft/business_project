@@ -61,6 +61,17 @@ button {
 button.danger { background: var(--danger); }
 button.primary { background: var(--accent); }
 
+.btn-icon {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  line-height: 1;
+}
+
 input,
 select,
 textarea {
@@ -256,4 +267,151 @@ table tr:hover { background: #1e2530; }
 @media (max-width: 500px) {
   .btn { padding: 6px 8px; font-size: 12px; }
   .modal-card { max-width: 94vw; }
+}
+
+/* BUS Core brand link */
+.tgc-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;     /* center horizontally */
+  justify-content: center;
+  width: 100%;
+  text-align: center;
+  gap: 2px;
+  text-decoration: none;   /* remove underline on <a> */
+  margin-bottom: 24px;
+}
+
+.tgc-brand-title {
+  color: #fff;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  text-shadow: 0 0 6px rgba(255,255,255,0.10);
+  font-size: 2em;
+  line-height: 1.05;
+}
+
+.tgc-brand-beta {
+  margin-top: 2px;
+  color: #fff;
+  opacity: 0.7;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+/* optional a11y/feedback */
+.tgc-brand:hover .tgc-brand-title { opacity: 0.95; }
+.tgc-brand:focus-visible {
+  outline: 2px solid rgba(255,255,255,.3);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Sidebar container must allow header shadows to render inside panel */
+.sidebar, .sidebar-container {
+  overflow: visible;
+}
+
+/* Sidebar section header (Tools) */
+.nav-section {
+  display: flex;
+  align-items: center;
+  justify-content: center;   /* center horizontally */
+  box-sizing: border-box;
+  width: 100%;
+  text-align: center;
+  padding: 10px 12px;
+  margin: 0 12px 12px;
+  max-width: calc(100% - 24px);
+  color: #fff;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.04);                 /* subtle box */
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.05) inset,             /* soft top bevel */
+    0 8px 16px rgba(0,0,0,0.28);                      /* shadow under */
+  cursor: default;
+  user-select: none;
+}
+
+/* Extra bottom buffer after Tools before System */
+.nav-section--tools {
+  margin-bottom: 20px;
+}
+
+/* Ensure no hover/active highlight applies */
+.nav-section:hover,
+.nav-section:active,
+.nav-section:focus {
+  background: rgba(255,255,255,0.04) !important;
+  outline: none;
+}
+
+#item-qty-preview {
+  margin-top: 6px;
+  font-size: 0.9em;
+  opacity: 0.8;
+}
+
+.inline-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #e6e6e6;
+}
+
+.inline-row > label:first-child {
+  visibility: hidden;
+}
+
+hr.thin {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 10px 0;
+  opacity: 0.6;
+}
+
+.error-banner {
+  background: rgba(255, 64, 64, 0.12);
+  border: 1px solid rgba(255, 64, 64, 0.35);
+  color: #ffd6d6;
+  padding: 8px 10px;
+  border-radius: 8px;
+  margin: 8px 0 12px;
+  font-size: 0.9em;
+}
+
+/* Inventory table layout */
+.inventory-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.inventory-table th,
+.inventory-table td {
+  text-align: center;
+  vertical-align: middle;
+  padding: 10px 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.subtable {
+  width: 100%;
+  table-layout: fixed;
+  margin-top: 8px;
+  border-collapse: separate;
+}
+
+.subtable th,
+.subtable td {
+  text-align: center;
+  padding: 6px 8px;
 }
