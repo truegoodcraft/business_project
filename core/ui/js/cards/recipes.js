@@ -343,11 +343,12 @@ function renderEditor(editor, leftPanel) {
   const actions = el('div', { style: 'display:flex;justify-content:space-between;gap:10px;align-items:center;margin-top:6px' });
   const saveBtn = el('button', { class: 'btn primary', text: 'Save Recipe', style: 'border-radius:10px;padding:10px 14px;' });
   const deleteBtn = el('button', {
+    id: 'recipe-delete',
     class: 'btn',
     text: 'Delete',
     style: 'border-radius:10px;padding:10px 14px;background:#3a3d43;color:#e6e6e6;border:1px solid #2f3136',
-    disabled: !_draft.id ? 'disabled' : undefined,
   });
+  deleteBtn.disabled = !_draft.id;
 
   saveBtn.onclick = async () => {
     status.textContent = '';
