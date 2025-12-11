@@ -409,6 +409,9 @@ function renderEditor(editor, leftPanel) {
     if (!confirm('Delete this recipe? This cannot be undone.')) return;
     status.textContent = '';
     status.style.color = '#9ca3af';
+    deleteBtn.disabled = true;
+    const resetLabel = deleteBtn.textContent;
+    deleteBtn.textContent = 'Deleting…';
     try {
       await ensureToken();
       await RecipesAPI.delete(_draft.id);
@@ -422,6 +425,9 @@ function renderEditor(editor, leftPanel) {
     } catch (e) {
       status.textContent = (e?.detail?.message || e?.detail || e?.message || 'Delete failed');
       status.style.color = '#ff6666';
+    } finally {
+      deleteBtn.disabled = false;
+      deleteBtn.textContent = resetLabel;
     }
   };
 

@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from core.appdb.engine import get_session
 from core.appdb.models import Item
-from core.appdb.models_recipes import Recipe, RecipeItem
+from core.appdb.models_recipes import ManufacturingRun, Recipe, RecipeItem
 from core.config.writes import require_writes
 from core.policy.guard import require_owner_commit
 from tgc.security import require_token_ctx
@@ -209,11 +209,15 @@ async def delete_recipe(
     _writes: None = Depends(require_writes),
     _token: str = Depends(require_token_ctx),
     _state: AppState = Depends(get_state),
-):
+): 
     require_owner_commit(req)
     r = db.get(Recipe, recipe_id)
     if not r:
         raise HTTPException(status_code=404, detail="Not Found")
+    db.query(ManufacturingRun).filter(ManufacturingRun.recipe_id == recipe_id).update(
+        {ManufacturingRun.recipe_id: None}, synchronize_session=False
+    )
+    db.query(RecipeItem).filter(RecipeItem.recipe_id == recipe_id).delete()
     db.delete(r)
     db.commit()
-    return {"ok": True}
+    return {"ok": True, "deleted": recipe_id}
