@@ -229,6 +229,7 @@ async def maintenance_guard(request: Request, call_next):
 
 
 UI_DIR = ui_dir()
+ICON_SVG = UI_DIR / "Icon.svg"
 # Mount brand to the repo root so Flat-Dark.png / Glow-Hero.png are reachable
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -237,9 +238,36 @@ app.mount("/ui", StaticFiles(directory=UI_DIR), name="ui")
 app.mount("/brand", StaticFiles(directory=str(REPO_ROOT)), name="brand")
 
 
-@app.get("/favicon.ico", include_in_schema=False)
-def favicon():
-    return FileResponse(REPO_ROOT / "Flat-Dark.png", media_type="image/png")
+def _resolve_ui_icon() -> Optional[Path]:
+    """Return the first existing icon in common UI paths (handles case/casing)."""
+
+    candidates = [
+        UI_DIR / "icon.png",
+        UI_DIR / "Icon.png",
+        UI_DIR / "favicon.png",
+        UI_DIR / "assets" / "icon.png",
+        UI_DIR / "assets" / "Icon.png",
+        UI_DIR / "assets" / "favicon.png",
+    ]
+    for path in candidates:
+        if path.exists():
+            return path
+    return None
+
+
+@app.get("/icon.png")
+def get_icon_png():
+    path = _resolve_ui_icon()
+    if not path:
+        raise HTTPException(status_code=404, detail="icon not found")
+    return FileResponse(path, media_type="image/png")
+
+
+@app.get("/favicon.ico")
+def get_favicon_ico():
+    if ICON_SVG.exists():
+        return FileResponse(ICON_SVG, media_type="image/svg+xml")
+    raise HTTPException(status_code=404, detail="icon not found")
 
 
 @app.get("/")

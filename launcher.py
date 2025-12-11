@@ -44,6 +44,7 @@ except Exception:
 
 UI_DIR = Path(__file__).parent / "core" / "ui"
 ICON_PATH = UI_DIR / "icon.png"
+UI_ICON = Path(__file__).parent / "core" / "ui" / "icon.png"
 
 def _ensure_runtime_dirs() -> None:
     for path in (DATA, LOGS):
@@ -153,7 +154,11 @@ def main():
             pystray.MenuItem("Quit BUS Core", on_quit)
         )
 
-        icon = pystray.Icon("BUS Core", icon_img, "TGC BUS Core", menu)
+        try:
+            tray_icon = Image.open(UI_ICON)
+        except Exception:
+            tray_icon = icon_img
+        icon = pystray.Icon("BUS Core", tray_icon, "TGC BUS Core", menu)
         icon.run()
     except Exception:
         # Fallback if icon run fails
