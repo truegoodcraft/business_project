@@ -225,12 +225,21 @@ function renderEditor(editor, leftPanel) {
 
   const outputRow = el('div', { style: 'display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap' });
   const outSel = el('select', {
+    id: 'recipe-output',
     style: 'flex:1;min-width:200px;padding:10px 12px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6'
   });
   outSel.append(el('option', { value: '' }, '— Output Item —'));
-  _items.forEach(i => outSel.append(el('option', { value: i.id, selected: String(i.id) === String(_draft.output_item_id) ? 'selected' : undefined }, i.name)));
+  _items.forEach((i) => {
+    outSel.append(
+      el('option', { value: String(i.id) }, i.name)
+    );
+  });
+  if (_draft.output_item_id != null) {
+    outSel.value = String(_draft.output_item_id);
+  }
   outSel.addEventListener('change', () => {
-    _draft.output_item_id = outSel.value ? Number(outSel.value) : null;
+    const parsed = parseInt(outSel.value, 10);
+    _draft.output_item_id = Number.isFinite(parsed) ? parsed : null;
   });
 
   const outQty = el('input', {
@@ -238,9 +247,13 @@ function renderEditor(editor, leftPanel) {
     min: '0.0001',
     step: '0.01',
     value: _draft.output_qty,
+    id: 'recipe-output-qty',
     style: 'width:140px;padding:10px 12px;text-align:right;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6'
   });
-  outQty.addEventListener('input', () => { _draft.output_qty = parseFloat(outQty.value) || 0; });
+  outQty.addEventListener('input', () => {
+    const parsed = parseFloat(outQty.value);
+    _draft.output_qty = Number.isFinite(parsed) ? parsed : 1;
+  });
   outputRow.append(
     el('label', { text: 'Output Item', style: 'width:90px;color:#cdd1dc' }),
     outSel,
@@ -361,8 +374,19 @@ function renderEditor(editor, leftPanel) {
       id: _draft.id,
       name: (_draft.name || '').trim(),
       code: _draft.code || null,
-      output_item_id: _draft.output_item_id || null,
-      output_qty: Number(_draft.output_qty) || 1,
+      output_item_id: (() => {
+        const sel = document.getElementById('recipe-output');
+        const selected = sel ? parseInt(sel.value, 10) : _draft.output_item_id;
+        return Number.isFinite(selected) ? selected : null;
+      })(),
+      output_qty: (() => {
+        const qtyInput = document.getElementById('recipe-output-qty');
+        if (qtyInput) {
+          const parsed = parseFloat(qtyInput.value);
+          return Number.isFinite(parsed) ? parsed : 1;
+        }
+        return Number(_draft.output_qty) || 1;
+      })(),
       archived: archivedValue,
       notes: _draft.notes || null,
       items: (_draft.items || []).map((it, idx) => ({

@@ -87,6 +87,7 @@ async def run_manufacturing(
             raise HTTPException(status_code=400, detail="Recipe has no output item")
         if recipe.output_qty <= 0:
             raise HTTPException(status_code=400, detail="Recipe has invalid output quantity")
+        output_item_id = recipe.output_item_id
 
     try:
         output_item_id, required, k, shortages = validate_run(db, body)
