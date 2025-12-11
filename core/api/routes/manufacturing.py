@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
-from sqlalchemy import func as sa_func
 from sqlalchemy.orm import Session
 
 from core.api.schemas.manufacturing import ManufacturingRunRequest, parse_run_request
@@ -16,7 +15,6 @@ from core.appdb.engine import get_session
 from core.appdb.ledger import InsufficientStock
 from core.appdb.models import Recipe
 from core.config.writes import require_writes
-from core.journal.manufacturing import MANUFACTURING_JOURNAL, append_mfg_journal
 from core.manufacturing.service import execute_run_txn, format_shortages, validate_run
 from core.policy.guard import require_owner_commit
 from tgc.security import require_token_ctx
@@ -26,11 +24,17 @@ router = APIRouter(prefix="/manufacturing", tags=["manufacturing"])
 logger = logging.getLogger(__name__)
 
 
+def _journals_dir() -> Path:
+    root = os.environ.get("LOCALAPPDATA")
+    if not root:
+        root = os.path.expanduser("~/.local/share")
+    d = Path(root) / "BUSCore" / "app" / "data" / "journals"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def _mf_journal_path() -> Path:
-    env_path = os.environ.get("BUS_MANUFACTURING_JOURNAL")
-    if env_path:
-        return Path(env_path)
-    return MANUFACTURING_JOURNAL
+    return _journals_dir() / "manufacturing.jsonl"
 
 
 def _parse_iso_utc(ts: str) -> datetime:
@@ -162,29 +166,16 @@ async def run_manufacturing(
         output_item_id, required, k, shortages = validate_run(db, body)
         if shortages:
             run = _record_failed_run(db, body, output_item_id, shortages)
-            _append_journal(
-                {
-                    "ts": int(time.time()),
-                    "type": "manufacturing_run",
-                    "run_id": run.id,
-                    "recipe_id": getattr(body, "recipe_id", None),
-                    "recipe_name": _resolve_recipe_name(db, getattr(body, "recipe_id", None)),
-                    "status": "failed_insufficient_stock",
-                    "shortages": shortages,
-                }
-            )
             raise HTTPException(status_code=400, detail=_shortage_detail(shortages, run.id))
         result = execute_run_txn(db, body, output_item_id, required, k)
         recipe_name = _resolve_recipe_name(db, getattr(body, "recipe_id", None))
-        _append_journal(
+        _append_manufacturing_journal(
             {
-                "ts": int(time.time()),
-                "type": "manufacturing_run",
-                "run_id": result["run"].id,
-                "recipe_id": getattr(body, "recipe_id", None),
+                "type": "manufacturing.run",
+                "recipe_id": int(body.recipe_id) if getattr(body, "recipe_id", None) is not None else None,
                 "recipe_name": recipe_name,
-                "status": "success",
-                "output_qty": body.output_qty,
+                "output_item_id": int(output_item_id) if output_item_id is not None else None,
+                "output_qty": int(body.output_qty),
             }
         )
         return {
@@ -197,17 +188,6 @@ async def run_manufacturing(
         db.rollback()
         shortages = format_shortages(exc.shortages)
         run = _record_failed_run(db, body, output_item_id, shortages)
-        _append_journal(
-            {
-                "ts": int(time.time()),
-                "type": "manufacturing_run",
-                "run_id": run.id,
-                "recipe_id": getattr(body, "recipe_id", None),
-                "recipe_name": _resolve_recipe_name(db, getattr(body, "recipe_id", None)),
-                "status": "failed_insufficient_stock",
-                "shortages": shortages,
-            }
-        )
         raise HTTPException(status_code=400, detail=_shortage_detail(shortages, run.id))
     except HTTPException as exc:
         db.rollback()
@@ -222,38 +202,20 @@ async def run_manufacturing(
 
         if shortages is not None:
             run = _record_failed_run(db, body, output_item_id, shortages)
-            _append_journal(
-                {
-                    "ts": int(time.time()),
-                    "type": "manufacturing_run",
-                    "run_id": run.id,
-                    "recipe_id": getattr(body, "recipe_id", None),
-                    "recipe_name": _resolve_recipe_name(db, getattr(body, "recipe_id", None)),
-                    "status": "failed_insufficient_stock",
-                    "shortages": shortages,
-                }
-            )
             raise HTTPException(status_code=400, detail=_shortage_detail(shortages, run.id))
-
-        _append_journal(
-            {
-                "ts": int(time.time()),
-                "type": "manufacturing_run",
-                "run_id": None,
-                "recipe_id": getattr(body, "recipe_id", None),
-                "recipe_name": _resolve_recipe_name(db, getattr(body, "recipe_id", None)),
-                "status": "failed",
-            }
-        )
         raise
     except Exception:  # pragma: no cover - defensive
         db.rollback()
         raise HTTPException(status_code=500, detail={"status": "failed_error"})
 
 
-def _append_journal(entry: dict) -> None:
+def _append_manufacturing_journal(entry: dict) -> None:
     try:
-        append_mfg_journal(entry)
+        entry = dict(entry)
+        entry.setdefault("timestamp", datetime.utcnow().isoformat() + "Z")
+        p = _journals_dir() / "manufacturing.jsonl"
+        with open(p, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, separators=(",", ":")) + "\n")
     except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to append manufacturing journal entry")
 

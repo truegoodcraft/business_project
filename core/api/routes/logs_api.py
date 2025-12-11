@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterator
@@ -16,7 +15,6 @@ public_router = APIRouter(prefix="/app", tags=["logs"])
 def _journals_dir() -> Path:
     root = os.environ.get("LOCALAPPDATA")
     if not root:
-        # Linux/macOS fallback
         root = os.path.expanduser("~/.local/share")
     d = Path(root) / "BUSCore" / "app" / "data" / "journals"
     d.mkdir(parents=True, exist_ok=True)
@@ -35,45 +33,46 @@ def _read_jsonl(path: Path, source: str) -> Iterator[dict]:
                 obj = json.loads(line)
             except Exception:
                 continue
-            obj["_source"] = source
             yield obj
 
 
-def _parse_ts(s: str) -> datetime | None:
-    if not s:
-        return None
-    try:
-        if s.endswith("Z"):
-            s = s[:-1] + "+00:00"
-        return datetime.fromisoformat(s)
-    except Exception:
-        return None
+def _normalize(entry: dict, source: str) -> dict | None:
+    def _ts(s: str):
+        if not s:
+            return None
+        s = s[:-1] + "+00:00" if str(s).endswith("Z") else s
+        try:
+            return datetime.fromisoformat(s)
+        except Exception:
+            return None
 
-
-def _normalize(entry: dict) -> dict | None:
-    ts = _parse_ts(str(entry.get("timestamp") or ""))
+    ts = _ts(entry.get("timestamp"))
     if ts is None:
         return None
-    e = {"ts": ts.isoformat(), "kind": entry.get("type") or entry.get("_source")}
-    if e["kind"] in ("purchase", "consume", "adjustment"):
-        e["domain"] = "inventory"
-        e["item_id"] = entry.get("item_id")
-        e["qty_change"] = entry.get("qty_change")
-        e["unit_cost_cents"] = entry.get("unit_cost_cents")
-        e["source_kind"] = entry.get("source_kind")
-        e["source_id"] = entry.get("source_id")
-    elif e["kind"] in ("run", "manufacturing.run", "manufacturing_run"):
-        e["domain"] = "manufacturing"
-        e["recipe_id"] = entry.get("recipe_id")
-        e["recipe_name"] = entry.get("recipe_name")
-        e["output_item_id"] = entry.get("output_item_id")
-        e["output_qty"] = entry.get("output_qty")
-    elif e["kind"] in ("recipe.create", "recipe.update", "recipe.delete"):
-        e["domain"] = "recipes"
-        e["recipe_id"] = entry.get("recipe_id")
-        e["recipe_name"] = entry.get("recipe_name")
-    else:
-        e["domain"] = entry.get("_source") or "other"
+
+    e = {"ts": ts.isoformat(), "kind": entry.get("type") or source, "domain": source}
+
+    if source == "inventory":
+        e.update(
+            {
+                "item_id": entry.get("item_id"),
+                "qty_change": entry.get("qty_change"),
+                "unit_cost_cents": entry.get("unit_cost_cents"),
+                "source_kind": entry.get("source_kind"),
+                "source_id": entry.get("source_id"),
+            }
+        )
+    elif source == "manufacturing":
+        e.update(
+            {
+                "recipe_id": entry.get("recipe_id"),
+                "recipe_name": entry.get("recipe_name"),
+                "output_item_id": entry.get("output_item_id"),
+                "output_qty": entry.get("output_qty"),
+            }
+        )
+    elif source == "recipes":
+        e.update({"recipe_id": entry.get("recipe_id"), "recipe_name": entry.get("recipe_name")})
     return e
 
 
@@ -89,12 +88,10 @@ def _load_events(days: int, cursor: str | None, limit: int):
     all_events = []
     for p, src in files:
         for obj in _read_jsonl(p, src):
-            e = _normalize(obj)
+            e = _normalize(obj, src)
             if not e:
                 continue
-            dt = _parse_ts(e["ts"])
-            if dt is None:
-                continue
+            dt = datetime.fromisoformat(e["ts"])
             if dt < cutoff:
                 continue
             all_events.append(e)
