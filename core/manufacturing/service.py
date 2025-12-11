@@ -45,18 +45,19 @@ def transactional(func: Callable):
 class fifo:
     @staticmethod
     def allocate(session: Session, item_id: int, qty: float) -> List[dict]:
-        if qty <= 0:
+        qty_int = int(qty)
+        if qty_int <= 0:
             return []
 
         batches = (
             session.query(ItemBatch)
-            .filter(ItemBatch.item_id == item_id, ItemBatch.qty_remaining > 1e-12)
+            .filter(ItemBatch.item_id == item_id, ItemBatch.qty_remaining > 0)
             .order_by(ItemBatch.created_at, ItemBatch.id)
             .with_for_update()
             .all()
         )
-        available = sum(float(b.qty_remaining) for b in batches)
-        if available + 1e-9 < qty:
+        available = sum(int(b.qty_remaining) for b in batches)
+        if available < qty_int:
             raise InsufficientStock(
                 [
                     {
@@ -69,14 +70,14 @@ class fifo:
             )
 
         allocations: List[dict] = []
-        remaining = qty
+        remaining = qty_int
         for batch in batches:
-            if remaining <= 1e-9:
+            if remaining <= 0:
                 break
-            take = min(float(batch.qty_remaining), remaining)
+            take = min(int(batch.qty_remaining), int(remaining))
             if take <= 0:
                 continue
-            batch.qty_remaining = float(batch.qty_remaining) - take
+            batch.qty_remaining = int(batch.qty_remaining) - take
             remaining -= take
             allocations.append(
                 {
