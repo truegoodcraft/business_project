@@ -22,13 +22,12 @@ function el(tag, attrs = {}, children = []) {
 let _state = {
   recipes: [],
   selectedRecipe: null,
-  multiplier: 1,
   movements: []
 };
 
 export async function mountManufacturing() {
   await ensureToken();
-  _state = { recipes: [], selectedRecipe: null, multiplier: 1, movements: [] };
+  _state = { recipes: [], selectedRecipe: null, movements: [] };
   const container = document.querySelector('[data-tab-panel="manufacturing"]');
   if (!container) return;
 
@@ -50,7 +49,7 @@ export async function mountManufacturing() {
 }
 
 export function unmountManufacturing() {
-  _state = { recipes: [], selectedRecipe: null, multiplier: 1, movements: [] };
+  _state = { recipes: [], selectedRecipe: null, movements: [] };
   const container = document.querySelector('[data-tab-panel="manufacturing"]');
   if (container) container.innerHTML = '';
 }
@@ -72,21 +71,18 @@ async function renderNewRunForm(parent) {
     el('h2', { text: 'New Production Run' }),
     el('a', { href: '#/recipes', class: 'btn small', style: 'text-decoration:none;border-radius:10px;padding:8px 12px;' }, 'Manage Recipes')
   ]);
-  
+
   // Controls
-  const formGrid = el('div', { class: 'form-grid', style: 'display:grid;grid-template-columns:1fr 110px;gap:12px;align-items:end;margin-bottom:20px;' });
-  
+  const formGrid = el('div', { class: 'form-grid', style: 'display:grid;grid-template-columns:1fr;gap:12px;align-items:end;margin-bottom:20px;' });
+
   const recipeSelect = el('select', { id: 'run-recipe', style: 'width:100%;background:#2a2c30;color:#e6e6e6;border:1px solid #3a3d43;border-radius:10px;padding:10px;' });
   recipeSelect.append(el('option', { value: '' }, '— Select Recipe —'));
   _state.recipes.forEach(r => {
     recipeSelect.append(el('option', { value: r.id }, r.name));
   });
 
-  const multInput = el('input', { type: 'number', value: '1', min: '1', style: 'width:100%;background:#2a2c30;color:#e6e6e6;border:1px solid #3a3d43;border-radius:10px;padding:10px;' });
-  
   formGrid.append(
-    el('label', {}, [el('div', { text: 'Recipe', style:'margin-bottom:4px;font-size:12px;color:#aaa' }), recipeSelect]),
-    el('label', {}, [el('div', { text: 'Multiplier', style:'margin-bottom:4px;font-size:12px;color:#aaa' }), multInput])
+    el('label', {}, [el('div', { text: 'Recipe', style:'margin-bottom:4px;font-size:12px;color:#aaa' }), recipeSelect])
   );
 
   // Projection Table
@@ -120,9 +116,8 @@ async function renderNewRunForm(parent) {
   // Logic
   const updateProjection = async () => {
     const rid = recipeSelect.value;
-    const mult = parseInt(multInput.value, 10) || 0;
-    
-    if (!rid || mult < 1) {
+
+    if (!rid) {
       tbody.innerHTML = '';
       table.style.display = 'none';
       emptyMsg.style.display = 'block';
@@ -145,7 +140,6 @@ async function renderNewRunForm(parent) {
         return;
       }
       _state.selectedRecipe = fullRecipe;
-      _state.multiplier = mult;
 
       tbody.innerHTML = '';
       table.style.display = 'table';
@@ -153,9 +147,8 @@ async function renderNewRunForm(parent) {
       runBtn.disabled = false;
 
       const baseOutput = Number(fullRecipe.output_qty || 1);
-      const multiplier = Number(mult) || 0;
-      const outputQty = baseOutput * multiplier;
-      const scale = outputQty / (baseOutput || 1);
+      const outputQty = baseOutput;
+      const scale = 1;
 
       fullRecipe.items.forEach(ri => {
         const current = (ri.item?.qty_stored ?? 0);
@@ -202,7 +195,6 @@ async function renderNewRunForm(parent) {
   };
 
   recipeSelect.addEventListener('change', updateProjection);
-  multInput.addEventListener('input', updateProjection);
 
   runBtn.addEventListener('click', async () => {
     if (!_state.selectedRecipe) return;
@@ -218,24 +210,19 @@ async function renderNewRunForm(parent) {
 
     try {
       const recipeId = Number(_state.selectedRecipe.id);
-      const outputQty = Math.trunc(Number(_state.selectedRecipe.output_qty || 1) * Number(_state.multiplier || 1));
 
       if (!Number.isInteger(recipeId) || recipeId <= 0) {
         throw new Error('Select a valid recipe.');
       }
-      if (!Number.isInteger(outputQty) || outputQty <= 0) {
-        throw new Error('Output quantity must be a positive integer.');
-      }
 
       await RecipesAPI.run({
         recipe_id: recipeId,
-        output_qty: outputQty
+        output_qty: 1
       });
-      
+
       statusMsg.textContent = 'Run Complete!';
       statusMsg.style.color = '#4caf50';
-      multInput.value = 1;
-      
+
       // Refresh views
       await updateProjection();
       await refreshHistory(document.querySelector('.history-list'));
