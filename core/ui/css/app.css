@@ -61,6 +61,17 @@ button {
 button.danger { background: var(--danger); }
 button.primary { background: var(--accent); }
 
+.btn-icon {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  line-height: 1;
+}
+
 input,
 select,
 textarea {

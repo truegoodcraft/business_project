@@ -237,7 +237,7 @@ function renderEditor(editor, leftPanel) {
 
   const itemsBox = el('div', { style: 'background:#23262b;padding:14px;border-radius:10px;border:1px solid #2f3136;margin-bottom:12px' });
   const itemsHeader = el('div', { style: 'display:flex;justify-content:space-between;align-items:center;margin-bottom:10px' }, [
-    el('h4', { text: 'Items', style: 'margin:0;color:#e6e6e6' }),
+    el('h4', { text: 'Input Items', style: 'margin:0;color:#e6e6e6' }),
     el('button', { class: 'btn small', text: '+ Add', style: 'border-radius:10px;padding:8px 12px;' })
   ]);
 
@@ -246,64 +246,59 @@ function renderEditor(editor, leftPanel) {
     el('th', { style: 'text-align:left;padding:10px;color:#e6e6e6' }, 'Item'),
     el('th', { style: 'text-align:right;padding:10px;color:#e6e6e6' }, 'Qty Required'),
     el('th', { style: 'text-align:center;padding:10px;color:#e6e6e6' }, 'Optional'),
-    el('th', { style: 'text-align:right;padding:10px;color:#e6e6e6' }, 'Sort'),
-    el('th', { style: 'width:60px' }, '')
+    el('th', { style: 'width:60px;text-align:right' }, '')
   ]));
   const tbody = el('tbody');
   table.append(thead, tbody);
 
   function renderItemRows() {
     tbody.innerHTML = '';
-    _draft.items
-      .sort((a, b) => (a.sort ?? a.sort_order ?? 0) - (b.sort ?? b.sort_order ?? 0))
-      .forEach((ri, idx) => {
-        const row = el('tr', { style: 'border-bottom:1px solid #2f3136' });
-        const itemSel = el('select', { style: 'width:100%;padding:8px 10px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6' });
-        itemSel.append(el('option', { value: '', selected: ri.item_id == null ? 'selected' : undefined }, '— Select —'));
-        _items.forEach(i => itemSel.append(el('option', { value: i.id, selected: String(i.id) === String(ri.item_id) ? 'selected' : undefined }, i.name)));
-        itemSel.value = ri.item_id == null ? '' : String(ri.item_id);
-        itemSel.addEventListener('change', () => {
-          ri.item_id = itemSel.value ? Number(itemSel.value) : null;
-        });
-
-        const qtyInput = el('input', {
-          type: 'number',
-          min: '0.0001',
-          step: '0.01',
-          value: ri.qty_required ?? '',
-          style: 'width:120px;text-align:right;padding:8px 10px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6'
-        });
-        qtyInput.addEventListener('input', () => {
-          const parsed = parseFloat(qtyInput.value);
-          ri.qty_required = Number.isFinite(parsed) ? parsed : null;
-        });
-
-        const optBox = el('input', { type: 'checkbox', checked: ri.optional === true ? 'checked' : undefined });
-        optBox.checked = ri.optional === true;
-        optBox.addEventListener('change', () => { ri.optional = optBox.checked; });
-
-        const sortInput = el('input', {
-          type: 'number',
-          value: ri.sort ?? ri.sort_order ?? idx,
-          style: 'width:70px;text-align:right;padding:8px 10px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6'
-        });
-        sortInput.addEventListener('input', () => { ri.sort = parseInt(sortInput.value || `${idx}`, 10); });
-
-        const delBtn = el('button', { class: 'btn small', text: 'Remove', style: 'border-radius:10px;padding:6px 10px;background:#3a3d43;color:#e6e6e6;border:1px solid #2f3136' });
-        delBtn.addEventListener('click', () => {
-          _draft.items = _draft.items.filter((_, i) => i !== idx);
-          renderItemRows();
-        });
-
-        row.append(
-          el('td', { style: 'padding:10px' }, itemSel),
-          el('td', { style: 'padding:10px;text-align:right' }, qtyInput),
-          el('td', { style: 'padding:10px;text-align:center' }, optBox),
-          el('td', { style: 'padding:10px;text-align:right' }, sortInput),
-          el('td', { style: 'padding:10px;text-align:right' }, delBtn)
-        );
-        tbody.append(row);
+    _draft.items.forEach((ri, idx) => {
+      const row = el('tr', { style: 'border-bottom:1px solid #2f3136' });
+      const itemSel = el('select', { style: 'width:100%;padding:8px 10px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6' });
+      itemSel.append(el('option', { value: '', selected: ri.item_id == null ? 'selected' : undefined }, '— Select —'));
+      _items.forEach(i => itemSel.append(el('option', { value: i.id, selected: String(i.id) === String(ri.item_id) ? 'selected' : undefined }, i.name)));
+      itemSel.value = ri.item_id == null ? '' : String(ri.item_id);
+      itemSel.addEventListener('change', () => {
+        ri.item_id = itemSel.value ? Number(itemSel.value) : null;
       });
+
+      const qtyInput = el('input', {
+        type: 'number',
+        min: '0.0001',
+        step: '0.01',
+        value: ri.qty_required ?? '',
+        style: 'width:120px;text-align:right;padding:8px 10px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6'
+      });
+      qtyInput.addEventListener('input', () => {
+        const parsed = parseFloat(qtyInput.value);
+        ri.qty_required = Number.isFinite(parsed) ? parsed : null;
+      });
+
+      const optBox = el('input', { type: 'checkbox', checked: ri.optional === true ? 'checked' : undefined });
+      optBox.checked = ri.optional === true;
+      optBox.addEventListener('change', () => { ri.optional = optBox.checked; });
+
+      const delBtn = el('button', {
+        class: 'btn danger btn-icon',
+        type: 'button',
+        text: '×',
+        title: 'Remove input',
+        'aria-label': 'Remove input',
+      });
+      delBtn.addEventListener('click', () => {
+        _draft.items = _draft.items.filter((_, i) => i !== idx);
+        renderItemRows();
+      });
+
+      row.append(
+        el('td', { style: 'padding:10px' }, itemSel),
+        el('td', { style: 'padding:10px;text-align:right' }, qtyInput),
+        el('td', { style: 'padding:10px;text-align:center' }, optBox),
+        el('td', { style: 'padding:10px;text-align:right' }, delBtn)
+      );
+      tbody.append(row);
+    });
   }
 
   itemsHeader.lastChild.onclick = () => {
@@ -337,11 +332,10 @@ function renderEditor(editor, leftPanel) {
     })();
 
     const cleanedItems = (_draft.items || [])
-      .map((it, idx) => ({
+      .map((it) => ({
         item_id: it.item_id,
         qty_required: it.qty_required,
         optional: it.optional === true || it.is_optional === true,
-        sort: (it.sort ?? it.sort_order ?? idx)
       }))
       .filter(it => it.item_id && it.qty_required !== null && it.qty_required !== '' && Number(it.qty_required) > 0);
 
@@ -364,7 +358,7 @@ function renderEditor(editor, leftPanel) {
         item_id: Number(it.item_id),
         qty_required: Number(it.qty_required),
         optional: it.optional === true,
-        sort: Number.isFinite(it.sort) ? it.sort : idx,
+        sort: idx,
       })),
     };
   }
