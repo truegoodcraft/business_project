@@ -136,6 +136,8 @@ async def run_manufacturing(
     body: ManufacturingRunRequest = parse_run_request(raw_body)
     output_item_id: int | None = getattr(body, "output_item_id", None)
 
+    recipe_name: str | None = None
+
     recipe: Recipe | None = None
     if getattr(body, "recipe_id", None) is not None:
         recipe = db.get(Recipe, body.recipe_id)
@@ -148,6 +150,8 @@ async def run_manufacturing(
         if recipe.output_qty <= 0:
             raise HTTPException(status_code=400, detail="Recipe has invalid output quantity")
         output_item_id = recipe.output_item_id
+        if getattr(recipe, "name", None):
+            recipe_name = recipe.name
 
     try:
         output_item_id, required, k, shortages = validate_run(db, body)
@@ -159,6 +163,7 @@ async def run_manufacturing(
                     "type": "manufacturing_run",
                     "run_id": run.id,
                     "recipe_id": getattr(body, "recipe_id", None),
+                    "recipe_name": recipe_name,
                     "status": "failed_insufficient_stock",
                     "shortages": shortages,
                 }
@@ -171,6 +176,7 @@ async def run_manufacturing(
                 "type": "manufacturing_run",
                 "run_id": result["run"].id,
                 "recipe_id": getattr(body, "recipe_id", None),
+                "recipe_name": recipe_name,
                 "status": "success",
                 "output_qty": body.output_qty,
             }
@@ -191,6 +197,7 @@ async def run_manufacturing(
                 "type": "manufacturing_run",
                 "run_id": run.id,
                 "recipe_id": getattr(body, "recipe_id", None),
+                "recipe_name": recipe_name,
                 "status": "failed_insufficient_stock",
                 "shortages": shortages,
             }
@@ -215,6 +222,7 @@ async def run_manufacturing(
                     "type": "manufacturing_run",
                     "run_id": run.id,
                     "recipe_id": getattr(body, "recipe_id", None),
+                    "recipe_name": recipe_name,
                     "status": "failed_insufficient_stock",
                     "shortages": shortages,
                 }
@@ -227,6 +235,7 @@ async def run_manufacturing(
                 "type": "manufacturing_run",
                 "run_id": None,
                 "recipe_id": getattr(body, "recipe_id", None),
+                "recipe_name": recipe_name,
                 "status": "failed",
             }
         )

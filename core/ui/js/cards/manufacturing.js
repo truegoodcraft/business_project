@@ -340,7 +340,7 @@ async function loadRecentRuns30d() {
       const timeStr = d ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
       const rid = (r.recipe_id != null) ? String(r.recipe_id) : null;
       const recipeName =
-        (r.recipe_name ? String(r.recipe_name) : null) ||
+        (r.recipe_name && String(r.recipe_name).trim()) ||
         (rid && recMap[rid]) ||
         (rid ? `Recipe #${rid}` : '(ad-hoc)');
       const row = document.createElement('div');
