@@ -1,4 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
+import json
+import os
+from datetime import datetime
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -12,6 +17,24 @@ from tgc.security import require_token_ctx
 from tgc.state import AppState, get_state
 
 router = APIRouter(prefix="/recipes", tags=["recipes"])
+
+
+def _journals_dir() -> Path:
+    root = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~/.local/share")
+    d = Path(root) / "BUSCore" / "app" / "data" / "journals"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _append_recipe_journal(entry: dict) -> None:
+    try:
+        entry = dict(entry)
+        entry.setdefault("timestamp", datetime.utcnow().isoformat() + "Z")
+        p = _journals_dir() / "recipes.jsonl"
+        with open(p, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, separators=(",", ":")) + "\n")
+    except Exception:
+        pass
 
 
 class RecipeItemIn(BaseModel):
@@ -154,6 +177,11 @@ async def create_recipe(
         )
     db.commit()
     db.refresh(recipe)
+    _append_recipe_journal({
+        "type": "recipe.create",
+        "recipe_id": int(recipe.id),
+        "recipe_name": recipe.name,
+    })
     return _serialize_recipe_detail(db, recipe)
 
 
@@ -197,6 +225,11 @@ async def update_recipe(
         )
     db.commit()
     db.refresh(recipe)
+    _append_recipe_journal({
+        "type": "recipe.update",
+        "recipe_id": int(recipe.id),
+        "recipe_name": recipe.name,
+    })
     return _serialize_recipe_detail(db, recipe)
 
 
@@ -219,4 +252,11 @@ async def delete_recipe(
     db.query(RecipeItem).filter(RecipeItem.recipe_id == recipe_id).delete()
     db.delete(r)
     db.commit()
+    _append_recipe_journal(
+        {
+            "type": "recipe.delete",
+            "recipe_id": int(recipe_id),
+            "recipe_name": getattr(r, "name", None),
+        }
+    )
     return {"ok": True, "deleted": recipe_id}

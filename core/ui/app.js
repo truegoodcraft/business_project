@@ -26,6 +26,7 @@ import { mountInventory, unmountInventory } from "./js/cards/inventory.js";
 import { mountManufacturing, unmountManufacturing } from "./js/cards/manufacturing.js";
 import { mountRecipes, unmountRecipes } from "./js/cards/recipes.js";
 import { settingsCard } from "./js/cards/settings.js";
+import { mountLogsPage } from "./js/logs.js";
 
 const ROUTES = {
   '#/inventory': showInventory,
@@ -194,13 +195,9 @@ async function showLogs() {
   const logsScreen = document.querySelector('[data-role="logs-screen"]');
   logsScreen?.classList.remove('hidden');
   const host = document.querySelector('[data-role="logs-root"]');
-  if (host && !host.hasChildNodes()) {
-    host.innerHTML = `
-      <section class="card">
-        <h1 style="margin-top:0;margin-bottom:8px;">Logs</h1>
-        <div id="log-feed" aria-live="polite">Log feed coming soon.</div>
-      </section>
-    `;
+  if (host) {
+    host.innerHTML = '';
+    mountLogsPage(host);
   }
 }
 
