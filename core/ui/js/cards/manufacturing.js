@@ -170,7 +170,7 @@ async function renderNewRunForm(parent) {
 
         row.append(
           el('td', { style:'padding:8px', text: ri.item?.name || `Item #${ri.item_id}` }),
-          el('td', { style:'padding:8px;color:#aaa', text: ri.is_optional ? 'Optional' : 'Input' }),
+          el('td', { style:'padding:8px;color:#aaa', text: (ri.optional ?? ri.is_optional) ? 'Optional' : 'Input' }),
           el('td', { style:'padding:8px;text-align:right', text: `${current} ${uom}` }),
           el('td', { style:'padding:8px;text-align:right', text: `${change.toFixed(2)}` }),
           el('td', { style:`padding:8px;text-align:right;color:${stockColor}`, text: `${future.toFixed(2)} ${uom}` })

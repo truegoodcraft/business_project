@@ -46,8 +46,8 @@ function normalizeRecipe(data) {
     items: (data.items || []).map((it, idx) => ({
       item_id: it.item_id,
       qty_required: Number(it.qty_required || it.qty_stored || 0),
-      is_optional: Boolean(it.is_optional),
-      sort_order: it.sort_order ?? idx,
+      optional: Boolean(it.optional ?? it.is_optional),
+      sort: it.sort ?? it.sort_order ?? idx,
     })),
   };
 }
@@ -294,7 +294,7 @@ function renderEditor(editor, leftPanel) {
   function renderItemRows() {
     tbody.innerHTML = '';
     _draft.items
-      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+      .sort((a, b) => (a.sort ?? a.sort_order ?? 0) - (b.sort ?? b.sort_order ?? 0))
       .forEach((ri, idx) => {
         const row = el('tr', { style: 'border-bottom:1px solid #2f3136' });
         const itemSel = el('select', { style: 'width:100%;padding:8px 10px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6' });
@@ -313,15 +313,15 @@ function renderEditor(editor, leftPanel) {
         });
         qtyInput.addEventListener('input', () => { ri.qty_required = parseFloat(qtyInput.value) || 0; });
 
-        const optBox = el('input', { type: 'checkbox', checked: ri.is_optional ? 'checked' : undefined });
-        optBox.addEventListener('change', () => { ri.is_optional = optBox.checked; });
+        const optBox = el('input', { type: 'checkbox', checked: ri.optional ? 'checked' : undefined });
+        optBox.addEventListener('change', () => { ri.optional = optBox.checked; });
 
         const sortInput = el('input', {
           type: 'number',
-          value: ri.sort_order ?? idx,
+          value: ri.sort ?? ri.sort_order ?? idx,
           style: 'width:70px;text-align:right;padding:8px 10px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6'
         });
-        sortInput.addEventListener('input', () => { ri.sort_order = parseInt(sortInput.value || `${idx}`, 10); });
+        sortInput.addEventListener('input', () => { ri.sort = parseInt(sortInput.value || `${idx}`, 10); });
 
         const delBtn = el('button', { class: 'btn small', text: 'Remove', style: 'border-radius:10px;padding:6px 10px;background:#3a3d43;color:#e6e6e6;border:1px solid #2f3136' });
         delBtn.addEventListener('click', () => {
@@ -344,8 +344,8 @@ function renderEditor(editor, leftPanel) {
     _draft.items.push({
       item_id: _items[0]?.id ?? null,
       qty_required: 1,
-      is_optional: false,
-      sort_order: _draft.items.length,
+      optional: false,
+      sort: _draft.items.length,
     });
     renderItemRows();
   };
@@ -392,8 +392,8 @@ function renderEditor(editor, leftPanel) {
       items: (_draft.items || []).map((it, idx) => ({
         item_id: it.item_id ? Number(it.item_id) : null,
         qty_required: Number(it.qty_required) || 0,
-        is_optional: Boolean(it.is_optional),
-        sort_order: it.sort_order ?? idx,
+        optional: Boolean(it.optional ?? it.is_optional),
+        sort: (it.sort ?? it.sort_order ?? idx),
       })),
     };
 
