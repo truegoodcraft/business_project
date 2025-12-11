@@ -50,8 +50,10 @@ async function fetchMore() {
   if (_loading) return;
   _loading = true;
   try {
-    const url = _cursor ? `/app/logs?limit=200&cursor=${encodeURIComponent(_cursor)}` : "/app/logs?limit=200";
-    const { events, next_cursor } = await apiGet(url);
+    const url = _cursor
+      ? `/app/logs?limit=200&cursor_id=${encodeURIComponent(_cursor)}`
+      : "/app/logs?limit=200";
+    const { events, next_cursor_id } = await apiGet(url);
     const body = document.getElementById("logs-body");
     if (!events || !events.length) {
       if (!body.children.length) body.innerHTML = `<div class="logs-empty">No logs.</div>`;
@@ -62,7 +64,7 @@ async function fetchMore() {
     const frag = document.createDocumentFragment();
     events.forEach(ev => frag.appendChild(rowEl(ev)));
     body.appendChild(frag);
-    _cursor = next_cursor || null;
+    _cursor = next_cursor_id || null;
     const more = document.getElementById("logs-more");
     if (more) more.style.display = _cursor ? "" : "none";
   } finally {
