@@ -37,7 +37,7 @@ function newRecipeDraft() {
 function blankRecipeItem(sort = 0) {
   return {
     item_id: null,
-    qty_required: null,
+    qty_required: '',
     optional: false,
     sort,
   };
@@ -271,8 +271,9 @@ function renderEditor(editor, leftPanel) {
       .forEach((ri, idx) => {
         const row = el('tr', { style: 'border-bottom:1px solid #2f3136' });
         const itemSel = el('select', { style: 'width:100%;padding:8px 10px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6' });
-        itemSel.append(el('option', { value: '', disabled: 'true', selected: ri.item_id == null ? 'selected' : undefined }, '— Select —'));
+        itemSel.append(el('option', { value: '', selected: ri.item_id == null ? 'selected' : undefined }, '— Select —'));
         _items.forEach(i => itemSel.append(el('option', { value: i.id, selected: String(i.id) === String(ri.item_id) ? 'selected' : undefined }, i.name)));
+        itemSel.value = ri.item_id == null ? '' : String(ri.item_id);
         itemSel.addEventListener('change', () => {
           ri.item_id = itemSel.value ? Number(itemSel.value) : null;
         });
