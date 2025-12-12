@@ -8,17 +8,40 @@
 
 <img src="core/ui/Logo.png" alt="BUS Core Icon" width="100">
 
-**The local-first ERP for makers. Inventory, Manufacturing, and Contacts—no cloud required.**
+BUS-Core
 
-BUS Core is a free, open-source business utility system designed for small workshops and makers. It runs entirely on your local machine, giving you ownership of your data without subscriptions or cloud dependencies.
+The local-first ERP for Makers. Inventory, Manufacturing, and Contacts. No cloud required.
+
+BUS-Core is a free, open-source business utility system built for small workshops and independent makers. It runs entirely on your local machine, giving you full control of your data. No subscriptions, no forced updates, no cloud lock-in.
+
+At its core, BUS-Core helps you track everything that moves through your shop:
+
+Materials & Consumables: Record stock by unit (grams, millimeters, milliliters, or each), with batch numbers, purchase price, and date added.
+
+Blueprints(Recipe): Define the recipes that turn raw materials into assemblies or finished goods. BUS-Core automatically calculates cost of goods based on the FIFO (First-In, First-Out) batches you’ve actually purchased.
+
+Assemblies & Products: Produce items using your blueprints and set a final selling price—then compare the real cost of input materials against sales to measure margin and waste.
+
+Vendors: Link materials and consumables to vendors and track their pricing history over time.
+
+It’s not an accounting program, and it’s not trying to be.
+BUS-Core exists to replace spreadsheet chaos and overpriced SaaS platforms that bleed your margins. It’s your own local workshop system—clean, transparent, and yours.
 
 ## Key Features
 
-* **Zero-License:** Completely free and open source (AGPLv3). No tiers, no "Pro" upselling, no locked features.
-* **Precision Inventory:** Integer-based metric tracking (mg, mm, ml, count) with strict FIFO valuation and batch management.
-* **Manufacturing:** Recipe-based production runs with automatic cost rollups, shortage detection, and atomic stock commits.
-* **Ledger & Logs:** Full history of stock movements, including specific tracking for sales, loss, and theft.
-* **Local & Private:** Powered by a local SQLite database. Includes AES-GCM encrypted backups.
+Key Features
+
+* Zero-License: 100% free and open-source (AGPLv3). No “Pro” tiers, no locked features, no tracking.
+
+* Precision Inventory: Integer-based metric tracking with FIFO batch valuation and accurate stock costing.
+
+* Manufacturing Engine: Recipe-based builds with automatic cost rollups, shortage detection, and atomic commits.
+
+* Ledger & Audit Trail: Full movement history—purchases, production, sales, loss, and adjustments.
+
+* Local & Private: Runs on a local SQLite database with optional AES-GCM encrypted backups.
+
+* Cross-Platform: Works on Windows (primary), Linux, and macOS.
 
 ## Getting Started
 
@@ -28,16 +51,13 @@ BUS Core is a free, open-source business utility system designed for small works
 
 ### Installation
 
-1.  Clone the repository.
-2.  Run the launcher:
-    ```powershell
-    scripts/launch.ps1
-    # Or: python launcher.py
-    ```
+1.  Download the .zip File and Extract it.
+2.  Double click Run Core.bat
+    
 
 **Note for Windows Users:** The application runs in the **System Tray**. If the browser does not open automatically, or if you close the window, double-click the tray icon to access the dashboard.
 
-*(If Windows blocks the script, run: `PowerShell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\launch.ps1"`)*
+*(If Windows blocks the script, run: `PowerShell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\launch.ps1"` in a Powershell window to sidestep it)*
 
 ## Dev Mode
 
