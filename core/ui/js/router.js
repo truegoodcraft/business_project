@@ -14,9 +14,9 @@ export function navigate(path) {
 }
 
 function render() {
-  const path = location.hash.replace(/^#/, '') || '/manufacturing';
+  const path = location.hash.replace(/^#/, '') || '/home';
   const target = document.getElementById('app');
-  const fn = routes[path] || routes['/manufacturing'];
+  const fn = routes[path] || routes['/home'];
   target.innerHTML = '';
   fn(target);
 }

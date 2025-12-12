@@ -41,7 +41,7 @@ const ROUTES = {
 };
 
 function getHash() {
-  return (window.location.hash || '#/inventory').replace(/\/+$/, '');
+  return (window.location.hash || '#/home').replace(/\/+$/, '');
 }
 
 function normalizeRoute(hash) {
@@ -100,7 +100,7 @@ async function onRouteChange() {
   document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
   clearCardHost();
 
-  const fn = ROUTES[hash] || ROUTES['#/inventory'];
+  const fn = ROUTES[hash] || ROUTES['#/home'];
   await fn();
 }
 
@@ -111,11 +111,18 @@ window.addEventListener('load', () => {
   onRouteChange().catch(err => console.error('route change failed', err));
 });
 
-if (!location.hash) location.hash = '#/inventory';
+if (!location.hash) location.hash = '#/home';
 
 document.addEventListener('DOMContentLoaded', async () => {
   try {
     await ensureToken();
+    // UI version stamp (from FastAPI OpenAPI info.version)
+    try {
+      const res = await fetch('/openapi.json', { credentials: 'include' });
+      const j = await res.json();
+      const el = document.querySelector('[data-role="ui-version"]');
+      if (el && j?.info?.version) el.textContent = j.info.version;
+    } catch (_) { /* non-fatal */ }
     console.log('BOOT OK');
   } catch (e) {
     console.error('BOOT FAIL', e);
