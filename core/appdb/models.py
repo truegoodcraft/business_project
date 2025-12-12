@@ -50,6 +50,7 @@ class Item(Base):
         ),
     )
 
+    # TODO(next schema bump): consider AUTOINCREMENT here to avoid id reuse after deletes
     id = Column(Integer, primary_key=True, index=True)
     vendor_id = Column(Integer, ForeignKey("vendors.id"), nullable=True)
     sku = Column(String, nullable=True)
