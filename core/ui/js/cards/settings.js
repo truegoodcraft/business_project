@@ -70,6 +70,28 @@ export async function settingsCard(el) {
 
   el.appendChild(root);
 
+  const unitsSection = document.createElement('div');
+  unitsSection.style.marginBottom = '20px';
+  unitsSection.innerHTML = `
+    <label style="display:flex; align-items:center; gap:10px; cursor:pointer; font-weight:600; color:#ccc;">
+      <input type="checkbox" data-role="american-mode" style="transform:scale(1.2);">
+      <span>American mode (Imperial units)</span>
+    </label>
+    <p class="sub" style="margin:6px 0 0; color:#aaa;">Show inches/feet, ounces, and fluid ounces in the UI. Values are converted to metric before saving.</p>
+  `;
+  const saveBlock = root.querySelector('#btn-save')?.parentElement;
+  if (saveBlock) {
+    root.insertBefore(unitsSection, saveBlock);
+  }
+
+  const americanToggle = unitsSection.querySelector('[data-role="american-mode"]');
+  if (americanToggle) {
+    americanToggle.checked = !!(window.BUS_UNITS && window.BUS_UNITS.american);
+    americanToggle.addEventListener('change', () => {
+      if (window.BUS_UNITS) window.BUS_UNITS.american = americanToggle.checked;
+    });
+  }
+
   const adminSection = document.createElement('section');
   adminSection.style.marginTop = '16px';
   adminSection.innerHTML = `
