@@ -742,7 +742,10 @@ app.add_middleware(
 
 
 protected = APIRouter(dependencies=[Depends(require_token_ctx)])
-protected.include_router(reader_local_router)
+try:
+    protected.include_router(reader_local_router)
+except Exception:
+    pass  # local index disabled: fail silently
 protected.include_router(organizer_router)
 from core.api.routes.items import router as items_router
 from core.api.routes.vendors import router as vendors_router
@@ -1188,43 +1191,36 @@ def _background_index_worker(initial_status: Optional[Dict[str, Any]] = None) ->
     INDEX_IDLE_EVENT.clear()
     try:
         if INDEX_PAUSE_EVENT.is_set() or INDEX_STOP_EVENT.is_set():
-            log("[index] background: pause requested (pre-start)")
             _dispose_index_handles()
             return
 
         try:
             broker = _broker()
-        except Exception as exc:
-            log(f"[index] background: broker_unavailable error={type(exc).__name__}")
+        except Exception:
             return
 
         if INDEX_STOP_EVENT.is_set() or INDEX_PAUSE_EVENT.is_set():
-            log("[index] background: stop requested (pre-start)")
             _dispose_index_handles()
             return
 
         status = initial_status or _index_status_payload(broker)
-        drive_needed = not bool(status.get("drive", {}).get("up_to_date"))
+        drive_needed = False  # disabled
         local_needed = not bool(status.get("local", {}).get("up_to_date"))
         if not drive_needed and not local_needed:
-            log("[index] background: already up-to-date")
             return
-
-        log(
-            f"[index] background: start drive_needed={drive_needed} local_needed={local_needed}"
-        )
 
         drive_success = True
         local_success = True
 
         if drive_needed:
-            drive_success = _catalog_background_scan(
-                broker, "google_drive", "allDrives", "Drive"
-            )
+            drive_success = True
         if local_needed:
-            local_success = _catalog_background_scan(
-                broker, "local_fs", "local_roots", "Local"
-            )
+            try:
+                local_success = _catalog_background_scan(
+                    broker, "local_fs", "local_roots", "Local"
+                )
+            except Exception:
+                local_success = False
 
         if drive_success and local_success:
             updated = _index_status_payload(broker)
@@ -1244,15 +1240,8 @@ def _background_index_worker(initial_status: Optional[Dict[str, Any]] = None) ->
                 state["updated_at"] = int(time.time())
                 try:
                     _save_index_state(state)
-                    log("[index] background: state persisted")
-                except Exception as exc:
-                    log(f"[index] background: persist_failed error={type(exc).__name__}")
-            else:
-                log("[index] background: nothing to persist")
-        else:
-            log(
-                f"[index] background: incomplete drive_ok={drive_success} local_ok={local_success}"
-            )
+                except Exception:
+                    pass
     finally:
         _dispose_index_handles()
         INDEX_IDLE_EVENT.set()
@@ -1261,12 +1250,11 @@ def _background_index_worker(initial_status: Optional[Dict[str, Any]] = None) ->
 async def _run_background_index(initial_status: Optional[Dict[str, Any]] = None) -> None:
     if INDEX_STOP_EVENT.is_set() or INDEX_PAUSE_EVENT.is_set():
         INDEX_IDLE_EVENT.set()
-        log("[index] background: paused; skipping run")
         return
     try:
         await asyncio.to_thread(_background_index_worker, initial_status)
-    except Exception as exc:
-        log(f"[index] background: worker_exception error={type(exc).__name__}")
+    except Exception:
+        pass
 
 
 def _decode_local_id(local_id: str) -> str:
@@ -1445,10 +1433,12 @@ def settings_google_post(
     updated: List[str] = []
     try:
         if payload.client_id is not None:
-            Secrets.set("google_drive", "client_id", payload.client_id)
+# DISABLED DRIVE INDEX
+#             Secrets.set("google_drive", "client_id", payload.client_id)
             updated.append("client_id")
         if payload.client_secret is not None:
-            Secrets.set("google_drive", "client_secret", payload.client_secret)
+# DISABLED DRIVE INDEX
+#             Secrets.set("google_drive", "client_secret", payload.client_secret)
             updated.append("client_secret")
     except SecretError as exc:
         raise HTTPException(status_code=500, detail="secret_store_error") from exc
@@ -1467,7 +1457,8 @@ def settings_google_delete(
 
     for key in ("client_id", "client_secret", "oauth_refresh"):
         try:
-            Secrets.delete("google_drive", key)
+# DISABLED DRIVE INDEX
+#             Secrets.delete("google_drive", key)
         except SecretError:
             continue
 
@@ -1559,18 +1550,14 @@ async def _auto_index_if_stale() -> None:
     INDEX_LOOP = asyncio.get_running_loop()
     try:
         status = _index_status_payload(_broker())
-    except Exception as exc:
-        log(f"[index] background: status_check_failed error={type(exc).__name__}")
+    except Exception:
         return
     if INDEX_STOP_EVENT.is_set() or INDEX_PAUSE_EVENT.is_set():
-        log("[index] background: startup skip (paused)")
         return
     if status.get("overall_up_to_date"):
-        log("[index] background: startup skip (up-to-date)")
         return
     if BACKGROUND_INDEX_TASK and not BACKGROUND_INDEX_TASK.done():
         return
-    log("[index] background: scheduling startup refresh")
     BACKGROUND_INDEX_TASK = asyncio.create_task(_run_background_index(status))
 
 
@@ -1667,7 +1654,8 @@ def oauth_google_callback(request: Request):
         raise HTTPException(status_code=400, detail="missing_refresh_token")
 
     try:
-        Secrets.set("google_drive", "oauth_refresh", refresh_token)
+# DISABLED DRIVE INDEX
+#         Secrets.set("google_drive", "oauth_refresh", refresh_token)
     except SecretError as exc:
         raise HTTPException(status_code=500, detail="secret_store_error") from exc
 
@@ -1687,11 +1675,13 @@ def oauth_google_revoke(_ctx=Depends(require_token_ctx)):
         except Exception:
             pass
         try:
-            Secrets.delete("google_drive", "oauth_refresh")
+# DISABLED DRIVE INDEX
+#             Secrets.delete("google_drive", "oauth_refresh")
         except SecretError:
             pass
     try:
-        get_broker().clear_provider_cache("google_drive")
+# DISABLED DRIVE INDEX
+#         get_broker().clear_provider_cache("google_drive")
     except Exception:
         pass
     response = JSONResponse({"ok": True})

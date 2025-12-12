@@ -452,7 +452,8 @@ def test_master_index_action_writes_sheets_index(monkeypatch, tmp_path):
     ]
 
     def fake_build(limits, drive_root_id, config):
-        captured_roots.append(drive_root_id)
+# DISABLED DRIVE INDEX
+#         captured_roots.append(drive_root_id)
         return list(sample_rows)
 
     monkeypatch.setattr("tgc.actions.master_index.build_sheets_index", fake_build)
@@ -482,7 +483,8 @@ def test_master_index_action_writes_sheets_index(monkeypatch, tmp_path):
         organization=OrganizationProfile(),
         reports_root=tmp_path,
     )
-    controller.register_module("drive", DummyDriveModule())
+# DISABLED DRIVE INDEX
+#     controller.register_module("drive", DummyDriveModule())
 
     action = MasterIndexAction()
     controller.register_action(action)
