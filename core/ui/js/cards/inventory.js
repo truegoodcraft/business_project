@@ -2,11 +2,12 @@
 // Inventory card with smart input parsing.
 
 import { apiGetJson, apiPost, apiPut, apiDelete, ensureToken } from '../api.js';
+import { METRIC, unitOptionsList, dimensionForUnit, toMetricBase, DIM_DEFAULTS_IMPERIAL, DIM_DEFAULTS_METRIC, norm } from '../lib/units.js';
 
 const UNIT_OPTIONS = {
   length: ['mm', 'cm', 'm'],
   area: ['mm2', 'cm2', 'm2'],
-  volume: ['mm3', 'cm3', 'm3', 'ml'],
+  volume: ['mm3', 'cm3', 'm3', 'ml', 'l'],
   weight: ['mg', 'g', 'kg'],
   count: ['ea'],
 };
@@ -30,6 +31,7 @@ const UNIT_LABEL = {
   cm3: 'cm³',
   m3: 'm³',
   ml: 'ml',
+  l: 'l',
   mg: 'mg',
   g: 'g',
   kg: 'kg',
@@ -39,7 +41,7 @@ const UNIT_LABEL = {
 const MULT = {
   length: { mm: 1, cm: 10, m: 1000 },
   area: { mm2: 1, cm2: 100, m2: 1_000_000 },
-  volume: { mm3: 1, cm3: 1_000, m3: 1_000_000_000, ml: 1_000 },
+  volume: { mm3: 1, cm3: 1_000, m3: 1_000_000_000, ml: 1_000, l: 1_000_000 },
   weight: { mg: 1, g: 1_000, kg: 1_000_000 },
   count: { ea: 1_000 },
 };
@@ -511,16 +513,8 @@ export function openItemModal(item = null) {
 
   // Elements – Speed Surface
   const fName = inputRow('Name', 'text', item?.name ?? '', { autofocus: true });
-  const dimensionSelect = createSelect('item-dimension', [
-    ['length', 'Length'],
-    ['area', 'Area'],
-    ['volume', 'Volume'],
-    ['weight', 'Weight'],
-    ['count', 'Count'],
-  ]);
-  const dimensionRow = fieldRowWithElement('Dimension', dimensionSelect);
 
-  const unitSelect = createSelect('item-unit');
+  const unitSelect = createUnitSelect('item-unit');
   const unitRow = fieldRowWithElement('Unit', unitSelect);
 
   const qtyInput = document.createElement('input');
@@ -529,7 +523,20 @@ export function openItemModal(item = null) {
   qtyInput.setAttribute('step', '0.001');
   qtyInput.setAttribute('min', '0');
   qtyInput.required = true;
-  const qtyRow = fieldRowWithElement('Quantity', qtyInput);
+  const qtyChip = document.createElement('span');
+  qtyChip.className = 'pill';
+  qtyChip.textContent = '';
+  const qtyWrap = document.createElement('div');
+  qtyWrap.className = 'field-input';
+  qtyWrap.style.display = 'flex';
+  qtyWrap.style.alignItems = 'center';
+  qtyWrap.style.gap = '8px';
+  qtyWrap.append(qtyInput, qtyChip);
+  const qtyRow = document.createElement('div');
+  qtyRow.className = 'field-row';
+  const qtyLabel = document.createElement('label');
+  qtyLabel.textContent = 'Quantity';
+  qtyRow.append(qtyLabel, qtyWrap);
 
   const qtyPreview = document.createElement('div');
   qtyPreview.id = 'item-qty-preview';
@@ -540,7 +547,28 @@ export function openItemModal(item = null) {
   costInput.id = 'item-cost-dec';
   costInput.setAttribute('step', '0.01');
   costInput.setAttribute('min', '0');
-  const costRow = fieldRowWithElement('Unit Cost', costInput);
+  const costUnitSelect = createUnitSelect('item-cost-unit');
+  const lockCostUnit = document.createElement('input');
+  lockCostUnit.type = 'checkbox';
+  lockCostUnit.id = 'item-lock-cost-unit';
+  lockCostUnit.checked = true;
+  const costUnitLockLabel = document.createElement('label');
+  costUnitLockLabel.className = 'inline-check';
+  costUnitLockLabel.htmlFor = 'item-lock-cost-unit';
+  costUnitLockLabel.append(lockCostUnit, document.createTextNode('Lock cost to unit'));
+  const costWrap = document.createElement('div');
+  costWrap.className = 'field-input';
+  costWrap.style.display = 'flex';
+  costWrap.style.alignItems = 'center';
+  costWrap.style.gap = '8px';
+  const slash = document.createElement('span');
+  slash.textContent = '/';
+  costWrap.append(costInput, slash, costUnitSelect, costUnitLockLabel);
+  const costRow = document.createElement('div');
+  costRow.className = 'field-row';
+  const costLabel = document.createElement('label');
+  costLabel.textContent = 'Cost';
+  costRow.append(costLabel, costWrap);
 
   const isProductInput = document.createElement('input');
   isProductInput.type = 'checkbox';
@@ -668,12 +696,12 @@ export function openItemModal(item = null) {
   const divider = document.createElement('hr');
   divider.className = 'thin';
 
-  content.append(fName, dimensionRow, unitRow, productRow, fPrice, divider);
+  content.append(fName, unitRow, productRow, fPrice, divider);
   if (addBatchToggleRow) content.append(addBatchToggleRow);
   if (batchFields) {
     content.append(batchFields);
   } else {
-    content.append(qtyRow, qtyPreview);
+    content.append(qtyRow, costRow, qtyPreview);
   }
   if (addBatchBtnRow) content.append(addBatchBtnRow);
   content.append(fLocation, hinge, ledger, footer);
@@ -719,21 +747,13 @@ export function openItemModal(item = null) {
     }
   });
 
-  function populateUnits(presetUnit = null) {
-    const dim = dimensionSelect.value;
-    const opts = UNIT_OPTIONS[dim] || [];
-    unitSelect.innerHTML = opts.map((u) => `<option value="${u}">${UNIT_LABEL[u] || u}</option>`).join('');
-    const targetUnit = (presetUnit && opts.includes(presetUnit)) ? presetUnit : opts[0];
-    if (targetUnit) unitSelect.value = targetUnit;
-    updatePreview();
+  function currentDimension() {
+    return dimensionForUnit(unitSelect.value || costUnitSelect.value) || 'count';
   }
 
-  function toBaseIntForPreview(value, unit, dim) {
-    const n = Number(value);
-    if (!Number.isFinite(n)) return 0;
-    const mult = MULT[dim]?.[unit];
-    if (!mult) return 0;
-    return Math.floor(n * mult + 0.5);
+  function unitFactor(dim, unit) {
+    const tbl = METRIC[dim] || {};
+    return tbl[norm(unit)] || 1;
   }
 
   function updatePreview() {
@@ -741,15 +761,44 @@ export function openItemModal(item = null) {
       qtyPreview.textContent = '';
       return;
     }
-    const dim = dimensionSelect.value;
     const unit = unitSelect.value;
+    const priceUnitSel = lockCostUnit.checked ? unit : (costUnitSelect.value || unit);
+    const dim = currentDimension();
     const val = qtyInput.value;
     if (!dim || !unit || val === '') {
       qtyPreview.textContent = '';
       return;
     }
-    const baseInt = toBaseIntForPreview(val, unit, dim);
-    qtyPreview.textContent = `Will store: ${baseInt} ${BASE_UNIT_LABEL[dim]}`;
+    const qtyNum = Number(val || 0);
+    const priceNum = Number(costInput?.value || 0);
+    const converted = toMetricBase({
+      dimension: dim,
+      qty: qtyNum,
+      qtyUnit: unit,
+      unitPrice: priceNum,
+      priceUnit: priceUnitSel,
+    });
+    const baseLabel = BASE_UNIT_LABEL[dim] || 'base';
+    const qtyBase = converted.qtyBase ?? Math.round(qtyNum * unitFactor(dim, unit));
+    const priceBase = converted.pricePerBase ?? (priceNum / unitFactor(dim, priceUnitSel));
+    const pricePerUnit = (priceBase ?? 0) * unitFactor(dim, unit);
+    if (converted.sendUnits) {
+      const priceNote = priceUnitSel === unit ? `${pricePerUnit}` : `${pricePerUnit} (from ${priceNum || 0} / ${priceUnitSel})`;
+      qtyPreview.textContent = `Will send: ${qtyNum || 0} ${unit} @ ${priceNote} / ${unit} (stores ${qtyBase} ${baseLabel})`;
+    } else {
+      qtyPreview.textContent = `Will send (converted): ${qtyBase} ${baseLabel} @ ${priceBase} / ${baseLabel} from ${unit}`;
+    }
+  }
+
+  function syncUnitState() {
+    qtyChip.textContent = unitSelect.value || '';
+    if (lockCostUnit.checked) {
+      costUnitSelect.value = unitSelect.value;
+      costUnitSelect.disabled = true;
+    } else {
+      costUnitSelect.disabled = false;
+    }
+    updatePreview();
   }
 
   function syncProductPriceVisibility() {
@@ -770,9 +819,18 @@ export function openItemModal(item = null) {
   }
 
   function initAddItemFormDefaults() {
-    const defaultDim = item?.dimension || dimensionSelect.value || 'count';
-    dimensionSelect.value = defaultDim;
-    populateUnits(item?.quantity_display?.unit || item?.unit);
+    const defaultUnitGuess = () => {
+      const american = !!(window.BUS_UNITS && window.BUS_UNITS.american);
+      const defaults = american ? DIM_DEFAULTS_IMPERIAL : DIM_DEFAULTS_METRIC;
+      const dim = item?.dimension || 'count';
+      return defaults[dim] || defaults.count || 'ea';
+    };
+    const initialUnit = item?.display_unit || item?.uom || item?.unit || item?.quantity_display?.unit || defaultUnitGuess();
+    populateUnitOptions(unitSelect, initialUnit);
+    populateUnitOptions(costUnitSelect, initialUnit);
+    qtyChip.textContent = unitSelect.value;
+    costUnitSelect.value = unitSelect.value;
+    costUnitSelect.disabled = lockCostUnit.checked;
     const qtyVal = item?.quantity_display?.value ?? (item?.qty ?? '');
     if (qtyVal !== undefined && qtyVal !== null) qtyInput.value = qtyVal;
     if (isProductInput) {
@@ -785,7 +843,7 @@ export function openItemModal(item = null) {
       if (costInput) costInput.value = '';
     }
     syncBatchVisibility();
-    updatePreview();
+    syncUnitState();
   }
 
   // Load vendors (async)
@@ -818,6 +876,7 @@ export function openItemModal(item = null) {
   const cleanup = () => {
     window.removeEventListener('contacts:saved', onContactSaved);
     document.removeEventListener('keydown', escBlocker, true);
+    document.removeEventListener('bus:units-mode', onUnitsMode);
   };
 
   const closeModalSafely = () => {
@@ -839,12 +898,24 @@ export function openItemModal(item = null) {
   }, true);
   card.addEventListener('click', (e) => e.stopPropagation());
 
-  dimensionSelect.addEventListener('change', () => populateUnits());
-  unitSelect.addEventListener('change', () => updatePreview());
+  unitSelect.addEventListener('change', () => syncUnitState());
+  costUnitSelect.addEventListener('change', () => { if (!lockCostUnit.checked) updatePreview(); });
+  lockCostUnit.addEventListener('change', () => {
+    costUnitSelect.disabled = lockCostUnit.checked;
+    if (lockCostUnit.checked) costUnitSelect.value = unitSelect.value;
+    updatePreview();
+  });
   qtyInput.addEventListener('input', () => updatePreview());
   if (addBatchToggle) addBatchToggle.addEventListener('change', () => { syncBatchVisibility(); updatePreview(); });
-  isProductInput.addEventListener('change', () => syncProductPriceVisibility());
+  isProductInput.addEventListener('change', () => { syncProductPriceVisibility(); updatePreview(); });
   if (addBatchBtn) addBatchBtn.addEventListener('click', () => openStockInModal());
+
+  const onUnitsMode = () => {
+    populateUnitOptions(unitSelect, unitSelect.value);
+    populateUnitOptions(costUnitSelect, costUnitSelect.value);
+    syncUnitState();
+  };
+  document.addEventListener('bus:units-mode', onUnitsMode);
 
   function fieldValue(rowSel) {
     return rowSel.querySelector('input,textarea,select')?.value ?? '';
@@ -872,6 +943,44 @@ export function openItemModal(item = null) {
       opt.textContent = text;
       select.appendChild(opt);
     });
+    return select;
+  }
+
+  function populateUnitOptions(select, preset) {
+    const american = !!(window.BUS_UNITS && window.BUS_UNITS.american);
+    const groups = unitOptionsList({ american });
+    const current = preset || select.value;
+    select.innerHTML = '';
+    groups.forEach((group) => {
+      const og = document.createElement('optgroup');
+      og.label = group.label;
+      group.units.forEach((u) => {
+        const opt = document.createElement('option');
+        opt.value = u;
+        opt.textContent = u.replace('_', '-');
+        og.appendChild(opt);
+      });
+      select.appendChild(og);
+    });
+    if (current && select.querySelector(`option[value="${current}"]`)) {
+      select.value = current;
+    } else if (!select.value) {
+      const fallbackDim = dimensionForUnit(current) || 'count';
+      const defaults = american ? DIM_DEFAULTS_IMPERIAL : DIM_DEFAULTS_METRIC;
+      const target = defaults[fallbackDim] || defaults.count || 'ea';
+      if (select.querySelector(`option[value="${target}"]`)) {
+        select.value = target;
+      } else if (select.options.length) {
+        select.selectedIndex = 0;
+      }
+    }
+  }
+
+  function createUnitSelect(id) {
+    const select = document.createElement('select');
+    if (id) select.id = id;
+    select.required = true;
+    populateUnitOptions(select);
     return select;
   }
 
@@ -1042,12 +1151,12 @@ export function openItemModal(item = null) {
     // Client-side validation
     if (!name) return markInvalid(fName.querySelector('input'));
 
-    const dimensionVal = dimensionSelect.value;
     const unitVal = unitSelect.value;
+    const priceUnitSel = lockCostUnit.checked ? unitVal : (costUnitSelect.value || unitVal);
     const qtyVal = qtyInput.value;
     const addOpeningBatch = addBatchToggle ? addBatchToggle.checked : false;
+    const dimensionVal = currentDimension();
 
-    if (!dimensionVal) return markInvalid(dimensionSelect);
     if (!unitVal) return markInvalid(unitSelect);
     if ((isEdit || addOpeningBatch) && qtyVal === '') return markInvalid(qtyInput);
 
@@ -1068,6 +1177,7 @@ export function openItemModal(item = null) {
       dimension: dimensionVal,
       uom: unitVal,
       unit: unitVal,
+      display_unit: unitVal,
       is_product: isProductInput.checked,
       quantity_decimal: isEdit ? qtyVal : '0',
     };
@@ -1093,13 +1203,32 @@ export function openItemModal(item = null) {
           return;
         }
 
+        const priceNum = Number(costInput?.value || 0);
+        const qtyConversion = toMetricBase({
+          dimension: dimensionVal,
+          qty: Number(qtyVal),
+          qtyUnit: unitVal,
+          unitPrice: priceNum,
+          priceUnit: priceUnitSel,
+        });
+        const basePrice = qtyConversion.pricePerBase ?? (priceNum / unitFactor(dimensionVal, priceUnitSel));
+        const baseUnitEntry = Object.entries(METRIC[dimensionVal] || {}).find(([, v]) => v === 1);
+        const baseUnit = baseUnitEntry ? baseUnitEntry[0] : unitVal;
+
         const stockPayload = {
           item_id: savedItem?.id,
           uom: unitVal,
           unit: unitVal,
           quantity_decimal: qtyVal,
-          unit_cost_decimal: costInput?.value || '0',
+          unit_cost_decimal: String((basePrice ?? 0) * unitFactor(dimensionVal, unitVal)),
         };
+
+        if (!qtyConversion.sendUnits) {
+          stockPayload.uom = baseUnit;
+          stockPayload.unit = baseUnit;
+          stockPayload.quantity_decimal = qtyConversion.qtyBase ?? qtyVal;
+          stockPayload.unit_cost_decimal = String(basePrice ?? 0);
+        }
 
         try {
           await ensureToken();
