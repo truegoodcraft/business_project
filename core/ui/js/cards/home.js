@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
 /* Home card – redesigned hero + launchpad (scoped styles) */
-export default function mountHome() { return renderHome(); }
-export function mountHome() { return renderHome(); }
+function mountHome() { return renderHome(); }
+export { mountHome as default, mountHome };
 
 function ensureHomeStyles() {
   const id = "bus-home-styles";
