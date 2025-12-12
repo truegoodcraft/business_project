@@ -29,19 +29,13 @@ BUS-Core exists to replace spreadsheet chaos and overpriced SaaS platforms that 
 
 ## Key Features
 
-Key Features
+- Zero-License: 100% free and open-source (AGPLv3). No “Pro” tiers, no locked features, no tracking.
+- Precision Inventory: Integer-based metric tracking with FIFO batch valuation and accurate stock costing.
+- Manufacturing Engine: Recipe-based builds with automatic cost rollups, shortage detection, and atomic commits.
+- Ledger & Audit Trail: Full movement history—purchases, production, sales, loss, and adjustments.
+- Local & Private: Runs on a local SQLite database with optional AES-GCM encrypted backups.
+- Cross-Platform: Works on Windows (primary), Linux, and macOS.
 
-* Zero-License: 100% free and open-source (AGPLv3). No “Pro” tiers, no locked features, no tracking.
-
-* Precision Inventory: Integer-based metric tracking with FIFO batch valuation and accurate stock costing.
-
-* Manufacturing Engine: Recipe-based builds with automatic cost rollups, shortage detection, and atomic commits.
-
-* Ledger & Audit Trail: Full movement history—purchases, production, sales, loss, and adjustments.
-
-* Local & Private: Runs on a local SQLite database with optional AES-GCM encrypted backups.
-
-* Cross-Platform: Works on Windows (primary), Linux, and macOS.
 
 ## Getting Started
 
