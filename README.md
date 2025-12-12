@@ -73,6 +73,6 @@ python launcher.py --dev
 
 ## Architecture
 
-See [docs/SOT.md](https://www.google.com/search?q=docs/SOT.md) for the Source of Truth and architecture details.
+See [docs/SOT.md](docs/SOT.md) for the Source of Truth and architecture details.
 
 ```
