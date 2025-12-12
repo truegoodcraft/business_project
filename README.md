@@ -3,6 +3,8 @@
 ![License](https://img.shields.io/badge/License-AGPLv3-blue.svg)
 ![Platform](https://img.shields.io/badge/Platform-Windows-blue.svg)
 ![Status](https://img.shields.io/badge/Status-Beta-orange.svg)
+[![Discord](https://img.shields.io/badge/Discord-Join%20Us-7289da.svg)](https://discord.gg/qp3rc5CxdM)
+
 
 <img src="core/ui/Logo.png" alt="BUS Core Icon" width="100">
 
