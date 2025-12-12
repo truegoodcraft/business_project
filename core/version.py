@@ -19,6 +19,6 @@
 
 """Version information for TGC Alpha Core."""
 
-VERSION = "v0.8.3"
+VERSION = "0.10.0-beta"
 
 __all__ = ["VERSION"]
