@@ -4,6 +4,8 @@
 ![Platform](https://img.shields.io/badge/Platform-Windows-blue.svg)
 ![Status](https://img.shields.io/badge/Status-Beta-orange.svg)
 
+<img src="core/ui/Logo.png" alt="BUS Core Icon" width="100">
+
 **The local-first ERP for makers. Inventory, Manufacturing, and Contacts—no cloud required.**
 
 BUS Core is a free, open-source business utility system designed for small workshops and makers. It runs entirely on your local machine, giving you ownership of your data without subscriptions or cloud dependencies.
