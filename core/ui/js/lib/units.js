@@ -11,7 +11,8 @@ export const METRIC = {
   volume: METRIC_VOLUME,
   weight: METRIC_WEIGHT,
   mass:   METRIC_WEIGHT,
-  count:  { ea: 1_000 },
+  // Backend uses base = 1 for count (ea)
+  count:  { ea: 1 },
 };
 
 // Imperial factors to METRIC BASE units (NOT exact integers; we keep precision until final rounding)

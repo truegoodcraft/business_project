@@ -44,7 +44,8 @@ const MULT = {
   area: { mm2: 1, cm2: 100, m2: 1_000_000 },
   volume: { mm3: 1, cm3: 1_000, m3: 1_000_000_000, ml: 1_000, l: 1_000_000 },
   weight: { mg: 1, g: 1_000, kg: 1_000_000 },
-  count: { ea: 1_000 },
+  // Backend uses base = 1 for count (ea)
+  count: { ea: 1 },
 };
 
 // Keep delegated handler binding stable across route changes
@@ -125,37 +126,24 @@ function formatItemPrice(item) {
 // 2) server-provided on-hand int + dimension-aware fallback,
 // 3) legacy quantity_display or final zero fallback.
 function formatOnHandDisplay(item) {
-  const sod = item.stock_on_hand_display;
-  if (sod && sod.unit && sod.value != null) {
-    return `${sod.value} ${sod.unit}`;
-  }
-
-  const v = (typeof item.stock_on_hand_int === 'number')
-    ? item.stock_on_hand_int
-    : (typeof item.quantity_int === 'number' ? item.quantity_int : 0);
-
-  switch (item.dimension) {
-    case 'count': {
-      const ea = (v / 1000).toFixed(3);
-      return `${ea} ea`;
-    }
-    case 'length':
-      return `${v} mm`;
-    case 'area':
-      return `${v} mm²`;
-    case 'volume':
-      return `${v} mm³`;
-    case 'weight':
-      return `${v} mg`;
-    default:
-      break;
-  }
-
-  if (item.quantity_display?.value && item.quantity_display?.unit) {
+  // Prefer backend-prepared display when available.
+  const sod = item?.stock_on_hand_display;
+  if (sod && sod.unit && sod.value != null) return `${sod.value} ${sod.unit}`;
+  if (item?.quantity_display?.value && item?.quantity_display?.unit) {
     return `${item.quantity_display.value} ${item.quantity_display.unit}`;
   }
-
-  return '0';
+  // Fallback: convert base -> display unit with our unit helpers.
+  const dim = (item?.dimension === 'weight') ? 'mass' : (item?.dimension || 'count');
+  const unit =
+    item?.display_unit ||
+    (dim === 'area'   ? 'm2' :
+     dim === 'length' ? 'm'  :
+     dim === 'volume' ? 'l'  :
+     dim === 'mass'   ? 'g'  : 'ea');
+  const base = (typeof item?.stock_on_hand_int === 'number')
+    ? item.stock_on_hand_int
+    : (typeof item?.quantity_int === 'number' ? item.quantity_int : 0);
+  return `${fmtQty(fromBaseQty(base, unit, dim))} ${unit}`;
 }
 
 function renderTable(state) {

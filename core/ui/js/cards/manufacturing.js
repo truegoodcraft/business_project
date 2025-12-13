@@ -3,7 +3,7 @@
 
 import { apiGet, ensureToken } from '../api.js';
 import { RecipesAPI } from '../api/recipes.js';
-import { fromBaseQty, fmtQty } from '../lib/units.js';
+import { fromBaseQty, fmtQty, dimensionForUnit } from '../lib/units.js';
 
 (function injectRunsCssOnce() {
   if (document.getElementById('mf-runs-css')) return;
@@ -68,10 +68,17 @@ const recipeNameCache = (window._recipeNameCache = window._recipeNameCache || Ob
 
 function fmtQtyDisplay(baseQty, item) {
   try {
-    const dim = item?.dimension || 'count';
-    const u = item?.display_unit || item?.uom || (dim === 'area' ? 'mm2' : dim === 'length' ? 'mm' : dim === 'volume' ? 'ml' : dim === 'weight' ? 'mg' : 'ea');
-    return `${fmtQty(fromBaseQty(Number(baseQty || 0), u, dim))} ${u}`;
-  } catch (err) {
+    const d0 = item?.dimension || 'count';
+    const u0 = item?.display_unit || item?.uom ||
+      (d0 === 'area' ? 'mm2' :
+       d0 === 'length' ? 'mm' :
+       d0 === 'volume' ? 'ml' :
+       d0 === 'weight' ? 'mg' : 'ea');
+    // If the unit implies a different dimension (e.g., m2), honor the unit.
+    const dim = dimensionForUnit(u0) || d0;
+    const val = fromBaseQty(Number(baseQty || 0), u0, dim);
+    return `${fmtQty(val)} ${u0}`;
+  } catch {
     return `${baseQty}`;
   }
 }
