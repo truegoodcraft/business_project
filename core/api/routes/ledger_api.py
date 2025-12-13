@@ -23,7 +23,12 @@ from core.appdb.ledger import (
 from core.appdb.models import Item, ItemBatch, ItemMovement
 from core.appdb.paths import resolve_db_path
 from core.api.schemas_ledger import QtyDisplay, StockInReq, StockInResp
-from core.metrics.metric import UNIT_MULTIPLIER, default_unit_for, from_base, to_base
+from core.metrics.metric import (
+    UNIT_MULTIPLIER,
+    default_unit_for,
+    from_base,
+    to_base_qty,
+)
 
 # NOTE: Primary router uses legacy "/ledger" prefix; public_router exposes routes without it
 # (e.g., /app/adjust) to match current app paths.
@@ -342,7 +347,7 @@ def stock_in(payload: StockInReq, db: Session = Depends(get_session)):
         raise HTTPException(status_code=400, detail="unsupported uom")
 
     try:
-        qty_int = to_base(payload.quantity_decimal, payload.uom, item.dimension)
+        qty_int = to_base_qty(item.dimension, payload.uom, Decimal(payload.quantity_decimal))
     except Exception:
         raise HTTPException(status_code=400, detail="invalid_quantity")
     if qty_int <= 0:

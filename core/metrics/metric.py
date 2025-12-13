@@ -8,7 +8,8 @@ UNIT_MULTIPLIER = {
     "area": {"mm2": 1, "cm2": 100, "m2": 1_000_000},
     "volume": {"mm3": 1, "cm3": 1_000, "m3": 1_000_000_000, "ml": 1_000},
     "weight": {"mg": 1, "g": 1_000, "kg": 1_000_000},
-    "count": {"unit": 1_000, "ea": 1_000},
+    # Count items are base-1
+    "count": {"unit": 1, "ea": 1},
 }
 
 
@@ -26,6 +27,20 @@ def uom_multiplier(dimension: str, unit: str) -> int:
     mult = units.get(_norm_unit(unit))
     return mult if mult is not None else 1
 
+
+def to_base_qty(dimension: str, unit: str, qty_decimal: Decimal) -> int:
+    """Convert a decimal quantity in the given UOM to base integer units."""
+
+    mult = uom_multiplier(dimension, unit)
+    return int((Decimal(qty_decimal) * Decimal(mult)).to_integral_value(rounding=ROUND_HALF_UP))
+
+
+def from_base_qty(dimension: str, unit: str, qty_base: int) -> Decimal:
+    mult = uom_multiplier(dimension, unit)
+    if mult == 0:
+        return Decimal(0)
+    return (Decimal(qty_base) / Decimal(mult)).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+
 DEFAULT_UNIT_FOR = {
     "length": "mm",
     "area": "mm2",
@@ -39,7 +54,7 @@ BASE_UNIT_LABEL = {
     "area": "mm²",
     "volume": "mm³",
     "weight": "mg",
-    "count": "milli-units",
+    "count": "ea",
 }
 
 
@@ -81,7 +96,9 @@ __all__ = [
     "_norm_unit",
     "default_unit_for",
     "from_base",
+    "from_base_qty",
     "to_base",
+    "to_base_qty",
     "uom_multiplier",
     "UNIT_MULTIPLIER",
 ]
