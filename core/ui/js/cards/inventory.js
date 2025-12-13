@@ -1216,6 +1216,7 @@ export function openItemModal(item = null) {
 
       try {
         await ensureToken();
+        console.debug('POST /ledger/stock_in payload', payload);
         delete payload.unit;
         await apiPost('/ledger/stock_in', payload, { headers: { 'Content-Type': 'application/json' } });
         closeStockInModal();
@@ -1334,6 +1335,7 @@ export function openItemModal(item = null) {
 
         try {
           await ensureToken();
+          console.debug('POST /ledger/stock_in payload', stockPayload);
           delete stockPayload.unit;
           await apiPost('/ledger/stock_in', stockPayload, { headers: { 'Content-Type': 'application/json' } });
         } catch (err) {
