@@ -2,6 +2,7 @@
 // Inventory card with smart input parsing.
 
 import { apiGetJson, apiPost, apiPut, apiDelete, ensureToken } from '../api.js';
+import { fromBaseQty, fromBaseUnitPrice, fmtQty, fmtMoney } from '../lib/units.js';
 import { METRIC, unitOptionsList, dimensionForUnit, toMetricBase, DIM_DEFAULTS_IMPERIAL, DIM_DEFAULTS_METRIC, norm } from '../lib/units.js';
 
 const UNIT_OPTIONS = {
@@ -439,9 +440,24 @@ export async function _mountInventory(container) {
       el('tbody', {}, batchRows),
     ]);
 
+    const dimension = detail.dimension === 'weight' ? 'mass' : (detail.dimension || 'count');
+    const displayUnit = detail.display_unit || (dimension === 'area'
+      ? 'm2'
+      : dimension === 'length'
+        ? 'm'
+        : dimension === 'mass'
+          ? 'g'
+          : dimension === 'volume'
+            ? 'l'
+            : 'ea');
+
     const details = el('tr', { class: 'row-details' }, [
       el('td', { colspan: String(colCount) }, [
-        el('div', { class: 'details' }, [
+        el('div', {
+          class: 'details',
+          'data-dimension': dimension,
+          'data-display-unit': displayUnit,
+        }, [
           kvNodes.length ? el('div', { class: 'grid' }, kvNodes) : null,
           detail.notes ? el('div', { class: 'notes', text: detail.notes }) : null,
           batchTable,
@@ -455,6 +471,7 @@ export async function _mountInventory(container) {
     ]);
 
     rowEl.after(details);
+    enhanceDetailsPanel(details.querySelector('.details'));
   }
 
   function confirmDelete() {
@@ -462,7 +479,98 @@ export async function _mountInventory(container) {
     return Promise.resolve(window.confirm('Delete this item? This cannot be undone.'));
   }
 
+  bindDetailsObserver(container);
   await reloadInventory();
+}
+
+// ---- Expanded row normalization (unit-aware, loop-safe) ----
+const _processedDetailsPanels = new WeakSet();
+let _detailsObserverBound = false;
+
+function enhanceDetailsPanel(panel) {
+  if (!panel || _processedDetailsPanels.has(panel)) return;
+  const unit = panel.dataset.displayUnit || 'ea';
+  const dimRaw = panel.dataset.dimension || 'count';
+  const dim = dimRaw === 'weight' ? 'mass' : dimRaw;
+
+  // Hide duplicate Price/Location rows (label + value)
+  panel.querySelectorAll('.kv').forEach((kv) => {
+    const label = (kv.querySelector('.k')?.textContent || '').trim().toLowerCase();
+    if (label === 'price' || label === 'location') {
+      kv.style.display = 'none';
+    }
+  });
+
+  const nodes = panel.querySelectorAll('td, .td, .value, div, span, .v');
+
+  // Convert first "X / Y" to display unit and add tooltip
+  for (const n of nodes) {
+    const s = (n.textContent || '').trim().replace(/,/g, '');
+    const m = s.match(/^(-?\d+)\s*\/\s*(-?\d+)$/);
+    if (!m) continue;
+    const baseRemain = parseInt(m[1], 10);
+    const baseOrig = parseInt(m[2], 10);
+    if (Number.isNaN(baseRemain) || Number.isNaN(baseOrig)) continue;
+    const remain = fmtQty(fromBaseQty(baseRemain, unit, dim));
+    const orig = fmtQty(fromBaseQty(baseOrig, unit, dim));
+    n.textContent = `${remain} / ${orig} ${unit}`;
+    n.title = `${baseRemain.toLocaleString()} / ${baseOrig.toLocaleString()} (base)`;
+    break;
+  }
+
+  // Normalize money per unit
+  for (const n of nodes) {
+    const s = (n.textContent || '').trim().replace(/,/g, '');
+    const m = s.match(/^\$?\s*([0-9.]+)\s*\/\s*([A-Za-z_²^2]+)\s*$/);
+    if (!m) continue;
+    const val = parseFloat(m[1]);
+    const shownUnit = m[2].replace(/[²^2]/g, '2').toLowerCase();
+    if (shownUnit === unit) {
+      n.textContent = `$${fmtMoney(val)} / ${unit}`;
+      break;
+    }
+    const converted = fromBaseUnitPrice(val, unit, dim);
+    n.textContent = `$${fmtMoney(converted)} / ${unit}`;
+    n.title = `${val} / ${shownUnit} (base)`;
+    break;
+  }
+
+  // Notes block: constrain and avoid spill
+  const noteEl = panel.querySelector('.notes');
+  if (noteEl) {
+    const txt = (noteEl.textContent || '').trim();
+    const block = document.createElement('div');
+    block.className = 'inv-note';
+    block.style.cssText = 'margin:8px 0 10px; padding:8px 10px; border:1px solid rgba(36,48,65,.6); border-radius:8px; background:rgba(0,0,0,.12); color:#a9b7c8; max-width:70ch;';
+    const h = document.createElement('div');
+    h.textContent = 'Notes';
+    h.style.cssText = 'font-weight:600; margin-bottom:4px; color:#e7eef7;';
+    const p = document.createElement('div');
+    p.textContent = txt;
+    p.style.cssText = 'white-space:normal; overflow-wrap:anywhere;';
+    block.append(h, p);
+    noteEl.replaceWith(block);
+  }
+
+  _processedDetailsPanels.add(panel);
+}
+
+function bindDetailsObserver(root = document.getElementById('app') || document.body) {
+  if (_detailsObserverBound) return;
+  const observer = new MutationObserver((records) => {
+    if (!location.hash.includes('/inventory')) return;
+    records.forEach((r) => {
+      r.addedNodes?.forEach((node) => {
+        if (!(node instanceof HTMLElement)) return;
+        if (node.matches?.('.details[data-dimension]')) enhanceDetailsPanel(node);
+        node.querySelectorAll?.('.details[data-dimension]')?.forEach(enhanceDetailsPanel);
+      });
+    });
+  });
+  observer.observe(root, { childList: true, subtree: true });
+  _detailsObserverBound = true;
+  // initial scan
+  (root.querySelectorAll?.('.details[data-dimension]') || []).forEach(enhanceDetailsPanel);
 }
 
 // ---------- Shallow/Deep Modal ----------
