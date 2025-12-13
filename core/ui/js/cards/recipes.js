@@ -1,6 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { apiGet, ensureToken } from '../api.js';
 import { RecipesAPI } from '../api/recipes.js';
+import {
+  toMetricBase,
+  unitOptionsList,
+  dimensionForUnit,
+  norm,
+  METRIC,
+  IMPERIAL_TO_METRIC,
+  DIM_DEFAULTS_METRIC,
+} from '../lib/units.js';
+import { preferredUnitForDimension } from '../lib/unit-preferences.js';
 
 function el(tag, attrs = {}, children = []) {
   const node = document.createElement(tag);
@@ -20,6 +30,38 @@ let _items = [];
 let _recipes = [];
 let _activeId = null;
 let _draft = null;
+let _unitsModeListenerBound = false;
+
+function americanMode() {
+  return !!(window.BUS_UNITS && window.BUS_UNITS.american);
+}
+
+function normalizeDimension(dim) {
+  if (!dim) return null;
+  const d = String(dim).toLowerCase();
+  if (d === 'mass') return 'weight';
+  if (['length', 'area', 'volume', 'weight', 'count'].includes(d)) return d;
+  return null;
+}
+
+function findItem(itemId) {
+  return _items.find((i) => String(i.id) === String(itemId));
+}
+
+function defaultUnitFor(itemOrDim) {
+  const dim = normalizeDimension(itemOrDim?.dimension || itemOrDim) || 'count';
+  return itemOrDim?.uom || itemOrDim?.unit || preferredUnitForDimension(dim);
+}
+
+function displayQtyFromBase(base, unit, dimension) {
+  const dim = normalizeDimension(dimension) || 'count';
+  const u = norm(unit);
+  const imperialFactor = IMPERIAL_TO_METRIC[dim]?.[u];
+  if (imperialFactor) return (Number(base) || 0) / imperialFactor;
+  const factor = METRIC[dim]?.[u] || 1;
+  if (!factor) return Number(base) || 0;
+  return (Number(base) || 0) / factor;
+}
 
 function newRecipeDraft() {
   return {
@@ -37,6 +79,8 @@ function blankRecipeItem(sort = 0) {
   return {
     item_id: null,
     qty_required: '',
+    unit: null,
+    dimension: null,
     optional: false,
     sort,
   };
@@ -50,14 +94,23 @@ function normalizeRecipe(data) {
     output_qty: data.output_qty || 1,
     archived: data.archived === true || data.is_archived === true,
     notes: data.notes || '',
-    items: (data.items || []).map((it, idx) => ({
-      item_id: it.item_id ?? null,
-      qty_required: it.qty_required !== undefined && it.qty_required !== null
-        ? Number(it.qty_required)
-        : null,
-      optional: it.optional === true || it.is_optional === true,
-      sort: Number.isFinite(it.sort ?? it.sort_order) ? (it.sort ?? it.sort_order) : idx,
-    })),
+    items: (data.items || []).map((it, idx) => {
+      const meta = findItem(it.item_id) || it.item || {};
+      const dim = normalizeDimension(it.dimension || meta.dimension) || 'count';
+      const unit = defaultUnitFor(meta) || preferredUnitForDimension(dim);
+      const qtyBase = it.qty_required !== undefined && it.qty_required !== null ? Number(it.qty_required) : null;
+      const qtyDisplay = qtyBase !== null && Number.isFinite(qtyBase)
+        ? displayQtyFromBase(qtyBase, unit, dim)
+        : null;
+      return {
+        item_id: it.item_id ?? null,
+        qty_required: qtyDisplay ?? '',
+        unit,
+        dimension: dim,
+        optional: it.optional === true || it.is_optional === true,
+        sort: Number.isFinite(it.sort ?? it.sort_order) ? (it.sort ?? it.sort_order) : idx,
+      };
+    }),
   };
 }
 
@@ -244,12 +297,33 @@ function renderEditor(editor, leftPanel) {
   const table = el('table', { style: 'width:100%;border-collapse:collapse;background:#1e1f22;border:1px solid #2f3136;border-radius:10px;overflow:hidden;' });
   const thead = el('thead', { style: 'background:#202226' }, el('tr', {}, [
     el('th', { style: 'text-align:left;padding:10px;color:#e6e6e6' }, 'Item'),
-    el('th', { style: 'text-align:right;padding:10px;color:#e6e6e6' }, 'Qty Required'),
+    el('th', { style: 'text-align:right;padding:10px;color:#e6e6e6' }, 'Qty + Unit'),
     el('th', { style: 'text-align:center;padding:10px;color:#e6e6e6' }, 'Optional'),
     el('th', { style: 'width:60px;text-align:right' }, '')
   ]));
   const tbody = el('tbody');
   table.append(thead, tbody);
+
+  function buildUnitSelectForDimension(dim, current) {
+    const select = el('select', {
+      class: 'input',
+      style: 'min-width:100px;padding:8px 10px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6',
+    });
+    unitOptionsList({ american: americanMode() }).forEach((g) => {
+      if (g.dim !== dim && g.dim !== 'count') return;
+      const og = document.createElement('optgroup');
+      og.label = g.label;
+      g.units.forEach((u) => {
+        const opt = document.createElement('option');
+        opt.value = u;
+        opt.textContent = u.replace('_', '-');
+        og.appendChild(opt);
+      });
+      select.appendChild(og);
+    });
+    if (current) select.value = current;
+    return select;
+  }
 
   function renderItemRows() {
     tbody.innerHTML = '';
@@ -257,11 +331,17 @@ function renderEditor(editor, leftPanel) {
       const row = el('tr', { style: 'border-bottom:1px solid #2f3136' });
       const itemSel = el('select', { style: 'width:100%;padding:8px 10px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6' });
       itemSel.append(el('option', { value: '', selected: ri.item_id == null ? 'selected' : undefined }, '— Select —'));
-      _items.forEach(i => itemSel.append(el('option', { value: i.id, selected: String(i.id) === String(ri.item_id) ? 'selected' : undefined }, i.name)));
-      itemSel.value = ri.item_id == null ? '' : String(ri.item_id);
-      itemSel.addEventListener('change', () => {
-        ri.item_id = itemSel.value ? Number(itemSel.value) : null;
+      _items.forEach(i => {
+        const opt = el('option', { value: i.id, selected: String(i.id) === String(ri.item_id) ? 'selected' : undefined }, i.name);
+        if (i.dimension) opt.dataset.dimension = i.dimension;
+        itemSel.append(opt);
       });
+      itemSel.value = ri.item_id == null ? '' : String(ri.item_id);
+
+      const itemMeta = findItem(ri.item_id) || {};
+      const dim = normalizeDimension(ri.dimension || itemMeta.dimension || dimensionForUnit(ri.unit)) || 'count';
+      ri.dimension = dim;
+      ri.unit = ri.unit || defaultUnitFor(itemMeta || dim);
 
       const qtyInput = el('input', {
         type: 'number',
@@ -273,7 +353,78 @@ function renderEditor(editor, leftPanel) {
       qtyInput.addEventListener('input', () => {
         const parsed = parseFloat(qtyInput.value);
         ri.qty_required = Number.isFinite(parsed) ? parsed : null;
+        renderPreview();
       });
+
+      let unitSel = buildUnitSelectForDimension(dim, ri.unit);
+      unitSel.addEventListener('change', () => {
+        const prevDim = ri.dimension;
+        ri.unit = unitSel.value;
+        ri.dimension = normalizeDimension(dimensionForUnit(unitSel.value)) || ri.dimension;
+        renderPreview();
+        if (prevDim !== ri.dimension) setTimeout(renderItemRows, 0);
+      });
+
+      itemSel.addEventListener('change', () => {
+        const prevDim = ri.dimension;
+        ri.item_id = itemSel.value ? Number(itemSel.value) : null;
+        const nextMeta = findItem(ri.item_id) || {};
+        const nextDim = normalizeDimension(nextMeta.dimension) || ri.dimension || 'count';
+        ri.dimension = nextDim;
+        const nextUnit = defaultUnitFor(nextMeta) || preferredUnitForDimension(nextDim);
+        ri.unit = nextUnit;
+        const replacement = buildUnitSelectForDimension(nextDim, nextUnit);
+        unitSel.replaceWith(replacement);
+        unitSel = replacement;
+        unitSel.addEventListener('change', () => {
+          ri.unit = unitSel.value;
+          ri.dimension = normalizeDimension(dimensionForUnit(unitSel.value)) || ri.dimension;
+          renderPreview();
+        });
+        renderPreview();
+        if (prevDim !== nextDim) setTimeout(renderItemRows, 0);
+      });
+
+      const qtyWrap = el('div', { style: 'display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap;' });
+      qtyWrap.append(qtyInput, unitSel);
+
+      let helper = null;
+      if (ri.dimension === 'area') {
+        const lenInput = el('input', { type: 'number', min: '0', step: 'any', placeholder: 'L', style: 'width:90px;padding:6px 8px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6' });
+        const widInput = el('input', { type: 'number', min: '0', step: 'any', placeholder: 'W', style: 'width:90px;padding:6px 8px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6' });
+        const baseSel = el('select', { style: 'min-width:80px;padding:6px 8px;background:#2a2c30;border:1px solid #3a3d43;border-radius:10px;color:#e6e6e6' });
+        (americanMode() ? ['in', 'ft'] : ['cm', 'm']).forEach((u) => baseSel.append(el('option', { value: u, text: u })));
+        const applyBtn = el('button', { class: 'btn small', text: 'Apply', type: 'button', style: 'padding:6px 8px;border-radius:10px;' });
+        helper = el('div', { style: 'display:flex;gap:6px;align-items:center;margin-top:6px;justify-content:flex-end;flex-wrap:wrap;' }, [
+          el('span', { class: 'sub', text: 'L×W helper', style: 'opacity:0.8' }),
+          lenInput,
+          el('span', { text: '×', style: 'color:#9ca3af' }),
+          widInput,
+          baseSel,
+          applyBtn,
+        ]);
+        applyBtn.addEventListener('click', () => {
+          const L = parseFloat(lenInput.value || '0');
+          const W = parseFloat(widInput.value || '0');
+          if (!Number.isFinite(L) || !Number.isFinite(W) || L <= 0 || W <= 0) return;
+          const unit = baseSel.value || 'cm';
+          const area = L * W;
+          const areaUnit = unit === 'in' ? 'in2' : unit === 'ft' ? 'ft2' : unit === 'm' ? 'm2' : 'cm2';
+          qtyInput.value = area;
+          ri.qty_required = area;
+          ri.unit = areaUnit;
+          ri.dimension = 'area';
+          const replacement = buildUnitSelectForDimension('area', areaUnit);
+          unitSel.replaceWith(replacement);
+          unitSel = replacement;
+          unitSel.addEventListener('change', () => {
+            ri.unit = unitSel.value;
+            ri.dimension = normalizeDimension(dimensionForUnit(unitSel.value)) || 'area';
+            renderPreview();
+          });
+          renderPreview();
+        });
+      }
 
       const optBox = el('input', { type: 'checkbox', checked: ri.optional === true ? 'checked' : undefined });
       optBox.checked = ri.optional === true;
@@ -291,14 +442,51 @@ function renderEditor(editor, leftPanel) {
         renderItemRows();
       });
 
+      const preview = el('div', { class: 'sub', style: 'margin-top:6px;color:#9ca3af;text-align:right;min-height:18px;' });
+
+      function renderPreview() {
+        const qtyVal = parseFloat(qtyInput.value || '0');
+        const unit = ri.unit || unitSel.value;
+        const dimNow = normalizeDimension(ri.dimension || dimensionForUnit(unit)) || 'count';
+        if (!ri.item_id || !Number.isFinite(qtyVal) || qtyVal <= 0) {
+          preview.textContent = '';
+          return;
+        }
+        const converted = toMetricBase({ dimension: dimNow, qty: qtyVal, qtyUnit: unit, unitPrice: 0, priceUnit: unit });
+        const baseQty = converted.qtyBase;
+        let text = baseQty != null ? `Base: ${baseQty.toLocaleString()} (${unit} → ${DIM_DEFAULTS_METRIC[dimNow] || 'base'})` : '';
+        const meta = findItem(ri.item_id);
+        const fifoCents = meta?.fifo_unit_cost_cents;
+        const priceUnit = meta?.stock_on_hand_display?.unit || meta?.uom || meta?.unit || unit;
+        if (fifoCents != null && baseQty != null) {
+          const pricePerUnit = fifoCents / 100;
+          const costConv = toMetricBase({ dimension: dimNow, qty: 1, qtyUnit: priceUnit, unitPrice: pricePerUnit, priceUnit });
+          const pricePerBase = costConv.pricePerBase ?? pricePerUnit;
+          const est = baseQty * pricePerBase;
+          if (Number.isFinite(est)) text += ` • est cost $${est.toFixed(2)}`;
+        }
+        preview.textContent = text;
+      }
+
+      const qtyCell = el('td', { style: 'padding:10px;text-align:right' });
+      qtyCell.append(qtyWrap);
+      if (helper) qtyCell.append(helper);
+      qtyCell.append(preview);
+
       row.append(
         el('td', { style: 'padding:10px' }, itemSel),
-        el('td', { style: 'padding:10px;text-align:right' }, qtyInput),
+        qtyCell,
         el('td', { style: 'padding:10px;text-align:center' }, optBox),
         el('td', { style: 'padding:10px;text-align:right' }, delBtn)
       );
       tbody.append(row);
+      renderPreview();
     });
+  }
+
+  if (!_unitsModeListenerBound) {
+    document.addEventListener('bus:units-mode', () => renderItemRows());
+    _unitsModeListenerBound = true;
   }
 
   itemsHeader.lastChild.onclick = () => {
@@ -332,12 +520,22 @@ function renderEditor(editor, leftPanel) {
     })();
 
     const cleanedItems = (_draft.items || [])
-      .map((it) => ({
-        item_id: it.item_id,
-        qty_required: it.qty_required,
-        optional: it.optional === true || it.is_optional === true,
-      }))
-      .filter(it => it.item_id && it.qty_required !== null && it.qty_required !== '' && Number(it.qty_required) > 0);
+      .map((it) => {
+        const meta = findItem(it.item_id) || {};
+        const dim = normalizeDimension(it.dimension || meta.dimension || dimensionForUnit(it.unit)) || 'count';
+        const unit = it.unit || defaultUnitFor(meta) || preferredUnitForDimension(dim);
+        const qtyVal = Number(it.qty_required);
+        const converted = toMetricBase({ dimension: dim, qty: qtyVal, qtyUnit: unit, unitPrice: 0, priceUnit: unit });
+        const qtyBase = converted?.qtyBase;
+        return {
+          item_id: it.item_id,
+          qty_required: qtyBase,
+          optional: it.optional === true || it.is_optional === true,
+          unit,
+          dimension: dim,
+        };
+      })
+      .filter(it => it.item_id && Number.isFinite(it.qty_required) && it.qty_required > 0);
 
     const errors = [];
     if (!nameVal) errors.push('Name is required.');

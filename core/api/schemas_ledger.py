@@ -1,16 +1,28 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, StrictStr
+
+try:
+    from pydantic import ConfigDict  # v2
+    _ModelConfig = ConfigDict
+except ImportError:  # pydantic v1 fallback
+    _ModelConfig = None  # type: ignore
 
 
 class StockInReq(BaseModel):
     item_id: int
-    uom: str
-    quantity_decimal: str
-    unit_cost_decimal: Optional[str] = None
+    uom: StrictStr
+    quantity_decimal: StrictStr
+    unit_cost_decimal: Optional[StrictStr] = None
     vendor_id: Optional[int] = None
-    notes: Optional[str] = None
+    notes: Optional[StrictStr] = None
+
+    if _ModelConfig:
+        model_config = _ModelConfig(extra="forbid")
+    else:
+        class Config:  # type: ignore
+            extra = "forbid"
 
 
 class QtyDisplay(BaseModel):

@@ -415,6 +415,8 @@ def delete_item(
     if not it:
         raise HTTPException(status_code=404, detail="item not found")
 
+    # Remove dependent batches to avoid orphaned rows if SQLite reuses item ids after delete
+    db.query(ItemBatch).filter(ItemBatch.item_id == item_id).delete(synchronize_session=False)
     db.delete(it)
     db.commit()
     return {"ok": True}
