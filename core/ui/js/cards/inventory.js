@@ -121,30 +121,20 @@ function formatItemPrice(item) {
   return item?.fifo_unit_cost_display || (item?.price != null ? formatMoney(item.price) : '—');
 }
 
-// Shared on-hand quantity formatter used by main table and (previously) details.
-// Order of preference:
-// 1) server-provided on-hand display (unit + value),
-// 2) server-provided on-hand int + dimension-aware fallback,
-// 3) legacy quantity_display or final zero fallback.
+// Compute list quantity from base every time to avoid legacy server scaling (ea=0.001).
 function formatOnHandDisplay(item) {
-  // Prefer backend-prepared display when available.
-  const sod = item?.stock_on_hand_display;
-  if (sod && sod.unit && sod.value != null) return `${sod.value} ${sod.unit}`;
-  if (item?.quantity_display?.value && item?.quantity_display?.unit) {
-    return `${item.quantity_display.value} ${item.quantity_display.unit}`;
-  }
-  // Fallback: convert base -> display unit with our unit helpers.
-  const dim = (item?.dimension === 'weight') ? 'mass' : (item?.dimension || 'count');
+  const base =
+    (typeof item?.stock_on_hand_int === 'number') ? item.stock_on_hand_int :
+    (typeof item?.quantity_int === 'number') ? item.quantity_int : 0;
   const unit =
     item?.display_unit ||
-    (dim === 'area'   ? 'm2' :
-     dim === 'length' ? 'm'  :
-     dim === 'volume' ? 'l'  :
-     dim === 'mass'   ? 'g'  : 'ea');
-  const base = (typeof item?.stock_on_hand_int === 'number')
-    ? item.stock_on_hand_int
-    : (typeof item?.quantity_int === 'number' ? item.quantity_int : 0);
-  return `${fmtQty(fromBaseQty(base, unit, dim))} ${unit}`;
+    (item?.dimension === 'area' ? 'm2' :
+     item?.dimension === 'length' ? 'm' :
+     item?.dimension === 'volume' ? 'l' :
+     (item?.dimension === 'mass' || item?.dimension === 'weight') ? 'g' : 'ea');
+  const dim = dimensionForUnit(unit) || item?.dimension || 'count';
+  const val = fromBaseQty(base, unit, dim);
+  return `${fmtQty(val)} ${unit}`;
 }
 
 function renderTable(state) {
