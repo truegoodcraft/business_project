@@ -118,3 +118,23 @@ export function unitOptionsList({american=false} = {}){
   const labels = {length:'Length', area:'Area', volume:'Volume', weight:'Weight', count:'Count'};
   return Object.keys(byDim).map(dim => ({ label: labels[dim], dim, units: byDim[dim] }));
 }
+
+// --- Added: base -> display conversions and helpers (UI render) ---
+export function factorOf(dimension, unit){
+  const u = norm(unit||'');
+  const tbl = METRIC[normalizeDimension(dimension) || dimension] || {};
+  return Number(tbl[u] || 1);
+}
+
+export function fromBaseQty(qBase, unit, dimension){
+  const f = factorOf(dimension, unit);
+  return Number(qBase) / (f || 1);
+}
+
+export function fromBaseUnitPrice(pBase, unit, dimension){
+  const f = factorOf(dimension, unit);
+  return Number(pBase) * (f || 1);
+}
+
+export function fmtQty(q){ return (Math.round(Number(q)*100)/100).toFixed(2); }
+export function fmtMoney(x){ return (Math.round(Number(x)*100)/100).toFixed(2); }
