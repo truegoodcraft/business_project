@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 from contextlib import wraps
 from datetime import datetime
-from typing import Callable, List, Tuple
+from typing import Callable, Dict, List, Tuple
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -16,6 +16,7 @@ from core.api.schemas.manufacturing import (
     ManufacturingRunRequest,
     RecipeRunRequest,
 )
+from core.metrics.metric import UNIT_MULTIPLIER  # unit multipliers (base-per-UOM)
 from core.appdb.ledger import InsufficientStock, on_hand_qty
 from core.appdb.models import Item, ItemBatch, ItemMovement
 from core.appdb.models_recipes import Recipe, RecipeItem
@@ -181,6 +182,8 @@ def execute_run_txn(
     allocations: List[dict] = []
     cost_inputs_cents = 0
     consumed_per_item: dict[int, float] = {}
+    # cache item -> (dimension, uom, multiplier) to avoid repeated lookups
+    item_uom_cache: dict[int, tuple[str, str, int]] = {}
     for r in required:
         if r["qty"] <= 0:
             continue
@@ -193,8 +196,19 @@ def execute_run_txn(
             consumed_per_item[alloc["item_id"]] = consumed_per_item.get(alloc["item_id"], 0) + alloc[
                 "qty"
             ]
+            # Convert alloc qty from base units back to the item's UOM before multiplying by UOM-priced cents
             if alloc["unit_cost_cents"] is not None:
-                cost_inputs_cents += int(round(alloc["unit_cost_cents"] * alloc["qty"]))
+                cached = item_uom_cache.get(alloc["item_id"])
+                if cached is None:
+                    item_obj = session.get(Item, alloc["item_id"])
+                    dim = getattr(item_obj, "dimension", "count") or "count"
+                    uom = getattr(item_obj, "uom", "ea") or "ea"
+                    mult = UNIT_MULTIPLIER.get(dim, {}).get(uom, 1) or 1
+                    cached = (dim, uom, mult)
+                    item_uom_cache[alloc["item_id"]] = cached
+                _, _, mult = cached
+                qty_in_uom = alloc["qty"] / float(mult)
+                cost_inputs_cents += int(round(alloc["unit_cost_cents"] * qty_in_uom))
 
     for alloc in allocations:
         session.add(
@@ -209,7 +223,13 @@ def execute_run_txn(
             )
         )
 
-    per_output_cents = round_half_up_cents(cost_inputs_cents / max(body.output_qty, 1e-9))
+    # Price per OUTPUT UOM (not per base). Convert output base qty back to its UOM.
+    out_item = session.get(Item, output_item_id)
+    out_dim = getattr(out_item, "dimension", "count") or "count"
+    out_uom = getattr(out_item, "uom", "ea") or "ea"
+    out_mult = UNIT_MULTIPLIER.get(out_dim, {}).get(out_uom, 1) or 1
+    output_qty_uom = (body.output_qty or 0) / float(out_mult)
+    per_output_cents = round_half_up_cents(cost_inputs_cents / max(output_qty_uom, 1e-9))
     output_batch = ItemBatch(
         item_id=output_item_id,
         qty_initial=body.output_qty,
