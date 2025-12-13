@@ -343,11 +343,12 @@ def stock_in(payload: StockInReq, db: Session = Depends(get_session)):
     if not item:
         raise HTTPException(status_code=404, detail="item_not_found")
 
-    if item.dimension not in UNIT_MULTIPLIER or payload.uom not in UNIT_MULTIPLIER[item.dimension]:
+    uom = payload.uom
+    if item.dimension not in UNIT_MULTIPLIER or uom not in UNIT_MULTIPLIER[item.dimension]:
         raise HTTPException(status_code=400, detail="unsupported uom")
 
     try:
-        qty_int = to_base_qty(item.dimension, payload.uom, Decimal(payload.quantity_decimal))
+        qty_int = to_base_qty(item.dimension, uom, Decimal(payload.quantity_decimal))
     except Exception:
         raise HTTPException(status_code=400, detail="invalid_quantity")
     if qty_int <= 0:

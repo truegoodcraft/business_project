@@ -1210,13 +1210,13 @@ export function openItemModal(item = null) {
       const payload = {
         item_id: item.id,
         uom: stockUnitSelect.value,
-        unit: stockUnitSelect.value,
         quantity_decimal: stockQtyInput.value,
         unit_cost_decimal: stockCostInput.value || undefined,
       };
 
       try {
         await ensureToken();
+        delete payload.unit;
         await apiPost('/ledger/stock_in', payload, { headers: { 'Content-Type': 'application/json' } });
         closeStockInModal();
         await reloadInventory?.();
@@ -1322,20 +1322,19 @@ export function openItemModal(item = null) {
         const stockPayload = {
           item_id: savedItem?.id,
           uom: unitVal,
-          unit: unitVal,
           quantity_decimal: decimalString(qtyVal),
           unit_cost_decimal: decimalString((basePrice ?? 0) * unitFactor(dimensionVal, unitVal)),
         };
 
         if (!qtyConversion.sendUnits) {
           stockPayload.uom = baseUnit;
-          stockPayload.unit = baseUnit;
           stockPayload.quantity_decimal = decimalString(qtyConversion.qtyBase ?? qtyVal);
           stockPayload.unit_cost_decimal = decimalString(basePrice ?? 0);
         }
 
         try {
           await ensureToken();
+          delete stockPayload.unit;
           await apiPost('/ledger/stock_in', stockPayload, { headers: { 'Content-Type': 'application/json' } });
         } catch (err) {
           const msg = serverErrorMessage(err);
