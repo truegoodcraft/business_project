@@ -18,7 +18,8 @@ const BASE_UNIT_LABEL = {
   area: 'mm²',
   volume: 'mm³',
   weight: 'mg',
-  count: 'milli-units',
+  // Count items are base-1 each
+  count: 'ea',
 };
 
 const UNIT_LABEL = {

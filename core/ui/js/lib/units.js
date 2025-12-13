@@ -96,6 +96,7 @@ export const UNIT_DIM_INDEX = (() => {
 
 export function dimensionForUnit(unit){
   const u = norm(unit);
+  if (u === 'ea') return 'count';
   return UNIT_DIM_INDEX[u] || null;
 }
 
