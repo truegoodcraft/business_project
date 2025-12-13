@@ -25,6 +25,7 @@ from core.appdb.paths import resolve_db_path
 from core.api.schemas_ledger import QtyDisplay, StockInReq, StockInResp
 from core.metrics.metric import (
     UNIT_MULTIPLIER,
+    _norm_unit,
     default_unit_for,
     from_base,
     to_base_qty,
@@ -371,9 +372,18 @@ def stock_in(payload: StockInReq, db: Session = Depends(get_session)):
             )
         return d
 
-    uom = payload.uom
-    if item.dimension not in UNIT_MULTIPLIER or uom not in UNIT_MULTIPLIER[item.dimension]:
-        raise HTTPException(status_code=400, detail="unsupported uom")
+    uom_raw = payload.uom
+    uom = _norm_unit(uom_raw)
+    units_for_dim = UNIT_MULTIPLIER.get(item.dimension, {})
+    if item.dimension not in UNIT_MULTIPLIER or uom not in units_for_dim:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "bad_request",
+                "message": "unsupported_uom",
+                "fields": {"dimension": item.dimension, "uom": uom_raw, "normalized_uom": uom},
+            },
+        )
 
     qty_dec = parse_decimal_str(payload.quantity_decimal, "quantity")
     try:
@@ -381,14 +391,24 @@ def stock_in(payload: StockInReq, db: Session = Depends(get_session)):
     except Exception as exc:  # pragma: no cover - defensive path
         logger.exception(
             "stock_in quantity conversion failed",
-            extra={"item_id": item.id, "dimension": item.dimension, "uom": uom, "qty_decimal": str(qty_dec)},
+            extra={
+                "item_id": item.id,
+                "dimension": item.dimension,
+                "uom": uom,
+                "qty_decimal": str(qty_dec),
+            },
         )
         raise HTTPException(
             status_code=400,
             detail={
                 "error": "bad_request",
                 "message": "invalid_quantity",
-                "fields": {"dimension": item.dimension, "uom": uom, "qty_decimal": str(qty_dec)},
+                "fields": {
+                    "dimension": item.dimension,
+                    "uom": uom_raw,
+                    "normalized_uom": uom,
+                    "qty_decimal": str(qty_dec),
+                },
             },
         ) from exc
     if qty_int <= 0:
@@ -397,7 +417,13 @@ def stock_in(payload: StockInReq, db: Session = Depends(get_session)):
             detail={
                 "error": "bad_request",
                 "message": "invalid_quantity",
-                "fields": {"dimension": item.dimension, "uom": uom, "qty_decimal": str(qty_dec), "qty_int": qty_int},
+                "fields": {
+                    "dimension": item.dimension,
+                    "uom": uom_raw,
+                    "normalized_uom": uom,
+                    "qty_decimal": str(qty_dec),
+                    "qty_int": qty_int,
+                },
             },
         )
 
@@ -428,6 +454,7 @@ def stock_in(payload: StockInReq, db: Session = Depends(get_session)):
             "item_id": item.id,
             "dimension": item.dimension,
             "uom": uom,
+            "uom_raw": uom_raw,
             "qty_decimal": str(qty_dec),
             "qty_int": qty_int,
             "unit_cost_decimal": payload.unit_cost_decimal,

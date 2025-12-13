@@ -1210,8 +1210,8 @@ export function openItemModal(item = null) {
       const payload = {
         item_id: item.id,
         uom: stockUnitSelect.value,
-        quantity_decimal: stockQtyInput.value,
-        unit_cost_decimal: stockCostInput.value || undefined,
+        quantity_decimal: decimalString(stockQtyInput.value),
+        unit_cost_decimal: stockCostInput.value === '' ? undefined : decimalString(stockCostInput.value),
       };
 
       try {
