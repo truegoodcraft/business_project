@@ -1,93 +1,110 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
 /**
- * Inventory expanded row cleanup (loop-safe).
- * - One-time enhancement per expanded panel (WeakSet guard) to avoid observer feedback loops.
- * - Convert Remaining/Original to item display unit (2 decimals) and show base values on hover.
- * - Convert Unit Cost to display unit if needed.
- * - Hide duplicate Price/Location in details.
- * - Render Notes in a tidy block.
+ * Inventory expanded row cleanup (loop-safe, robust selectors).
+ * - One-time enhancement per expanded panel (WeakSet guard).
+ * - Remaining/Original rendered in display unit (2 decimals); base numbers on hover.
+ * - Hide duplicate Price/Location rows (label + value).
+ * - Notes rendered in a constrained block; original long text hidden.
  */
-import { UNIT_DIM_INDEX, norm, factorOf, fromBaseQty, fromBaseUnitPrice, fmtQty, fmtMoney } from "../lib/units.js";
+import {
+  UNIT_DIM_INDEX, norm,
+  fromBaseQty, fromBaseUnitPrice,
+  fmtQty, fmtMoney
+} from "../lib/units.js";
 
 const PROCESSED = new WeakSet();
 
-function text(el){ return (el?.textContent || "").trim(); }
-function $all(sel, root=document){ return Array.from(root.querySelectorAll(sel)); }
-function unitDim(u){ return UNIT_DIM_INDEX[norm(u)] || 'count'; }
+const t = (el)=> (el?.textContent || "").trim();
+const $ = (sel, root=document)=> root.querySelector(sel);
+const $$ = (sel, root=document)=> Array.from(root.querySelectorAll(sel));
+const unitDim = (u)=> UNIT_DIM_INDEX[norm(u)] || 'count';
 
 function parseDisplayUnitFromHeader(row){
   if (!row) return 'ea';
-  // Look in header/collapsed cells near Quantity or Price
-  //  e.g., "1.969 m2" or "$29.00 / m2"
-  const cells = $all('td, .cell, [role="cell"]', row);
+  const cells = $$('td, .cell, [role="cell"], .kv-value', row);
   for (const td of cells){
-    const s = text(td);
-    let m = s.match(/\/\s*([a-zA-Z_²^2]+)/);          // from price
+    const s = t(td);
+    // try Price suffix first: "$.. / m2"
+    let m = s.match(/\/\s*([a-zA-Z_²^2]+)/);
     if (m) return m[1].replace(/[²^2]/g,'2').toLowerCase();
-    m = s.match(/[-\d.,]+\s*([a-zA-Z_²^2]+)$/);       // from quantity
+    // then Quantity suffix: "1.969 m2"
+    m = s.match(/[-\d.,]+\s*([a-zA-Z_²^2]+)$/);
     if (m) return m[1].replace(/[²^2]/g,'2').toLowerCase();
   }
   return 'ea';
 }
 
+function hideDuplicateKv(panel){
+  // Hide any KV rows where label is exactly "Price" or "Location"
+  const labels = $$('*', panel).filter(n=>/^(price|location)$/i.test(t(n)));
+  for (const lab of labels){
+    const row = lab.closest('.row, tr, .kv, .grid, div');
+    if (row){
+      row.style.display = 'none';
+    } else {
+      // Fallback: hide label and its next sibling (value)
+      lab.style.display = 'none';
+      if (lab.nextElementSibling) lab.nextElementSibling.style.display = 'none';
+    }
+  }
+}
+
 function convertRemainingOriginal(panel, unit){
-  const labels = $all('th, .th, .label', panel);
-  const labelCell = labels.find(th => /remaining\s*\/\s*original/i.test(text(th)));
-  if (!labelCell) return;
-  const valCell = labelCell.parentElement?.querySelector('td, .td, .value') || labelCell.nextElementSibling;
-  if (!valCell) return;
-  const s = text(valCell).replace(/,/g,'');
-  const m = s.match(/(-?\d+)\s*\/\s*(-?\d+)/);
-  if (!m) return;
-  const baseRemain = parseInt(m[1],10);
-  const baseOrig   = parseInt(m[2],10);
-  const dim = unitDim(unit);
-  const remain = fmtQty(fromBaseQty(baseRemain, unit, dim));
-  const orig   = fmtQty(fromBaseQty(baseOrig, unit, dim));
-  valCell.textContent = `${remain} / ${orig} ${unit}`;
-  valCell.title = `${baseRemain.toLocaleString()} / ${baseOrig.toLocaleString()} (base)`;
+  // Strategy: find the FIRST text in panel that looks like "<int> / <int>"
+  // (this is the "Remaining / Original" cell), then rewrite it.
+  const candidates = $$('td, .td, .value, div, span', panel);
+  for (const el of candidates){
+    const s = t(el).replace(/,/g,'');
+    const m = s.match(/^\s*(-?\d+)\s*\/\s*(-?\d+)\s*$/);
+    if (!m) continue;
+    const baseRemain = parseInt(m[1],10);
+    const baseOrig   = parseInt(m[2],10);
+    if (Number.isNaN(baseRemain) || Number.isNaN(baseOrig)) continue;
+
+    const dim = unitDim(unit);
+    const remain = fmtQty(fromBaseQty(baseRemain, unit, dim));
+    const orig   = fmtQty(fromBaseQty(baseOrig, unit, dim));
+    el.textContent = `${remain} / ${orig} ${unit}`;
+    el.title = `${baseRemain.toLocaleString()} / ${baseOrig.toLocaleString()} (base)`;
+    return; // only rewrite the first match
+  }
 }
 
 function convertUnitCost(panel, unit){
-  const labels = $all('th, .th, .label', panel);
-  const labelCell = labels.find(th => /unit\s*cost/i.test(text(th)));
-  if (!labelCell) return;
-  const valCell = labelCell.parentElement?.querySelector('td, .td, .value') || labelCell.nextElementSibling;
-  if (!valCell) return;
-  const s = text(valCell).replace(/,/g,'');
-  // If already correct suffix, exit.
-  if (new RegExp(`/\\s*${unit}\\b`).test(s)) return;
-  const m = s.match(/\$?\s*([0-9.]+)\s*\/\s*([a-zA-Z_²^2]+)/);
-  if (!m) return;
-  const priceBase = parseFloat(m[1]);
-  const baseUnit  = m[2].replace(/[²^2]/g,'2').toLowerCase();
-  const dim = unitDim(unit);
-  const priceDisp = fromBaseUnitPrice(priceBase, unit, dim);
-  valCell.textContent = `$${fmtMoney(priceDisp)} / ${unit}`;
-  valCell.title = `${priceBase} / ${baseUnit} (base)`;
-}
-
-function removeDuplicates(panel){
-  // Hide duplicate Price / Location blocks in the expanded header area
-  $all('*', panel).forEach(el => {
-    const t = text(el).toLowerCase();
-    if (t === 'price' || t === 'location') {
-      const row = el.closest('.row, tr, div');
-      if (row && row !== panel) row.style.display = 'none';
+  // Find a money-per-unit pattern and normalize it to display unit if needed.
+  const cells = $$('td, .td, .value, div, span', panel);
+  for (const el of cells){
+    const s = t(el).replace(/,/g,'');
+    const m = s.match(/^\$?\s*([0-9.]+)\s*\/\s*([a-zA-Z_²^2]+)\s*$/);
+    if (!m) continue;
+    const val = parseFloat(m[1]);
+    const unitShown = m[2].replace(/[²^2]/g,'2').toLowerCase();
+    // If already display unit, keep as is (but ensure formatting)
+    if (unitShown === unit){
+      el.textContent = `$${fmtMoney(val)} / ${unit}`;
+      return;
     }
-  });
+    // Otherwise treat as base-unit price and convert to display unit
+    const dim = unitDim(unit);
+    const converted = fromBaseUnitPrice(val, unit, dim);
+    el.textContent = `$${fmtMoney(converted)} / ${unit}`;
+    el.title = `${m[1]} / ${unitShown} (base)`;
+    return;
+  }
 }
 
-function tidyNotes(panel){
-  // Capture long free text and render as a dedicated Notes block
-  const cand = $all('div, p, span', panel).find(el =>
-    el && !el.children.length &&
-    text(el).length > 30 &&
-    !/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(text(el)) &&
-    !/^\$/.test(text(el)) &&
-    !/^\w+\s*\/\s*\w+/.test(text(el))
+function renderNotes(panel){
+  // Find any long, free text and wrap it into a styled note block (max-width).
+  const long = $$('div, p, span', panel).find(el =>
+    !el.children.length &&
+    t(el).length > 30 &&
+    !/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(t(el)) &&
+    !/^\$/.test(t(el)) &&
+    !/^\w+\s*\/\s*\w+/.test(t(el))
   );
-  if (!cand) return;
+  if (!long) return;
+
+  const original = t(long);
   const block = document.createElement('div');
   block.className = 'inv-note';
   block.style.cssText = 'margin:8px 0 10px; padding:8px 10px; border:1px solid rgba(36,48,65,.6); border-radius:8px; background:rgba(0,0,0,.12); color:#a9b7c8; max-width:70ch;';
@@ -95,55 +112,58 @@ function tidyNotes(panel){
   h.textContent = 'Notes';
   h.style.cssText = 'font-weight:600; margin-bottom:4px; color:#e7eef7;';
   const p = document.createElement('div');
-  p.textContent = text(cand);
+  p.textContent = original;
+  p.style.cssText = 'white-space:normal; overflow-wrap:anywhere;';
   block.appendChild(h); block.appendChild(p);
-  cand.replaceWith(block);
+
+  // Replace the original node entirely so the text is contained
+  long.replaceWith(block);
+
+  // Remove any sibling that duplicates the same long text (paranoid guard)
+  $$('div, p, span', panel).forEach(el => {
+    if (el !== block && t(el) === original) el.style.display = 'none';
+  });
 }
 
-function enhanceExpanded(panel){
+function enhance(panel){
   if (!panel || PROCESSED.has(panel)) return;
-  // Find collapsed/header row (previous sibling row of the details panel)
+
   const headerRow = panel.previousElementSibling || panel.parentElement?.previousElementSibling;
-  const unit = parseDisplayUnitFromHeader(headerRow);
+  const displayUnit = parseDisplayUnitFromHeader(headerRow);
+
   try {
-    convertRemainingOriginal(panel, unit);
-    convertUnitCost(panel, unit);
-    removeDuplicates(panel);
-    tidyNotes(panel);
+    hideDuplicateKv(panel);
+    convertRemainingOriginal(panel, displayUnit);
+    convertUnitCost(panel, displayUnit);
+    renderNotes(panel);
   } catch (_) { /* fail-safe */ }
+
   PROCESSED.add(panel);
 }
 
 (function bootstrap(){
   const root = document.getElementById('app') || document.body;
-  const isInv = () => location.hash.includes('/inventory');
+  const isInv = ()=> location.hash.includes('/inventory');
 
-  // Scan existing panels once on load/navigation
-  function scanOnce(){
+  function scan(){
     if (!isInv()) return;
-    const panels = $all('.expanded, .details, .batch-panel', root);
-    panels.forEach(enhanceExpanded);
+    $$('.expanded, .details, .batch-panel', root).forEach(enhance);
   }
 
-  // Observe only for added nodes; process new expansion containers once.
-  const mo = new MutationObserver((records) => {
+  const mo = new MutationObserver(records => {
     if (!isInv()) return;
     for (const r of records){
-      r.addedNodes && r.addedNodes.forEach(node => {
+      r.addedNodes?.forEach(node => {
         if (!(node instanceof HTMLElement)) return;
-        if (node.matches?.('.expanded, .details, .batch-panel')) {
-          enhanceExpanded(node);
-        } else {
-          const found = node.querySelectorAll?.('.expanded, .details, .batch-panel');
-          found && found.forEach(enhanceExpanded);
-        }
+        if (node.matches?.('.expanded, .details, .batch-panel')) enhance(node);
+        else node.querySelectorAll?.('.expanded, .details, .batch-panel')?.forEach(enhance);
       });
     }
   });
 
-  window.addEventListener('hashchange', () => setTimeout(scanOnce, 0));
-  document.addEventListener('DOMContentLoaded', () => {
-    setTimeout(scanOnce, 0);
-    mo.observe(root, { childList: true, subtree: true }); // no attributes to avoid feedback loops
+  window.addEventListener('hashchange', ()=> setTimeout(scan, 0));
+  document.addEventListener('DOMContentLoaded', ()=>{
+    setTimeout(scan, 0);
+    mo.observe(root, { childList:true, subtree:true });
   });
 })();
