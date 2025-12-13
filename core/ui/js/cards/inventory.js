@@ -843,6 +843,21 @@ export function openItemModal(item = null) {
     return tbl[norm(unit)] || 1;
   }
 
+  function decimalString(v) {
+    const s = String(v ?? '').trim().replace(/,/g, '');
+    if (s === '' || s === '.' || s === '-.') return '0';
+    return s.startsWith('.') ? `0${s}` : s;
+  }
+
+  function serverErrorMessage(err) {
+    if (err?.detail?.error === 'validation_error') {
+      const fields = err.detail.fields || {};
+      const parts = Object.entries(fields).map(([k, v]) => `${k}: ${v}`);
+      if (parts.length) return parts.join(' • ');
+    }
+    return err?.detail?.message || err?.message || err?.error || 'Error';
+  }
+
   function updatePreview() {
     if (addBatchToggle && !addBatchToggle.checked) {
       qtyPreview.textContent = '';
@@ -856,8 +871,10 @@ export function openItemModal(item = null) {
       qtyPreview.textContent = '';
       return;
     }
-    const qtyNum = Number(val || 0);
-    const priceNum = Number(costInput?.value || 0);
+    const qtyNum = Number(decimalString(val || 0));
+    const priceNum = Number(decimalString(costInput?.value || 0));
+    const qtyShow = decimalString(val || 0);
+    const priceShow = decimalString(costInput?.value || 0);
     const converted = toMetricBase({
       dimension: dim,
       qty: qtyNum,
@@ -868,12 +885,12 @@ export function openItemModal(item = null) {
     const baseLabel = BASE_UNIT_LABEL[dim] || 'base';
     const qtyBase = converted.qtyBase ?? Math.round(qtyNum * unitFactor(dim, unit));
     const priceBase = converted.pricePerBase ?? (priceNum / unitFactor(dim, priceUnitSel));
-    const pricePerUnit = (priceBase ?? 0) * unitFactor(dim, unit);
     if (converted.sendUnits) {
-      const priceNote = priceUnitSel === unit ? `${pricePerUnit}` : `${pricePerUnit} (from ${priceNum || 0} / ${priceUnitSel})`;
-      qtyPreview.textContent = `Will send: ${qtyNum || 0} ${unit} @ ${priceNote} / ${unit} (stores ${qtyBase} ${baseLabel})`;
+      const priceNote = priceUnitSel === unit ? priceShow : `${priceShow} (per ${priceUnitSel})`;
+      qtyPreview.textContent = `Will send: ${qtyShow} ${unit} @ ${priceNote} / ${unit} (stores ${qtyBase} ${baseLabel})`;
     } else {
-      qtyPreview.textContent = `Will send (converted): ${qtyBase} ${baseLabel} @ ${priceBase} / ${baseLabel} from ${unit}`;
+      const priceBaseStr = decimalString(priceBase);
+      qtyPreview.textContent = `Will send (converted): ${qtyBase} ${baseLabel} @ ${priceBaseStr} / ${baseLabel} from ${unit}`;
     }
   }
 
@@ -1204,7 +1221,7 @@ export function openItemModal(item = null) {
         closeStockInModal();
         await reloadInventory?.();
       } catch (err) {
-        const msg = err?.detail?.message || err?.message || 'Stock-in failed.';
+        const msg = serverErrorMessage(err) || 'Stock-in failed.';
         if (stockError) {
           stockError.textContent = msg;
           stockError.hidden = false;
@@ -1306,22 +1323,22 @@ export function openItemModal(item = null) {
           item_id: savedItem?.id,
           uom: unitVal,
           unit: unitVal,
-          quantity_decimal: qtyVal,
-          unit_cost_decimal: String((basePrice ?? 0) * unitFactor(dimensionVal, unitVal)),
+          quantity_decimal: decimalString(qtyVal),
+          unit_cost_decimal: decimalString((basePrice ?? 0) * unitFactor(dimensionVal, unitVal)),
         };
 
         if (!qtyConversion.sendUnits) {
           stockPayload.uom = baseUnit;
           stockPayload.unit = baseUnit;
-          stockPayload.quantity_decimal = qtyConversion.qtyBase ?? qtyVal;
-          stockPayload.unit_cost_decimal = String(basePrice ?? 0);
+          stockPayload.quantity_decimal = decimalString(qtyConversion.qtyBase ?? qtyVal);
+          stockPayload.unit_cost_decimal = decimalString(basePrice ?? 0);
         }
 
         try {
           await ensureToken();
           await apiPost('/ledger/stock_in', stockPayload, { headers: { 'Content-Type': 'application/json' } });
         } catch (err) {
-          const msg = err?.detail?.message || err?.error || err?.message || 'Stock-in failed.';
+          const msg = serverErrorMessage(err);
           if (errorBanner) {
             errorBanner.textContent = msg;
             errorBanner.hidden = false;
