@@ -3,6 +3,7 @@
 
 import { apiGet, ensureToken } from '../api.js';
 import { RecipesAPI } from '../api/recipes.js';
+import { fromBaseQty, fmtQty } from '../lib/units.js';
 
 (function injectRunsCssOnce() {
   if (document.getElementById('mf-runs-css')) return;
@@ -64,6 +65,16 @@ let _state = {
 };
 
 const recipeNameCache = (window._recipeNameCache = window._recipeNameCache || Object.create(null));
+
+function fmtQtyDisplay(baseQty, item) {
+  try {
+    const dim = item?.dimension || 'count';
+    const u = item?.display_unit || item?.uom || (dim === 'area' ? 'mm2' : dim === 'length' ? 'mm' : dim === 'volume' ? 'ml' : dim === 'weight' ? 'mg' : 'ea');
+    return `${fmtQty(fromBaseQty(Number(baseQty || 0), u, dim))} ${u}`;
+  } catch (err) {
+    return `${baseQty}`;
+  }
+}
 
 function _runConfirmText({ recipeName, outputQty, adhoc }) {
   const title = adhoc ? 'Confirm Ad-hoc Manufacturing Run' : 'Confirm Manufacturing Run';
@@ -206,7 +217,7 @@ async function renderNewRunForm(parent) {
         const current = (ri.item?.qty_stored ?? 0);
         const change = -(Number(ri.qty_required || 0) * scale);
         const future = current + change;
-        const uom = ri.item?.uom || '';
+        const uom = ri.item?.display_unit || ri.item?.uom || '';
 
         const row = el('tr', { style: 'border-bottom:1px solid #2a2a2a' });
 
@@ -216,9 +227,9 @@ async function renderNewRunForm(parent) {
         row.append(
           el('td', { style:'padding:8px', text: ri.item?.name || `Item #${ri.item_id}` }),
           el('td', { style:'padding:8px;color:#aaa', text: (ri.optional ?? ri.is_optional) ? 'Optional' : 'Input' }),
-          el('td', { style:'padding:8px;text-align:right', text: `${current} ${uom}` }),
-          el('td', { style:'padding:8px;text-align:right', text: `${change.toFixed(2)}` }),
-          el('td', { style:`padding:8px;text-align:right;color:${stockColor}`, text: `${future.toFixed(2)} ${uom}` })
+          el('td', { style:'padding:8px;text-align:right', text: fmtQtyDisplay(current, ri.item) }),
+          el('td', { style:'padding:8px;text-align:right', text: fmtQtyDisplay(change, ri.item) }),
+          el('td', { style:`padding:8px;text-align:right;color:${stockColor}`, text: fmtQtyDisplay(future, ri.item) })
         );
         tbody.append(row);
       });
@@ -228,14 +239,14 @@ async function renderNewRunForm(parent) {
         const outCurrent = outItem?.qty_stored || 0;
         const outChange = outputQty;
         const outFuture = outCurrent + outChange;
-        const uom = outItem?.uom || '';
+        const uom = outItem?.display_unit || outItem?.uom || '';
         const row = el('tr', { style: 'border-bottom:1px solid #2a2a2a' });
         row.append(
           el('td', { style:'padding:8px', text: outItem?.name || `Item #${fullRecipe.output_item_id}` }),
           el('td', { style:'padding:8px;color:#4caf50', text: 'Output' }),
-          el('td', { style:'padding:8px;text-align:right', text: `${outCurrent} ${uom}` }),
-          el('td', { style:'padding:8px;text-align:right', text: `+${outChange}` }),
-          el('td', { style:'padding:8px;text-align:right;color:#4caf50', text: `${outFuture} ${uom}` })
+          el('td', { style:'padding:8px;text-align:right', text: fmtQtyDisplay(outCurrent, outItem) }),
+          el('td', { style:'padding:8px;text-align:right', text: fmtQtyDisplay(outChange, outItem) }),
+          el('td', { style:'padding:8px;text-align:right;color:#4caf50', text: fmtQtyDisplay(outFuture, outItem) })
         );
         tbody.append(row);
       }

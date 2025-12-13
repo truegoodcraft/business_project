@@ -16,7 +16,7 @@ from core.api.schemas.manufacturing import (
     ManufacturingRunRequest,
     RecipeRunRequest,
 )
-from core.metrics.metric import UNIT_MULTIPLIER  # unit multipliers (base-per-UOM)
+from core.metrics.metric import uom_multiplier  # normalized unit multipliers
 from core.appdb.ledger import InsufficientStock, on_hand_qty
 from core.appdb.models import Item, ItemBatch, ItemMovement
 from core.appdb.models_recipes import Recipe, RecipeItem
@@ -203,7 +203,7 @@ def execute_run_txn(
                     item_obj = session.get(Item, alloc["item_id"])
                     dim = getattr(item_obj, "dimension", "count") or "count"
                     uom = getattr(item_obj, "uom", "ea") or "ea"
-                    mult = UNIT_MULTIPLIER.get(dim, {}).get(uom, 1) or 1
+                    mult = uom_multiplier(dim, uom)
                     cached = (dim, uom, mult)
                     item_uom_cache[alloc["item_id"]] = cached
                 _, _, mult = cached
@@ -227,7 +227,7 @@ def execute_run_txn(
     out_item = session.get(Item, output_item_id)
     out_dim = getattr(out_item, "dimension", "count") or "count"
     out_uom = getattr(out_item, "uom", "ea") or "ea"
-    out_mult = UNIT_MULTIPLIER.get(out_dim, {}).get(out_uom, 1) or 1
+    out_mult = uom_multiplier(out_dim, out_uom)
     output_qty_uom = (body.output_qty or 0) / float(out_mult)
     per_output_cents = round_half_up_cents(cost_inputs_cents / max(output_qty_uom, 1e-9))
     output_batch = ItemBatch(
@@ -241,6 +241,25 @@ def execute_run_txn(
     )
     session.add(output_batch)
     session.flush()
+
+    # Debug trace to verify unit math end-to-end
+    try:
+        from core.logging import log
+
+        log.info(
+            "mfg:cost",
+            extra={
+                "inputs_cents": cost_inputs_cents,
+                "out_dim": out_dim,
+                "out_uom": out_uom,
+                "out_qty_base": body.output_qty,
+                "out_mult": out_mult,
+                "out_qty_uom": output_qty_uom,
+                "per_out_cents": per_output_cents,
+            },
+        )
+    except Exception:
+        pass
 
     session.add(
         ItemMovement(
