@@ -2,11 +2,13 @@
 // Inventory card with smart input parsing.
 
 import { apiGetJson, apiPost, apiPut, apiDelete, ensureToken } from '../api.js';
+import { fromBaseQty, fromBaseUnitPrice, fmtQty, fmtMoney } from '../lib/units.js';
+import { METRIC, unitOptionsList, dimensionForUnit, toMetricBase, DIM_DEFAULTS_IMPERIAL, DIM_DEFAULTS_METRIC, norm } from '../lib/units.js';
 
 const UNIT_OPTIONS = {
   length: ['mm', 'cm', 'm'],
   area: ['mm2', 'cm2', 'm2'],
-  volume: ['mm3', 'cm3', 'm3', 'ml'],
+  volume: ['mm3', 'cm3', 'm3', 'ml', 'l'],
   weight: ['mg', 'g', 'kg'],
   count: ['ea'],
 };
@@ -16,7 +18,8 @@ const BASE_UNIT_LABEL = {
   area: 'mm²',
   volume: 'mm³',
   weight: 'mg',
-  count: 'milli-units',
+  // Count items are base-1 each
+  count: 'ea',
 };
 
 const UNIT_LABEL = {
@@ -30,6 +33,7 @@ const UNIT_LABEL = {
   cm3: 'cm³',
   m3: 'm³',
   ml: 'ml',
+  l: 'l',
   mg: 'mg',
   g: 'g',
   kg: 'kg',
@@ -39,9 +43,10 @@ const UNIT_LABEL = {
 const MULT = {
   length: { mm: 1, cm: 10, m: 1000 },
   area: { mm2: 1, cm2: 100, m2: 1_000_000 },
-  volume: { mm3: 1, cm3: 1_000, m3: 1_000_000_000, ml: 1_000 },
+  volume: { mm3: 1, cm3: 1_000, m3: 1_000_000_000, ml: 1_000, l: 1_000_000 },
   weight: { mg: 1, g: 1_000, kg: 1_000_000 },
-  count: { ea: 1_000 },
+  // Backend uses base = 1 for count (ea)
+  count: { ea: 1 },
 };
 
 // Keep delegated handler binding stable across route changes
@@ -116,43 +121,20 @@ function formatItemPrice(item) {
   return item?.fifo_unit_cost_display || (item?.price != null ? formatMoney(item.price) : '—');
 }
 
-// Shared on-hand quantity formatter used by main table and (previously) details.
-// Order of preference:
-// 1) server-provided on-hand display (unit + value),
-// 2) server-provided on-hand int + dimension-aware fallback,
-// 3) legacy quantity_display or final zero fallback.
+// Compute list quantity from base every time to avoid legacy server scaling (ea=0.001).
 function formatOnHandDisplay(item) {
-  const sod = item.stock_on_hand_display;
-  if (sod && sod.unit && sod.value != null) {
-    return `${sod.value} ${sod.unit}`;
-  }
-
-  const v = (typeof item.stock_on_hand_int === 'number')
-    ? item.stock_on_hand_int
-    : (typeof item.quantity_int === 'number' ? item.quantity_int : 0);
-
-  switch (item.dimension) {
-    case 'count': {
-      const ea = (v / 1000).toFixed(3);
-      return `${ea} ea`;
-    }
-    case 'length':
-      return `${v} mm`;
-    case 'area':
-      return `${v} mm²`;
-    case 'volume':
-      return `${v} mm³`;
-    case 'weight':
-      return `${v} mg`;
-    default:
-      break;
-  }
-
-  if (item.quantity_display?.value && item.quantity_display?.unit) {
-    return `${item.quantity_display.value} ${item.quantity_display.unit}`;
-  }
-
-  return '0';
+  const base =
+    (typeof item?.stock_on_hand_int === 'number') ? item.stock_on_hand_int :
+    (typeof item?.quantity_int === 'number') ? item.quantity_int : 0;
+  const unit =
+    item?.display_unit ||
+    (item?.dimension === 'area' ? 'm2' :
+     item?.dimension === 'length' ? 'm' :
+     item?.dimension === 'volume' ? 'l' :
+     (item?.dimension === 'mass' || item?.dimension === 'weight') ? 'g' : 'ea');
+  const dim = dimensionForUnit(unit) || item?.dimension || 'count';
+  const val = fromBaseQty(base, unit, dim);
+  return `${fmtQty(val)} ${unit}`;
 }
 
 function renderTable(state) {
@@ -437,9 +419,24 @@ export async function _mountInventory(container) {
       el('tbody', {}, batchRows),
     ]);
 
+    const dimension = detail.dimension === 'weight' ? 'mass' : (detail.dimension || 'count');
+    const displayUnit = detail.display_unit || (dimension === 'area'
+      ? 'm2'
+      : dimension === 'length'
+        ? 'm'
+        : dimension === 'mass'
+          ? 'g'
+          : dimension === 'volume'
+            ? 'l'
+            : 'ea');
+
     const details = el('tr', { class: 'row-details' }, [
       el('td', { colspan: String(colCount) }, [
-        el('div', { class: 'details' }, [
+        el('div', {
+          class: 'details',
+          'data-dimension': dimension,
+          'data-display-unit': displayUnit,
+        }, [
           kvNodes.length ? el('div', { class: 'grid' }, kvNodes) : null,
           detail.notes ? el('div', { class: 'notes', text: detail.notes }) : null,
           batchTable,
@@ -453,6 +450,7 @@ export async function _mountInventory(container) {
     ]);
 
     rowEl.after(details);
+    enhanceDetailsPanel(details.querySelector('.details'));
   }
 
   function confirmDelete() {
@@ -460,7 +458,98 @@ export async function _mountInventory(container) {
     return Promise.resolve(window.confirm('Delete this item? This cannot be undone.'));
   }
 
+  bindDetailsObserver(container);
   await reloadInventory();
+}
+
+// ---- Expanded row normalization (unit-aware, loop-safe) ----
+const _processedDetailsPanels = new WeakSet();
+let _detailsObserverBound = false;
+
+function enhanceDetailsPanel(panel) {
+  if (!panel || _processedDetailsPanels.has(panel)) return;
+  const unit = panel.dataset.displayUnit || 'ea';
+  const dimRaw = panel.dataset.dimension || 'count';
+  const dim = dimRaw === 'weight' ? 'mass' : dimRaw;
+
+  // Hide duplicate Price/Location rows (label + value)
+  panel.querySelectorAll('.kv').forEach((kv) => {
+    const label = (kv.querySelector('.k')?.textContent || '').trim().toLowerCase();
+    if (label === 'price' || label === 'location') {
+      kv.style.display = 'none';
+    }
+  });
+
+  const nodes = panel.querySelectorAll('td, .td, .value, div, span, .v');
+
+  // Convert first "X / Y" to display unit and add tooltip
+  for (const n of nodes) {
+    const s = (n.textContent || '').trim().replace(/,/g, '');
+    const m = s.match(/^(-?\d+)\s*\/\s*(-?\d+)$/);
+    if (!m) continue;
+    const baseRemain = parseInt(m[1], 10);
+    const baseOrig = parseInt(m[2], 10);
+    if (Number.isNaN(baseRemain) || Number.isNaN(baseOrig)) continue;
+    const remain = fmtQty(fromBaseQty(baseRemain, unit, dim));
+    const orig = fmtQty(fromBaseQty(baseOrig, unit, dim));
+    n.textContent = `${remain} / ${orig} ${unit}`;
+    n.title = `${baseRemain.toLocaleString()} / ${baseOrig.toLocaleString()} (base)`;
+    break;
+  }
+
+  // Normalize money per unit
+  for (const n of nodes) {
+    const s = (n.textContent || '').trim().replace(/,/g, '');
+    const m = s.match(/^\$?\s*([0-9.]+)\s*\/\s*([A-Za-z_²^2]+)\s*$/);
+    if (!m) continue;
+    const val = parseFloat(m[1]);
+    const shownUnit = m[2].replace(/[²^2]/g, '2').toLowerCase();
+    if (shownUnit === unit) {
+      n.textContent = `$${fmtMoney(val)} / ${unit}`;
+      break;
+    }
+    const converted = fromBaseUnitPrice(val, unit, dim);
+    n.textContent = `$${fmtMoney(converted)} / ${unit}`;
+    n.title = `${val} / ${shownUnit} (base)`;
+    break;
+  }
+
+  // Notes block: constrain and avoid spill
+  const noteEl = panel.querySelector('.notes');
+  if (noteEl) {
+    const txt = (noteEl.textContent || '').trim();
+    const block = document.createElement('div');
+    block.className = 'inv-note';
+    block.style.cssText = 'margin:8px 0 10px; padding:8px 10px; border:1px solid rgba(36,48,65,.6); border-radius:8px; background:rgba(0,0,0,.12); color:#a9b7c8; max-width:70ch;';
+    const h = document.createElement('div');
+    h.textContent = 'Notes';
+    h.style.cssText = 'font-weight:600; margin-bottom:4px; color:#e7eef7;';
+    const p = document.createElement('div');
+    p.textContent = txt;
+    p.style.cssText = 'white-space:normal; overflow-wrap:anywhere;';
+    block.append(h, p);
+    noteEl.replaceWith(block);
+  }
+
+  _processedDetailsPanels.add(panel);
+}
+
+function bindDetailsObserver(root = document.getElementById('app') || document.body) {
+  if (_detailsObserverBound) return;
+  const observer = new MutationObserver((records) => {
+    if (!location.hash.includes('/inventory')) return;
+    records.forEach((r) => {
+      r.addedNodes?.forEach((node) => {
+        if (!(node instanceof HTMLElement)) return;
+        if (node.matches?.('.details[data-dimension]')) enhanceDetailsPanel(node);
+        node.querySelectorAll?.('.details[data-dimension]')?.forEach(enhanceDetailsPanel);
+      });
+    });
+  });
+  observer.observe(root, { childList: true, subtree: true });
+  _detailsObserverBound = true;
+  // initial scan
+  (root.querySelectorAll?.('.details[data-dimension]') || []).forEach(enhanceDetailsPanel);
 }
 
 // ---------- Shallow/Deep Modal ----------
@@ -511,16 +600,8 @@ export function openItemModal(item = null) {
 
   // Elements – Speed Surface
   const fName = inputRow('Name', 'text', item?.name ?? '', { autofocus: true });
-  const dimensionSelect = createSelect('item-dimension', [
-    ['length', 'Length'],
-    ['area', 'Area'],
-    ['volume', 'Volume'],
-    ['weight', 'Weight'],
-    ['count', 'Count'],
-  ]);
-  const dimensionRow = fieldRowWithElement('Dimension', dimensionSelect);
 
-  const unitSelect = createSelect('item-unit');
+  const unitSelect = createUnitSelect('item-unit');
   const unitRow = fieldRowWithElement('Unit', unitSelect);
 
   const qtyInput = document.createElement('input');
@@ -529,7 +610,20 @@ export function openItemModal(item = null) {
   qtyInput.setAttribute('step', '0.001');
   qtyInput.setAttribute('min', '0');
   qtyInput.required = true;
-  const qtyRow = fieldRowWithElement('Quantity', qtyInput);
+  const qtyChip = document.createElement('span');
+  qtyChip.className = 'pill';
+  qtyChip.textContent = '';
+  const qtyWrap = document.createElement('div');
+  qtyWrap.className = 'field-input';
+  qtyWrap.style.display = 'flex';
+  qtyWrap.style.alignItems = 'center';
+  qtyWrap.style.gap = '8px';
+  qtyWrap.append(qtyInput, qtyChip);
+  const qtyRow = document.createElement('div');
+  qtyRow.className = 'field-row';
+  const qtyLabel = document.createElement('label');
+  qtyLabel.textContent = 'Quantity';
+  qtyRow.append(qtyLabel, qtyWrap);
 
   const qtyPreview = document.createElement('div');
   qtyPreview.id = 'item-qty-preview';
@@ -540,7 +634,28 @@ export function openItemModal(item = null) {
   costInput.id = 'item-cost-dec';
   costInput.setAttribute('step', '0.01');
   costInput.setAttribute('min', '0');
-  const costRow = fieldRowWithElement('Unit Cost', costInput);
+  const costUnitSelect = createUnitSelect('item-cost-unit');
+  const lockCostUnit = document.createElement('input');
+  lockCostUnit.type = 'checkbox';
+  lockCostUnit.id = 'item-lock-cost-unit';
+  lockCostUnit.checked = true;
+  const costUnitLockLabel = document.createElement('label');
+  costUnitLockLabel.className = 'inline-check';
+  costUnitLockLabel.htmlFor = 'item-lock-cost-unit';
+  costUnitLockLabel.append(lockCostUnit, document.createTextNode('Lock cost to unit'));
+  const costWrap = document.createElement('div');
+  costWrap.className = 'field-input';
+  costWrap.style.display = 'flex';
+  costWrap.style.alignItems = 'center';
+  costWrap.style.gap = '8px';
+  const slash = document.createElement('span');
+  slash.textContent = '/';
+  costWrap.append(costInput, slash, costUnitSelect, costUnitLockLabel);
+  const costRow = document.createElement('div');
+  costRow.className = 'field-row';
+  const costLabel = document.createElement('label');
+  costLabel.textContent = 'Cost';
+  costRow.append(costLabel, costWrap);
 
   const isProductInput = document.createElement('input');
   isProductInput.type = 'checkbox';
@@ -668,12 +783,12 @@ export function openItemModal(item = null) {
   const divider = document.createElement('hr');
   divider.className = 'thin';
 
-  content.append(fName, dimensionRow, unitRow, productRow, fPrice, divider);
+  content.append(fName, unitRow, productRow, fPrice, divider);
   if (addBatchToggleRow) content.append(addBatchToggleRow);
   if (batchFields) {
     content.append(batchFields);
   } else {
-    content.append(qtyRow, qtyPreview);
+    content.append(qtyRow, costRow, qtyPreview);
   }
   if (addBatchBtnRow) content.append(addBatchBtnRow);
   content.append(fLocation, hinge, ledger, footer);
@@ -719,21 +834,28 @@ export function openItemModal(item = null) {
     }
   });
 
-  function populateUnits(presetUnit = null) {
-    const dim = dimensionSelect.value;
-    const opts = UNIT_OPTIONS[dim] || [];
-    unitSelect.innerHTML = opts.map((u) => `<option value="${u}">${UNIT_LABEL[u] || u}</option>`).join('');
-    const targetUnit = (presetUnit && opts.includes(presetUnit)) ? presetUnit : opts[0];
-    if (targetUnit) unitSelect.value = targetUnit;
-    updatePreview();
+  function currentDimension() {
+    return dimensionForUnit(unitSelect.value || costUnitSelect.value) || 'count';
   }
 
-  function toBaseIntForPreview(value, unit, dim) {
-    const n = Number(value);
-    if (!Number.isFinite(n)) return 0;
-    const mult = MULT[dim]?.[unit];
-    if (!mult) return 0;
-    return Math.floor(n * mult + 0.5);
+  function unitFactor(dim, unit) {
+    const tbl = METRIC[dim] || {};
+    return tbl[norm(unit)] || 1;
+  }
+
+  function decimalString(v) {
+    const s = String(v ?? '').trim().replace(/,/g, '');
+    if (s === '' || s === '.' || s === '-.') return '0';
+    return s.startsWith('.') ? `0${s}` : s;
+  }
+
+  function serverErrorMessage(err) {
+    if (err?.detail?.error === 'validation_error') {
+      const fields = err.detail.fields || {};
+      const parts = Object.entries(fields).map(([k, v]) => `${k}: ${v}`);
+      if (parts.length) return parts.join(' • ');
+    }
+    return err?.detail?.message || err?.message || err?.error || 'Error';
   }
 
   function updatePreview() {
@@ -741,15 +863,46 @@ export function openItemModal(item = null) {
       qtyPreview.textContent = '';
       return;
     }
-    const dim = dimensionSelect.value;
     const unit = unitSelect.value;
+    const priceUnitSel = lockCostUnit.checked ? unit : (costUnitSelect.value || unit);
+    const dim = currentDimension();
     const val = qtyInput.value;
     if (!dim || !unit || val === '') {
       qtyPreview.textContent = '';
       return;
     }
-    const baseInt = toBaseIntForPreview(val, unit, dim);
-    qtyPreview.textContent = `Will store: ${baseInt} ${BASE_UNIT_LABEL[dim]}`;
+    const qtyNum = Number(decimalString(val || 0));
+    const priceNum = Number(decimalString(costInput?.value || 0));
+    const qtyShow = decimalString(val || 0);
+    const priceShow = decimalString(costInput?.value || 0);
+    const converted = toMetricBase({
+      dimension: dim,
+      qty: qtyNum,
+      qtyUnit: unit,
+      unitPrice: priceNum,
+      priceUnit: priceUnitSel,
+    });
+    const baseLabel = BASE_UNIT_LABEL[dim] || 'base';
+    const qtyBase = converted.qtyBase ?? Math.round(qtyNum * unitFactor(dim, unit));
+    const priceBase = converted.pricePerBase ?? (priceNum / unitFactor(dim, priceUnitSel));
+    if (converted.sendUnits) {
+      const priceNote = priceUnitSel === unit ? priceShow : `${priceShow} (per ${priceUnitSel})`;
+      qtyPreview.textContent = `Will send: ${qtyShow} ${unit} @ ${priceNote} / ${unit} (stores ${qtyBase} ${baseLabel})`;
+    } else {
+      const priceBaseStr = decimalString(priceBase);
+      qtyPreview.textContent = `Will send (converted): ${qtyBase} ${baseLabel} @ ${priceBaseStr} / ${baseLabel} from ${unit}`;
+    }
+  }
+
+  function syncUnitState() {
+    qtyChip.textContent = unitSelect.value || '';
+    if (lockCostUnit.checked) {
+      costUnitSelect.value = unitSelect.value;
+      costUnitSelect.disabled = true;
+    } else {
+      costUnitSelect.disabled = false;
+    }
+    updatePreview();
   }
 
   function syncProductPriceVisibility() {
@@ -770,9 +923,18 @@ export function openItemModal(item = null) {
   }
 
   function initAddItemFormDefaults() {
-    const defaultDim = item?.dimension || dimensionSelect.value || 'count';
-    dimensionSelect.value = defaultDim;
-    populateUnits(item?.quantity_display?.unit || item?.unit);
+    const defaultUnitGuess = () => {
+      const american = !!(window.BUS_UNITS && window.BUS_UNITS.american);
+      const defaults = american ? DIM_DEFAULTS_IMPERIAL : DIM_DEFAULTS_METRIC;
+      const dim = item?.dimension || 'count';
+      return defaults[dim] || defaults.count || 'ea';
+    };
+    const initialUnit = item?.display_unit || item?.uom || item?.unit || item?.quantity_display?.unit || defaultUnitGuess();
+    populateUnitOptions(unitSelect, initialUnit);
+    populateUnitOptions(costUnitSelect, initialUnit);
+    qtyChip.textContent = unitSelect.value;
+    costUnitSelect.value = unitSelect.value;
+    costUnitSelect.disabled = lockCostUnit.checked;
     const qtyVal = item?.quantity_display?.value ?? (item?.qty ?? '');
     if (qtyVal !== undefined && qtyVal !== null) qtyInput.value = qtyVal;
     if (isProductInput) {
@@ -785,7 +947,7 @@ export function openItemModal(item = null) {
       if (costInput) costInput.value = '';
     }
     syncBatchVisibility();
-    updatePreview();
+    syncUnitState();
   }
 
   // Load vendors (async)
@@ -818,6 +980,7 @@ export function openItemModal(item = null) {
   const cleanup = () => {
     window.removeEventListener('contacts:saved', onContactSaved);
     document.removeEventListener('keydown', escBlocker, true);
+    document.removeEventListener('bus:units-mode', onUnitsMode);
   };
 
   const closeModalSafely = () => {
@@ -839,12 +1002,24 @@ export function openItemModal(item = null) {
   }, true);
   card.addEventListener('click', (e) => e.stopPropagation());
 
-  dimensionSelect.addEventListener('change', () => populateUnits());
-  unitSelect.addEventListener('change', () => updatePreview());
+  unitSelect.addEventListener('change', () => syncUnitState());
+  costUnitSelect.addEventListener('change', () => { if (!lockCostUnit.checked) updatePreview(); });
+  lockCostUnit.addEventListener('change', () => {
+    costUnitSelect.disabled = lockCostUnit.checked;
+    if (lockCostUnit.checked) costUnitSelect.value = unitSelect.value;
+    updatePreview();
+  });
   qtyInput.addEventListener('input', () => updatePreview());
   if (addBatchToggle) addBatchToggle.addEventListener('change', () => { syncBatchVisibility(); updatePreview(); });
-  isProductInput.addEventListener('change', () => syncProductPriceVisibility());
+  isProductInput.addEventListener('change', () => { syncProductPriceVisibility(); updatePreview(); });
   if (addBatchBtn) addBatchBtn.addEventListener('click', () => openStockInModal());
+
+  const onUnitsMode = () => {
+    populateUnitOptions(unitSelect, unitSelect.value);
+    populateUnitOptions(costUnitSelect, costUnitSelect.value);
+    syncUnitState();
+  };
+  document.addEventListener('bus:units-mode', onUnitsMode);
 
   function fieldValue(rowSel) {
     return rowSel.querySelector('input,textarea,select')?.value ?? '';
@@ -872,6 +1047,44 @@ export function openItemModal(item = null) {
       opt.textContent = text;
       select.appendChild(opt);
     });
+    return select;
+  }
+
+  function populateUnitOptions(select, preset) {
+    const american = !!(window.BUS_UNITS && window.BUS_UNITS.american);
+    const groups = unitOptionsList({ american });
+    const current = preset || select.value;
+    select.innerHTML = '';
+    groups.forEach((group) => {
+      const og = document.createElement('optgroup');
+      og.label = group.label;
+      group.units.forEach((u) => {
+        const opt = document.createElement('option');
+        opt.value = u;
+        opt.textContent = u.replace('_', '-');
+        og.appendChild(opt);
+      });
+      select.appendChild(og);
+    });
+    if (current && select.querySelector(`option[value="${current}"]`)) {
+      select.value = current;
+    } else if (!select.value) {
+      const fallbackDim = dimensionForUnit(current) || 'count';
+      const defaults = american ? DIM_DEFAULTS_IMPERIAL : DIM_DEFAULTS_METRIC;
+      const target = defaults[fallbackDim] || defaults.count || 'ea';
+      if (select.querySelector(`option[value="${target}"]`)) {
+        select.value = target;
+      } else if (select.options.length) {
+        select.selectedIndex = 0;
+      }
+    }
+  }
+
+  function createUnitSelect(id) {
+    const select = document.createElement('select');
+    if (id) select.id = id;
+    select.required = true;
+    populateUnitOptions(select);
     return select;
   }
 
@@ -997,18 +1210,19 @@ export function openItemModal(item = null) {
       const payload = {
         item_id: item.id,
         uom: stockUnitSelect.value,
-        unit: stockUnitSelect.value,
-        quantity_decimal: stockQtyInput.value,
-        unit_cost_decimal: stockCostInput.value || undefined,
+        quantity_decimal: decimalString(stockQtyInput.value),
+        unit_cost_decimal: stockCostInput.value === '' ? undefined : decimalString(stockCostInput.value),
       };
 
       try {
         await ensureToken();
+        console.debug('POST /ledger/stock_in payload', payload);
+        delete payload.unit;
         await apiPost('/ledger/stock_in', payload, { headers: { 'Content-Type': 'application/json' } });
         closeStockInModal();
         await reloadInventory?.();
       } catch (err) {
-        const msg = err?.detail?.message || err?.message || 'Stock-in failed.';
+        const msg = serverErrorMessage(err) || 'Stock-in failed.';
         if (stockError) {
           stockError.textContent = msg;
           stockError.hidden = false;
@@ -1042,12 +1256,12 @@ export function openItemModal(item = null) {
     // Client-side validation
     if (!name) return markInvalid(fName.querySelector('input'));
 
-    const dimensionVal = dimensionSelect.value;
     const unitVal = unitSelect.value;
+    const priceUnitSel = lockCostUnit.checked ? unitVal : (costUnitSelect.value || unitVal);
     const qtyVal = qtyInput.value;
     const addOpeningBatch = addBatchToggle ? addBatchToggle.checked : false;
+    const dimensionVal = currentDimension();
 
-    if (!dimensionVal) return markInvalid(dimensionSelect);
     if (!unitVal) return markInvalid(unitSelect);
     if ((isEdit || addOpeningBatch) && qtyVal === '') return markInvalid(qtyInput);
 
@@ -1068,6 +1282,7 @@ export function openItemModal(item = null) {
       dimension: dimensionVal,
       uom: unitVal,
       unit: unitVal,
+      display_unit: unitVal,
       is_product: isProductInput.checked,
       quantity_decimal: isEdit ? qtyVal : '0',
     };
@@ -1093,19 +1308,38 @@ export function openItemModal(item = null) {
           return;
         }
 
+        const priceNum = Number(costInput?.value || 0);
+        const qtyConversion = toMetricBase({
+          dimension: dimensionVal,
+          qty: Number(qtyVal),
+          qtyUnit: unitVal,
+          unitPrice: priceNum,
+          priceUnit: priceUnitSel,
+        });
+        const basePrice = qtyConversion.pricePerBase ?? (priceNum / unitFactor(dimensionVal, priceUnitSel));
+        const baseUnitEntry = Object.entries(METRIC[dimensionVal] || {}).find(([, v]) => v === 1);
+        const baseUnit = baseUnitEntry ? baseUnitEntry[0] : unitVal;
+
         const stockPayload = {
           item_id: savedItem?.id,
           uom: unitVal,
-          unit: unitVal,
-          quantity_decimal: qtyVal,
-          unit_cost_decimal: costInput?.value || '0',
+          quantity_decimal: decimalString(qtyVal),
+          unit_cost_decimal: decimalString((basePrice ?? 0) * unitFactor(dimensionVal, unitVal)),
         };
+
+        if (!qtyConversion.sendUnits) {
+          stockPayload.uom = baseUnit;
+          stockPayload.quantity_decimal = decimalString(qtyConversion.qtyBase ?? qtyVal);
+          stockPayload.unit_cost_decimal = decimalString(basePrice ?? 0);
+        }
 
         try {
           await ensureToken();
+          console.debug('POST /ledger/stock_in payload', stockPayload);
+          delete stockPayload.unit;
           await apiPost('/ledger/stock_in', stockPayload, { headers: { 'Content-Type': 'application/json' } });
         } catch (err) {
-          const msg = err?.detail?.message || err?.error || err?.message || 'Stock-in failed.';
+          const msg = serverErrorMessage(err);
           if (errorBanner) {
             errorBanner.textContent = msg;
             errorBanner.hidden = false;

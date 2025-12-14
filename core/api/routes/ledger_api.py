@@ -4,6 +4,7 @@ import logging
 import os
 import sqlite3
 import sys
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from datetime import datetime
 from pathlib import Path
 from typing import Literal, Optional
@@ -23,7 +24,13 @@ from core.appdb.ledger import (
 from core.appdb.models import Item, ItemBatch, ItemMovement
 from core.appdb.paths import resolve_db_path
 from core.api.schemas_ledger import QtyDisplay, StockInReq, StockInResp
-from core.metrics.metric import UNIT_MULTIPLIER, default_unit_for, from_base, to_base
+from core.metrics.metric import (
+    UNIT_MULTIPLIER,
+    _norm_unit,
+    default_unit_for,
+    from_base,
+    to_base_qty,
+)
 
 # NOTE: Primary router uses legacy "/ledger" prefix; public_router exposes routes without it
 # (e.g., /app/adjust) to match current app paths.
@@ -338,15 +345,88 @@ def stock_in(payload: StockInReq, db: Session = Depends(get_session)):
     if not item:
         raise HTTPException(status_code=404, detail="item_not_found")
 
-    if item.dimension not in UNIT_MULTIPLIER or payload.uom not in UNIT_MULTIPLIER[item.dimension]:
-        raise HTTPException(status_code=400, detail="unsupported uom")
+    def parse_decimal_str(val: str, field: str) -> Decimal:
+        try:
+            cleaned = (val or "").strip().replace(",", "")
+            if cleaned in ("", ".", "-.", "+."):
+                raise InvalidOperation()
+            if cleaned.startswith("."):
+                cleaned = "0" + cleaned
+            d = Decimal(cleaned)
+        except (InvalidOperation, TypeError):
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "bad_request",
+                    "message": f"invalid_{field}",
+                    "fields": {"dimension": item.dimension, "uom": uom, field: val},
+                },
+            )
+        if d <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "bad_request",
+                    "message": f"invalid_{field}",
+                    "fields": {"dimension": item.dimension, "uom": uom, field: str(d)},
+                },
+            )
+        return d
 
+    uom_raw = payload.uom
+    uom = _norm_unit(uom_raw)
+    units_for_dim = UNIT_MULTIPLIER.get(item.dimension, {})
+    if item.dimension not in UNIT_MULTIPLIER or uom not in units_for_dim:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "bad_request",
+                "message": "unsupported_uom",
+                "fields": {"dimension": item.dimension, "uom": uom_raw, "normalized_uom": uom},
+            },
+        )
+
+    qty_dec = parse_decimal_str(payload.quantity_decimal, "quantity")
     try:
-        qty_int = to_base(payload.quantity_decimal, payload.uom, item.dimension)
-    except Exception:
-        raise HTTPException(status_code=400, detail="invalid_quantity")
+        qty_int = to_base_qty(item.dimension, uom, qty_dec)
+    except Exception as exc:  # pragma: no cover - defensive path
+        logger.exception(
+            "stock_in quantity conversion failed",
+            extra={
+                "item_id": item.id,
+                "dimension": item.dimension,
+                "uom": uom,
+                "qty_decimal": str(qty_dec),
+            },
+        )
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "bad_request",
+                "message": "invalid_quantity",
+                "fields": {
+                    "dimension": item.dimension,
+                    "uom": uom_raw,
+                    "normalized_uom": uom,
+                    "qty_decimal": str(qty_dec),
+                },
+            },
+        ) from exc
     if qty_int <= 0:
-        raise HTTPException(status_code=400, detail="invalid_quantity")
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "bad_request",
+                "message": "invalid_quantity",
+                "fields": {
+                    "dimension": item.dimension,
+                    "uom": uom_raw,
+                    "normalized_uom": uom,
+                    "qty_decimal": str(qty_dec),
+                    "qty_int": qty_int,
+                },
+            },
+        )
 
     unit_cost_cents: Optional[int]
     if payload.unit_cost_decimal is None:
@@ -368,6 +448,20 @@ def stock_in(payload: StockInReq, db: Session = Depends(get_session)):
         created_at=datetime.utcnow(),
     )
     db.add(batch)
+
+    logger.info(
+        "stock_in debug",
+        extra={
+            "item_id": item.id,
+            "dimension": item.dimension,
+            "uom": uom,
+            "uom_raw": uom_raw,
+            "qty_decimal": str(qty_dec),
+            "qty_int": qty_int,
+            "unit_cost_decimal": payload.unit_cost_decimal,
+            "unit_cost_cents": unit_cost_cents,
+        },
+    )
 
     movement = ItemMovement(
         item_id=item.id,
