@@ -69,4 +69,20 @@ python launcher.py --dev
 
 See [docs/SOT.md](docs/SOT.md) for the Source of Truth and architecture details.
 
+
+
+Interface Gallery
+
+| Dashboard | Inventory Management |
+| :---: | :---: |
+| <img src="screenshots/Home.jpg" width="100%"> | <img src="screenshots/Invintory.jpg" width="100%"> |
+
+| Manufacturing | Recipe Engine |
+| :---: | :---: |
+| <img src="screenshots/Manufacturing.jpg" width="100%"> | <img src="screenshots/Recipe.jpg" width="100%"> |
+
+| System Logs | Application Settings |
+| :---: | :---: |
+| <img src="screenshots/Logs.jpg" width="100%"> | <img src="screenshots/Settings.jpg" width="100%"> |
+
 ```
