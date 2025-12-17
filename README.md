@@ -10,9 +10,10 @@
 
 BUS-Core
 
-The local-first ERP for Makers. Inventory, Manufacturing, and Contacts. No cloud required.
-
-BUS-Core is a free, open-source business utility system built for small workshops and independent makers. It runs entirely on your local machine, giving you full control of your data. No subscriptions, no forced updates, no cloud lock-in.
+BUS Core
+A free, local-first inventory and manufacturing tracker for small, single-person workshops.
+No cloud. No accounts. No subscriptions.
+If this is enough for you, that’s the point.
 
 At its core, BUS-Core helps you track everything that moves through your shop:
 
