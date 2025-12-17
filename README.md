@@ -6,7 +6,6 @@
 [![Discord](https://img.shields.io/badge/Discord-Join%20Us-7289da.svg)](https://discord.gg/qp3rc5CxdM)
 
 
-<img src="core/ui/Logo.png" alt="BUS Core Icon" width="100">
 
 BUS-Core
 
