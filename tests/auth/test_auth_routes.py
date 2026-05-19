@@ -355,6 +355,62 @@ def test_claimed_session_token_does_not_create_legacy_bypass(bus_client):
     assert app_response.json() == {"error": "auth_required"}
 
 
+def test_claimed_mode_allows_public_update_check_only(bus_client, monkeypatch):
+    from core.api.routes import update as update_routes
+    from core.services.update import UpdateResult
+
+    class FakeUpdateService:
+        def check(self, *, manifest_url: str, channel: str):
+            return UpdateResult(
+                current_version="1.2.1",
+                latest_version="1.2.1",
+                update_available=False,
+                download_url=None,
+                error_code=None,
+                error_message=None,
+            )
+
+    monkeypatch.setattr(update_routes, "get_update_service", lambda: FakeUpdateService())
+    setup_client = bus_client["client"]
+    _setup_owner(setup_client)
+    client = _anonymous_client(bus_client)
+
+    update_response = client.get("/app/update/check")
+    assert update_response.status_code == 200, update_response.text
+    assert update_response.json() == {
+        "current_version": "1.2.1",
+        "latest_version": "1.2.1",
+        "update_available": False,
+        "download_url": None,
+        "error_code": None,
+        "error_message": None,
+    }
+
+    config_get = client.get("/app/config")
+    assert config_get.status_code == 401
+    assert config_get.json() == {"error": "auth_required"}
+
+    config_post = client.post("/app/config", json={"ui": {"theme": "system"}})
+    assert config_post.status_code == 401
+    assert config_post.json() == {"error": "auth_required"}
+
+    transactions_summary = client.get("/app/transactions/summary?window=30d")
+    assert transactions_summary.status_code == 401
+    assert transactions_summary.json() == {"error": "auth_required"}
+
+    transactions = client.get("/app/transactions?limit=10")
+    assert transactions.status_code == 401
+    assert transactions.json() == {"error": "auth_required"}
+
+    items_response = client.get("/app/items")
+    assert items_response.status_code == 401
+    assert items_response.json() == {"error": "auth_required"}
+
+    authenticated_response = setup_client.get("/app/update/check")
+    assert authenticated_response.status_code == 200, authenticated_response.text
+    assert authenticated_response.json()["error_code"] is None
+
+
 def test_claimed_mode_rejects_revoked_auth_session(bus_client):
     setup_client = bus_client["client"]
     models = bus_client["models"]

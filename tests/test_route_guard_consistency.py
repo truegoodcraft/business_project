@@ -25,6 +25,9 @@ SCOPED_ROUTE_FILES = (
     Path("core/api/routes/system_state.py"),
 )
 MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+PUBLIC_READ_ROUTE_EXCEPTIONS = {
+    (Path("core/api/routes/update.py"), "check_for_updates"),
+}
 TEST_SESSION_TOKEN = "route-guard-token"
 
 
@@ -168,6 +171,8 @@ def test_all_scoped_read_routes_have_route_local_token_guards() -> None:
         for function_name, methods, dependencies in _route_functions(relative_path):
             if "GET" not in methods:
                 continue
+            if (relative_path, function_name) in PUBLIC_READ_ROUTE_EXCEPTIONS:
+                continue
             if "require_token_ctx" not in dependencies:
                 violations.append(f"{relative_path}:{function_name} missing require_token_ctx")
 
@@ -179,6 +184,8 @@ def test_all_scoped_routes_have_route_local_permission_guards() -> None:
     for relative_path in SCOPED_ROUTE_FILES:
         for function_name, methods, dependencies in _route_functions(relative_path):
             if not methods.intersection({"GET", "POST", "PUT", "PATCH", "DELETE"}):
+                continue
+            if (relative_path, function_name) in PUBLIC_READ_ROUTE_EXCEPTIONS:
                 continue
             if "require_permission" not in dependencies:
                 violations.append(f"{relative_path}:{function_name} missing require_permission")

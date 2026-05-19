@@ -806,9 +806,9 @@ POST   /app/manufacture => PRESENT
 
 ### Legacy/Removal Truth
 
-* Removed dead modules: `core/ui/js/cards/dev.js`, `core/ui/js/cards/fixkit.js`, `core/ui/js/cards/organizer.js`, `core/ui/js/cards/tasks.js`, `core/ui/js/cards/writes.js`.
+* Removed dead modules: `core/ui/js/cards/dev.js`, `core/ui/js/cards/fixkit.js`, `core/ui/js/cards/home_donuts.js`, `core/ui/js/cards/organizer.js`, `core/ui/js/cards/tasks.js`, `core/ui/js/cards/writes.js`.
 
-* Deferred quarantine/legacy candidates still unresolved: `core/ui/js/cards/home_donuts.js`, `core/ui/js/cards/tools.js`, `core/ui/js/cards/backup.js`.
+* Deferred quarantine/legacy candidates still unresolved: `core/ui/js/cards/tools.js`, `core/ui/js/cards/backup.js`.
 
 ### Contract-to-Form Parity Truth (Completed Modules)
 
@@ -838,7 +838,7 @@ POST   /app/manufacture => PRESENT
 
 * Update-check display/settings logic cleanup pass (UI behavior/presentation-level only).
 
-* Legacy/quarantine resolution decisions and implementation for remaining deferred cards (`home_donuts`, `tools`, `backup`).
+* Legacy/quarantine resolution decisions and implementation for remaining deferred cards (`tools`, `backup`).
 
 * UI-vs-backend count-unit authority reconciliation follow-up for `core/ui/js/lib/units.js` vs canonical backend/SOT count base model.
 - Finance COGS authority corrections are Phase 2C.

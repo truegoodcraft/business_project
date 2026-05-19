@@ -82,7 +82,7 @@ export function toMetricBase({ dimension, qty, qtyUnit, unitPrice, priceUnit }) 
 export const UNIT_DIM_INDEX = (() => {
   const idx = {};
   for (const [dim, table] of Object.entries(METRIC)) {
-    for (const u of Object.keys(table)) idx[norm(u)] = dim;
+    for (const u of Object.keys(table)) idx[norm(u)] = normalizeDimension(dim) || dim;
   }
   for (const [dim, table] of Object.entries(IMPERIAL_TO_METRIC)) {
     for (const u of Object.keys(table)) idx[norm(u)] = normalizeDimension(dim) || dim;
@@ -91,6 +91,7 @@ export const UNIT_DIM_INDEX = (() => {
   idx[norm('m²')] = 'area'; idx[norm('cm²')] = 'area'; idx[norm('mm²')] = 'area';
   idx[norm('fl-oz')] = 'volume'; idx[norm('fl oz')] = 'volume';
   idx[norm('lbs')] = 'weight'; idx[norm('ounces')] = 'weight';
+  idx[norm('mc')] = 'count';
   return idx;
 })();
 

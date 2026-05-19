@@ -106,10 +106,8 @@ def test_route_modules_forbid_uom_guessing():
     assert not offenders, f"Forbidden UOM guessing found: {offenders}"
 
 
-def test_home_dashboard_stub_routes_are_explicitly_disclosed():
-    home_widget = Path("core/ui/js/cards/home_donuts.js").read_text(encoding="utf-8")
+def test_legacy_home_transaction_widget_is_not_mounted():
+    app_js = Path("core/ui/app.js").read_text(encoding="utf-8")
 
-    assert "/app/transactions/summary" in home_widget
-    assert "/app/transactions?limit=10" in home_widget
-    assert "placeholder only" in home_widget
-    assert "transactions module lands" in home_widget
+    assert not Path("core/ui/js/cards/home_donuts.js").exists()
+    assert "home_donuts" not in app_js

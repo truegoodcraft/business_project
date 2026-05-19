@@ -121,9 +121,29 @@ def test_app_boot_checks_auth_state_before_protected_mount() -> None:
     app_js = (REPO_ROOT / "core" / "ui" / "app.js").read_text(encoding="utf-8")
 
     assert "await refreshAuthState();\n    if (!canMountNormalApp())" in app_js
+    assert "bindSidebarUpdateControls();\n    maybeRunStartupUpdateCheck();\n    await refreshAuthState();" in app_js
+    assert "await maybeRunStartupUpdateCheck();" not in app_js
     assert "showLoginGate();" in app_js
     assert "openClaimScreen" in app_js
     assert "#/security" in app_js
+
+
+def test_startup_update_check_uses_public_path_without_auth_boot_dependencies() -> None:
+    update_js = (REPO_ROOT / "core" / "ui" / "js" / "update-check.js").read_text(encoding="utf-8")
+
+    startup_section = update_js.split("export async function maybeRunStartupUpdateCheck()", 1)[1]
+    assert "startupCheckDone = true" in startup_section
+    assert "executeCheck({ manual: false })" in startup_section
+    assert "ensureToken" not in startup_section
+    assert "/app/config" not in startup_section
+    assert "apiGet" not in startup_section
+
+
+def test_legacy_home_transaction_loader_is_not_mounted() -> None:
+    app_js = (REPO_ROOT / "core" / "ui" / "app.js").read_text(encoding="utf-8")
+
+    assert not (REPO_ROOT / "core" / "ui" / "js" / "cards" / "home_donuts.js").exists()
+    assert "home_donuts" not in app_js
 
 
 def test_security_ui_refreshes_auth_state_after_permission_sensitive_actions() -> None:

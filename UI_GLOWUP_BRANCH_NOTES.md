@@ -367,17 +367,16 @@ Completed as a tight removal pass with no active route/handler behavior changes.
 - Files removed:
 - `core/ui/js/cards/dev.js`
 - `core/ui/js/cards/fixkit.js`
+- `core/ui/js/cards/home_donuts.js`
 - `core/ui/js/cards/organizer.js`
 - `core/ui/js/cards/tasks.js`
 - `core/ui/js/cards/writes.js`
 
 - Files intentionally deferred in this pass:
 - `core/ui/js/cards/backup.js` (explicitly retained)
-- `core/ui/js/cards/home_donuts.js` (deferred to legacy quarantine/removal pass)
 - `core/ui/js/cards/tools.js` (deferred to legacy quarantine/removal pass)
 
 - Remaining legacy quarantine candidates:
-- `core/ui/js/cards/home_donuts.js`
 - `core/ui/js/cards/tools.js`
 - `core/ui/js/cards/backup.js` (ownership/retention decision still explicit and separate)
 
@@ -387,8 +386,8 @@ Current branch posture before parity remediation:
 
 - Standardized for presentation authority: `settings.js`, `vendors.js`, `recipes.js`, `finance.js`, `logs.js`.
 - Partially standardized: `inventory.js`, `manufacturing.js`.
-- Legacy/orphan deferred by explicit decision: `home_donuts.js`, `tools.js`, `backup.js`.
-- Removed dead modules in this branch: `dev.js`, `fixkit.js`, `organizer.js`, `tasks.js`, `writes.js`.
+- Legacy/orphan deferred by explicit decision: `tools.js`, `backup.js`.
+- Removed dead modules in this branch: `dev.js`, `fixkit.js`, `home_donuts.js`, `organizer.js`, `tasks.js`, `writes.js`.
 
 ## Contract-to-Form Parity Audit
 
@@ -739,7 +738,7 @@ Step 4 implementation has started with a narrow recipes parity pass in `core/ui/
 
 - UI styling authority migration to `core/ui/css/app.css` as canonical visual system authority.
 - Shared shell/navigation/cards/forms/button/status standardization passes completed and settings page adopted as first full-system target.
-- Dead UI module removals completed for `dev.js`, `fixkit.js`, `organizer.js`, `tasks.js`, and `writes.js`.
+- Dead UI module removals completed for `dev.js`, `fixkit.js`, `home_donuts.js`, `organizer.js`, `tasks.js`, and `writes.js`.
 - Contract-to-form parity remediation completed for Inventory, Contacts, Manufacturing, and Recipes scoped issues.
 - Recipes UI count-unit presentation policy updated so internal `mc` is hidden in user-facing selectors.
 
@@ -747,7 +746,7 @@ Step 4 implementation has started with a narrow recipes parity pass in `core/ui/
 
 - Small settings/admin pass for contract-backed guard/error-display polish.
 - Update-check display/settings logic adjustment pass.
-- Legacy/quarantine resolution for `home_donuts.js`, `tools.js`, and explicit `backup.js` ownership decision.
+- Legacy/quarantine resolution for `tools.js` and explicit `backup.js` ownership decision.
 - Unit-authority reconciliation follow-up: `core/ui/js/lib/units.js` count-base model vs backend/SOT canonical count base.
 - Controlled recursion/self-reference recipe validation test with non-shortage stock conditions.
 

@@ -58,10 +58,7 @@ def _stage_payload(result: UpdateStageResult) -> dict[str, object | None]:
 
 
 @router.get("/update/check")
-def check_for_updates(
-    _permission=Depends(require_permission(PERMISSION_UPDATES_CHECK)),
-    _token: None = Depends(require_token_ctx),
-) -> dict[str, object | None]:
+def check_for_updates() -> dict[str, object | None]:
     try:
         cfg = load_config().updates
         result = get_update_service().check(

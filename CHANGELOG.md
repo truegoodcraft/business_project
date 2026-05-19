@@ -1,5 +1,18 @@
 # Changelog
 
+## [Internal 1.2.1.1] - 2026-05-19
+
+### Fixed
+
+- Fixed Add Item regression coverage for weight-based units of measure such as `mg`, `g`, and `kg`, including filament-style gram stock-in to canonical `mg` base units.
+- Fixed update checks being blocked by the claimed-mode login gate by making exact `GET /app/update/check` public while keeping protected `/app` routes private.
+- Re-enabled the one-shot automatic update check through the public read-only check path so login boot does not request a legacy session token or `/app/config` before authentication.
+- Removed the defunct Home transaction widget so claimed-mode login no longer triggers pre-auth `/app/transactions*` requests.
+
+### Changed
+
+- Bumped `INTERNAL_VERSION` from `1.2.1.0` to `1.2.1.1` for the scoped hotfix work without changing public `VERSION`.
+
 ## [1.2.1] - 2026-05-13
 
 ### Changed
