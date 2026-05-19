@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { apiGet, apiPost, ensureToken } from './api.js';
+import { apiPost, ensureToken, rawFetch } from './api.js';
 
 let startupCheckDone = false;
 
@@ -28,14 +28,6 @@ function setStageButton({ visible, disabled = false, label = 'Update' }) {
     return;
   }
   stage.classList.add('hidden');
-}
-
-async function getStartupPolicyEnabled() {
-  await ensureToken();
-  const cfg = await apiGet('/app/config');
-  const updates = cfg?.updates || {};
-  // Product policy: update checks are default-on and opt-out.
-  return updates.enabled !== false && updates.check_on_startup !== false;
 }
 
 async function executeCheck({ manual = false } = {}) {
@@ -86,8 +78,20 @@ export function bindSidebarUpdateControls() {
 }
 
 export async function runUpdateCheck() {
-  await ensureToken();
-  return apiGet('/app/update/check');
+  const response = await rawFetch('/app/update/check', {
+    method: 'GET',
+    credentials: 'same-origin',
+    headers: { Accept: 'application/json' },
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok) {
+    const message = body?.error || body?.message || body?.detail || response.statusText || `Request failed with status ${response.status}`;
+    const error = new Error(message);
+    error.status = response.status;
+    error.payload = body;
+    throw error;
+  }
+  return body;
 }
 
 export async function runSidebarManualUpdateStage() {
@@ -129,17 +133,6 @@ export async function maybeRunStartupUpdateCheck() {
   if (startupCheckDone) return;
   startupCheckDone = true;
   bindSidebarUpdateControls();
-  try {
-    const enabled = await getStartupPolicyEnabled();
-    if (!enabled) {
-      setSidebarStatus('Startup update checks disabled\n(use Check now)', 'neutral');
-      setStageButton({ visible: false, disabled: false, label: 'Update' });
-      return;
-    }
-
-    // Product policy: run one startup check when not explicitly disabled.
-    await executeCheck({ manual: false });
-  } catch (_err) {
-    // Silent by design (non-blocking startup behavior)
-  }
+  // Product policy: run one public, non-authenticated startup check per boot.
+  await executeCheck({ manual: false });
 }

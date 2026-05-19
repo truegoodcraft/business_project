@@ -421,6 +421,9 @@ PUBLIC_PATHS = {
     "/auth/logout",
     "/auth/me",
 }
+PUBLIC_GET_PATHS = {
+    "/app/update/check",
+}
 PUBLIC_PREFIXES = (
     "/ui/",
     # "/dev/" removed to enforce middleware auth on dev routes
@@ -953,8 +956,10 @@ async def session_guard(request: Request, call_next):
         return JSONResponse(status_code=404, content=normalize_http_exc("Not found"))
     if request.method == "OPTIONS":
         return await call_next(request)
-    # Make static UI, session bootstrap, and brand assets public
-    if p in PUBLIC_PATHS or any(p.startswith(prefix) for prefix in PUBLIC_PREFIXES):
+    # Make static UI, session bootstrap, brand assets, and exact read-only public routes public
+    if p in PUBLIC_PATHS or (request.method == "GET" and p in PUBLIC_GET_PATHS) or any(
+        p.startswith(prefix) for prefix in PUBLIC_PREFIXES
+    ):
         return await call_next(request)
     try:
         with _auth_gate_db() as db:

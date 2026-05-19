@@ -24,7 +24,6 @@ import { mountAuthGate } from "./js/auth-ui.js";
 import { mountBackupExport } from "./js/cards/backup.js";
 import mountVendors from "./js/cards/vendors.js";
 import { mountHome } from "./js/cards/home.js";
-import "./js/cards/home_donuts.js";
 import { mountInventory, unmountInventory } from "./js/cards/inventory.js";
 import { mountManufacturing, unmountManufacturing } from "./js/cards/manufacturing.js";
 import { mountRecipes, unmountRecipes } from "./js/cards/recipes.js";
@@ -543,13 +542,14 @@ window.BUS_UNITS = {
 
 document.addEventListener('DOMContentLoaded', async () => {
   try {
+    bindSidebarUpdateControls();
+    maybeRunStartupUpdateCheck();
     await refreshAuthState();
     if (!canMountNormalApp()) {
       showLoginGate();
       return;
     }
     await ensureToken();
-    bindSidebarUpdateControls();
     // UI version stamp (from FastAPI OpenAPI info.version)
     {
       const el = document.querySelector('[data-role="ui-version"]');
@@ -561,7 +561,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         } catch (_) { el.textContent = 'unknown'; }
       }
     }
-    await maybeRunStartupUpdateCheck();
     console.log('BOOT OK');
   } catch (e) {
     console.error('BOOT FAIL', e);

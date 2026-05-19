@@ -151,8 +151,8 @@ def test_verified_ready_newer_always_newest_launches(monkeypatch: pytest.MonkeyP
         "read_state",
         lambda _root, active_version: {
             "verified_ready": {
-                "version": "1.2.0",
-                "exe_path": "C:/cache/versions/1.2.0/BUS-Core.exe",
+                "version": "1.2.3",
+                "exe_path": "C:/cache/versions/1.2.3/BUS-Core.exe",
                 "sha256": "a" * 64,
             }
         },
@@ -160,12 +160,12 @@ def test_verified_ready_newer_always_newest_launches(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(
         launcher.Path,
         "exists",
-        lambda self: str(self).replace("\\", "/") == "C:/cache/versions/1.2.0/BUS-Core.exe",
+        lambda self: str(self).replace("\\", "/") == "C:/cache/versions/1.2.3/BUS-Core.exe",
     )
     monkeypatch.setattr(
         launcher.Path,
         "is_file",
-        lambda self: str(self).replace("\\", "/") == "C:/cache/versions/1.2.0/BUS-Core.exe",
+        lambda self: str(self).replace("\\", "/") == "C:/cache/versions/1.2.3/BUS-Core.exe",
     )
 
     launched = launcher._maybe_handoff_to_verified_ready(
@@ -176,7 +176,7 @@ def test_verified_ready_newer_always_newest_launches(monkeypatch: pytest.MonkeyP
 
     assert launched is True
     assert len(calls) == 1
-    assert calls[0][0].replace("\\", "/") == "C:/cache/versions/1.2.0/BUS-Core.exe"
+    assert calls[0][0].replace("\\", "/") == "C:/cache/versions/1.2.3/BUS-Core.exe"
     assert calls[0][1:] == (8765, False)
 
 
@@ -204,8 +204,8 @@ def test_verified_ready_newer_ask_yes_attempts_launch(monkeypatch: pytest.Monkey
         "read_state",
         lambda _root, active_version: {
             "verified_ready": {
-                "version": "1.2.1",
-                "exe_path": "C:/cache/versions/1.2.1/BUS-Core.exe",
+                "version": "1.2.3",
+                "exe_path": "C:/cache/versions/1.2.3/BUS-Core.exe",
                 "sha256": "a" * 64,
             }
         },
@@ -213,12 +213,12 @@ def test_verified_ready_newer_ask_yes_attempts_launch(monkeypatch: pytest.Monkey
     monkeypatch.setattr(
         launcher.Path,
         "exists",
-        lambda self: str(self).replace("\\", "/") == "C:/cache/versions/1.2.1/BUS-Core.exe",
+        lambda self: str(self).replace("\\", "/") == "C:/cache/versions/1.2.3/BUS-Core.exe",
     )
     monkeypatch.setattr(
         launcher.Path,
         "is_file",
-        lambda self: str(self).replace("\\", "/") == "C:/cache/versions/1.2.1/BUS-Core.exe",
+        lambda self: str(self).replace("\\", "/") == "C:/cache/versions/1.2.3/BUS-Core.exe",
     )
 
     launched = launcher._maybe_handoff_to_verified_ready(

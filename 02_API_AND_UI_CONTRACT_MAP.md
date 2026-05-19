@@ -4,7 +4,7 @@
 - Primary authority basis: Mounted routes in `core/api/http.py`, `core/api/routes/*`, `core/reader/api.py`, `core/organizer/api.py`, and SPA usage in `core/ui/app.js`, `core/ui/js/**/*`.
 - Best use: Contract checking, route inventory, UI/backend coherence review, wrapper/drift detection.
 - Refresh triggers: Route additions/removals, router remounting, screen changes, payload shape changes, legacy-wrapper cleanup.
-- Highest-risk drift areas: Missing backup endpoints, stub transaction endpoints used by the UI, `/app/logs` vs `/logs` naming collision, and any future route-level guard drift.
+- Highest-risk drift areas: Missing backup endpoints, transaction endpoints that remain backend stubs, `/app/logs` vs `/logs` naming collision, and any future route-level guard drift.
 - Key dependent files / modules: `core/api/http.py`, `core/api/routes/items.py`, `core/api/routes/recipes.py`, `core/api/routes/manufacturing.py`, `core/api/routes/ledger_api.py`, `core/api/routes/finance_api.py`, `core/ui/app.js`, `core/ui/js/cards/*`.
 
 ## Top Contract Drift Risks
@@ -12,7 +12,7 @@
 This map exists to keep authority boundaries explicit. Canonical, supported, secondary, and legacy or drifted surfaces are separated so operators and maintainers can see where predictability is guaranteed and where compatibility or debt still exists.
 
 - Drifted: `core/ui/js/cards/backup.js` expects `/app/backup` or `/app.db`; no matching mounted backend route was found.
-- Drifted: `core/ui/js/cards/home_donuts.js` uses `/app/transactions/summary` and `/app/transactions`, but both endpoints are explicit stubs.
+- Removed: legacy `core/ui/js/cards/home_donuts.js` is no longer mounted; `/app/transactions/summary` and `/app/transactions` remain backend stubs and must not be called from claimed-mode login.
 - Canonical: `/session/token` authority is only `core/api/http.py`; it remains unclaimed-mode compatibility and returns `login_required` in claimed mode rather than minting a legacy app-access bypass.
 - Canonical: `/auth/state`, `/auth/setup-owner`, `/auth/login`, `/auth/logout`, `/auth/me`, `/auth/recover`, and `/auth/recovery-codes/regenerate` expose DB-backed auth account lifecycle over `bus_auth_session`. The SPA calls `/auth/state` during boot before protected app mounting, preserves legacy local behavior while unclaimed, requires login UI before normal screens once claimed without a current session, exposes account recovery from the claimed-mode login card, exposes recovery-code regeneration from Security management, and refreshes in-memory auth state after permission/session-sensitive Security UI actions.
 - Canonical: `/app/users`, `/app/roles`, `/app/sessions`, and `/app/audit` expose claimed-mode user, role, session, and audit management. The `#/security` UI consumes these routes when permitted; backend route-local permissions remain authoritative and no default users are created.
@@ -204,7 +204,7 @@ Silent contract drift is a stability risk. The purpose of this document is not t
 
 | Hash route | Status | Screen / behavior | Main files |
 | --- | --- | --- | --- |
-| `#/home` | Canonical | Home dashboard with version badge and transaction widgets. | `core/ui/app.js`, `core/ui/js/cards/home.js`, `core/ui/js/cards/home_donuts.js` |
+| `#/home` | Canonical | Home dashboard with version badge and static guidance. | `core/ui/app.js`, `core/ui/js/cards/home.js` |
 | `#/welcome` | Canonical | Onboarding/EULA/demo-mode entry flow. | `core/ui/app.js` |
 | `#/inventory` | Canonical | Inventory screen; supports `#/inventory/{id}`. | `core/ui/js/cards/inventory.js` |
 | `#/manufacturing` | Canonical | Manufacturing run screen. | `core/ui/js/cards/manufacturing.js` |
@@ -224,7 +224,7 @@ Silent contract drift is a stability risk. The purpose of this document is not t
 | UI expectation | Status | Backend reality | Evidence |
 | --- | --- | --- | --- |
 | Backup export via `/app/backup` or `/app.db` | Drifted | No mounted route found. | `core/ui/js/cards/backup.js`, route inventory above |
-| Home dashboard transaction widgets | Drifted | Endpoints exist but are explicit stubs, not full business data. | `core/ui/js/cards/home_donuts.js`, `core/api/routes/transactions.py` |
+| Home dashboard transaction widgets | Removed | Endpoints exist as backend stubs, but the legacy widget is no longer mounted. | `core/api/routes/transactions.py` |
 | Dedicated `#/runs` and `#/import` screens | Drifted | Routes exist in SPA but render placeholders only. | `core/ui/app.js` |
 
 ## UI-to-API dependency map
@@ -233,7 +233,7 @@ Silent contract drift is a stability risk. The purpose of this document is not t
 | --- | --- |
 | Welcome/onboarding | `/session/token`, `/app/system/state`, `/app/system/start-fresh`, `/license/EULA.md` |
 | Auth boot/login/claim/recovery chrome | `/auth/state`, `/auth/setup-owner`, `/auth/recover`, `/auth/login`, `/auth/logout`, `/auth/me` |
-| Home | `/openapi.json`, `/app/transactions/summary?window=30d`, `/app/transactions?limit=10` |
+| Home | `/openapi.json` |
 | Inventory | `/app/items`, `/app/items/{id}`, `/app/stock/in`, `/app/stock/out`, `/app/purchase`, `/app/finance/refund`, `/app/vendors?is_vendor=true`, `/app/contacts?is_vendor=true`, `/app/items/{id}` `DELETE` |
 | Manufacturing | `/app/recipes`, `/app/recipes/{id}`, `/app/manufacture`, `/app/ledger/history` |
 | Recipes | `/app/items`, `/app/recipes`, `/app/recipes/{id}`, `/app/recipes` `POST`, `/app/recipes/{id}` `PUT|DELETE` |

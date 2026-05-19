@@ -312,11 +312,10 @@ def test_update_service_partner_channel_does_not_fall_back_to_channel_less_publi
     assert result.download_url is None
 
 
-def test_update_startup_policy_is_opt_out_and_no_hidden_polling():
+def test_update_startup_check_is_public_one_shot_and_no_hidden_polling():
     update_js = (REPO_ROOT / "core" / "ui" / "js" / "update-check.js").read_text(encoding="utf-8")
 
-    assert "updates.enabled !== false && updates.check_on_startup !== false" in update_js
-    assert "return apiGet('/app/update/check');" in update_js
+    assert "rawFetch('/app/update/check'" in update_js
     assert "apiPost('/app/update/stage', {})" in update_js
     assert "runSidebarManualUpdateStage" in update_js
     assert "runSidebarManualUpdateCheck();" in update_js
@@ -328,6 +327,8 @@ def test_update_startup_policy_is_opt_out_and_no_hidden_polling():
 
     startup_section = update_js.split("export async function maybeRunStartupUpdateCheck()", 1)[1]
     assert "/app/update/stage" not in startup_section
+    assert "/app/config" not in startup_section
+    assert "ensureToken" not in startup_section
 
 
 def test_sidebar_uses_update_button_not_raw_download_link():
