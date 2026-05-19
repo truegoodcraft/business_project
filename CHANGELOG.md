@@ -1,6 +1,6 @@
 # Changelog
 
-## [Internal 1.2.1.1] - 2026-05-19
+## [1.2.2] - 2026-05-19
 
 ### Fixed
 
@@ -11,7 +11,7 @@
 
 ### Changed
 
-- Bumped `INTERNAL_VERSION` from `1.2.1.0` to `1.2.1.1` for the scoped hotfix work without changing public `VERSION`.
+- Bumped `VERSION` from `1.2.1` to `1.2.2` and reset `INTERNAL_VERSION` from `1.2.1.1` to `1.2.2.0` for the owner-approved scoped hotfix release boundary.
 
 ## [1.2.1] - 2026-05-13
 
