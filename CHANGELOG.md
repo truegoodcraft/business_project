@@ -50,6 +50,8 @@
 ## [Unreleased]
 
 ### Changed
+- Refreshed claimed-mode system role defaults through `/auth/state` so existing owner/operator/viewer roles pick up newly added `jobs.read`/`jobs.write` permissions and the Jobs sidebar item remains visible for authorized users after SPA auth boot.
+- Bumped `INTERNAL_VERSION` from `1.2.2.2` to `1.2.2.3` for the Jobs sidebar claimed-mode permission refresh without changing public `VERSION`.
 - Added Job Tracking Phase 2 operator UI with the `#/jobs` screen, job create/edit/status controls, line CRUD, manual notes, a read-only Home Jobs Pressure Board, and UI source guards preserving Jobs as a local-first demand-control layer with no stock, finance, manufacturing, or unit-conversion authority.
 - Bumped `INTERNAL_VERSION` from `1.2.2.1` to `1.2.2.2` for the Job Tracking Phase 2 UI and Home pressure board without changing public `VERSION`.
 - Added Job Tracking Phase 1 backend foundation with empty additive `jobs`, `job_lines`, and `job_events` tables, guarded CRUD/status/event APIs, canonical `qty_base` line quantity storage, and tests proving no inventory, manufacturing, or finance side effects.

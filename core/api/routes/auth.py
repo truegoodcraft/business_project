@@ -294,6 +294,7 @@ def _auth_state_payload(db: Session, request: Request) -> dict[str, Any]:
             "current_user": None,
         }
 
+    _seed_system_roles(db)
     auth_session, user = _current_session(db, request)
     if auth_session is not None:
         db.commit()

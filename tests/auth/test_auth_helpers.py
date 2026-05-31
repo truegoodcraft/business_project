@@ -13,6 +13,7 @@ from core.auth.permissions import (
     PERMISSION_ADMIN_USERS,
     PERMISSION_INVENTORY_READ,
     PERMISSION_JOBS_READ,
+    PERMISSION_JOBS_WRITE,
     VIEWER_ROLE_KEY,
     default_role_bundles,
 )
@@ -60,6 +61,10 @@ def test_default_permissions_and_roles_are_deterministic():
     assert first == second
     assert tuple(first) == (OWNER_ROLE_KEY, OPERATOR_ROLE_KEY, VIEWER_ROLE_KEY)
     assert PERMISSION_ADMIN_USERS in first[OWNER_ROLE_KEY]
+    assert PERMISSION_JOBS_READ in first[OWNER_ROLE_KEY]
+    assert PERMISSION_JOBS_WRITE in first[OWNER_ROLE_KEY]
+    assert PERMISSION_JOBS_READ in first[OPERATOR_ROLE_KEY]
+    assert PERMISSION_JOBS_WRITE in first[OPERATOR_ROLE_KEY]
     assert PERMISSION_INVENTORY_READ in first[VIEWER_ROLE_KEY]
     assert PERMISSION_JOBS_READ in first[VIEWER_ROLE_KEY]
     for permissions in first.values():

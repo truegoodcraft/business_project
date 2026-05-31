@@ -177,6 +177,15 @@ def test_jobs_phase2_ui_route_is_permissioned_and_mounted() -> None:
     assert "jobs: ['jobs.read']" in app_js
     assert "async function showJobs()" in app_js
     assert 'href="#/jobs" data-role="nav-link" data-route="jobs"' in shell_html
+    sidebar_tools = shell_html.split('<ul class="sidebar-nav">', 1)[1].split('nav-section--system', 1)[0]
+    assert re.findall(r'data-route="([^"]+)"', sidebar_tools) == [
+        "manufacturing",
+        "inventory",
+        "contacts",
+        "recipes",
+        "finance",
+        "jobs",
+    ]
     assert 'data-role="jobs-screen"' in shell_html
     assert 'data-role="jobs-root"' in shell_html
     assert "export async function mountJobs()" in jobs_js
