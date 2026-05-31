@@ -25,6 +25,7 @@ import { mountBackupExport } from "./js/cards/backup.js";
 import mountVendors from "./js/cards/vendors.js";
 import { mountHome } from "./js/cards/home.js";
 import { mountInventory, unmountInventory } from "./js/cards/inventory.js";
+import { mountJobs, unmountJobs } from "./js/cards/jobs.js";
 import { mountManufacturing, unmountManufacturing } from "./js/cards/manufacturing.js";
 import { mountRecipes, unmountRecipes } from "./js/cards/recipes.js";
 import { settingsCard } from "./js/cards/settings.js";
@@ -36,6 +37,7 @@ import { bindSidebarUpdateControls, maybeRunStartupUpdateCheck } from "./js/upda
 
 const ROUTES = {
   '#/welcome': showWelcome,
+  '#/jobs': showJobs,
   '#/inventory': showInventory,
   '#/manufacturing': showManufacturing,
   '#/recipes': showRecipes,
@@ -84,6 +86,7 @@ const ROUTE_PERMISSIONS = {
   contacts: ['contacts.read'],
   finance: ['finance.read'],
   inventory: ['inventory.read'],
+  jobs: ['jobs.read'],
   logs: ['logs.read'],
   manufacturing: ['manufacturing.read'],
   recipes: ['recipes.read'],
@@ -401,8 +404,9 @@ function clearCardHost() {
   const recipesHost = document.querySelector('[data-tab-panel="recipes"]');
   const logsHost = document.querySelector('[data-role="logs-root"]');
   const financeHost = document.querySelector('[data-role="finance-root"]');
+  const jobsHost = document.querySelector('[data-role="jobs-root"]');
   const welcomeHost = document.querySelector('[data-role="welcome-root"]');
-  [root, inventoryHost, contactsHost, settingsHost, securityHost, manufacturingHost, recipesHost, logsHost, financeHost, welcomeHost]
+  [root, inventoryHost, contactsHost, settingsHost, securityHost, manufacturingHost, recipesHost, logsHost, financeHost, jobsHost, welcomeHost]
     .filter(Boolean)
     .forEach((n) => {
       n.innerHTML = '';
@@ -503,6 +507,7 @@ async function onRouteChange() {
 
   document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="security-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="jobs-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="welcome-screen"]')?.classList.add('hidden');
   clearCardHost();
 
@@ -570,10 +575,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 async function showContacts() {
   // Close Tools drawer if open
   unmountInventory();
+  unmountJobs();
   unmountManufacturing();
   unmountRecipes();
   document.querySelector('[data-role="home-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="jobs-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
@@ -588,11 +595,13 @@ async function showInventory() {
   document.querySelector('[data-role="home-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="jobs-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="welcome-screen"]')?.classList.add('hidden');
+  unmountJobs();
   unmountManufacturing();
   unmountRecipes();
   document.querySelector('[data-role="inventory-screen"]')?.classList.remove('hidden');
@@ -604,6 +613,7 @@ async function showManufacturing() {
   document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="jobs-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
@@ -611,16 +621,19 @@ async function showManufacturing() {
   const screen = document.querySelector('[data-role="manufacturing-screen"]');
   screen?.classList.remove('hidden');
   unmountInventory();
+  unmountJobs();
   unmountRecipes();
   await mountManufacturing();
 }
 
 async function showSettings() {
   unmountInventory();
+  unmountJobs();
   unmountManufacturing();
   unmountRecipes();
   document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
   showScreen(null);
+  document.querySelector('[data-role="jobs-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
@@ -637,6 +650,7 @@ async function showSettings() {
 
 async function showSecurity() {
   unmountInventory();
+  unmountJobs();
   unmountManufacturing();
   unmountRecipes();
   document.querySelector('[data-role="home-screen"]')?.classList.add('hidden');
@@ -644,6 +658,7 @@ async function showSecurity() {
   document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="jobs-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
@@ -663,6 +678,7 @@ async function showSecurity() {
 
 async function showLogs() {
   unmountInventory();
+  unmountJobs();
   unmountManufacturing();
   unmountRecipes();
   document.querySelector('[data-role="home-screen"]')?.classList.add('hidden');
@@ -670,6 +686,7 @@ async function showLogs() {
   document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="jobs-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="welcome-screen"]')?.classList.add('hidden');
@@ -685,6 +702,7 @@ async function showLogs() {
 
 async function showFinance() {
   unmountInventory();
+  unmountJobs();
   unmountManufacturing();
   unmountRecipes();
   document.querySelector('[data-role="home-screen"]')?.classList.add('hidden');
@@ -692,6 +710,7 @@ async function showFinance() {
   document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="jobs-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
   const financeScreen = document.querySelector('[data-role="finance-screen"]');
@@ -703,7 +722,9 @@ async function showHome() {
   showScreen('home');   // show only Home
   mountHome();          // keep existing Home logic
   unmountInventory();   // ensure Inventory hides when returning Home
+  unmountJobs();
   document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="jobs-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
   unmountManufacturing();
   unmountRecipes();
@@ -713,11 +734,31 @@ async function showHome() {
   document.querySelector('[data-role="welcome-screen"]')?.classList.add('hidden');
 }
 
+async function showJobs() {
+  showScreen(null);
+  document.querySelector('[data-role="home-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="welcome-screen"]')?.classList.add('hidden');
+  unmountInventory();
+  unmountManufacturing();
+  unmountRecipes();
+  const jobsScreen = document.querySelector('[data-role="jobs-screen"]');
+  jobsScreen?.classList.remove('hidden');
+  await mountJobs();
+}
+
 async function showRecipes() {
   document.querySelector('[data-role="home-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="jobs-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
@@ -725,6 +766,7 @@ async function showRecipes() {
   const recipesScreen = document.querySelector('[data-role="recipes-screen"]');
   recipesScreen?.classList.remove('hidden');
   unmountInventory();
+  unmountJobs();
   unmountManufacturing();
   await mountRecipes();
 }
@@ -745,12 +787,14 @@ function renderInlinePanel(title, message, badHash = null) {
 
 async function showNotFound(badHash) {
   unmountInventory();
+  unmountJobs();
   unmountManufacturing();
   unmountRecipes();
   document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="jobs-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
@@ -761,12 +805,14 @@ async function showNotFound(badHash) {
 
 async function showRuns() {
   unmountInventory();
+  unmountJobs();
   unmountManufacturing();
   unmountRecipes();
   document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="jobs-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
@@ -777,12 +823,14 @@ async function showRuns() {
 
 async function showImport() {
   unmountInventory();
+  unmountJobs();
   unmountManufacturing();
   unmountRecipes();
   document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="jobs-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
@@ -797,6 +845,7 @@ async function showWelcome() {
     return;
   }
   unmountInventory();
+  unmountJobs();
   unmountManufacturing();
   unmountRecipes();
   document.querySelector('[data-role="home-screen"]')?.classList.add('hidden');
@@ -804,6 +853,7 @@ async function showWelcome() {
   document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="jobs-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');

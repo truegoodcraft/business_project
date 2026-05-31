@@ -50,6 +50,8 @@
 ## [Unreleased]
 
 ### Changed
+- Added Job Tracking Phase 2 operator UI with the `#/jobs` screen, job create/edit/status controls, line CRUD, manual notes, a read-only Home Jobs Pressure Board, and UI source guards preserving Jobs as a local-first demand-control layer with no stock, finance, manufacturing, or unit-conversion authority.
+- Bumped `INTERNAL_VERSION` from `1.2.2.1` to `1.2.2.2` for the Job Tracking Phase 2 UI and Home pressure board without changing public `VERSION`.
 - Added Job Tracking Phase 1 backend foundation with empty additive `jobs`, `job_lines`, and `job_events` tables, guarded CRUD/status/event APIs, canonical `qty_base` line quantity storage, and tests proving no inventory, manufacturing, or finance side effects.
 - Bumped `INTERNAL_VERSION` from `1.2.2.0` to `1.2.2.1` for the Job Tracking Phase 1 backend foundation without changing public `VERSION`.
 - Bumped `INTERNAL_VERSION` from `1.1.1.14` to `1.1.1.15` for the recovery UI entry-point patch without changing public `VERSION`.

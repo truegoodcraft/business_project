@@ -14,7 +14,10 @@ const ACTIONS = {
   adjustInventory: { href: '#/inventory', label: 'Adjust Inventory', hint: 'Stock in, consume, or correct' },
   createBlueprint: { href: '#/recipes', label: 'Create Blueprint', hint: 'Define recipe and costs' },
   buildProduct: { href: '#/manufacturing', label: 'Build Product', hint: 'Run production from a blueprint' },
+  viewJobs: { href: '#/jobs', label: 'View Jobs', hint: 'Open work commitments' },
 };
+
+const CLOSED_JOB_STATUSES = new Set(['done', 'cancelled']);
 
 function readJsonStorage(key, fallback) {
   try {
@@ -82,6 +85,18 @@ function formatDateTime(value) {
   return date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 }
 
+function formatDate(value) {
+  if (!value) return 'No due date';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'No due date';
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function formatMoney(cents) {
+  const value = Number(cents || 0) / 100;
+  return value.toLocaleString(undefined, { style: 'currency', currency: 'USD' });
+}
+
 function actionLink(action, extraClass = '') {
   return `<a class="bus-home-btn ${extraClass}" href="${action.href}"><span class="bus-home-btn-label">${action.label}</span><span class="bus-home-btn-hint">${action.hint}</span></a>`;
 }
@@ -89,6 +104,109 @@ function actionLink(action, extraClass = '') {
 function statusRow(label, value, tone = '') {
   const toneAttr = tone ? ` data-tone="${tone}"` : '';
   return `<div class="bus-home-status-row"><span>${label}</span><strong${toneAttr}>${value}</strong></div>`;
+}
+
+function jobDueMeta(job) {
+  if (!job?.due_date || CLOSED_JOB_STATUSES.has(job.status)) return { due: null, overdue: false, dueSoon: false };
+  const due = new Date(job.due_date);
+  if (Number.isNaN(due.getTime())) return { due: null, overdue: false, dueSoon: false };
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dueDay = new Date(due);
+  dueDay.setHours(0, 0, 0, 0);
+  const diffDays = Math.floor((dueDay.getTime() - today.getTime()) / 86400000);
+  return { due, overdue: diffDays < 0, dueSoon: diffDays >= 0 && diffDays <= 7 };
+}
+
+function rankJobPressure(job) {
+  const due = jobDueMeta(job);
+  if (due.overdue) return 0;
+  if (job.status === 'blocked') return 1;
+  if (due.dueSoon) return 2;
+  if (job.status === 'ready') return 3;
+  if (job.status === 'active') return 4;
+  return 5;
+}
+
+async function fetchJobsPressureData() {
+  try {
+    const jobs = await apiGetJson('/app/jobs');
+    const list = Array.isArray(jobs) ? jobs : [];
+    const attentionCandidates = list
+      .filter((job) => !CLOSED_JOB_STATUSES.has(job.status))
+      .sort((a, b) => {
+        const rank = rankJobPressure(a) - rankJobPressure(b);
+        if (rank !== 0) return rank;
+        return String(a.due_date || '9999').localeCompare(String(b.due_date || '9999'));
+      })
+      .slice(0, 3);
+    const details = await Promise.all(attentionCandidates.map((job) => apiGetJson(`/app/jobs/${job.id}`).catch(() => null)));
+    return { available: true, jobs: list, details: details.filter(Boolean) };
+  } catch (error) {
+    return { available: false, jobs: [], details: [] };
+  }
+}
+
+function summarizeJobsPressure(pressure) {
+  if (!pressure?.available) {
+    return { available: false, dueCount: null, blockedCount: null, readyCount: null, activeValueCents: null, attentionJobs: [], recentEvents: [] };
+  }
+  const openJobs = pressure.jobs.filter((job) => !CLOSED_JOB_STATUSES.has(job.status));
+  const dueCount = openJobs.filter((job) => {
+    const due = jobDueMeta(job);
+    return due.overdue || due.dueSoon;
+  }).length;
+  const blockedCount = openJobs.filter((job) => job.status === 'blocked').length;
+  const readyCount = openJobs.filter((job) => job.status === 'ready').length;
+  const activeValueCents = openJobs.reduce((sum, job) => sum + Number(job.estimated_value_cents || 0), 0);
+  const attentionJobs = openJobs
+    .sort((a, b) => {
+      const rank = rankJobPressure(a) - rankJobPressure(b);
+      if (rank !== 0) return rank;
+      return String(a.due_date || '9999').localeCompare(String(b.due_date || '9999'));
+    })
+    .slice(0, 3);
+  const recentEvents = pressure.details
+    .flatMap((job) => (Array.isArray(job.events) ? job.events.map((event) => ({ ...event, job })) : []))
+    .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))
+    .slice(0, 2);
+  return { available: true, dueCount, blockedCount, readyCount, activeValueCents, attentionJobs, recentEvents };
+}
+
+function renderJobsPressureBoard(pressure) {
+  const summary = summarizeJobsPressure(pressure);
+  if (!summary.available) {
+    return `
+      <section class="bus-home-jobs-pressure" data-role="home-jobs-pressure">
+        <div class="bus-home-side-card-head"><h3>Jobs Pressure Board</h3><a href="#/jobs">View Jobs</a></div>
+        <p>Jobs data is unavailable from Home right now.</p>
+      </section>`;
+  }
+
+  const attention = summary.attentionJobs.length
+    ? summary.attentionJobs.map((job) => {
+        const due = jobDueMeta(job);
+        const tone = due.overdue ? 'overdue' : due.dueSoon ? 'soon' : job.status;
+        return `<li data-tone="${escapeHtml(tone)}"><a href="#/jobs">${escapeHtml(job.title || `Job #${job.id}`)}</a><span>${escapeHtml(job.status || 'draft')} · ${escapeHtml(formatDate(job.due_date))}</span></li>`;
+      }).join('')
+    : '<li><span>No active job pressure.</span></li>';
+  const events = summary.recentEvents.length
+    ? `<div class="bus-home-jobs-events">${summary.recentEvents.map((event) => `
+        <p><strong>${escapeHtml(event.job?.title || 'Job')}</strong><span>${escapeHtml(event.event_type || 'note')} · ${escapeHtml(formatDateTime(event.created_at) || 'recent')}</span></p>`).join('')}</div>`
+    : '';
+
+  return `
+    <section class="bus-home-jobs-pressure" data-role="home-jobs-pressure">
+      <div class="bus-home-side-card-head"><h3>Jobs Pressure Board</h3><a href="#/jobs">View Jobs</a></div>
+      <div class="bus-home-jobs-metrics">
+        ${statusRow('Due soon/overdue', String(summary.dueCount), summary.dueCount > 0 ? 'warn' : 'good')}
+        ${statusRow('Blocked', String(summary.blockedCount), summary.blockedCount > 0 ? 'warn' : 'good')}
+        ${statusRow('Ready', String(summary.readyCount), summary.readyCount > 0 ? 'good' : '')}
+        ${statusRow('Active value', escapeHtml(formatMoney(summary.activeValueCents)))}
+      </div>
+      <ul class="bus-home-jobs-attention">${attention}</ul>
+      ${events}
+    </section>`;
 }
 
 async function setVersionInto(el) {
@@ -112,11 +230,12 @@ async function setVersionInto(el) {
 }
 
 async function fetchHomeData(currentVersion) {
-  const [system, exportsRes, auth, update] = await Promise.all([
+  const [system, exportsRes, auth, update, jobsPressure] = await Promise.all([
     apiGetJson('/app/system/state').catch(() => null),
     apiGetJson('/app/db/exports').catch(() => null),
     getAuthState().catch(() => null),
     runUpdateCheck().catch(() => null),
+    fetchJobsPressureData(),
   ]);
 
   const counts = system?.counts || {};
@@ -137,6 +256,7 @@ async function fetchHomeData(currentVersion) {
     },
     auth,
     update,
+    jobsPressure,
   };
 }
 
@@ -217,15 +337,15 @@ function renderActiveShop(data) {
 function renderBench(data) {
   const state = shopState(data.counts);
   if (state === 'no-supplies') {
-    return `<h2>Start your shop setup</h2>${renderSetupSteps()}`;
+    return `<h2>Start your shop setup</h2>${renderSetupSteps()}${renderJobsPressureBoard(data.jobsPressure)}`;
   }
   if (state === 'no-blueprints') {
-    return `<h2>Shop bench</h2>${renderNextStep('Next useful step: Create a blueprint from your supplies.', ACTIONS.createBlueprint)}`;
+    return `<h2>Shop bench</h2>${renderNextStep('Next useful step: Create a blueprint from your supplies.', ACTIONS.createBlueprint)}${renderJobsPressureBoard(data.jobsPressure)}`;
   }
   if (state === 'no-builds') {
-    return `<h2>Shop bench</h2>${renderNextStep('Next useful step: Build your first product from a blueprint.', ACTIONS.buildProduct)}`;
+    return `<h2>Shop bench</h2>${renderNextStep('Next useful step: Build your first product from a blueprint.', ACTIONS.buildProduct)}${renderJobsPressureBoard(data.jobsPressure)}`;
   }
-  return `<h2>Shop bench</h2>${renderActiveShop(data)}`;
+  return `<h2>Shop bench</h2>${renderActiveShop(data)}${renderJobsPressureBoard(data.jobsPressure)}`;
 }
 
 function updatePair(currentVersion, latestVersion) {
@@ -430,6 +550,7 @@ function renderHome() {
       backup: { exports: null, latest: null },
       auth: null,
       update: null,
+      jobsPressure: { available: false, jobs: [], details: [] },
     });
   });
 }
