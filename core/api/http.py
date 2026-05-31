@@ -980,7 +980,7 @@ async def session_guard(request: Request, call_next):
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:8765", "http://localhost:8765"],
-    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["Accept", "Content-Type"],
 )
 
@@ -991,6 +991,7 @@ protected.include_router(organizer_router)
 from core.api.routes.items import router as items_router
 from core.api.routes.vendors import router as vendors_router
 from core.api.routes.recipes import router as recipes_router
+from core.api.routes.jobs import router as jobs_router
 from core.api.routes.manufacturing import public_router as manufacturing_public_router, router as manufacturing_router
 from core.api.routes import logs_api
 from core.api.routes.finance_api import router as finance_router
@@ -2573,6 +2574,7 @@ def create_app():
         app.include_router(items_router, prefix="/app")
         app.include_router(vendors_router, prefix="/app")
         app.include_router(recipes_router, prefix="/app")
+        app.include_router(jobs_router, prefix="/app")
         app.include_router(manufacturing_router, prefix="/app")
         app.include_router(manufacturing_public_router, prefix="/app")
         app.include_router(logs_api.public_router)

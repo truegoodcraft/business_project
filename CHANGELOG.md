@@ -50,6 +50,8 @@
 ## [Unreleased]
 
 ### Changed
+- Added Job Tracking Phase 1 backend foundation with empty additive `jobs`, `job_lines`, and `job_events` tables, guarded CRUD/status/event APIs, canonical `qty_base` line quantity storage, and tests proving no inventory, manufacturing, or finance side effects.
+- Bumped `INTERNAL_VERSION` from `1.2.2.0` to `1.2.2.1` for the Job Tracking Phase 1 backend foundation without changing public `VERSION`.
 - Bumped `INTERNAL_VERSION` from `1.1.1.14` to `1.1.1.15` for the recovery UI entry-point patch without changing public `VERSION`.
 - Added minimal claimed-mode recovery UI: login now exposes a recovery form for the existing `/auth/recover` backend route, validates password confirmation client-side, shows generic recovery failures, and returns to login with a success message without storing recovery data.
 - Added Security UI recovery-code regeneration for users with management authority, using the existing `/auth/recovery-codes/regenerate` backend route, warning before invalidating old unused codes, showing new codes once, and clearing them after confirmation.

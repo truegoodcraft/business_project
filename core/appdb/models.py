@@ -132,6 +132,7 @@ __all__ = [
 
 # Import extension model modules to attach to the shared Base
 from core.appdb.models_recipes import ManufacturingRun, Recipe, RecipeItem  # noqa: E402  # isort:skip
+from core.appdb.models_jobs import Job, JobEvent, JobLine  # noqa: E402  # isort:skip
 from core.appdb import models_auth as _models_auth  # noqa: E402  # isort:skip
 
 _AUTH_MODEL_EXPORTS = (
@@ -156,4 +157,5 @@ def __getattr__(name: str):
     raise AttributeError(name)
 
 __all__ += ["Recipe", "RecipeItem", "ManufacturingRun"]
+__all__ += ["Job", "JobLine", "JobEvent"]
 __all__ += list(_AUTH_MODEL_EXPORTS)
