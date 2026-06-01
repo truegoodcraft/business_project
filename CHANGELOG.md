@@ -8,6 +8,10 @@
 - Added operator-facing Home links for support, docs, bug reports, Discord, license, data safety, known limits, and the full changelog without changing local-first data authority.
 - Included Job Tracking Phase 1 and Phase 2 in the release boundary: additive Jobs backend tables/APIs, the `#/jobs` operator screen, and a read-only Home Jobs Pressure board with no stock, cash, manufacturing, or quantity-conversion side effects.
 - Refreshed claimed-mode role defaults through `/auth/state` so existing owner/operator/viewer roles pick up Jobs permissions and authorized users keep the Jobs sidebar item after SPA auth boot.
+- `scripts/build_core.ps1` release mode now supports signing and bundling in addition to the existing one-file build path.
+- `scripts/build_core.ps1 -Release` builds `dist/BUS-Core-1.2.3.exe`, signs the versioned EXE, verifies Authenticode validity and signer thumbprint `55474AA9A2D562022A6590D487045E069457F985`, verifies the timestamped signature, and creates the canonical release ZIP `dist/BUS-Core-1.2.3.zip`.
+- The canonical `BUS-Core-1.2.3.zip` release bundle contains only `BUS-Core-1.2.3.exe`, `README.md`, and `license/` at the ZIP root.
+- No signing password or PIN is stored in the repo or script; the operator enters any required credential through the Windows certificate provider / signing prompt flow.
 - Bumped `VERSION` from `1.2.2` to `1.2.3` and reset `INTERNAL_VERSION` from `1.2.2.3` to `1.2.3.0` for the owner-approved public release boundary.
 
 ## [1.2.2] - 2026-05-19
@@ -60,12 +64,6 @@
 ## [Unreleased]
 
 ### Changed
-- Refreshed claimed-mode system role defaults through `/auth/state` so existing owner/operator/viewer roles pick up newly added `jobs.read`/`jobs.write` permissions and the Jobs sidebar item remains visible for authorized users after SPA auth boot.
-- Bumped `INTERNAL_VERSION` from `1.2.2.2` to `1.2.2.3` for the Jobs sidebar claimed-mode permission refresh without changing public `VERSION`.
-- Added Job Tracking Phase 2 operator UI with the `#/jobs` screen, job create/edit/status controls, line CRUD, manual notes, a read-only Home Jobs Pressure Board, and UI source guards preserving Jobs as a local-first demand-control layer with no stock, finance, manufacturing, or unit-conversion authority.
-- Bumped `INTERNAL_VERSION` from `1.2.2.1` to `1.2.2.2` for the Job Tracking Phase 2 UI and Home pressure board without changing public `VERSION`.
-- Added Job Tracking Phase 1 backend foundation with empty additive `jobs`, `job_lines`, and `job_events` tables, guarded CRUD/status/event APIs, canonical `qty_base` line quantity storage, and tests proving no inventory, manufacturing, or finance side effects.
-- Bumped `INTERNAL_VERSION` from `1.2.2.0` to `1.2.2.1` for the Job Tracking Phase 1 backend foundation without changing public `VERSION`.
 - Bumped `INTERNAL_VERSION` from `1.1.1.14` to `1.1.1.15` for the recovery UI entry-point patch without changing public `VERSION`.
 - Added minimal claimed-mode recovery UI: login now exposes a recovery form for the existing `/auth/recover` backend route, validates password confirmation client-side, shows generic recovery failures, and returns to login with a success message without storing recovery data.
 - Added Security UI recovery-code regeneration for users with management authority, using the existing `/auth/recovery-codes/regenerate` backend route, warning before invalidating old unused codes, showing new codes once, and clearing them after confirmation.
