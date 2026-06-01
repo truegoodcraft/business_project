@@ -149,17 +149,34 @@ async function fetchJobsPressureData() {
 
 function summarizeJobsPressure(pressure) {
   if (!pressure?.available) {
-    return { available: false, dueCount: null, blockedCount: null, readyCount: null, activeValueCents: null, attentionJobs: [], recentEvents: [] };
+    return {
+      available: false,
+      dueCount: null,
+      dueSoonCount: null,
+      overdueCount: null,
+      blockedCount: null,
+      readyCount: null,
+      activeValueCents: null,
+      attentionJobs: [],
+      recentEvents: [],
+    };
   }
   const openJobs = pressure.jobs.filter((job) => !CLOSED_JOB_STATUSES.has(job.status));
+  const dueMeta = new Map(openJobs.map((job) => [job.id, jobDueMeta(job)]));
   const dueCount = openJobs.filter((job) => {
-    const due = jobDueMeta(job);
+    const due = dueMeta.get(job.id);
     return due.overdue || due.dueSoon;
   }).length;
+  const overdueCount = openJobs.filter((job) => dueMeta.get(job.id)?.overdue).length;
+  const dueSoonCount = openJobs.filter((job) => dueMeta.get(job.id)?.dueSoon).length;
   const blockedCount = openJobs.filter((job) => job.status === 'blocked').length;
   const readyCount = openJobs.filter((job) => job.status === 'ready').length;
   const activeValueCents = openJobs.reduce((sum, job) => sum + Number(job.estimated_value_cents || 0), 0);
-  const attentionJobs = openJobs
+  const pressureJobs = openJobs.filter((job) => {
+    const due = dueMeta.get(job.id);
+    return due?.overdue || due?.dueSoon || ['blocked', 'ready', 'active'].includes(job.status);
+  });
+  const attentionJobs = pressureJobs
     .sort((a, b) => {
       const rank = rankJobPressure(a) - rankJobPressure(b);
       if (rank !== 0) return rank;
@@ -170,7 +187,7 @@ function summarizeJobsPressure(pressure) {
     .flatMap((job) => (Array.isArray(job.events) ? job.events.map((event) => ({ ...event, job })) : []))
     .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))
     .slice(0, 2);
-  return { available: true, dueCount, blockedCount, readyCount, activeValueCents, attentionJobs, recentEvents };
+  return { available: true, dueCount, dueSoonCount, overdueCount, blockedCount, readyCount, activeValueCents, attentionJobs, recentEvents };
 }
 
 function renderJobsPressureBoard(pressure) {
@@ -178,7 +195,7 @@ function renderJobsPressureBoard(pressure) {
   if (!summary.available) {
     return `
       <section class="bus-home-jobs-pressure" data-role="home-jobs-pressure">
-        <div class="bus-home-side-card-head"><h3>Jobs Pressure Board</h3><a href="#/jobs">View Jobs</a></div>
+        <div class="bus-home-section-head"><h3>Jobs Pressure</h3><a href="#/jobs">View Jobs</a></div>
         <p>Jobs data is unavailable from Home right now.</p>
       </section>`;
   }
@@ -197,10 +214,10 @@ function renderJobsPressureBoard(pressure) {
 
   return `
     <section class="bus-home-jobs-pressure" data-role="home-jobs-pressure">
-      <div class="bus-home-side-card-head"><h3>Jobs Pressure Board</h3><a href="#/jobs">View Jobs</a></div>
+      <div class="bus-home-section-head"><h3>Jobs Pressure</h3><a href="#/jobs">View Jobs</a></div>
       <div class="bus-home-jobs-metrics">
-        ${statusRow('Due soon/overdue', String(summary.dueCount), summary.dueCount > 0 ? 'warn' : 'good')}
-        ${statusRow('Blocked', String(summary.blockedCount), summary.blockedCount > 0 ? 'warn' : 'good')}
+        ${statusRow('Overdue / due soon', String(summary.dueCount), summary.overdueCount > 0 ? 'danger' : summary.dueSoonCount > 0 ? 'warn' : 'good')}
+        ${statusRow('Blocked', String(summary.blockedCount), summary.blockedCount > 0 ? 'danger' : 'good')}
         ${statusRow('Ready', String(summary.readyCount), summary.readyCount > 0 ? 'good' : '')}
         ${statusRow('Active value', escapeHtml(formatMoney(summary.activeValueCents)))}
       </div>
@@ -272,6 +289,9 @@ function shopState(counts) {
 
 function renderSetupSteps() {
   return `
+    <div class="bus-home-next-step">
+      <span class="bus-home-next-label">Start your shop setup</span>
+    </div>
     <ol class="bus-home-steps">
       <li><span>1</span><strong>Add your first supply</strong></li>
       <li><span>2</span><strong>Create a blueprint</strong></li>
@@ -284,68 +304,59 @@ function renderSetupSteps() {
     </div>`;
 }
 
-function renderNextStep(title, action) {
+function renderNextStep(message, action, helper = '') {
   return `
     <div class="bus-home-next-step">
-      <p>${title}</p>
+      <span class="bus-home-next-label">Next useful step</span>
+      <p class="bus-home-next-copy">${message}</p>
+      ${helper ? `<p class="bus-home-helper">${helper}</p>` : ''}
       <div class="bus-home-action-row bus-home-action-row--single">${actionLink(action, 'bus-home-btn--primary')}</div>
     </div>`;
 }
 
 function renderActiveShop(data) {
-  const { counts, backup, update } = data;
-  const latestExport = backup.latest ? formatDateTime(backup.latest.modified) : null;
+  const { backup, update } = data;
+  const jobSummary = summarizeJobsPressure(data.jobsPressure);
+  const backupWarning = backup.exports && backup.exports.length === 0;
   const attention = [];
   if (update?.update_available && update?.latest_version) attention.push(`Update available: ${escapeHtml(update.latest_version)}`);
-  if (backup.exports && backup.exports.length === 0) attention.push('No local backup export found yet.');
-  if (!attention.length) attention.push('No urgent items detected from available local data.');
+  if (backupWarning) attention.push('No local backup export found yet.');
+  if (jobSummary.available) {
+    if (jobSummary.dueCount > 0) attention.push(`${plural(jobSummary.dueCount, 'job')} overdue or due soon.`);
+    if (jobSummary.blockedCount > 0) attention.push(`${plural(jobSummary.blockedCount, 'blocked job')} needs a decision.`);
+    if (jobSummary.readyCount > 0) attention.push(`${plural(jobSummary.readyCount, 'ready job')} can move forward.`);
+  } else {
+    attention.push('Job pressure is unavailable right now.');
+  }
 
-  const activityParts = [];
-  if (counts.builds !== null) activityParts.push(plural(counts.builds, 'build'));
-  if (counts.movements !== null) activityParts.push(plural(counts.movements, 'inventory movement'));
-  if (counts.cashEvents !== null) activityParts.push(plural(counts.cashEvents, 'cash event'));
+  const allClear = !attention.length && jobSummary.available;
+  const body = allClear
+    ? `<div class="bus-home-all-clear"><strong>All clear</strong><p>No overdue jobs, no blocked jobs, no backup warnings.</p></div>`
+    : `<ul class="bus-home-attention-list">${attention.map((item) => `<li>${item}</li>`).join('')}</ul>`;
 
   return `
-    <div class="bus-home-ops-grid">
-      <section class="bus-home-mini-card">
-        <h3>What needs attention</h3>
-        <ul>${attention.map((item) => `<li>${item}</li>`).join('')}</ul>
-      </section>
-      <section class="bus-home-mini-card">
-        <h3>Shop snapshot</h3>
-        ${statusRow('Supplies', counts.supplies === null ? 'Unavailable' : String(counts.supplies))}
-        ${statusRow('Blueprints', counts.blueprints === null ? 'Unavailable' : String(counts.blueprints))}
-        ${statusRow('Builds', counts.builds === null ? 'Unavailable' : String(counts.builds))}
-      </section>
-      <section class="bus-home-mini-card bus-home-mini-card--actions">
-        <h3>Quick actions</h3>
-        <div class="bus-home-quick-actions">
-          ${actionLink(ACTIONS.addSupply)}
-          ${actionLink(ACTIONS.adjustInventory)}
-          ${actionLink(ACTIONS.createBlueprint)}
-          ${actionLink(ACTIONS.buildProduct)}
-        </div>
-      </section>
-      <section class="bus-home-mini-card">
-        <h3>Recent activity</h3>
-        <p>${activityParts.length ? activityParts.join(' · ') : 'Recent activity is not available on Home yet.'}</p>
-        <p>${latestExport ? `Last export: ${escapeHtml(latestExport)}` : 'Backup history appears after your first export.'}</p>
-      </section>
-    </div>`;
+    <section class="bus-home-attention-card">
+      <h3>What needs attention</h3>
+      ${body}
+      <div class="bus-home-bench-actions">
+        ${actionLink(ACTIONS.buildProduct, 'bus-home-btn--primary')}
+        ${actionLink(ACTIONS.addSupply)}
+      </div>
+    </section>`;
 }
 
 function renderBench(data) {
   const state = shopState(data.counts);
   if (state === 'no-supplies') {
-    return `<h2>Start your shop setup</h2>${renderSetupSteps()}${renderJobsPressureBoard(data.jobsPressure)}`;
+    return `<h2>Shop Bench</h2>${renderSetupSteps()}`;
   }
   if (state === 'no-blueprints') {
-    return `<h2>Shop bench</h2>${renderNextStep('Next useful step: Create a blueprint from your supplies.', ACTIONS.createBlueprint)}${renderJobsPressureBoard(data.jobsPressure)}`;
+    return `<h2>Shop Bench</h2>${renderNextStep('Create a blueprint from your supplies.', ACTIONS.createBlueprint)}`;
   }
   if (state === 'no-builds') {
-    return `<h2>Shop bench</h2>${renderNextStep('Next useful step: Build your first product from a blueprint.', ACTIONS.buildProduct)}${renderJobsPressureBoard(data.jobsPressure)}`;
+    return `<h2>Shop Bench</h2>${renderNextStep('Build your first product from a blueprint.', ACTIONS.buildProduct, 'This proves your supply to blueprint to product flow and starts real costing.')}`;
   }
-  return `<h2>Shop bench</h2>${renderActiveShop(data)}${renderJobsPressureBoard(data.jobsPressure)}`;
+  return `<h2>Shop Bench</h2>${renderActiveShop(data)}`;
 }
 
 function updatePair(currentVersion, latestVersion) {
@@ -365,18 +376,15 @@ function buildNotices(data) {
   if (update?.update_available && update?.latest_version) {
     const pair = updatePair(currentVersion, update.latest_version);
     if (!versionState.dismissedUpdatePairs.includes(pair)) {
-      notices.push({ id: `update:${pair}`, tone: 'warn', text: `New version available: ${update.latest_version}.` });
+      notices.push({ id: `update:${pair}`, tone: 'warn', text: `Update available: ${update.latest_version}.`, actionHref: '#/settings', actionText: 'Review update settings' });
     }
-  } else if (currentVersion !== 'unknown' && versionState.lastSeenVersion && versionState.lastSeenVersion !== currentVersion) {
-    notices.push({ id: `updated:${currentVersion}`, tone: 'good', text: `Updated to current version ${currentVersion}.` });
-  }
-
-  if (data.auth && data.auth.owner_exists === false && !dismissed.includes('local-owner-missing')) {
-    notices.push({ id: 'local-owner-missing', tone: 'warn', text: 'Local owner is not set yet.', actionHref: '#/security', actionText: 'Set local owner' });
   }
 
   if (data.backup.exports && data.backup.exports.length === 0 && !dismissed.includes('backup-export-missing')) {
     notices.push({ id: 'backup-export-missing', tone: 'warn', text: 'No local backup export has been found yet.', actionHref: '#/settings', actionText: 'Open backup settings' });
+  }
+  if (data.busMode === 'demo' && !dismissed.includes('demo-data-active')) {
+    notices.push({ id: 'demo-data-active', tone: 'warn', text: 'Demo data active.' });
   }
   return notices;
 }
@@ -398,25 +406,35 @@ function renderUpdateCard(data) {
   const hasUpdate = !!(update?.update_available && update?.latest_version);
   const currentSeen = versionNoticeState().lastSeenVersion === currentVersion;
   const hiddenByUpdateDismiss = hasUpdate && isUpdatePairDismissed(currentVersion, update.latest_version);
-  if (hasUpdate && !hiddenByUpdateDismiss) {
+  const versionLine = currentVersion === 'unknown' ? 'BUS Core' : `BUS Core ${escapeHtml(currentVersion)}`;
+  const updateLine = hasUpdate && !hiddenByUpdateDismiss
+    ? `<p class="bus-home-update-available">Update available: ${escapeHtml(update.latest_version)}.</p>`
+    : '';
+  if (currentSeen && (!hasUpdate || hiddenByUpdateDismiss)) {
     return `
       <section class="bus-home-side-card" data-role="home-update-card">
-        <div class="bus-home-side-card-head"><h3>Latest update</h3><button type="button" data-dismiss-update-card>Dismiss</button></div>
-        <p>Version ${escapeHtml(update.latest_version)} is available.</p>
-        <a href="#/settings">Review update settings</a>
-      </section>`;
-  }
-  if (!currentSeen && currentVersion !== 'unknown') {
-    return `
-      <section class="bus-home-side-card" data-role="home-update-card">
-        <div class="bus-home-side-card-head"><h3>Latest update</h3><button type="button" data-dismiss-update-card>Dismiss</button></div>
-        <p>Running BUS Core ${escapeHtml(currentVersion)}.</p>
+        <h3>Latest Update</h3>
+        <p>${versionLine}</p>
+        <a href="/brand/CHANGELOG.md" target="_blank" rel="noopener noreferrer">Read full changelog</a>
       </section>`;
   }
   return `
-    <section class="bus-home-side-card">
-      <h3>Latest update</h3>
-      <p>${update ? 'BUS Core is up to date.' : 'Update status is unavailable right now.'}</p>
+    <section class="bus-home-side-card" data-role="home-update-card">
+      <div class="bus-home-side-card-head"><h3>Latest Update</h3><button type="button" data-dismiss-update-card>Dismiss</button></div>
+      <p class="bus-home-release-version">${versionLine}</p>
+      ${updateLine}
+      <p class="bus-home-side-label">What changed:</p>
+      <ul class="bus-home-release-list">
+        <li>Home now shows shop status, job pressure, and backup warnings.</li>
+        <li>Added Jobs Pressure Board for due, blocked, and ready work.</li>
+        <li>Improved local trust/status display.</li>
+        <li>Added clearer support, docs, bug report, and Discord links.</li>
+      </ul>
+      <p class="bus-home-side-label">Why it matters:</p>
+      <p>You can now see what needs attention from the Home screen without digging through tools.</p>
+      <div class="bus-home-side-actions">
+        <a href="/brand/CHANGELOG.md" target="_blank" rel="noopener noreferrer">Read full changelog</a>
+      </div>
     </section>`;
 }
 
@@ -429,7 +447,7 @@ function renderSystemPanel(data) {
   return `
     <aside class="bus-home-side" aria-label="System and support">
       <section class="bus-home-side-card">
-        <h3>System trust</h3>
+        <h3>System Trust</h3>
         ${statusRow('Version', escapeHtml(data.currentVersion || 'unknown'))}
         ${statusRow('Storage', 'Local', 'good')}
         ${statusRow('Telemetry', 'Off', 'good')}
@@ -438,20 +456,26 @@ function renderSystemPanel(data) {
       </section>
       ${renderUpdateCard(data)}
       <section class="bus-home-side-card">
-        <h3>Support</h3>
-        <div class="bus-home-link-list">
-          <a href="/brand/README.md" target="_blank" rel="noopener noreferrer">Docs</a>
-          <a href="/brand/wiki/Bug-Reports.md" target="_blank" rel="noopener noreferrer">Bug Report</a>
-          <a href="https://discord.gg/qp3rc5CxdM" target="_blank" rel="noopener noreferrer">Discord</a>
-          <a href="/license/LICENSE.md" target="_blank" rel="noopener noreferrer">License</a>
-        </div>
+        <h3>Support Development</h3>
+        <p>BUS Core is free and local-first. If it saves you time or helps your shop, consider supporting the project.</p>
+        <a class="bus-home-support-action" href="https://buscore.ca/support" target="_blank" rel="noopener noreferrer">Support BUS Core</a>
       </section>
       <section class="bus-home-side-card">
-        <h3>Help</h3>
-        <div class="bus-home-link-list">
-          <a href="/license/EULA.md" target="_blank" rel="noopener noreferrer">How BUS Core Works</a>
-          <a href="/brand/docs/DATA_LIFECYCLE.md" target="_blank" rel="noopener noreferrer">Data Safety</a>
-          <a href="/brand/docs/ui_validation_matrix.md" target="_blank" rel="noopener noreferrer">Known Limits</a>
+        <h3>Help & Community</h3>
+        <div class="bus-home-link-groups">
+          <div>
+            <span>Help</span>
+            <a href="/license/EULA.md" target="_blank" rel="noopener noreferrer">How BUS Core Works</a>
+            <a href="/brand/docs/DATA_LIFECYCLE.md" target="_blank" rel="noopener noreferrer">Data Safety</a>
+            <a href="/brand/docs/ui_validation_matrix.md" target="_blank" rel="noopener noreferrer">Known Limits</a>
+          </div>
+          <div>
+            <span>Community</span>
+            <a href="/brand/README.md" target="_blank" rel="noopener noreferrer">Docs</a>
+            <a href="/brand/wiki/Bug-Reports.md" target="_blank" rel="noopener noreferrer">Bug Report</a>
+            <a href="https://discord.gg/qp3rc5CxdM" target="_blank" rel="noopener noreferrer">Discord</a>
+            <a href="/license/LICENSE.md" target="_blank" rel="noopener noreferrer">License</a>
+          </div>
         </div>
       </section>
     </aside>`;
@@ -460,6 +484,7 @@ function renderSystemPanel(data) {
 function renderDashboard(root, data) {
   root.querySelector('[data-role="home-alerts"]').innerHTML = renderNotices(data);
   root.querySelector('[data-role="home-bench"]').innerHTML = renderBench(data);
+  root.querySelector('[data-role="home-jobs-pressure-slot"]').innerHTML = renderJobsPressureBoard(data.jobsPressure);
   root.querySelector('[data-role="home-side-panel"]').innerHTML = renderSystemPanel(data);
 
   root.querySelectorAll('[data-dismiss-notice]').forEach((button) => {
@@ -529,10 +554,18 @@ function renderHome() {
 
       <div data-role="home-alerts"></div>
       <section class="bus-home-dashboard">
-        <section class="bus-home-bench" data-role="home-bench">
-          <h2>Shop bench</h2>
-          <p class="bus-home-sub">Loading local shop state...</p>
-        </section>
+        <div class="bus-home-main-column">
+          <section class="bus-home-bench" data-role="home-bench">
+            <h2>Shop Bench</h2>
+            <p class="bus-home-sub">Loading local shop state...</p>
+          </section>
+          <div data-role="home-jobs-pressure-slot">
+            <section class="bus-home-jobs-pressure" data-role="home-jobs-pressure">
+              <div class="bus-home-section-head"><h3>Jobs Pressure</h3><a href="#/jobs">View Jobs</a></div>
+              <p>Loading job pressure...</p>
+            </section>
+          </div>
+        </div>
         <div data-role="home-side-panel"></div>
       </section>
     </div>

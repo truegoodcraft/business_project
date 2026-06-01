@@ -242,6 +242,7 @@ def test_home_jobs_pressure_board_is_read_only() -> None:
 
     assert "function renderJobsPressureBoard" in home_js
     assert "data-role=\"home-jobs-pressure\"" in home_js
+    assert "data-role=\"home-jobs-pressure-slot\"" in home_js
     assert "apiGetJson('/app/jobs')" in home_js
     assert "apiGetJson(`/app/jobs/${job.id}`).catch(() => null)" in home_js
     assert "href=\"#/jobs\"" in home_js
@@ -257,3 +258,55 @@ def test_home_jobs_pressure_board_is_read_only() -> None:
         "/app/deliver",
     ):
         assert forbidden_endpoint not in home_js
+
+
+def test_home_release_polish_keeps_operator_hierarchy_and_links() -> None:
+    home_js = (REPO_ROOT / "core" / "ui" / "js" / "cards" / "home.js").read_text(encoding="utf-8")
+    app_js = (REPO_ROOT / "core" / "ui" / "app.js").read_text(encoding="utf-8")
+
+    render_markup = home_js.split("root.innerHTML = `", 1)[1]
+    assert render_markup.index('data-role="home-alerts"') < render_markup.index('data-role="home-bench"')
+    assert render_markup.index('data-role="home-bench"') < render_markup.index('data-role="home-jobs-pressure-slot"')
+    assert render_markup.index('data-role="home-jobs-pressure-slot"') < render_markup.index('data-role="home-side-panel"')
+
+    render_bench = home_js.split("function renderBench", 1)[1].split("function buildNotices", 1)[0]
+    assert "renderJobsPressureBoard" not in render_bench
+
+    for expected_copy in (
+        "Shop Bench",
+        "Start your shop setup",
+        "Next useful step",
+        "What needs attention",
+        "No overdue jobs, no blocked jobs, no backup warnings.",
+        "Jobs Pressure",
+        "Overdue / due soon",
+        "No active job pressure.",
+        "System Trust",
+        "Latest Update",
+        "What changed:",
+        "Why it matters:",
+        "Support Development",
+        "Help & Community",
+        "Support BUS Core",
+        "https://buscore.ca/support",
+        "Read full changelog",
+        "Bug Report",
+        "Discord",
+    ):
+        assert expected_copy in home_js
+
+    assert "local-owner-missing" not in home_js
+    assert "Set local owner" not in home_js
+    assert "canonicalHash === '#/home'" in app_js
+
+
+def test_home_local_storage_is_display_only() -> None:
+    home_js = (REPO_ROOT / "core" / "ui" / "js" / "cards" / "home.js").read_text(encoding="utf-8")
+
+    assert "bus.home.dismissedNotices" in home_js
+    assert "bus.home.versionNoticeState" in home_js
+    sensitive_terms = ("password", "recovery", "session", "token", "permission", "auth")
+    for line in home_js.splitlines():
+        if "localStorage" in line or "sessionStorage" in line:
+            lowered = line.lower()
+            assert not any(term in lowered for term in sensitive_terms), line

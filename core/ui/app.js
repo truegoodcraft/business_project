@@ -176,7 +176,8 @@ function applyPermissionNav() {
 function renderAuthBanner() {
   const banner = document.querySelector('[data-role="auth-banner"]');
   if (!banner) return;
-  if (currentAuthState?.mode !== 'unclaimed') {
+  const canonicalHash = normalizeHash(window.location.hash || '#/home');
+  if (currentAuthState?.mode !== 'unclaimed' || canonicalHash === '#/home') {
     banner.classList.add('hidden');
     banner.innerHTML = '';
     return;

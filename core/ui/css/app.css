@@ -1814,8 +1814,13 @@ hr.thin {
   align-items: start;
 }
 
+.bus-home-main-column {
+  display: grid;
+  gap: 12px;
+}
+
 .bus-home-bench {
-  min-height: 420px;
+  min-height: 260px;
   padding: 16px;
   border: 1px solid rgba(105, 132, 177, 0.24);
   border-radius: 12px;
@@ -1827,7 +1832,8 @@ hr.thin {
 
 .bus-home-bench h2,
 .bus-home-side-card h3,
-.bus-home-mini-card h3 {
+.bus-home-mini-card h3,
+.bus-home-jobs-pressure h3 {
   margin: 0 0 10px;
   color: #dbe9ff;
 }
@@ -1943,11 +1949,77 @@ hr.thin {
   margin-top: 12px;
 }
 
-.bus-home-next-step p {
+.bus-home-next-label,
+.bus-home-side-label {
+  display: block;
+  margin-bottom: 6px;
+  color: #9fb1cf;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.bus-home-next-step p,
+.bus-home-next-copy {
   margin: 0;
   color: #dce8fb;
   font-size: 1rem;
   line-height: 1.45;
+}
+
+.bus-home-helper {
+  margin-top: 8px !important;
+  color: #9fb1cf !important;
+  font-size: 0.8rem !important;
+}
+
+.bus-home-attention-card {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid rgba(101, 129, 176, 0.26);
+  border-radius: 10px;
+  background: rgba(18, 28, 44, 0.56);
+}
+
+.bus-home-attention-card h3 {
+  margin: 0;
+  color: #dbe9ff;
+  font-size: 0.94rem;
+}
+
+.bus-home-attention-list {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding-left: 18px;
+  color: #c9d8ef;
+  font-size: 0.82rem;
+}
+
+.bus-home-all-clear {
+  padding: 10px;
+  border: 1px solid rgba(86, 187, 130, 0.28);
+  border-radius: 9px;
+  background: rgba(24, 72, 50, 0.18);
+}
+
+.bus-home-all-clear strong {
+  color: #7edda3;
+}
+
+.bus-home-all-clear p {
+  margin: 4px 0 0;
+  color: #a8bbd8;
+  font-size: 0.8rem;
+}
+
+.bus-home-bench-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(150px, 220px));
+  gap: 10px;
 }
 
 .bus-home-ops-grid {
@@ -2009,6 +2081,10 @@ hr.thin {
   color: #ffcc7a;
 }
 
+.bus-home-status-row strong[data-tone="danger"] {
+  color: #ff9c8f;
+}
+
 .bus-home-quick-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2029,6 +2105,15 @@ hr.thin {
   padding: 12px;
 }
 
+.bus-home-side-card a,
+.bus-home-alert a {
+  color: #93c5fd;
+}
+
+.bus-home-side-card p {
+  margin: 0 0 10px;
+}
+
 .bus-home-side-card-head {
   display: flex;
   align-items: center;
@@ -2046,8 +2131,65 @@ hr.thin {
   gap: 8px;
 }
 
+.bus-home-release-version {
+  color: #e5efff !important;
+  font-weight: 700;
+}
+
+.bus-home-update-available {
+  color: #ffcc7a !important;
+}
+
+.bus-home-release-list {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 10px;
+  padding-left: 18px;
+  color: #9fb1cf;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.bus-home-side-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.bus-home-support-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 1px solid rgba(106, 168, 255, 0.42);
+  border-radius: 8px;
+  background: rgba(44, 82, 140, 0.28);
+  color: #dce8fb !important;
+  text-decoration: none;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.bus-home-link-groups {
+  display: grid;
+  gap: 12px;
+}
+
+.bus-home-link-groups div {
+  display: grid;
+  gap: 7px;
+}
+
+.bus-home-link-groups span {
+  color: #9fb1cf;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .bus-home-jobs-pressure {
-  margin-top: 12px;
   padding: 12px;
   border: 1px solid rgba(101, 129, 176, 0.26);
   border-radius: 10px;
@@ -2058,6 +2200,18 @@ hr.thin {
   margin: 0;
   color: #dbe9ff;
   font-size: 0.92rem;
+}
+
+.bus-home-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.bus-home-section-head h3 {
+  margin: 0;
 }
 
 .bus-home-jobs-pressure a {
@@ -2094,8 +2248,18 @@ hr.thin {
 
 .bus-home-jobs-attention li[data-tone="overdue"],
 .bus-home-jobs-attention li[data-tone="blocked"] {
-  border-color: rgba(255, 186, 92, 0.38);
-  background: rgba(70, 48, 22, 0.28);
+  border-color: rgba(255, 130, 106, 0.42);
+  background: rgba(82, 36, 30, 0.3);
+}
+
+.bus-home-jobs-attention li[data-tone="soon"] {
+  border-color: rgba(255, 186, 92, 0.36);
+  background: rgba(70, 48, 22, 0.24);
+}
+
+.bus-home-jobs-attention li[data-tone="ready"] {
+  border-color: rgba(86, 187, 130, 0.28);
+  background: rgba(24, 72, 50, 0.16);
 }
 
 .bus-home-jobs-attention li span {
