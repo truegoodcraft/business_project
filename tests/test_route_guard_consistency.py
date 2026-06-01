@@ -13,6 +13,7 @@ pytestmark = pytest.mark.api
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCOPED_ROUTE_FILES = (
     Path("core/api/routes/items.py"),
+    Path("core/api/routes/jobs.py"),
     Path("core/api/routes/ledger_api.py"),
     Path("core/api/routes/finance_api.py"),
     Path("core/api/routes/config.py"),

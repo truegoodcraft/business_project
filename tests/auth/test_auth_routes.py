@@ -5,11 +5,17 @@ import json
 from datetime import datetime, timedelta
 
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from core.api.routes.auth import AUTH_SESSION_COOKIE, RECOVERY_CODE_COUNT
 from core.auth.passwords import MIN_PASSWORD_LENGTH
-from core.auth.permissions import OWNER_ROLE_KEY
+from core.auth.permissions import (
+    OPERATOR_ROLE_KEY,
+    OWNER_ROLE_KEY,
+    PERMISSION_JOBS_READ,
+    PERMISSION_JOBS_WRITE,
+    VIEWER_ROLE_KEY,
+)
 from core.auth.sessions import (
     AUTH_SESSION_IDLE_TIMEOUT_MINUTES,
     AUTH_SESSION_MAX_AGE_DAYS,
@@ -151,6 +157,56 @@ def test_setup_owner_succeeds_and_creates_owner_user_role_session_and_recovery_c
         assert len(sessions) == 1
         assert sessions[0].session_hash == hash_session_token(response.cookies[AUTH_SESSION_COOKIE])
         assert str(response.cookies[AUTH_SESSION_COOKIE]) not in str(sessions[0].session_hash)
+
+
+def test_auth_state_refreshes_jobs_permissions_for_existing_system_roles(bus_client):
+    client = bus_client["client"]
+    models = bus_client["models"]
+    engine_module = bus_client["engine"]
+    _setup_owner(client)
+
+    system_role_keys = (OWNER_ROLE_KEY, OPERATOR_ROLE_KEY, VIEWER_ROLE_KEY)
+    job_permissions = (PERMISSION_JOBS_READ, PERMISSION_JOBS_WRITE)
+    with engine_module.SessionLocal() as db:
+        role_ids = [
+            int(row[0])
+            for row in db.execute(select(models.AuthRole.id).where(models.AuthRole.key.in_(system_role_keys))).all()
+        ]
+        assert role_ids
+        db.execute(
+            delete(models.AuthRolePermission).where(
+                models.AuthRolePermission.role_id.in_(role_ids),
+                models.AuthRolePermission.permission.in_(job_permissions),
+            )
+        )
+        db.commit()
+
+    response = client.get("/auth/state")
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["current_user"]["username"] == "owner"
+    assert PERMISSION_JOBS_READ in payload["current_user"]["permissions"]
+    with engine_module.SessionLocal() as db:
+        for role_key in system_role_keys:
+            stored_permissions = {
+                str(row[0])
+                for row in db.execute(
+                    select(models.AuthRolePermission.permission)
+                    .join(models.AuthRole, models.AuthRole.id == models.AuthRolePermission.role_id)
+                    .where(models.AuthRole.key == role_key)
+                ).all()
+            }
+            assert PERMISSION_JOBS_READ in stored_permissions
+        owner_operator_permissions = {
+            str(row[0])
+            for row in db.execute(
+                select(models.AuthRolePermission.permission)
+                .join(models.AuthRole, models.AuthRole.id == models.AuthRolePermission.role_id)
+                .where(models.AuthRole.key.in_((OWNER_ROLE_KEY, OPERATOR_ROLE_KEY)))
+            ).all()
+        }
+        assert PERMISSION_JOBS_WRITE in owner_operator_permissions
 
 
 def test_setup_owner_rejects_short_password(bus_client):

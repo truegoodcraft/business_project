@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 
@@ -164,3 +165,148 @@ def test_token_helper_accepts_claimed_mode_login_required() -> None:
 
     assert "body?.error === 'login_required'" in token_js
     assert "_claimedModeNoLegacyToken = true" in token_js
+
+
+def test_jobs_phase2_ui_route_is_permissioned_and_mounted() -> None:
+    app_js = (REPO_ROOT / "core" / "ui" / "app.js").read_text(encoding="utf-8")
+    shell_html = (REPO_ROOT / "core" / "ui" / "shell.html").read_text(encoding="utf-8")
+    jobs_js = (REPO_ROOT / "core" / "ui" / "js" / "cards" / "jobs.js").read_text(encoding="utf-8")
+
+    assert "import { mountJobs, unmountJobs } from \"./js/cards/jobs.js\";" in app_js
+    assert "'#/jobs': showJobs" in app_js
+    assert "jobs: ['jobs.read']" in app_js
+    assert "async function showJobs()" in app_js
+    assert 'href="#/jobs" data-role="nav-link" data-route="jobs"' in shell_html
+    sidebar_tools = shell_html.split('<ul class="sidebar-nav">', 1)[1].split('nav-section--system', 1)[0]
+    assert re.findall(r'data-route="([^"]+)"', sidebar_tools) == [
+        "manufacturing",
+        "inventory",
+        "contacts",
+        "recipes",
+        "finance",
+        "jobs",
+    ]
+    assert 'data-role="jobs-screen"' in shell_html
+    assert 'data-role="jobs-root"' in shell_html
+    assert "export async function mountJobs()" in jobs_js
+    assert "export function unmountJobs()" in jobs_js
+
+
+def test_jobs_phase2_ui_uses_only_jobs_and_read_lookup_endpoints() -> None:
+    jobs_js = (REPO_ROOT / "core" / "ui" / "js" / "cards" / "jobs.js").read_text(encoding="utf-8")
+
+    endpoints = sorted(set(re.findall(r"['`](/app/[^'`]+)", jobs_js)))
+    assert endpoints
+    allowed_prefixes = ("/app/jobs", "/app/contacts", "/app/items", "/app/recipes")
+    for endpoint in endpoints:
+        assert endpoint.startswith(allowed_prefixes), endpoint
+
+    forbidden_endpoint_terms = (
+        "/app/stock",
+        "/app/finance",
+        "/app/manufacturing",
+        "/app/purchase",
+        "/app/payments",
+        "/app/reserve",
+        "/app/deliver",
+    )
+    for term in forbidden_endpoint_terms:
+        assert term not in jobs_js
+
+    assert "apiPost(`/app/jobs/${job.id}/status`, { status })" in jobs_js
+    assert "apiPost(`/app/jobs/${job.id}/lines`, payload)" in jobs_js
+    assert "apiPost(`/app/jobs/${job.id}/events`, { event_type: 'note', message: text })" in jobs_js
+
+
+def test_jobs_phase2_ui_preserves_backend_quantity_authority() -> None:
+    jobs_js = (REPO_ROOT / "core" / "ui" / "js" / "cards" / "jobs.js").read_text(encoding="utf-8")
+
+    assert "payload.quantity_decimal = quantity" in jobs_js
+    assert "payload.uom = String(data.get('uom') || '').trim();" in jobs_js
+    assert "name: 'quantity_decimal'" in jobs_js
+    assert "name: 'uom'" in jobs_js
+    for forbidden in (
+        "qty_base",
+        "normalize_quantity",
+        "normalizeQuantity",
+        "toMetricBase",
+        "DIM_DEFAULTS",
+        "unitMultiplier",
+        "base_int",
+    ):
+        assert forbidden not in jobs_js
+
+
+def test_home_jobs_pressure_board_is_read_only() -> None:
+    home_js = (REPO_ROOT / "core" / "ui" / "js" / "cards" / "home.js").read_text(encoding="utf-8")
+
+    assert "function renderJobsPressureBoard" in home_js
+    assert "data-role=\"home-jobs-pressure\"" in home_js
+    assert "data-role=\"home-jobs-pressure-slot\"" in home_js
+    assert "apiGetJson('/app/jobs')" in home_js
+    assert "apiGetJson(`/app/jobs/${job.id}`).catch(() => null)" in home_js
+    assert "href=\"#/jobs\"" in home_js
+    for write_api in ("apiPost", "apiPatch", "apiPut", "apiDelete"):
+        assert write_api not in home_js
+    for forbidden_endpoint in (
+        "/app/stock",
+        "/app/finance",
+        "/app/manufacturing",
+        "/app/purchase",
+        "/app/payments",
+        "/app/reserve",
+        "/app/deliver",
+    ):
+        assert forbidden_endpoint not in home_js
+
+
+def test_home_release_polish_keeps_operator_hierarchy_and_links() -> None:
+    home_js = (REPO_ROOT / "core" / "ui" / "js" / "cards" / "home.js").read_text(encoding="utf-8")
+    app_js = (REPO_ROOT / "core" / "ui" / "app.js").read_text(encoding="utf-8")
+
+    render_markup = home_js.split("root.innerHTML = `", 1)[1]
+    assert render_markup.index('data-role="home-alerts"') < render_markup.index('data-role="home-bench"')
+    assert render_markup.index('data-role="home-bench"') < render_markup.index('data-role="home-jobs-pressure-slot"')
+    assert render_markup.index('data-role="home-jobs-pressure-slot"') < render_markup.index('data-role="home-side-panel"')
+
+    render_bench = home_js.split("function renderBench", 1)[1].split("function buildNotices", 1)[0]
+    assert "renderJobsPressureBoard" not in render_bench
+
+    for expected_copy in (
+        "Shop Bench",
+        "Start your shop setup",
+        "Next useful step",
+        "What needs attention",
+        "No overdue jobs, no blocked jobs, no backup warnings.",
+        "Jobs Pressure",
+        "Overdue / due soon",
+        "No active job pressure.",
+        "System Trust",
+        "Latest Update",
+        "What changed:",
+        "Why it matters:",
+        "Support Development",
+        "Help & Community",
+        "Support BUS Core",
+        "https://buscore.ca/support",
+        "Read full changelog",
+        "Bug Report",
+        "Discord",
+    ):
+        assert expected_copy in home_js
+
+    assert "local-owner-missing" not in home_js
+    assert "Set local owner" not in home_js
+    assert "canonicalHash === '#/home'" in app_js
+
+
+def test_home_local_storage_is_display_only() -> None:
+    home_js = (REPO_ROOT / "core" / "ui" / "js" / "cards" / "home.js").read_text(encoding="utf-8")
+
+    assert "bus.home.dismissedNotices" in home_js
+    assert "bus.home.versionNoticeState" in home_js
+    sensitive_terms = ("password", "recovery", "session", "token", "permission", "auth")
+    for line in home_js.splitlines():
+        if "localStorage" in line or "sessionStorage" in line:
+            lowered = line.lower()
+            assert not any(term in lowered for term in sensitive_terms), line

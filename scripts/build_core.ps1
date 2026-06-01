@@ -3,10 +3,128 @@ param(
   [string]$Name    = "BUS-Core",
   [string]$Company = "True Good Craft",
   [string]$Product = "TGC BUS Core",
-  [string]$Desc    = "Local-first Business Utility System Core (AGPL) by True Good Craft"
+  [string]$Desc    = "Local-first Business Utility System Core (AGPL) by True Good Craft",
+  [switch]$Sign,
+  [switch]$Bundle,
+  [switch]$Release,
+  [string]$SignerThumbprint = "55474aa9a2d562022a6590d487045e069457f985",
+  [string]$TimestampUrl = "http://timestamp.digicert.com",
+  [string]$SignToolPath = "signtool"
 )
 
 $ErrorActionPreference = "Stop"
+
+if ($Release) {
+  $Sign = $true
+  $Bundle = $true
+}
+
+function Normalize-Thumbprint {
+  param([string]$Thumbprint)
+
+  return (($Thumbprint -replace "\s", "").ToUpperInvariant())
+}
+
+function Assert-ValidSignature {
+  param(
+    [string]$Path,
+    [string]$ExpectedThumbprint
+  )
+
+  $signature = Get-AuthenticodeSignature -FilePath $Path
+  if ($signature.Status -ne "Valid") {
+    throw "Signature verification failed for '$Path': $($signature.Status) $($signature.StatusMessage)"
+  }
+
+  if ($null -eq $signature.SignerCertificate) {
+    throw "Signature verification failed for '$Path': missing signer certificate."
+  }
+
+  $actualThumbprint = Normalize-Thumbprint $signature.SignerCertificate.Thumbprint
+  $expectedNormalized = Normalize-Thumbprint $ExpectedThumbprint
+  if ($actualThumbprint -ne $expectedNormalized) {
+    throw "Signature verification failed for '$Path': signer thumbprint '$actualThumbprint' did not match expected '$expectedNormalized'."
+  }
+}
+
+function New-ReleaseBundle {
+  param(
+    [string]$VersionedExe,
+    [string]$ReadmePath,
+    [string]$LicensePath,
+    [string]$DistPath,
+    [string]$BundleName
+  )
+
+  if (!(Test-Path $VersionedExe -PathType Leaf)) {
+    throw "Cannot bundle: versioned EXE not found: $VersionedExe"
+  }
+  if (!(Test-Path $ReadmePath -PathType Leaf)) {
+    throw "Cannot bundle: README.md not found: $ReadmePath"
+  }
+  if (!(Test-Path $LicensePath -PathType Container)) {
+    throw "Cannot bundle: license folder not found: $LicensePath"
+  }
+
+  $bundleRoot = Join-Path $DistPath "_bundle"
+  $stagePath = Join-Path $bundleRoot $BundleName
+  $zipPath = Join-Path $DistPath "$BundleName.zip"
+
+  Remove-Item -Recurse -Force $stagePath -ErrorAction SilentlyContinue
+  New-Item -ItemType Directory -Path $stagePath -Force | Out-Null
+
+  Copy-Item $VersionedExe (Join-Path $stagePath (Split-Path -Leaf $VersionedExe)) -Force
+  Copy-Item $ReadmePath (Join-Path $stagePath "README.md") -Force
+  Copy-Item $LicensePath (Join-Path $stagePath "license") -Recurse -Force
+
+  Remove-Item -Force $zipPath -ErrorAction SilentlyContinue
+  Compress-Archive -Path (Join-Path $stagePath "*") -DestinationPath $zipPath -Force
+
+  $archive = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
+  try {
+    $rootEntries = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    $rootExeCount = 0
+    $rootReadmeCount = 0
+    $licenseFileCount = 0
+    $expectedExeName = Split-Path -Leaf $VersionedExe
+
+    foreach ($entry in $archive.Entries) {
+      $entryPath = $entry.FullName.Replace("\", "/")
+      $parts = $entryPath.Split("/", [System.StringSplitOptions]::RemoveEmptyEntries)
+      if ($parts.Count -eq 0) { continue }
+
+      [void]$rootEntries.Add($parts[0])
+
+      if ($parts.Count -eq 1 -and $parts[0] -eq $expectedExeName) {
+        $rootExeCount++
+      } elseif ($parts.Count -eq 1 -and $parts[0] -eq "README.md") {
+        $rootReadmeCount++
+      } elseif ($parts.Count -gt 1 -and $parts[0] -eq "license" -and -not [string]::IsNullOrEmpty($entry.Name)) {
+        $licenseFileCount++
+      }
+    }
+
+    $allowedRoots = @($expectedExeName, "README.md", "license")
+    foreach ($rootEntry in $rootEntries) {
+      if ($allowedRoots -notcontains $rootEntry) {
+        throw "Bundle verification failed for '$zipPath': unexpected root entry '$rootEntry'."
+      }
+    }
+    if ($rootExeCount -ne 1) {
+      throw "Bundle verification failed for '$zipPath': expected one root '$expectedExeName' entry, found $rootExeCount."
+    }
+    if ($rootReadmeCount -ne 1) {
+      throw "Bundle verification failed for '$zipPath': expected one root 'README.md' entry, found $rootReadmeCount."
+    }
+    if ($licenseFileCount -lt 1) {
+      throw "Bundle verification failed for '$zipPath': expected at least one file under 'license/'."
+    }
+  } finally {
+    $archive.Dispose()
+  }
+
+  return $zipPath
+}
 
 # -----------------------------
 # Repo root
@@ -149,10 +267,52 @@ if (Test-Path $internalPath) {
 
 # Optional: rename output to include version (keeps releases sane)
 $finalExe = Join-Path $DIST "$Name-$Version.exe"
-Copy-Item $exeOut $finalExe -Force
+$VersionedExe = $finalExe
+Copy-Item $exeOut $VersionedExe -Force
 
-Write-Host "[PASS] Build complete (ONEFILE): $finalExe" -ForegroundColor Green
+$zipOut = $null
+
+if ($Sign) {
+  Write-Host "[INFO] Signing versioned EXE" -ForegroundColor Cyan
+  & $SignToolPath sign `
+    /fd SHA256 `
+    /tr $TimestampUrl `
+    /td SHA256 `
+    /sha1 $SignerThumbprint `
+    $VersionedExe
+
+  if ($LASTEXITCODE -ne 0) {
+    throw "Signing failed for: $VersionedExe"
+  }
+
+  Assert-ValidSignature -Path $VersionedExe -ExpectedThumbprint $SignerThumbprint
+
+  & $SignToolPath verify /pa /all /v $VersionedExe
+  if ($LASTEXITCODE -ne 0) {
+    throw "signtool verification failed for: $VersionedExe"
+  }
+}
+
+if ($Bundle) {
+  $zipOut = New-ReleaseBundle `
+    -VersionedExe $VersionedExe `
+    -ReadmePath (Join-Path $ROOT "README.md") `
+    -LicensePath (Join-Path $ROOT "license") `
+    -DistPath $DIST `
+    -BundleName "$Name-$Version"
+}
+
+Write-Host "[PASS] Build complete (ONEFILE): $VersionedExe" -ForegroundColor Green
+if ($Sign) {
+  Write-Host "[PASS] Signature verified: $VersionedExe" -ForegroundColor Green
+}
+if ($Bundle) {
+  Write-Host "[PASS] Bundle complete: $zipOut" -ForegroundColor Green
+}
+
 Write-Host ""
-Write-Host "Next:" -ForegroundColor Cyan
-Write-Host "  signtool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /a `"$finalExe`""
-Write-Host "  signtool verify /pa /v `"$finalExe`""
+Write-Host "Artifacts:" -ForegroundColor Cyan
+Write-Host "  EXE: $VersionedExe"
+if ($Bundle) {
+  Write-Host "  ZIP: $zipOut"
+}

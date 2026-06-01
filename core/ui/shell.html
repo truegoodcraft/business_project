@@ -45,6 +45,7 @@
       <li><a class="nav-link" href="#/contacts" data-role="nav-link" data-route="contacts">Contacts</a></li>
       <li><a class="nav-link" href="#/recipes" data-role="nav-link" data-route="recipes">Recipes</a></li>
       <li><a class="nav-link" href="#/finance" data-role="nav-link" data-route="finance">Finance</a></li>
+      <li><a class="nav-link" href="#/jobs" data-role="nav-link" data-route="jobs">Jobs</a></li>
 
       <li><div class="nav-section nav-section--system" role="heading" aria-level="2">System</div></li>
       <li><a class="nav-link" href="#/settings" id="nav-settings" data-role="nav-link" data-route="settings">Settings</a></li>
@@ -129,6 +130,10 @@
         <div data-role="inventory-root" class="card"></div>
       </div>
 
+      <div data-role="jobs-screen" class="hidden">
+        <div data-role="jobs-root"></div>
+      </div>
+
       <div data-role="manufacturing-screen" class="hidden">
         <div class="screen-body">
           <div data-tab-panel="manufacturing"></div>
@@ -199,6 +204,7 @@
         <div data-role="tools-list">
           <h2 class="text-xl">Tools</h2>
           <ul>
+            <li><a href="#/jobs">Jobs</a></li>
             <li><a href="#/inventory">Inventory</a></li>
             <li><a href="#/contacts">Contacts</a></li>
           </ul>
@@ -310,6 +316,6 @@
     </div>
   </div>
 
-  <script type="module" src="/ui/app.js?v=invalidqtydebug2"></script>
+  <script type="module" src="/ui/app.js?v=home-unclaimed-banner-cleanup"></script>
 </body>
 </html>

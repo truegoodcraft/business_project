@@ -17,6 +17,15 @@ def test_canonical_endpoints_exist(bus_client):
         ("POST", "/app/purchase"),
         ("GET", "/app/ledger/history"),
         ("POST", "/app/manufacture"),
+        ("GET", "/app/jobs"),
+        ("POST", "/app/jobs"),
+        ("GET", "/app/jobs/{job_id}"),
+        ("PATCH", "/app/jobs/{job_id}"),
+        ("POST", "/app/jobs/{job_id}/lines"),
+        ("PATCH", "/app/jobs/{job_id}/lines/{line_id}"),
+        ("DELETE", "/app/jobs/{job_id}/lines/{line_id}"),
+        ("POST", "/app/jobs/{job_id}/events"),
+        ("POST", "/app/jobs/{job_id}/status"),
     }
     assert targets.issubset(routes)
 
@@ -92,6 +101,28 @@ def test_route_modules_forbid_mutation_primitives():
             if token in text:
                 offenders.append(f"{py_file}:{token}")
     assert not offenders, f"Forbidden mutation primitives found: {offenders}"
+
+
+def test_jobs_phase1_forbids_authority_mutation_primitives():
+    checked_files = [Path("core/api/routes/jobs.py"), Path("core/services/jobs.py")]
+    bad_tokens = (
+        "add_batch",
+        "fifo_consume",
+        "append_inventory",
+        "perform_stock_out",
+        "perform_stock_in",
+        "perform_purchase",
+        "ItemMovement",
+        "CashEvent",
+        "ManufacturingRun",
+    )
+    offenders = []
+    for py_file in checked_files:
+        text = py_file.read_text(encoding="utf-8", errors="replace")
+        for token in bad_tokens:
+            if token in text:
+                offenders.append(f"{py_file}:{token}")
+    assert not offenders, f"Jobs Phase 1 must stay non-authoritative: {offenders}"
 
 
 def test_route_modules_forbid_uom_guessing():

@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.2.3] - 2026-06-01
+
+### Home Release Polish
+
+- Polished the Home screen for the public release with a clearer alert strip, focused Shop Bench, separate Jobs Pressure board, and right-side System Trust, Latest Update, Support Development, and Help & Community sections.
+- Added operator-facing Home links for support, docs, bug reports, Discord, license, data safety, known limits, and the full changelog without changing local-first data authority.
+- Included Job Tracking Phase 1 and Phase 2 in the release boundary: additive Jobs backend tables/APIs, the `#/jobs` operator screen, and a read-only Home Jobs Pressure board with no stock, cash, manufacturing, or quantity-conversion side effects.
+- Refreshed claimed-mode role defaults through `/auth/state` so existing owner/operator/viewer roles pick up Jobs permissions and authorized users keep the Jobs sidebar item after SPA auth boot.
+- `scripts/build_core.ps1` release mode now supports signing and bundling in addition to the existing one-file build path.
+- `scripts/build_core.ps1 -Release` builds `dist/BUS-Core-1.2.3.exe`, signs the versioned EXE, verifies Authenticode validity and signer thumbprint `55474AA9A2D562022A6590D487045E069457F985`, verifies the timestamped signature, and creates the canonical release ZIP `dist/BUS-Core-1.2.3.zip`.
+- The canonical `BUS-Core-1.2.3.zip` release bundle contains only `BUS-Core-1.2.3.exe`, `README.md`, and `license/` at the ZIP root.
+- No signing password or PIN is stored in the repo or script; the operator enters any required credential through the Windows certificate provider / signing prompt flow.
+- Bumped `VERSION` from `1.2.2` to `1.2.3` and reset `INTERNAL_VERSION` from `1.2.2.3` to `1.2.3.0` for the owner-approved public release boundary.
+
 ## [1.2.2] - 2026-05-19
 
 ### Fixed

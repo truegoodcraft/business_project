@@ -1,6 +1,6 @@
 # TGC BUS Core — Unified Source of Truth
 
-**Version:** v1.2.2 **Updated:** 2026-05-19 **Status:** Stable **Authority:** `core/version.py` is the version authority. Where this document and code disagree, update this document.
+**Version:** v1.2.3 **Updated:** 2026-06-01 **Status:** Stable **Authority:** `core/version.py` is the version authority. Where this document and code disagree, update this document.
 
 ---
 
@@ -152,7 +152,13 @@
 
 * BUS Core has a DB/app ownership lock that prevents multiple live owners of the same DB/app root. Launcher preflight blocks duplicate native launches before browser open / uvicorn bind, and the app-level lock remains defense-in-depth. Verified version handoff is evaluated after DB ownership lock on next start, scans verified-ready records, filters to versions newer than the running `VERSION`, and chooses the newest eligible SemVer candidate according to the configured launch policy.
 
-* Windows code signing is currently a manual post-build ceremony. `scripts/build_core.ps1` builds the onefile EXE and prints optional `signtool sign` / `signtool verify` commands; it does not sign or verify artifacts automatically.
+* `scripts/build_core.ps1` remains the canonical local Windows build script. Without release flags it builds the onefile EXE, keeps `dist/BUS-Core.exe`, and copies the versioned EXE to `dist/BUS-Core-<VERSION>.exe`.
+
+* `scripts/build_core.ps1 -Release` is the current release-mode build path: it builds the versioned EXE, signs only `dist/BUS-Core-<VERSION>.exe`, verifies the Authenticode result internally, verifies the signer thumbprint against `55474AA9A2D562022A6590D487045E069457F985`, and bundles the canonical public ZIP `dist/BUS-Core-<VERSION>.zip`.
+
+* The canonical public release ZIP remains `BUS-Core-<VERSION>.zip`. The ZIP opens directly to the signed versioned EXE, `README.md`, and `license/`; the build script does not add evidence files, checksum files, release reports, or other bundle extras.
+
+* Code-signing credential material is still not stored, encoded, or automated in the repo. If the certificate provider requires a password, PIN, or hardware-token action, the operator enters it through the normal Windows / `signtool` prompt flow.
 
 * Docker is a separate deployment lane. `.github/workflows/publish-image.yml` currently publishes GHCR `latest` and commit-SHA image tags only; it does not publish SemVer tags, sign images, generate SBOM/provenance, scan images, or define a formal Docker update policy. Default Compose networking is host-loopback only because BUS Core is local-first software and the session bootstrap model is not designed for multi-user network hosting.
 
@@ -505,7 +511,7 @@
 
 * Phase 3 fix restored the public API error-code contract: policy-blocked localhost/private/link-local/loopback/unspecified manifest URLs return `manifest_url_not_allowed`, while malformed URLs and bad schemes remain `invalid_manifest_url`.
 
-* Remaining update-chain work includes EXE Authenticode/publisher verification, `verified_ready` promotion rules, safe handoff/launch behavior, keeping the manual signing ceremony explicit, Docker release hardening if that lane becomes release-governed, and preserving DB ownership/single-instance control before any staged/apply update path.
+* Remaining update-chain work includes safe handoff/launch behavior, any future decision about requiring signed manifests for read-only update checks, Docker release hardening if that lane becomes release-governed, and preserving DB ownership/single-instance control before any staged/apply update path.
 
 * This bridge release still performs no auto-download, no auto-install, no executable launch, and no handoff. Artifact download and extraction exist only as internal helpers; executable trust verification is still incomplete.
 

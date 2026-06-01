@@ -38,7 +38,7 @@ In the current stabilization phase, trustworthy release infrastructure means ope
 | Output | Status | Produced by | Destination |
 | --- | --- | --- | --- |
 | Windows one-file EXE | Canonical | `scripts/build_core.ps1` + `BUS-Core.spec` | `dist/BUS-Core.exe`, copied to `dist/BUS-Core-<VERSION>.exe` |
-| Canonical public release package (ZIP) | Canonical | Manual release packaging + GitHub release asset | `BUS-Core-<VERSION>.zip` (GitHub release), mirrored to R2 `releases/BUS-Core-<VERSION>.zip` |
+| Canonical public release package (ZIP) | Canonical | `scripts/build_core.ps1 -Bundle` or `-Release`, then external release publication | `dist/BUS-Core-<VERSION>.zip`; published release assets and mirrors remain outside the build script |
 | Windows version metadata file | Canonical | `scripts/build_core.ps1` | `scripts/_win_version_info.txt` |
 | Bundled UI/license assets | Canonical | `BUS-Core.spec` | Embedded in PyInstaller artifact |
 | Docker image | Canonical | `Dockerfile`, `.github/workflows/publish-image.yml` | GHCR tags `latest` and `:<sha>` |
@@ -50,15 +50,19 @@ In the current stabilization phase, trustworthy release infrastructure means ope
 2. `v1.2.0` is superseded by `v1.2.1` because the published Windows artifact was unsigned; do not mutate or reuse the `v1.2.0` release/tag/artifact for the corrected release.
 3. The `v1.2.1` Windows EXE must be Authenticode-signed before packaging/uploading, and the update path must continue rejecting unsigned artifacts such as the `v1.2.0` artifact that failed with status `NotSigned`.
 4. `scripts/build_core.ps1` reads `VERSION` from `core/version.py` unless an explicit override is passed, validates `X.Y.Z`, writes Windows version metadata, builds the one-file EXE, and copies `dist/BUS-Core.exe` to `dist/BUS-Core-<VERSION>.exe`.
-5. `scripts/release-check.ps1` now validates the current release chain truthfully: isolated smoke, canonical build script, and artifact existence checks for both current EXE names.
-6. `.github/workflows/release-mirror.yml` now separates tooling checkout from release identity: release-triggered runs still check out the published tag, while manual `workflow_dispatch` backfills may check out a current tooling ref such as `main` and mirror an older `release_tag` independently.
-7. For published releases, the workflow still reads `VERSION` from `core/version.py` and fails unless the release tag exactly equals `v{VERSION}`. For manual backfills, it validates the requested `release_tag` as strict `vX.Y.Z`, derives manifest `latest.version` and expected asset name from that requested tag, and uses the same tag for release download and release notes URL generation.
-8. The same workflow downloads the exact `BUS-Core-<VERSION>.zip` release asset, computes `sha256`, uploads the asset to R2 `releases/<asset-name>`, and generates manifest `latest.version` plus an authoritative absolute `latest.download.url` using `https://lighthouse.buscore.ca/releases/BUS-Core-<VERSION>.zip`.
-9. Before signing, the workflow now prints the working directory, lists `scripts/`, and fails clearly if `scripts/sign_manifest.py` is missing from the checked-out tooling ref. It then signs generated `stable.json` into `stable.signed.json` with `scripts/sign_manifest.py`, key ID `bus-core-prod-ed25519-2026-04-25`, and GitHub secret `BUSCORE_MANIFEST_SIGNING_PRIVATE_KEY`. If that secret is missing, the workflow fails clearly and does not silently publish an unsigned manifest.
-10. The workflow verifies that the signed manifest preserves `latest.version` and `latest.download.url`, contains `signature.alg = Ed25519` and the expected key ID, and verifies the embedded signature using Core's pinned public key policy before upload.
-11. The signed manifest is uploaded in place to R2 as `manifest/core/stable.json`. Lighthouse serves/proxies that manifest, but Lighthouse does not own signing authority; the GitHub Actions release workflow does.
-12. `.github/workflows/publish-image.yml` remains a separate container-publish workflow and does not govern Windows release/update version authority.
-13. `scripts/build_core.ps1` prints manual `signtool` commands for signing and signature verification, but the repo does not automate those steps.
+5. Without `-Sign`, `-Bundle`, or `-Release`, the script remains the normal build path and stops after the versioned EXE copy.
+6. `scripts/build_core.ps1 -Release` now performs the local release build boundary: it builds the versioned EXE, signs only `dist/BUS-Core-<VERSION>.exe`, verifies Authenticode validity and the signer thumbprint `55474AA9A2D562022A6590D487045E069457F985`, optionally verifies through `signtool`, and bundles `dist/BUS-Core-<VERSION>.zip`.
+7. The release ZIP is created from a clean staging folder and contains only the signed versioned EXE, `README.md`, and `license/` at the ZIP root.
+8. The script does not store or automate signing passwords/PINs; any required credential entry remains in the Windows certificate-provider / `signtool` prompt flow.
+9. GitHub release creation, Lighthouse/R2 mirroring, manifest signing, and manifest publication remain outside `scripts/build_core.ps1`.
+10. `scripts/release-check.ps1` now validates the current release chain truthfully: isolated smoke, canonical build script, and artifact existence checks for both current EXE names.
+11. `.github/workflows/release-mirror.yml` now separates tooling checkout from release identity: release-triggered runs still check out the published tag, while manual `workflow_dispatch` backfills may check out a current tooling ref such as `main` and mirror an older `release_tag` independently.
+12. For published releases, the workflow still reads `VERSION` from `core/version.py` and fails unless the release tag exactly equals `v{VERSION}`. For manual backfills, it validates the requested `release_tag` as strict `vX.Y.Z`, derives manifest `latest.version` and expected asset name from that requested tag, and uses the same tag for release download and release notes URL generation.
+13. The same workflow downloads the exact `BUS-Core-<VERSION>.zip` release asset, computes `sha256`, uploads the asset to R2 `releases/<asset-name>`, and generates manifest `latest.version` plus an authoritative absolute `latest.download.url` using `https://lighthouse.buscore.ca/releases/BUS-Core-<VERSION>.zip`.
+14. Before signing, the workflow now prints the working directory, lists `scripts/`, and fails clearly if `scripts/sign_manifest.py` is missing from the checked-out tooling ref. It then signs generated `stable.json` into `stable.signed.json` with `scripts/sign_manifest.py`, key ID `bus-core-prod-ed25519-2026-04-25`, and GitHub secret `BUSCORE_MANIFEST_SIGNING_PRIVATE_KEY`. If that secret is missing, the workflow fails clearly and does not silently publish an unsigned manifest.
+15. The workflow verifies that the signed manifest preserves `latest.version` and `latest.download.url`, contains `signature.alg = Ed25519` and the expected key ID, and verifies the embedded signature using Core's pinned public key policy before upload.
+16. The signed manifest is uploaded in place to R2 as `manifest/core/stable.json`. Lighthouse serves/proxies that manifest, but Lighthouse does not own signing authority; the GitHub Actions release workflow does.
+17. `.github/workflows/publish-image.yml` remains a separate container-publish workflow and does not govern Windows release/update version authority.
 
 ## Docker Deployment Boundary
 
@@ -106,7 +110,7 @@ Update checks are part of the trust model because they are optional and non-bloc
 | Release notes link from manifest | Internal declared metadata only | Yes | No | Bridge groundwork |
 | Manifest checksum/hash use | Internal declared metadata only | Yes | No | Bridge groundwork |
 | Artifact signature/publisher/size verification | Partial internal helper coverage | Yes | No | ZIP hash/size plus EXE Authenticode/publisher/thumbprint verification exist internally; `/app/update/check` still does not execute or hand off artifacts |
-| Binary signing execution | Manual script hint only | Some older docs implied more | No | Drifted |
+| Binary signing execution | Yes, in `scripts/build_core.ps1` when `-Sign` or `-Release` is used | Yes | No | Canonical for local build/sign/bundle only; external publication stays separate. |
 | Truthful release-check helper | Yes | Yes | Yes | Canonical |
 
 ## External infrastructure references
@@ -130,7 +134,7 @@ Update checks are part of the trust model because they are optional and non-bloc
 
 Release and update trust here depends more on clear authority and honest limits than on a large automation footprint. The current boundary is: canonical version authority exists, authority mirrors and change-trace requirements are machine-checked, tag alignment is checked, manifests are signed during release publication, update-check metadata is normalized, channel-specific manifests are selected explicitly, manual staging requires trusted signed manifest metadata before executing artifact verification into version+sha keyed `verified_ready_versions`, and launcher handoff is policy-controlled on next start.
 
-Known remaining release/update work is explicit: deciding whether read-only update check should also require signed manifests, adding optional restart orchestration beyond restart/reopen guidance, preserving the manual Windows signing ceremony until automation is practical, and Docker release hardening if the container lane needs governed releases. There is still no auto-install, startup auto-update, telemetry, or silent background update behavior.
+Known remaining release/update work is explicit: deciding whether read-only update check should also require signed manifests, adding optional restart orchestration beyond restart/reopen guidance, and Docker release hardening if the container lane needs governed releases. There is still no auto-install, startup auto-update, telemetry, or silent background update behavior.
 
 ## Freeze Notes
 
