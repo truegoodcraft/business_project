@@ -64,6 +64,8 @@
 ## [Unreleased]
 
 ### Changed
+- Bumped `INTERNAL_VERSION` from `1.2.3.3` to `1.2.3.4` for Home/community and Jobs-nav UI polish without changing public `VERSION`.
+- Added a stronger Home-screen Discord call-to-action under Support Development and gave the Jobs sidebar tab a dedicated icon that matches the existing nav treatment.
 - Bumped `INTERNAL_VERSION` from `1.2.3.2` to `1.2.3.3` for the Jobs contact quick-create/link workflow without changing public `VERSION`.
 - Added a minimal Jobs-local contact quick-create flow that uses the existing Contacts facade, selects the new contact for unsaved jobs, and links it immediately for existing jobs.
 - Bumped `INTERNAL_VERSION` from `1.2.3.1` to `1.2.3.2` for the UI shell scrollbar ownership fix without changing public `VERSION`.

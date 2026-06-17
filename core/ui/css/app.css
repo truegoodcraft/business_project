@@ -993,6 +993,7 @@ pre {
 #sidebar .sidebar-nav > li > a[data-route="contacts"]::before { background-image: url('/ui/assets/sidebar-icons/contacts.png'); }
 #sidebar .sidebar-nav > li > a[data-route="recipes"]::before { background-image: url('/ui/assets/sidebar-icons/recipes.png'); }
 #sidebar .sidebar-nav > li > a[data-route="finance"]::before { background-image: url('/ui/assets/sidebar-icons/finance.png'); }
+#sidebar .sidebar-nav > li > a[data-route="jobs"]::before { background-image: url('/ui/assets/sidebar-icons/jobs.png'); }
 #sidebar .sidebar-nav > li > a[data-route="settings"]::before { background-image: url('/ui/assets/sidebar-icons/settings.png'); }
 #sidebar .sidebar-nav > li > a[data-route="security"]::before { background-image: url('/ui/assets/sidebar-icons/settings.png'); }
 #sidebar .sidebar-nav > li > a[data-route="logs"]::before { background-image: url('/ui/assets/sidebar-icons/logs.png'); }
@@ -2200,6 +2201,11 @@ hr.thin {
   text-decoration: none;
   font-size: 0.8rem;
   font-weight: 700;
+}
+
+.bus-home-discord-action {
+  border-color: rgba(122, 146, 255, 0.4);
+  background: rgba(56, 74, 146, 0.28);
 }
 
 .bus-home-link-groups {

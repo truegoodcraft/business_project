@@ -8,6 +8,7 @@ export { mountHome as default, mountHome };
 
 const VERSION_NOTICE_KEY = 'bus.home.versionNoticeState';
 const DISMISSED_NOTICE_KEY = 'bus.home.dismissedNotices';
+const DISCORD_URL = 'https://discord.gg/qp3rc5CxdM';
 
 const ACTIONS = {
   addSupply: { href: '#/inventory', label: 'Add Supply', hint: 'Create a material or consumable' },
@@ -461,6 +462,11 @@ function renderSystemPanel(data) {
         <a class="bus-home-support-action" href="https://buscore.ca/support" target="_blank" rel="noopener noreferrer">Support BUS Core</a>
       </section>
       <section class="bus-home-side-card">
+        <h3>Discord Community</h3>
+        <p>Join the BUS Core Discord for beta feedback, questions, and shop-floor discussion.</p>
+        <a class="bus-home-support-action bus-home-discord-action" href="${DISCORD_URL}" target="_blank" rel="noopener noreferrer">Join the Discord</a>
+      </section>
+      <section class="bus-home-side-card">
         <h3>Help & Community</h3>
         <div class="bus-home-link-groups">
           <div>
@@ -473,7 +479,7 @@ function renderSystemPanel(data) {
             <span>Community</span>
             <a href="/brand/README.md" target="_blank" rel="noopener noreferrer">Docs</a>
             <a href="/brand/wiki/Bug-Reports.md" target="_blank" rel="noopener noreferrer">Bug Report</a>
-            <a href="https://discord.gg/qp3rc5CxdM" target="_blank" rel="noopener noreferrer">Discord</a>
+            <a href="${DISCORD_URL}" target="_blank" rel="noopener noreferrer">Discord</a>
             <a href="/license/LICENSE.md" target="_blank" rel="noopener noreferrer">License</a>
           </div>
         </div>
