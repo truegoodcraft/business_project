@@ -426,13 +426,13 @@ function renderUpdateCard(data) {
       ${updateLine}
       <p class="bus-home-side-label">What changed:</p>
       <ul class="bus-home-release-list">
-        <li>Home now shows shop status, job pressure, and backup warnings.</li>
-        <li>Added Jobs Pressure Board for due, blocked, and ready work.</li>
-        <li>Improved local trust/status display.</li>
-        <li>Added clearer support, docs, bug report, and Discord links.</li>
+        <li>Jobs line entry now uses clearer quantity and unit validation.</li>
+        <li>Jobs can create and link contacts without leaving the screen.</li>
+        <li>Desktop shell scroll ownership is more stable at Windows zoom levels.</li>
+        <li>Home now gives Discord a clearer community call to action.</li>
       </ul>
       <p class="bus-home-side-label">Why it matters:</p>
-      <p>You can now see what needs attention from the Home screen without digging through tools.</p>
+      <p>Daily work capture is tighter, contact linking is faster, and the operator shell is steadier.</p>
       <div class="bus-home-side-actions">
         <a href="/brand/CHANGELOG.md" target="_blank" rel="noopener noreferrer">Read full changelog</a>
       </div>

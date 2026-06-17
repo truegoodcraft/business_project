@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.4] - 2026-06-17
+
+### Jobs Workflow Polish
+
+- Hardened Jobs line entry so service and fee quantity defaults use `ea`, invalid UOM values are blocked, backend line quantity failures return stable validation codes, and the UI shows actionable validation messages instead of raw request failures.
+- Fixed desktop shell scroll ownership so `#main` is the primary scroll container and the document body does not create a competing vertical scrollbar at browser zoom levels such as 125%.
+- Added a minimal Jobs-local contact quick-create flow that uses the existing Contacts facade, selects the new contact for unsaved jobs, and links it immediately for existing jobs.
+- Added a stronger Home-screen Discord call-to-action under Support Development and gave the Jobs sidebar tab a dedicated icon that matches the existing nav treatment.
+- Bumped `VERSION` from `1.2.3` to `1.2.4` and reset `INTERNAL_VERSION` from `1.2.3.4` to `1.2.4.0` for the owner-approved release boundary.
+
 ## [1.2.3] - 2026-06-01
 
 ### Home Release Polish
@@ -64,14 +74,6 @@
 ## [Unreleased]
 
 ### Changed
-- Bumped `INTERNAL_VERSION` from `1.2.3.3` to `1.2.3.4` for Home/community and Jobs-nav UI polish without changing public `VERSION`.
-- Added a stronger Home-screen Discord call-to-action under Support Development and gave the Jobs sidebar tab a dedicated icon that matches the existing nav treatment.
-- Bumped `INTERNAL_VERSION` from `1.2.3.2` to `1.2.3.3` for the Jobs contact quick-create/link workflow without changing public `VERSION`.
-- Added a minimal Jobs-local contact quick-create flow that uses the existing Contacts facade, selects the new contact for unsaved jobs, and links it immediately for existing jobs.
-- Bumped `INTERNAL_VERSION` from `1.2.3.1` to `1.2.3.2` for the UI shell scrollbar ownership fix without changing public `VERSION`.
-- Fixed desktop shell scroll ownership so `#main` is the primary scroll container and the document body does not create a competing vertical scrollbar at browser zoom levels such as 125%.
-- Bumped `INTERNAL_VERSION` from `1.2.3.0` to `1.2.3.1` for Jobs line-item form and validation hardening without changing public `VERSION`.
-- Hardened Jobs line entry so service/fee quantity defaults use `ea`, invalid UOM values are blocked, backend line quantity failures return stable validation codes, and the UI shows actionable validation messages instead of raw request failures.
 - Bumped `INTERNAL_VERSION` from `1.1.1.14` to `1.1.1.15` for the recovery UI entry-point patch without changing public `VERSION`.
 - Added minimal claimed-mode recovery UI: login now exposes a recovery form for the existing `/auth/recover` backend route, validates password confirmation client-side, shows generic recovery failures, and returns to login with a success message without storing recovery data.
 - Added Security UI recovery-code regeneration for users with management authority, using the existing `/auth/recovery-codes/regenerate` backend route, warning before invalidating old unused codes, showing new codes once, and clearing them after confirmation.
