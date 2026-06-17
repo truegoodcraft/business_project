@@ -14,6 +14,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SCOPED_ROUTE_FILES = (
     Path("core/api/routes/items.py"),
     Path("core/api/routes/jobs.py"),
+    Path("core/api/routes/invoices.py"),
     Path("core/api/routes/ledger_api.py"),
     Path("core/api/routes/finance_api.py"),
     Path("core/api/routes/config.py"),
@@ -123,6 +124,7 @@ def _override_named_dependency(app: FastAPI, dependant, name: str, override) -> 
 def _guard_test_app(monkeypatch: pytest.MonkeyPatch, *, allow_writes: bool) -> FastAPI:
     from core.api.routes import config as config_routes
     from core.api.routes import finance_api, ledger_api, logs_api
+    from core.api.routes import invoices as invoices_routes
     from core.auth.dependencies import require_user
     from tgc.security import require_token_ctx
 
@@ -131,6 +133,7 @@ def _guard_test_app(monkeypatch: pytest.MonkeyPatch, *, allow_writes: bool) -> F
     app.include_router(ledger_api.public_router, prefix="/app")
     app.include_router(ledger_api.router, prefix="/app")
     app.include_router(finance_api.router, prefix="/app")
+    app.include_router(invoices_routes.router, prefix="/app")
     app.include_router(config_routes.router, prefix="/app")
     app.include_router(logs_api.public_router)
     app.include_router(logs_api.router)
@@ -143,6 +146,7 @@ def _guard_test_app(monkeypatch: pytest.MonkeyPatch, *, allow_writes: bool) -> F
             _override_named_dependency(app, dependant, "require_user", _route_guard_user_context)
     app.dependency_overrides[ledger_api.get_session] = _dummy_session
     app.dependency_overrides[finance_api.get_session] = _dummy_session
+    app.dependency_overrides[invoices_routes.get_session] = _dummy_session
     app.dependency_overrides[logs_api.get_session] = _dummy_session
     monkeypatch.setattr(config_routes, "load_config", lambda: _ConfigStub())
     monkeypatch.setattr(config_routes, "save_config", lambda _payload: None)
@@ -199,10 +203,12 @@ def test_anonymous_sensitive_reads_and_writes_fail(monkeypatch: pytest.MonkeyPat
     cases = [
         ("get", "/app/ledger/history", {}),
         ("get", "/app/finance/summary", {"params": {"from": "2026-01-01", "to": "2026-01-31"}}),
+        ("get", "/app/invoices", {}),
         ("get", "/app/config", {}),
         ("get", "/app/logs", {}),
         ("post", "/app/stock/in", {"json": {"item_id": 1, "quantity_decimal": "1", "uom": "ea"}}),
         ("post", "/app/finance/expense", {"json": {"amount_cents": 1}}),
+        ("post", "/app/invoices", {"json": {"contact_id": 1}}),
         ("post", "/app/config", {"json": {"ui": {"theme": "system"}}}),
     ]
 
@@ -219,6 +225,7 @@ def test_writes_disabled_blocks_ledger_finance_and_config_mutations(monkeypatch:
         cases = [
             ("/app/stock/in", {"item_id": 1, "quantity_decimal": "1", "uom": "ea", "unit_cost_cents": 0}),
             ("/app/finance/expense", {"amount_cents": 1}),
+            ("/app/invoices", {"contact_id": 1}),
             ("/app/config", {"ui": {"theme": "system"}}),
         ]
         for path, payload in cases:

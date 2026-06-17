@@ -159,3 +159,8 @@ def __getattr__(name: str):
 __all__ += ["Recipe", "RecipeItem", "ManufacturingRun"]
 __all__ += ["Job", "JobLine", "JobEvent"]
 __all__ += list(_AUTH_MODEL_EXPORTS)
+
+# Import invoice model module to attach to the shared Base
+from core.appdb.models_invoices import DocumentSequence, Invoice, InvoiceLine  # noqa: E402  # isort:skip
+
+__all__ += ["Invoice", "InvoiceLine", "DocumentSequence"]

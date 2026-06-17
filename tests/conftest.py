@@ -20,6 +20,7 @@ BUS_MODULES_TO_RESET = [
     "core.api.http",
     "core.api.routes.auth",
     "core.api.routes.finance_api",
+    "core.api.routes.invoices",
     "core.api.routes.items",
     "core.api.routes.jobs",
     "core.api.routes.ledger_api",
@@ -31,6 +32,7 @@ BUS_MODULES_TO_RESET = [
     "core.appdb.ledger",
     "core.appdb.models",
     "core.appdb.models_auth",
+    "core.appdb.models_invoices",
     "core.appdb.models_jobs",
     "core.appdb.models_recipes",
     "core.appdb.session",
@@ -45,6 +47,7 @@ BUS_MODULES_TO_RESET = [
     "core.config.writes",
     "core.journal.inventory",
     "core.journal.manufacturing",
+    "core.services.invoices",
     "core.services.jobs",
     "core.manufacturing.service",
     "core.policy.store",
@@ -103,6 +106,7 @@ def bus_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.
     import core.appdb.ledger as ledger_module
     import core.appdb.models as models_module
     import core.appdb.models_auth as auth_models_module
+    import core.appdb.models_invoices as invoices_module
     import core.appdb.models_jobs as jobs_module
     import core.appdb.models_recipes as recipes_module
     import core.services.models as services_models
@@ -114,6 +118,7 @@ def bus_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.
     auth_models_module = importlib.reload(auth_models_module)
     for model_name in auth_models_module.__all__:
         setattr(models_module, model_name, getattr(auth_models_module, model_name))
+    invoices_module = importlib.reload(invoices_module)
     recipes_module = importlib.reload(recipes_module)
     jobs_module = importlib.reload(jobs_module)
     services_models = importlib.reload(services_models)
@@ -141,6 +146,7 @@ def bus_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.
         "models": models_module,
         "api_http": api_http,
         "jobs": jobs_module,
+        "invoices": invoices_module,
         "recipes": recipes_module,
         "ledger": ledger_module,
         "local_app_data": local_app_data,

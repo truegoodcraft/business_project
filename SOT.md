@@ -17,6 +17,7 @@
 * **Trust posture:** Predictability, stability, operator safety, and long-term reliability are first-order product requirements. Feature growth does not outrank trust preservation.
 
 * **Authority boundary:** Core owns the canonical business logic, durable data model, and operator-safe base workflows. Pro may automate, orchestrate, integrate, or accelerate around Core, but it MUST NOT supersede Core or redefine Core logic.
+* **Invoice authority:** Core owns local invoice truth. Invoice lines are billing records only and MUST NOT become inventory mutation authority. Invoice payment truth is exactly one local `CashEvent` with `kind="sale"`, `category="invoice"`, `source_kind="invoice"`, and `source_id="invoice:{id}"`. Pro-owned sending, payment links, portals, sync, recurring billing, reminders, and automation remain outside Core.
 
 * **Product framing:** Core is the product and trust anchor, not a crippled free tier. The system must remain complete and useful on its own.
 

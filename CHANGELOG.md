@@ -2,6 +2,12 @@
 
 ## [1.2.4] - 2026-06-17
 
+### Invoice Truth MVP Backend Phase 1
+
+- Added backend Invoice Truth MVP Phase 1: local invoice tables, additive startup bootstrap, invoice/job draft creation, draft-only invoice editing, issuing, idempotent mark-paid cash events, and focused invoice API/tests.
+- Kept the scope backend-only: no invoice UI, sidebar work, print styling, or Pro email/payment/accounting/customer-portal features were added.
+- Bumped `INTERNAL_VERSION` from `1.2.4.0` to `1.2.4.1` for the backend Invoice Truth MVP Phase 1 implementation without changing public `VERSION`.
+
 ### Jobs Workflow Polish
 
 - Hardened Jobs line entry so service and fee quantity defaults use `ea`, invalid UOM values are blocked, backend line quantity failures return stable validation codes, and the UI shows actionable validation messages instead of raw request failures.

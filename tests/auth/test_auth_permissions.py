@@ -73,6 +73,7 @@ def test_claimed_owner_can_access_representative_permission_families(bus_client)
         ("get", "/app/ledger/history", {}),
         ("get", "/app/recipes", {}),
         ("get", "/app/jobs", {}),
+        ("get", "/app/invoices", {}),
         ("get", "/app/manufacturing/runs", {}),
         ("get", "/app/vendors", {}),
         ("get", "/app/finance/summary", {"params": {"from": "2026-01-01", "to": "2026-01-31"}}),
@@ -96,6 +97,7 @@ def test_claimed_viewer_can_read_but_cannot_write_inventory_finance_or_settings(
     read_cases = [
         ("/app/items", {}),
         ("/app/jobs", {}),
+        ("/app/invoices", {}),
         ("/app/finance/summary", {"params": {"from": "2026-01-01", "to": "2026-01-31"}}),
         ("/app/config", {}),
         ("/app/logs", {}),
@@ -107,6 +109,7 @@ def test_claimed_viewer_can_read_but_cannot_write_inventory_finance_or_settings(
     denied_cases = [
         ("/app/items", {"name": "Blocked item", "dimension": "count", "uom": "ea"}),
         ("/app/jobs", {"title": "Blocked job"}),
+        ("/app/invoices", {"contact_id": 1}),
         ("/app/finance/expense", {"amount_cents": 1}),
         ("/app/config", {"ui": {"theme": "system"}}),
     ]
@@ -135,6 +138,11 @@ def test_claimed_operator_can_use_inventory_and_manufacturing_but_not_finance_or
 
     job_response = client.post("/app/jobs", json={"title": "Operator job"})
     assert job_response.status_code == 200, job_response.text
+
+    contact_create = client.post("/app/contacts", json={"name": "Invoice Contact"})
+    assert contact_create.status_code == 201, contact_create.text
+    invoice_response = client.post("/app/invoices", json={"contact_id": contact_create.json()["id"]})
+    assert invoice_response.status_code == 200, invoice_response.text
 
     denied_cases = [
         ("/app/finance/expense", {"amount_cents": 1}),

@@ -13,6 +13,7 @@ from core.appdb.engine import get_session
 from core.auth.dependencies import require_permission
 from core.auth.permissions import PERMISSION_JOBS_READ, PERMISSION_JOBS_WRITE
 from core.config.writes import require_writes
+from core.services import invoices as invoice_service
 from core.policy.guard import require_owner_commit
 from core.services import jobs as jobs_service
 from tgc.security import require_token_ctx
@@ -73,6 +74,12 @@ class JobEventCreateRequest(BaseModel):
     source_kind: str | None = None
     source_id: str | None = None
     meta: Any = None
+
+
+class JobInvoiceCreateRequest(BaseModel):
+    due_date: datetime | None = None
+    tax_rate_percent: str | None = None
+    notes: str | None = None
 
 
 @router.get("")
@@ -206,3 +213,16 @@ def transition_job_status(
 ):
     require_owner_commit(req)
     return jobs_service.transition_job_status(db, job_id, body.status)
+
+
+@router.post("/{job_id}/invoice")
+def create_job_invoice(
+    job_id: int,
+    body: JobInvoiceCreateRequest,
+    db: Session = Depends(get_session),
+    _writes: None = Depends(require_writes),
+    _permission=Depends(require_permission(PERMISSION_JOBS_WRITE)),
+    _token: str = Depends(require_token_ctx),
+    _state: AppState = Depends(get_state),
+):
+    return invoice_service.create_invoice_from_job(db, job_id, body.model_dump(exclude_unset=True))

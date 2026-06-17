@@ -133,7 +133,7 @@ from core.config.paths import (
     IMPORTS_DIR,
     DB_URL,
 )
-from core.appdb.migrate import ensure_vendors_flags
+from core.appdb.migrate import ensure_invoice_bootstrap, ensure_vendors_flags
 from core.appdb.models import Base
 from core.appdb.paths import ui_dir
 from core.appdata.paths import db_path_for_mode, resolve_bus_mode
@@ -378,6 +378,7 @@ def startup_migrations():
     # Ensure all declared tables exist before running additive patches.
     Base.metadata.create_all(bind=engine)
     ensure_vendors_flags(engine)
+    ensure_invoice_bootstrap(engine)
     db = next(get_session())
     try:
         _ensure_schema_upgrades(db)
@@ -992,6 +993,7 @@ from core.api.routes.items import router as items_router
 from core.api.routes.vendors import router as vendors_router
 from core.api.routes.recipes import router as recipes_router
 from core.api.routes.jobs import router as jobs_router
+from core.api.routes.invoices import router as invoices_router
 from core.api.routes.manufacturing import public_router as manufacturing_public_router, router as manufacturing_router
 from core.api.routes import logs_api
 from core.api.routes.finance_api import router as finance_router
@@ -2575,6 +2577,7 @@ def create_app():
         app.include_router(vendors_router, prefix="/app")
         app.include_router(recipes_router, prefix="/app")
         app.include_router(jobs_router, prefix="/app")
+        app.include_router(invoices_router, prefix="/app")
         app.include_router(manufacturing_router, prefix="/app")
         app.include_router(manufacturing_public_router, prefix="/app")
         app.include_router(logs_api.public_router)
