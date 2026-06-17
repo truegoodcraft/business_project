@@ -4,6 +4,18 @@ import { apiDelete, apiGet, apiPatch, apiPost, ensureToken } from '../api.js';
 const JOB_STATUSES = ['draft', 'active', 'blocked', 'ready', 'done', 'cancelled'];
 const LINE_TYPES = ['product', 'service', 'fee', 'note'];
 const LINE_STATUSES = ['pending', 'produced', 'delivered', 'cancelled'];
+const JOB_UOM_OPTIONS = ['ea', 'kg', 'g', 'mg', 'm', 'cm', 'mm', 'm2', 'cm2', 'mm2', 'l', 'ml', 'm3', 'cm3', 'mm3'];
+const JOB_UOM_SET = new Set(JOB_UOM_OPTIONS);
+const JOB_ERROR_MESSAGES = {
+  uom_required: 'Choose a unit before saving a line with quantity.',
+  invalid_uom: 'Choose a valid unit from the UOM list.',
+  item_or_recipe_required_for_quantity: 'Product quantities need an item or recipe so BUS Core can validate the unit.',
+  quantity_not_allowed_for_note_line: 'Note lines cannot have quantities. Use a product, service, or fee line for quantity.',
+  quantity_decimal_must_be_positive: 'Quantity must be greater than zero.',
+  invalid_quantity: 'Enter a valid quantity greater than zero.',
+  invalid_job_line_type: 'Choose a valid line type.',
+  invalid_job_line_status: 'Choose a valid line status.',
+};
 
 let state = newState();
 
@@ -48,8 +60,8 @@ function safeError(error, fallback = 'Request failed.') {
     if (code === 'writes_disabled') return 'Writes are disabled. Turn writes back on to save job changes.';
     return 'Your account does not have permission for that Jobs action.';
   }
-  if (typeof detail === 'string') return detail.replaceAll('_', ' ');
-  if (typeof code === 'string') return code.replaceAll('_', ' ');
+  if (typeof detail === 'string') return JOB_ERROR_MESSAGES[detail] || detail.replaceAll('_', ' ');
+  if (typeof code === 'string') return JOB_ERROR_MESSAGES[code] || code.replaceAll('_', ' ');
   if (typeof error?.message === 'string' && error.message && !error.message.includes('[object Object]')) {
     return error.message;
   }
@@ -138,6 +150,46 @@ function selectOptions(values, selected, labeler = (value) => value) {
   });
 }
 
+function normalizeJobUom(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw === 'mc') return 'ea';
+  return raw;
+}
+
+function uomSelectOptions(selected) {
+  const normalized = normalizeJobUom(selected);
+  const options = [el('option', { value: '', text: 'Choose UOM' })];
+  JOB_UOM_OPTIONS.forEach((value) => {
+    const opt = el('option', { value, text: value });
+    if (value === normalized) opt.selected = true;
+    options.push(opt);
+  });
+  if (normalized && !JOB_UOM_SET.has(normalized)) {
+    const opt = el('option', { value: normalized, text: `${normalized} (saved value)` });
+    opt.selected = true;
+    options.push(opt);
+  }
+  return options;
+}
+
+function quantityStepForUom(uom) {
+  const normalized = normalizeJobUom(uom);
+  if (!normalized || normalized === 'ea') return '1';
+  return '0.001';
+}
+
+function selectedReference(select, entries) {
+  return entries.find((entry) => String(entry.id) === String(select.value));
+}
+
+function defaultUomForLine(lineType, itemSelect, recipeSelect) {
+  const item = selectedReference(itemSelect, state.items);
+  if (item?.uom) return normalizeJobUom(item.uom);
+  const recipe = selectedReference(recipeSelect, state.recipes);
+  if (recipe?.uom) return normalizeJobUom(recipe.uom);
+  return ['service', 'fee'].includes(lineType) ? 'ea' : '';
+}
+
 function referenceOptions(entries, selected, placeholder) {
   const options = [el('option', { value: '', text: placeholder })];
   entries.forEach((entry) => {
@@ -148,13 +200,17 @@ function referenceOptions(entries, selected, placeholder) {
   return options;
 }
 
+async function loadContacts() {
+  const contacts = await apiGet('/app/contacts').catch(() => []);
+  state.contacts = Array.isArray(contacts) ? contacts : [];
+}
+
 async function loadReferenceData() {
-  const [contacts, items, recipes] = await Promise.all([
-    apiGet('/app/contacts').catch(() => []),
+  const [items, recipes] = await Promise.all([
     apiGet('/app/items').catch(() => []),
     apiGet('/app/recipes').catch(() => []),
   ]);
-  state.contacts = Array.isArray(contacts) ? contacts : [];
+  await loadContacts();
   state.items = Array.isArray(items) ? items : [];
   state.recipes = Array.isArray(recipes) ? recipes : [];
 }
@@ -312,6 +368,10 @@ function renderJobForm(job) {
   });
   const status = el('select', { class: 'jobs-input', name: 'status' }, selectOptions(JOB_STATUSES, job?.status || 'draft'));
   const contact = el('select', { class: 'jobs-input', name: 'contact_id' }, referenceOptions(state.contacts, job?.contact_id, 'No contact'));
+  const contactTools = el('div', { class: 'jobs-contact-control' }, [
+    contact,
+    el('button', { class: 'btn secondary', type: 'button', text: '+ New Contact', 'data-action': 'jobs-new-contact' }),
+  ]);
   const dueDate = el('input', {
     class: 'jobs-input',
     name: 'due_date',
@@ -342,7 +402,7 @@ function renderJobForm(job) {
 
   const grid = el('div', { class: 'jobs-form-grid' }, [
     field('Title', title),
-    field('Contact', contact),
+    field('Contact', contactTools),
     field('Priority', priority),
     field('Due date', dueDate),
   ]);
@@ -359,6 +419,9 @@ function renderJobForm(job) {
     event.preventDefault();
     await saveJob(form, job);
   });
+  form.querySelector('[data-action="jobs-new-contact"]')?.addEventListener('click', () => {
+    openJobContactModal({ form, contactSelect: contact, existingJob: job });
+  });
   return form;
 }
 
@@ -374,6 +437,13 @@ function showFormError(form, message) {
   if (!banner) return;
   banner.textContent = message;
   banner.classList.remove('hidden');
+}
+
+function hideFormError(form) {
+  const banner = form.querySelector('[data-role$="error"], [data-role="job-form-error"]');
+  if (!banner) return;
+  banner.textContent = '';
+  banner.classList.add('hidden');
 }
 
 async function saveJob(form, existingJob) {
@@ -406,6 +476,107 @@ async function saveJob(form, existingJob) {
   } catch (error) {
     showFormError(form, safeError(error, 'Unable to save job.'));
   }
+}
+
+function openJobContactModal({ form, contactSelect, existingJob }) {
+  const overlay = el('div', { class: 'contacts-modal', role: 'dialog', 'aria-modal': 'true' });
+  const box = el('div', { class: 'contacts-modal-box' });
+  const name = el('input', {
+    class: 'jobs-input',
+    name: 'contact_name',
+    required: 'true',
+    placeholder: 'Name',
+    autocomplete: 'name',
+  });
+  const contactInfo = el('input', {
+    class: 'jobs-input',
+    name: 'contact_info',
+    placeholder: 'Email, phone, or preferred contact info',
+    autocomplete: 'email',
+  });
+  const error = el('div', { class: 'jobs-error hidden', 'data-role': 'jobs-contact-error' });
+  const save = el('button', { class: 'btn primary', type: 'submit', text: 'Create Contact' });
+  const cancel = el('button', { class: 'btn secondary', type: 'button', text: 'Cancel' });
+  const modalForm = el('form', { class: 'contacts-modal-form' }, [
+    field('Name', name),
+    field('Contact info', contactInfo),
+    error,
+    el('div', { class: 'contacts-modal-actions' }, [cancel, save]),
+  ]);
+
+  box.append(
+    el('div', { class: 'contacts-modal-title-row' }, [
+      el('div', { class: 'contacts-modal-title', text: 'New Contact' }),
+      el('button', { class: 'btn ghost', type: 'button', text: 'Close', 'data-action': 'close-contact-modal' }),
+    ]),
+    el('p', { class: 'contacts-modal-body', text: 'Create a contact and keep working in Jobs.' }),
+    modalForm,
+  );
+  overlay.append(box);
+  document.body.append(overlay);
+
+  const close = () => overlay.remove();
+  cancel.addEventListener('click', close);
+  overlay.querySelector('[data-action="close-contact-modal"]')?.addEventListener('click', close);
+  overlay.addEventListener('click', (event) => {
+    if (event.target === overlay) close();
+  });
+
+  modalForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    hideFormError(modalForm);
+    const contactNameValue = name.value.trim();
+    const contactValue = contactInfo.value.trim();
+    if (!contactNameValue) {
+      showFormError(modalForm, 'Contact name is required.');
+      name.focus();
+      return;
+    }
+
+    save.disabled = true;
+    try {
+      const created = await apiPost('/app/contacts', {
+        name: contactNameValue,
+        contact: contactValue || null,
+        is_vendor: false,
+      });
+      await loadContacts();
+      const createdId = created?.id;
+      contactSelect.replaceChildren(...referenceOptions(state.contacts, createdId, 'No contact'));
+
+      if (existingJob?.id && createdId) {
+        try {
+          const updated = await apiPatch(`/app/jobs/${existingJob.id}`, { contact_id: createdId });
+          state.selectedId = updated?.id || existingJob.id;
+        } catch (linkError) {
+          close();
+          showFormError(
+            form,
+            `Contact "${contactNameValue}" was created, but it could not be linked to this job. Save Job to try linking it again. ${safeError(linkError, 'Unable to link contact.')}`,
+          );
+          toast('Contact created, but not linked.', 'error');
+          return;
+        }
+        close();
+        toast('Contact created and linked.');
+        try {
+          await loadJobs({ keepSelection: true });
+          render();
+        } catch (refreshError) {
+          showFormError(form, safeError(refreshError, 'Contact was linked, but the job view could not refresh.'));
+        }
+        return;
+      }
+
+      close();
+      toast('Contact created and selected.');
+    } catch (error) {
+      showFormError(modalForm, safeError(error, 'Unable to create contact.'));
+      save.disabled = false;
+    }
+  });
+
+  name.focus();
 }
 
 function renderStatusControls(job) {
@@ -508,10 +679,10 @@ function renderLineForm(job) {
     name: 'quantity_decimal',
     type: 'number',
     min: '0',
-    step: '0.001',
+    step: quantityStepForUom(editing?.display_uom),
     placeholder: editing ? 'Leave blank to keep quantity' : 'Optional quantity',
   });
-  const uom = el('input', { class: 'jobs-input', name: 'uom', placeholder: 'uom, e.g. ea or kg', value: editing?.display_uom || '' });
+  const uom = el('select', { class: 'jobs-input', name: 'uom' }, uomSelectOptions(editing?.display_uom));
   const price = el('input', {
     class: 'jobs-input',
     name: 'unit_price',
@@ -524,10 +695,30 @@ function renderLineForm(job) {
   const status = el('select', { class: 'jobs-input', name: 'status' }, selectOptions(LINE_STATUSES, editing?.status || 'pending'));
   const error = el('div', { class: 'jobs-error hidden', 'data-role': 'line-form-error' });
 
-  itemSelect.addEventListener('change', () => {
-    const found = state.items.find((item) => String(item.id) === String(itemSelect.value));
-    if (found?.uom && !uom.value.trim()) uom.value = found.uom;
+  const syncLineQuantityControls = ({ preferReference = false } = {}) => {
+    const type = String(lineType.value || 'product');
+    if (type === 'note') {
+      quantity.value = '';
+      uom.value = '';
+      quantity.disabled = true;
+      uom.disabled = true;
+      quantity.step = '1';
+      return;
+    }
+    quantity.disabled = false;
+    uom.disabled = false;
+    const preferred = defaultUomForLine(type, itemSelect, recipeSelect);
+    if ((preferReference || !uom.value) && preferred) uom.value = preferred;
+    quantity.step = quantityStepForUom(uom.value || preferred);
+  };
+
+  lineType.addEventListener('change', () => syncLineQuantityControls());
+  itemSelect.addEventListener('change', () => syncLineQuantityControls({ preferReference: true }));
+  recipeSelect.addEventListener('change', () => syncLineQuantityControls({ preferReference: true }));
+  uom.addEventListener('change', () => {
+    quantity.step = quantityStepForUom(uom.value);
   });
+  syncLineQuantityControls();
 
   form.append(
     el('div', { class: 'jobs-form-subhead' }, [
@@ -563,6 +754,7 @@ function renderLineForm(job) {
 }
 
 async function saveLine(job, form, editing) {
+  hideFormError(form);
   const data = new FormData(form);
   const description = String(data.get('description') || '').trim();
   if (!description) {
@@ -570,19 +762,39 @@ async function saveLine(job, form, editing) {
     return;
   }
   const quantity = String(data.get('quantity_decimal') || '').trim();
+  const lineType = String(data.get('line_type') || 'product');
+  const uom = normalizeJobUom(data.get('uom'));
+  const hasItem = !!parseOptionalInt(data.get('item_id'));
+  const hasRecipe = !!parseOptionalInt(data.get('recipe_id'));
+  if (lineType === 'note' && quantity) {
+    showFormError(form, JOB_ERROR_MESSAGES.quantity_not_allowed_for_note_line);
+    return;
+  }
+  if (quantity && !uom) {
+    showFormError(form, JOB_ERROR_MESSAGES.uom_required);
+    return;
+  }
+  if (uom && !JOB_UOM_SET.has(uom)) {
+    showFormError(form, JOB_ERROR_MESSAGES.invalid_uom);
+    return;
+  }
+  if (quantity && ['service', 'fee'].includes(lineType) && !hasItem && !hasRecipe && uom !== 'ea') {
+    showFormError(form, 'Service and fee quantities without an item or recipe must use ea.');
+    return;
+  }
   const payload = {
-    line_type: String(data.get('line_type') || 'product'),
+    line_type: lineType,
     description,
-    item_id: parseOptionalInt(data.get('item_id')),
-    recipe_id: parseOptionalInt(data.get('recipe_id')),
+    item_id: hasItem ? parseOptionalInt(data.get('item_id')) : null,
+    recipe_id: hasRecipe ? parseOptionalInt(data.get('recipe_id')) : null,
     unit_price_cents: centsFromMoney(data.get('unit_price')),
     status: String(data.get('status') || 'pending'),
   };
   if (quantity) {
     payload.quantity_decimal = quantity;
-    payload.uom = String(data.get('uom') || '').trim();
-  } else if (!editing && String(data.get('uom') || '').trim()) {
-    payload.uom = String(data.get('uom') || '').trim();
+    payload.uom = uom;
+  } else if (!editing && uom) {
+    payload.uom = uom;
   }
   try {
     if (editing?.id) {

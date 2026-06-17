@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from core.appdb.models import Item, Vendor
 from core.appdb.models_jobs import Job, JobEvent, JobLine
 from core.appdb.models_recipes import Recipe
-from core.metrics.metric import normalize_quantity_to_base_int
+from core.metrics.metric import allowed_units_for, normalize_quantity_to_base_int
 
 JOB_STATUSES = {"draft", "active", "blocked", "ready", "done", "cancelled"}
 CLOSED_JOB_STATUSES = {"done", "cancelled"}
@@ -94,6 +94,7 @@ def _quantity_authority_item(db: Session, item: Item | None, recipe: Recipe | No
 def _normalize_line_quantity(
     db: Session,
     *,
+    line_type: str,
     item_id: int | None,
     recipe_id: int | None,
     quantity_decimal: str | None,
@@ -101,23 +102,42 @@ def _normalize_line_quantity(
 ) -> tuple[int | None, str | None]:
     if quantity_decimal is None:
         return None, uom
-    if uom is None or not str(uom).strip():
+    display_uom = str(uom or "").strip().lower()
+    if not display_uom:
         raise HTTPException(status_code=400, detail="uom_required")
+
+    if line_type == "note":
+        raise HTTPException(status_code=400, detail="quantity_not_allowed_for_note_line")
+
     item, recipe = _validate_item_recipe(db, item_id, recipe_id)
     authority_item = _quantity_authority_item(db, item, recipe)
     if authority_item is None:
-        raise HTTPException(status_code=400, detail="item_or_recipe_required_for_quantity")
+        if line_type not in {"service", "fee"}:
+            raise HTTPException(status_code=400, detail="item_or_recipe_required_for_quantity")
+        if display_uom != "ea":
+            raise HTTPException(status_code=400, detail="invalid_uom")
+        dimension = "count"
+    else:
+        dimension = str(authority_item.dimension)
+
+    if display_uom not in allowed_units_for(dimension):
+        raise HTTPException(status_code=400, detail="invalid_uom")
+
     try:
         qty_base = normalize_quantity_to_base_int(
             quantity_decimal=str(quantity_decimal),
-            uom=str(uom),
-            dimension=str(authority_item.dimension),
+            uom=display_uom,
+            dimension=dimension,
         )
+    except ValueError as exc:
+        if str(exc) == "unsupported_uom":
+            raise HTTPException(status_code=400, detail="invalid_uom") from exc
+        raise HTTPException(status_code=400, detail="invalid_quantity") from exc
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"invalid_quantity:{exc}") from exc
+        raise HTTPException(status_code=400, detail="invalid_quantity") from exc
     if qty_base <= 0:
         raise HTTPException(status_code=400, detail="quantity_decimal_must_be_positive")
-    return int(qty_base), str(uom).strip().lower()
+    return int(qty_base), display_uom
 
 
 def _normalize_meta(meta: Any) -> str | None:
@@ -329,6 +349,7 @@ def create_line(db: Session, job_id: int, payload: dict[str, Any]) -> dict[str, 
     _validate_item_recipe(db, item_id, recipe_id)
     qty_base, display_uom = _normalize_line_quantity(
         db,
+        line_type=line_type,
         item_id=item_id,
         recipe_id=recipe_id,
         quantity_decimal=payload.get("quantity_decimal"),
@@ -365,12 +386,13 @@ def update_line(db: Session, job_id: int, line_id: int, payload: dict[str, Any])
     line = _get_job_line(db, job_id, line_id)
     item_id = payload.get("item_id", line.item_id)
     recipe_id = payload.get("recipe_id", line.recipe_id)
+    line_type = _validate_line_type(payload.get("line_type", line.line_type))
     _validate_item_recipe(db, item_id, recipe_id)
     if ("item_id" in payload or "recipe_id" in payload) and line.qty_base is not None and "quantity_decimal" not in payload:
         raise HTTPException(status_code=400, detail="quantity_required_when_quantity_authority_changes")
 
     if "line_type" in payload:
-        line.line_type = _validate_line_type(payload["line_type"])
+        line.line_type = line_type
     if "description" in payload:
         line.description = _clean_required_text(payload["description"], "description")
     if "item_id" in payload:
@@ -391,6 +413,7 @@ def update_line(db: Session, job_id: int, line_id: int, payload: dict[str, Any])
         else:
             qty_base, display_uom = _normalize_line_quantity(
                 db,
+                line_type=line_type,
                 item_id=item_id,
                 recipe_id=recipe_id,
                 quantity_decimal=payload["quantity_decimal"],

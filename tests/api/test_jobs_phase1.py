@@ -168,6 +168,62 @@ def test_job_line_quantity_authority_is_qty_base_only(bus_client):
     assert rejected.json()["detail"]["error"] == "legacy_quantity_keys_forbidden"
 
 
+def test_service_line_quantity_allows_ea_without_item_or_recipe(bus_client):
+    client = bus_client["client"]
+    job = _create_job(client)
+    before = _authority_counts(bus_client)
+
+    response = client.post(
+        f"/app/jobs/{job['id']}/lines",
+        json={
+            "line_type": "service",
+            "description": "Consulting hour",
+            "quantity_decimal": "1",
+            "uom": "ea",
+            "unit_price_cents": 5000,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["qty_base"] == 1000
+    assert payload["display_uom"] == "ea"
+    assert payload["item_id"] is None
+    assert payload["recipe_id"] is None
+    assert before == _authority_counts(bus_client)
+
+
+def test_job_line_quantity_rejects_invalid_or_missing_uom_with_stable_codes(bus_client):
+    client = bus_client["client"]
+    item_id = _create_item(bus_client)
+    job = _create_job(client)
+
+    invalid_uom = client.post(
+        f"/app/jobs/{job['id']}/lines",
+        json={
+            "line_type": "product",
+            "description": "Bad unit",
+            "item_id": item_id,
+            "quantity_decimal": "1",
+            "uom": "1",
+        },
+    )
+    assert invalid_uom.status_code == 400
+    assert invalid_uom.json()["detail"] == "invalid_uom"
+
+    missing_uom = client.post(
+        f"/app/jobs/{job['id']}/lines",
+        json={
+            "line_type": "product",
+            "description": "Missing unit",
+            "item_id": item_id,
+            "quantity_decimal": "1",
+        },
+    )
+    assert missing_uom.status_code == 400
+    assert missing_uom.json()["detail"] == "uom_required"
+
+
 def test_manual_job_events_are_reference_only(bus_client):
     client = bus_client["client"]
     item_id = _create_item(bus_client)
