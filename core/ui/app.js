@@ -25,6 +25,7 @@ import { mountBackupExport } from "./js/cards/backup.js";
 import mountVendors from "./js/cards/vendors.js";
 import { mountHome } from "./js/cards/home.js";
 import { mountInventory, unmountInventory } from "./js/cards/inventory.js";
+import { mountInvoices, unmountInvoices } from "./js/cards/invoices.js";
 import { mountJobs, unmountJobs } from "./js/cards/jobs.js";
 import { mountManufacturing, unmountManufacturing } from "./js/cards/manufacturing.js";
 import { mountRecipes, unmountRecipes } from "./js/cards/recipes.js";
@@ -34,10 +35,14 @@ import { mountFinance } from "./js/cards/finance.js";
 import { mountSecurity } from "./js/security.js";
 import { toMetricBase, DIM_DEFAULTS_IMPERIAL } from "./js/lib/units.js";
 import { bindSidebarUpdateControls, maybeRunStartupUpdateCheck } from "./js/update-check.js";
+import { initTheme } from "./js/theme.js";
+
+initTheme();
 
 const ROUTES = {
   '#/welcome': showWelcome,
   '#/jobs': showJobs,
+  '#/invoices': showInvoices,
   '#/inventory': showInventory,
   '#/manufacturing': showManufacturing,
   '#/recipes': showRecipes,
@@ -86,6 +91,7 @@ const ROUTE_PERMISSIONS = {
   contacts: ['contacts.read'],
   finance: ['finance.read'],
   inventory: ['inventory.read'],
+  invoices: ['invoices.read'],
   jobs: ['jobs.read'],
   logs: ['logs.read'],
   manufacturing: ['manufacturing.read'],
@@ -405,9 +411,10 @@ function clearCardHost() {
   const recipesHost = document.querySelector('[data-tab-panel="recipes"]');
   const logsHost = document.querySelector('[data-role="logs-root"]');
   const financeHost = document.querySelector('[data-role="finance-root"]');
+  const invoicesHost = document.querySelector('[data-role="invoices-root"]');
   const jobsHost = document.querySelector('[data-role="jobs-root"]');
   const welcomeHost = document.querySelector('[data-role="welcome-root"]');
-  [root, inventoryHost, contactsHost, settingsHost, securityHost, manufacturingHost, recipesHost, logsHost, financeHost, jobsHost, welcomeHost]
+  [root, inventoryHost, contactsHost, settingsHost, securityHost, manufacturingHost, recipesHost, logsHost, financeHost, invoicesHost, jobsHost, welcomeHost]
     .filter(Boolean)
     .forEach((n) => {
       n.innerHTML = '';
@@ -493,7 +500,7 @@ async function onRouteChange() {
   renderDemoBanner();
   window.BUS_ROUTE = { path: canonical, base: canonical, id: null };
 
-  const detailMatch = canonical.match(/^#\/(inventory|contacts|recipes|runs)\/([^/]+)$/);
+  const detailMatch = canonical.match(/^#\/(inventory|contacts|recipes|runs|invoices)\/([^/]+)$/);
   const baseHash = detailMatch ? `#/${detailMatch[1]}` : canonical;
   const detailId = detailMatch ? decodeURIComponent(detailMatch[2]) : null;
   const hash = canonical;
@@ -509,6 +516,7 @@ async function onRouteChange() {
   document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="security-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="jobs-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="invoices-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="welcome-screen"]')?.classList.add('hidden');
   clearCardHost();
 
@@ -586,6 +594,7 @@ async function showContacts() {
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="invoices-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="welcome-screen"]')?.classList.add('hidden');
   const contactsScreen = document.querySelector('[data-role="contacts-screen"]');
   contactsScreen?.classList.remove('hidden');
@@ -601,6 +610,7 @@ async function showInventory() {
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="invoices-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="welcome-screen"]')?.classList.add('hidden');
   unmountJobs();
   unmountManufacturing();
@@ -618,6 +628,7 @@ async function showManufacturing() {
   document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="invoices-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="welcome-screen"]')?.classList.add('hidden');
   const screen = document.querySelector('[data-role="manufacturing-screen"]');
   screen?.classList.remove('hidden');
@@ -635,10 +646,12 @@ async function showSettings() {
   document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
   showScreen(null);
   document.querySelector('[data-role="jobs-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="invoices-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="invoices-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="welcome-screen"]')?.classList.add('hidden');
   const settingsScreen = document.querySelector('[data-role="settings-screen"]');
   settingsScreen?.classList.remove('hidden');
@@ -714,9 +727,31 @@ async function showFinance() {
   document.querySelector('[data-role="jobs-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="invoices-screen"]')?.classList.add('hidden');
   const financeScreen = document.querySelector('[data-role="finance-screen"]');
   financeScreen?.classList.remove('hidden');
   mountFinance();
+}
+
+async function showInvoices() {
+  showScreen(null);
+  document.querySelector('[data-role="home-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="jobs-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="welcome-screen"]')?.classList.add('hidden');
+  unmountInventory();
+  unmountJobs();
+  unmountManufacturing();
+  unmountRecipes();
+  const invoicesScreen = document.querySelector('[data-role="invoices-screen"]');
+  invoicesScreen?.classList.remove('hidden');
+  await mountInvoices();
 }
 
 async function showHome() {
@@ -724,14 +759,17 @@ async function showHome() {
   mountHome();          // keep existing Home logic
   unmountInventory();   // ensure Inventory hides when returning Home
   unmountJobs();
+  unmountInvoices();
   document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="jobs-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="invoices-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="contacts-screen"]')?.classList.add('hidden');
   unmountManufacturing();
   unmountRecipes();
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="invoices-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="welcome-screen"]')?.classList.add('hidden');
 }
 
@@ -745,8 +783,10 @@ async function showJobs() {
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="invoices-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="welcome-screen"]')?.classList.add('hidden');
   unmountInventory();
+  unmountInvoices();
   unmountManufacturing();
   unmountRecipes();
   const jobsScreen = document.querySelector('[data-role="jobs-screen"]');
@@ -763,6 +803,7 @@ async function showRecipes() {
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="invoices-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="welcome-screen"]')?.classList.add('hidden');
   const recipesScreen = document.querySelector('[data-role="recipes-screen"]');
   recipesScreen?.classList.remove('hidden');
@@ -796,6 +837,7 @@ async function showNotFound(badHash) {
   document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="jobs-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="invoices-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
@@ -814,6 +856,7 @@ async function showRuns() {
   document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="jobs-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="invoices-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
@@ -832,6 +875,7 @@ async function showImport() {
   document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="jobs-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="invoices-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');
@@ -855,6 +899,7 @@ async function showWelcome() {
   document.querySelector('[data-role="inventory-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="manufacturing-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="jobs-screen"]')?.classList.add('hidden');
+  document.querySelector('[data-role="invoices-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="recipes-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="logs-screen"]')?.classList.add('hidden');
   document.querySelector('[data-role="finance-screen"]')?.classList.add('hidden');

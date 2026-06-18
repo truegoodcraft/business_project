@@ -5,18 +5,37 @@
   <title>BUS Core</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" type="image/svg+xml" href="favicon.svg?v=buscore-8">
+  <script>
+  (function(){
+    const fallback = 'forge-dark';
+    const map = {
+      current: fallback,
+      dark: fallback,
+      default: fallback,
+      system: fallback,
+      light: 'clean-light',
+      'clean-light': 'clean-light',
+      slate: 'workshop-slate',
+      'workshop-slate': 'workshop-slate',
+      contrast: 'high-contrast',
+      'high-contrast': 'high-contrast',
+      'forge-dark': fallback
+    };
+    const keys = ['bus.ui.themeVariant', 'bus.ui.theme', 'bus.ui.style', 'bus.theme'];
+    let theme = fallback;
+    try {
+      for (const key of keys) {
+        const value = localStorage.getItem(key);
+        if (value) {
+          theme = map[String(value).trim().toLowerCase()] || fallback;
+          break;
+        }
+      }
+    } catch {}
+    document.documentElement.dataset.busTheme = theme;
+  })();
+  </script>
   <link rel="stylesheet" href="/ui/css/app.css">
-  <style>
-    :root { --bg:#0e1118; --fg:#e6ecf7; --accent:#3b82f6; --sidebar:#111723; }
-    #sidebar h1{margin:0 0 16px 16px;font-size:14px;color:#aaa}
-    .tab{padding:10px 16px;cursor:pointer;border-left:4px solid transparent}
-    .tab.active{background:#333;border-left-color:var(--accent);font-weight:600}
-    .tab:hover:not(.active){background:#2a2a2a}
-    .tabs{display:flex;gap:8px;margin-bottom:16px}
-    .tabs button{background:#2b2f36;color:#e6e6e6;border:1px solid #363b44;padding:8px 14px;border-radius:10px;cursor:pointer}
-    .tabs button.active{background:var(--accent);border-color:var(--accent);color:#fff}
-    .tab-panel{display:flex;flex-direction:column;gap:16px}
-  </style>
   <script>
   (function(){
     const href = "favicon.svg?v=buscore-8";
@@ -44,8 +63,9 @@
       <li><a class="nav-link" href="#/inventory" data-role="nav-link" data-route="inventory">Inventory</a></li>
       <li><a class="nav-link" href="#/contacts" data-role="nav-link" data-route="contacts">Contacts</a></li>
       <li><a class="nav-link" href="#/recipes" data-role="nav-link" data-route="recipes">Recipes</a></li>
-      <li><a class="nav-link" href="#/finance" data-role="nav-link" data-route="finance">Finance</a></li>
       <li><a class="nav-link" href="#/jobs" data-role="nav-link" data-route="jobs">Jobs</a></li>
+      <li><a class="nav-link" href="#/invoices" data-role="nav-link" data-route="invoices">Invoices</a></li>
+      <li><a class="nav-link" href="#/finance" data-role="nav-link" data-route="finance">Finance</a></li>
 
       <li><div class="nav-section nav-section--system" role="heading" aria-level="2">System</div></li>
       <li><a class="nav-link" href="#/settings" id="nav-settings" data-role="nav-link" data-route="settings">Settings</a></li>
@@ -109,16 +129,16 @@
       <!-- Contacts screen (hidden by default) -->
       <div data-role="contacts-screen" class="hidden">
         <div class="card" data-view="contacts">
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;">
-            <h2 style="margin:0;">Contacts</h2>
+          <div class="legacy-contacts-head">
+            <h2 class="legacy-contacts-title">Contacts</h2>
             <button type="button" data-action="open-contacts-modal">Add Contact</button>
           </div>
-          <table data-role="contacts-table" class="table" style="width:100%;border-collapse:separate;border-spacing:0;background:#111318;border-radius:10px;overflow:hidden">
+          <table data-role="contacts-table" class="table legacy-contacts-table">
             <thead>
               <tr>
-                <th style="text-align:left;padding:10px;background:#1a1f2b">Type</th>
-                <th style="text-align:left;padding:10px;background:#1a1f2b">Contact</th>
-                <th style="text-align:left;padding:10px;background:#1a1f2b">Actions</th>
+                <th>Type</th>
+                <th>Contact</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody><!-- rows rendered by vendors.js --></tbody>
@@ -134,6 +154,10 @@
         <div data-role="jobs-root"></div>
       </div>
 
+      <div data-role="invoices-screen" class="hidden">
+        <div data-role="invoices-root"></div>
+      </div>
+
       <div data-role="manufacturing-screen" class="hidden">
         <div class="screen-body">
           <div data-tab-panel="manufacturing"></div>
@@ -142,7 +166,7 @@
 
       <div data-role="recipes-screen" class="hidden">
         <div class="screen-header">
-          <h1 style="margin:0;">Recipes</h1>
+          <h1 class="screen-title">Recipes</h1>
         </div>
         <div class="screen-body">
           <div data-tab-panel="recipes"></div>
@@ -243,8 +267,8 @@
     <div class="drawer-backdrop" data-action="close-contacts-drawer"></div>
     <div class="drawer-panel">
       <header class="drawer-header">
-        <h3 id="contact-drawer-title" style="margin:0;font-size:18px;color:#f8fafc">Contact</h3>
-        <button type="button" data-action="close-contacts-drawer" aria-label="Close" style="background:transparent;border:none;color:#9ca3af;font-size:24px;cursor:pointer;line-height:1">×</button>
+        <h3 id="contact-drawer-title" class="drawer-title">Contact</h3>
+        <button type="button" data-action="close-contacts-drawer" class="drawer-close" aria-label="Close">×</button>
       </header>
       <section class="drawer-body">
         <div class="kv"><span class="k">Type</span><span class="v" data-field="type"></span></div>

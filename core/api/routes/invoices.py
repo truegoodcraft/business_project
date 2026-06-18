@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -101,6 +102,17 @@ def get_invoice_detail(
     _state: AppState = Depends(get_state),
 ):
     return invoice_service.get_invoice_detail(db, invoice_id)
+
+
+@router.get("/{invoice_id}/print", response_class=HTMLResponse)
+def get_invoice_print(
+    invoice_id: int,
+    db: Session = Depends(get_session),
+    _permission=Depends(require_permission(PERMISSION_INVOICES_READ)),
+    _token: str = Depends(require_token_ctx),
+    _state: AppState = Depends(get_state),
+):
+    return HTMLResponse(invoice_service.render_invoice_print_html(db, invoice_id))
 
 
 @router.patch("/{invoice_id}")

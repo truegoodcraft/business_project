@@ -399,6 +399,17 @@ function renderJobForm(job) {
       el('p', { text: isNew ? 'Create a draft demand record. It will not change stock or finance.' : 'Edit job context. Status changes are handled separately below.' }),
     ]),
   ]);
+  if (!isNew) {
+    const invoiceBtn = el('button', {
+      class: 'btn secondary',
+      type: 'button',
+      text: 'Create Invoice',
+      'data-action': 'create-job-invoice',
+      disabled: !job?.contact_id,
+      title: job?.contact_id ? 'Create a draft invoice from this job.' : 'Add a contact before invoicing this job.',
+    });
+    head.append(invoiceBtn);
+  }
 
   const grid = el('div', { class: 'jobs-form-grid' }, [
     field('Title', title),
@@ -418,6 +429,18 @@ function renderJobForm(job) {
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     await saveJob(form, job);
+  });
+  form.querySelector('[data-action="create-job-invoice"]')?.addEventListener('click', async () => {
+    if (!job?.id) return;
+    try {
+      const invoice = await apiPost(`/app/jobs/${job.id}/invoice`, {});
+      toast('Draft invoice created from job.');
+      if (invoice?.id) {
+        window.location.hash = `#/invoices/${encodeURIComponent(invoice.id)}`;
+      }
+    } catch (error) {
+      showFormError(form, safeError(error, 'Unable to create invoice from job.'));
+    }
   });
   form.querySelector('[data-action="jobs-new-contact"]')?.addEventListener('click', () => {
     openJobContactModal({ form, contactSelect: contact, existingJob: job });

@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 from __future__ import annotations
 
+from html import escape
 from datetime import datetime
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any
@@ -323,6 +324,130 @@ def delete_invoice_line(db: Session, invoice_id: int, line_id: int) -> dict[str,
 
 def get_invoice_detail(db: Session, invoice_id: int) -> dict[str, Any]:
     return _serialize_invoice(_get_invoice(db, invoice_id), include_lines=True)
+
+
+def _format_invoice_print_date(value: Any, fallback: str = "—") -> str:
+    if value is None:
+        return fallback
+    if isinstance(value, datetime):
+        return value.strftime("%Y-%m-%d")
+    text = str(value).strip()
+    if not text:
+        return fallback
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).strftime("%Y-%m-%d")
+    except ValueError:
+        return text
+
+
+def _format_invoice_money(cents: Any) -> str:
+    value = Decimal(int(cents or 0)) / Decimal("100")
+    return f"${value:,.2f}"
+
+
+def render_invoice_print_html(db: Session, invoice_id: int) -> str:
+    invoice = get_invoice_detail(db, invoice_id)
+    contact = _get_contact(db, int(invoice["contact_id"]))
+    job = _get_job(db, int(invoice["job_id"])) if invoice.get("job_id") is not None else None
+
+    lines_html = []
+    for line in invoice.get("lines", []):
+        taxable_label = "Yes" if line.get("taxable") else "No"
+        lines_html.append(
+            (
+                "<tr>"
+                f"<td>{escape(str(line.get('description') or ''))}</td>"
+                f"<td>{escape(str(line.get('line_type') or ''))}</td>"
+                f"<td>{escape(str(line.get('quantity_decimal') or '—'))}</td>"
+                f"<td>{escape(str(line.get('uom') or '—'))}</td>"
+                f"<td>{escape(_format_invoice_money(line.get('unit_price_cents')) if line.get('unit_price_cents') is not None else '—')}</td>"
+                f"<td>{escape(taxable_label)}</td>"
+                f"<td>{escape(_format_invoice_money(line.get('line_subtotal_cents')))}</td>"
+                "</tr>"
+            )
+        )
+    if not lines_html:
+        lines_html.append('<tr><td colspan="7">No lines</td></tr>')
+
+    notes_text = str(invoice.get("notes") or "").strip()
+    notes_html = escape(notes_text) if notes_text else "—"
+    contact_display = str(getattr(contact, "name", "") or f"Contact #{invoice['contact_id']}")
+    job_display = str(getattr(job, "title", "") or f"Job #{invoice['job_id']}") if job is not None else "—"
+
+    return (
+        "<!doctype html>"
+        "<html lang=\"en\">"
+        "<head>"
+        "<meta charset=\"utf-8\">"
+        f"<title>{escape(str(invoice.get('invoice_number') or f'Invoice #{invoice_id}'))}</title>"
+        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+        "<style>"
+        "body{font-family:Arial,sans-serif;margin:32px;color:#111;background:#fff;}"
+        "h1,h2,h3{margin:0 0 8px;}"
+        ".page{max-width:960px;margin:0 auto;}"
+        ".header{display:flex;justify-content:space-between;gap:24px;align-items:flex-start;margin-bottom:24px;}"
+        ".muted{color:#555;font-size:14px;}"
+        ".meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 24px;margin:20px 0;}"
+        ".meta-block{border:1px solid #d0d0d0;padding:12px;border-radius:8px;}"
+        ".label{display:block;font-size:12px;text-transform:uppercase;color:#666;margin-bottom:4px;}"
+        "table{width:100%;border-collapse:collapse;margin-top:18px;}"
+        "th,td{border:1px solid #d0d0d0;padding:10px;text-align:left;vertical-align:top;font-size:14px;}"
+        "th{background:#f4f4f4;}"
+        ".totals{margin-top:18px;margin-left:auto;width:min(320px,100%);}"
+        ".totals-row{display:flex;justify-content:space-between;border-bottom:1px solid #d0d0d0;padding:8px 0;gap:12px;}"
+        ".totals-row strong{font-size:16px;}"
+        ".notes{margin-top:24px;border:1px solid #d0d0d0;border-radius:8px;padding:12px;white-space:pre-wrap;}"
+        "@media print{body{margin:16px;}.page{max-width:none;}}"
+        "</style>"
+        "</head>"
+        "<body>"
+        "<div class=\"page\">"
+        "<div class=\"header\">"
+        "<div>"
+        "<h1>BUS Core</h1>"
+        "<div class=\"muted\">Printable local invoice</div>"
+        "</div>"
+        "<div>"
+        f"<h2>{escape(str(invoice.get('invoice_number') or f'Invoice #{invoice_id}'))}</h2>"
+        f"<div class=\"muted\">Status: {escape(str(invoice.get('status') or 'draft'))}</div>"
+        "</div>"
+        "</div>"
+        "<div class=\"meta\">"
+        "<div class=\"meta-block\">"
+        "<span class=\"label\">Customer / Contact</span>"
+        f"<div>{escape(contact_display)}</div>"
+        "</div>"
+        "<div class=\"meta-block\">"
+        "<span class=\"label\">Linked Job</span>"
+        f"<div>{escape(job_display)}</div>"
+        "</div>"
+        "<div class=\"meta-block\">"
+        "<span class=\"label\">Issue Date</span>"
+        f"<div>{escape(_format_invoice_print_date(invoice.get('issue_date')))}</div>"
+        "</div>"
+        "<div class=\"meta-block\">"
+        "<span class=\"label\">Due Date</span>"
+        f"<div>{escape(_format_invoice_print_date(invoice.get('due_date')))}</div>"
+        "</div>"
+        "</div>"
+        "<table>"
+        "<thead><tr><th>Description</th><th>Type</th><th>Quantity</th><th>UOM</th><th>Unit Price</th><th>Taxable</th><th>Subtotal</th></tr></thead>"
+        f"<tbody>{''.join(lines_html)}</tbody>"
+        "</table>"
+        "<div class=\"totals\">"
+        f"<div class=\"totals-row\"><span>Subtotal</span><span>{escape(_format_invoice_money(invoice.get('subtotal_cents')))}</span></div>"
+        f"<div class=\"totals-row\"><span>Tax Rate</span><span>{escape(str(invoice.get('tax_rate_percent') or '0'))}%</span></div>"
+        f"<div class=\"totals-row\"><span>Tax Total</span><span>{escape(_format_invoice_money(invoice.get('tax_cents')))}</span></div>"
+        f"<div class=\"totals-row\"><strong>Total</strong><strong>{escape(_format_invoice_money(invoice.get('total_cents')))}</strong></div>"
+        "</div>"
+        "<div class=\"notes\">"
+        "<span class=\"label\">Notes</span>"
+        f"{notes_html}"
+        "</div>"
+        "</div>"
+        "</body>"
+        "</html>"
+    )
 
 
 def update_invoice(db: Session, invoice_id: int, payload: dict[str, Any]) -> dict[str, Any]:
