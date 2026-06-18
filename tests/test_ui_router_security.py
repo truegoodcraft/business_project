@@ -183,13 +183,30 @@ def test_jobs_phase2_ui_route_is_permissioned_and_mounted() -> None:
         "inventory",
         "contacts",
         "recipes",
-        "finance",
         "jobs",
+        "invoices",
+        "finance",
     ]
     assert 'data-role="jobs-screen"' in shell_html
     assert 'data-role="jobs-root"' in shell_html
     assert "export async function mountJobs()" in jobs_js
     assert "export function unmountJobs()" in jobs_js
+
+
+def test_invoices_phase1_ui_route_is_permissioned_and_mounted() -> None:
+    app_js = (REPO_ROOT / "core" / "ui" / "app.js").read_text(encoding="utf-8")
+    shell_html = (REPO_ROOT / "core" / "ui" / "shell.html").read_text(encoding="utf-8")
+    invoices_js = (REPO_ROOT / "core" / "ui" / "js" / "cards" / "invoices.js").read_text(encoding="utf-8")
+
+    assert 'import { mountInvoices, unmountInvoices } from "./js/cards/invoices.js";' in app_js
+    assert "'#/invoices': showInvoices" in app_js
+    assert "invoices: ['invoices.read']" in app_js
+    assert "async function showInvoices()" in app_js
+    assert 'href="#/invoices" data-role="nav-link" data-route="invoices"' in shell_html
+    assert 'data-role="invoices-screen"' in shell_html
+    assert 'data-role="invoices-root"' in shell_html
+    assert "export async function mountInvoices()" in invoices_js
+    assert "export function unmountInvoices()" in invoices_js
 
 
 def test_jobs_phase2_ui_uses_only_jobs_and_read_lookup_endpoints() -> None:
@@ -218,11 +235,42 @@ def test_jobs_phase2_ui_uses_only_jobs_and_read_lookup_endpoints() -> None:
     assert "apiPost(`/app/jobs/${job.id}/events`, { event_type: 'note', message: text })" in jobs_js
 
 
+def test_invoices_phase1_ui_uses_only_invoice_contact_and_job_endpoints() -> None:
+    invoices_js = (REPO_ROOT / "core" / "ui" / "js" / "cards" / "invoices.js").read_text(encoding="utf-8")
+
+    endpoints = sorted(set(re.findall(r"['`](/app/[^'`]+)", invoices_js)))
+    assert endpoints
+    allowed_prefixes = ("/app/invoices", "/app/contacts", "/app/jobs")
+    for endpoint in endpoints:
+        assert endpoint.startswith(allowed_prefixes), endpoint
+
+    forbidden_endpoint_terms = (
+        "/app/stock",
+        "/app/finance/export",
+        "/app/manufacturing",
+        "/app/purchase",
+        "/app/payments",
+        "/app/accounting",
+        "/app/portal",
+    )
+    for term in forbidden_endpoint_terms:
+        assert term not in invoices_js
+
+
+def test_invoices_phase1_ui_avoids_unsafe_dynamic_html_rendering() -> None:
+    invoices_js = (REPO_ROOT / "core" / "ui" / "js" / "cards" / "invoices.js").read_text(encoding="utf-8")
+
+    assert ".innerHTML" not in invoices_js
+    for forbidden in ("dangerouslySetInnerHTML", "insertAdjacentHTML"):
+        assert forbidden not in invoices_js
+
+
 def test_jobs_phase2_ui_preserves_backend_quantity_authority() -> None:
     jobs_js = (REPO_ROOT / "core" / "ui" / "js" / "cards" / "jobs.js").read_text(encoding="utf-8")
 
     assert "payload.quantity_decimal = quantity" in jobs_js
-    assert "payload.uom = String(data.get('uom') || '').trim();" in jobs_js
+    assert "const uom = normalizeJobUom(data.get('uom'));" in jobs_js
+    assert "payload.uom = uom;" in jobs_js
     assert "name: 'quantity_decimal'" in jobs_js
     assert "name: 'uom'" in jobs_js
     for forbidden in (

@@ -179,3 +179,36 @@ def test_paid_invoice_cannot_be_financially_edited_and_void_invoice_cannot_be_pa
     pay_void = client.post(f"/app/invoices/{voidable['id']}/mark-paid", json={})
     assert pay_void.status_code == 400
     assert pay_void.json()["detail"] == "invoice_void_cannot_be_paid"
+
+
+def test_invoice_print_returns_html_and_escapes_unsafe_text(bus_client):
+    client = bus_client["client"]
+    contact_id = _create_contact(bus_client, name='<b>Danger Contact</b>')
+    invoice = _create_invoice(
+        client,
+        contact_id,
+        notes='<script>alert("x")</script>',
+        tax_rate_percent="13",
+    )
+    create_line = client.post(
+        f"/app/invoices/{invoice['id']}/lines",
+        json={
+            "line_type": "service",
+            "description": '<img src=x onerror=alert(1)>',
+            "quantity_decimal": "2",
+            "uom": "hr",
+            "unit_price_cents": 1500,
+            "taxable": True,
+        },
+    )
+    assert create_line.status_code == 200, create_line.text
+
+    response = client.get(f"/app/invoices/{invoice['id']}/print")
+    assert response.status_code == 200, response.text
+    assert response.headers["content-type"].startswith("text/html")
+    assert "INV-1001" in response.text
+    assert "$33.90" in response.text
+    assert "&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;" in response.text
+    assert "&lt;img src=x onerror=alert(1)&gt;" in response.text
+    assert "<script>alert(\"x\")</script>" not in response.text
+    assert "<img src=x onerror=alert(1)>" not in response.text

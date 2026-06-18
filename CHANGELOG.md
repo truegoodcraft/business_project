@@ -2,6 +2,21 @@
 
 ## [1.2.4] - 2026-06-17
 
+### Invoice Truth MVP Frontend UI
+
+- Added a dedicated `#/invoices` route, screen host, and sidebar navigation entry near Jobs and Finance.
+- Added the local invoice list/detail UI, manual draft invoice creation, draft line add/edit/delete, tax-rate and taxable-line controls, totals display, and issue/mark-paid/void actions.
+- Added a Jobs detail action that creates a draft invoice from a job and routes directly into the invoice editor.
+- Kept the scope UI-only for this pass: no Pro email/payment/accounting/customer-portal/recurring/reminder features were added.
+- Bumped `INTERNAL_VERSION` from `1.2.4.1` to `1.2.4.2` for the frontend Invoice Truth MVP implementation without changing public `VERSION`.
+
+### Invoice Truth MVP Print Slice
+
+- Added `GET /app/invoices/{invoice_id}/print` as a local HTML-first printable invoice route with escaped invoice, contact, job, line, and notes text.
+- Added a Print action in the Invoices UI that opens the printable invoice in a new tab for standard browser print or save-to-PDF flow.
+- Kept the scope minimal and local-first: no PDF dependency, email sending, payment links, customer portal, accounting sync, or other Pro features were added.
+- Bumped `INTERNAL_VERSION` from `1.2.4.2` to `1.2.4.3` for the printable invoice completion slice without changing public `VERSION`.
+
 ### Invoice Truth MVP Backend Phase 1
 
 - Added backend Invoice Truth MVP Phase 1: local invoice tables, additive startup bootstrap, invoice/job draft creation, draft-only invoice editing, issuing, idempotent mark-paid cash events, and focused invoice API/tests.
