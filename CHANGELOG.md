@@ -1,27 +1,34 @@
 # Changelog
 
+## [1.3.0] - 2026-06-18
+
+### Invoice Truth MVP
+
+- Added local invoice authority in Core with DB-backed invoices and invoice lines, additive startup schema materialization, invoice permissions, and focused API coverage.
+- Added canonical invoice API routes under `/app/invoices` for listing, creating, updating drafts, adding/updating/deleting draft lines, issuing, marking paid, voiding, and reading invoice detail.
+- Added local printable invoice HTML at `/app/invoices/{invoice_id}/print` for browser print or save-to-PDF workflows without adding a PDF dependency.
+- Added a dedicated `#/invoices` screen with list/detail workflow, manual draft invoice creation, tax-rate and taxable-line controls, totals display, status badges, issue/mark-paid/void actions, and print access.
+- Added a Jobs action that creates a draft invoice from a job and opens it directly in the invoice editor.
+- Added invoice read/write permissions and route guard coverage so claimed-mode navigation and backend permission checks stay aligned.
+- Preserved the local-first scope: no email sending, payment links, customer portal, accounting sync, recurring billing, reminders, or Pro automation were added.
+
+### Theme Variants Spike
+
+- Added a UI-only theme manager in `core/ui/js/theme.js` using localStorage key `bus.ui.themeVariant`.
+- Reused the existing Settings theme dropdown as the single theme selector and added four variants: BUS Core Default / Forge Dark, Clean Light, Workshop Slate, and High Contrast.
+- Applied themes through `document.documentElement.dataset.busTheme` / `data-bus-theme` and CSS variables, with startup bootstrap to minimize first-paint flicker.
+- Preserved backward compatibility for legacy theme values: `dark`, `system`, `current`, and `default` map to Forge Dark; `light` maps to Clean Light.
+- Kept the current Forge Dark appearance as the default and avoided duplicate theme switchers, backend config changes, telemetry, CDNs, or asset changes for the theme spike.
+
+### Release Hygiene
+
+- Bumped public `VERSION` from `1.2.4` to `1.3.0` and reset `INTERNAL_VERSION` from `1.2.4.3` to `1.3.0.0` for the combined Invoice Truth MVP and UI theme release boundary.
+- Updated package and Windows version metadata mirrors to `1.3.0`.
+- Updated Home's Latest Update card, README feature framing, API/UI contract docs, SOT version header, and generated GitHub release notes for `v1.3.0`.
+- Removed the accidentally tracked vendored GitHub CLI files from `.tools/` and ignored `.tools/` for future local tooling.
+- Added the Invoices sidebar icon mapping and release-tree icon asset.
+
 ## [1.2.4] - 2026-06-17
-
-### Invoice Truth MVP Frontend UI
-
-- Added a dedicated `#/invoices` route, screen host, and sidebar navigation entry near Jobs and Finance.
-- Added the local invoice list/detail UI, manual draft invoice creation, draft line add/edit/delete, tax-rate and taxable-line controls, totals display, and issue/mark-paid/void actions.
-- Added a Jobs detail action that creates a draft invoice from a job and routes directly into the invoice editor.
-- Kept the scope UI-only for this pass: no Pro email/payment/accounting/customer-portal/recurring/reminder features were added.
-- Bumped `INTERNAL_VERSION` from `1.2.4.1` to `1.2.4.2` for the frontend Invoice Truth MVP implementation without changing public `VERSION`.
-
-### Invoice Truth MVP Print Slice
-
-- Added `GET /app/invoices/{invoice_id}/print` as a local HTML-first printable invoice route with escaped invoice, contact, job, line, and notes text.
-- Added a Print action in the Invoices UI that opens the printable invoice in a new tab for standard browser print or save-to-PDF flow.
-- Kept the scope minimal and local-first: no PDF dependency, email sending, payment links, customer portal, accounting sync, or other Pro features were added.
-- Bumped `INTERNAL_VERSION` from `1.2.4.2` to `1.2.4.3` for the printable invoice completion slice without changing public `VERSION`.
-
-### Invoice Truth MVP Backend Phase 1
-
-- Added backend Invoice Truth MVP Phase 1: local invoice tables, additive startup bootstrap, invoice/job draft creation, draft-only invoice editing, issuing, idempotent mark-paid cash events, and focused invoice API/tests.
-- Kept the scope backend-only: no invoice UI, sidebar work, print styling, or Pro email/payment/accounting/customer-portal features were added.
-- Bumped `INTERNAL_VERSION` from `1.2.4.0` to `1.2.4.1` for the backend Invoice Truth MVP Phase 1 implementation without changing public `VERSION`.
 
 ### Jobs Workflow Polish
 

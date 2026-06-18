@@ -426,13 +426,13 @@ function renderUpdateCard(data) {
       ${updateLine}
       <p class="bus-home-side-label">What changed:</p>
       <ul class="bus-home-release-list">
-        <li>Jobs line entry now uses clearer quantity and unit validation.</li>
-        <li>Jobs can create and link contacts without leaving the screen.</li>
-        <li>Desktop shell scroll ownership is more stable at Windows zoom levels.</li>
-        <li>Home now gives Discord a clearer community call to action.</li>
+        <li>Invoices are now a first-class local workflow with draft, issue, paid, void, and print states.</li>
+        <li>Jobs can create draft invoices directly from job detail.</li>
+        <li>Settings now includes selectable UI themes with Forge Dark, Clean Light, Workshop Slate, and High Contrast.</li>
+        <li>Release metadata and update surfaces are aligned for this release boundary.</li>
       </ul>
       <p class="bus-home-side-label">Why it matters:</p>
-      <p>Daily work capture is tighter, contact linking is faster, and the operator shell is steadier.</p>
+      <p>Billing, shop tracking, and visual comfort now live closer to the daily operator loop while staying local-first.</p>
       <div class="bus-home-side-actions">
         <a href="/brand/CHANGELOG.md" target="_blank" rel="noopener noreferrer">Read full changelog</a>
       </div>

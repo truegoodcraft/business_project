@@ -17,6 +17,7 @@ ENV/
 env/
 
 # --- Test / coverage / tooling caches ---
+.tools/
 .artifacts/pytest-tmp/
 .pytest-phase0a-2/
 .codex-tmp/

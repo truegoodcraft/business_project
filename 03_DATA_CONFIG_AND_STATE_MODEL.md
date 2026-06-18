@@ -1,11 +1,11 @@
 # 03_DATA_CONFIG_AND_STATE_MODEL
 
 - Document purpose: Authority map for persistent, mutable, generated, and runtime state in BUS Core, with an emphasis on one durable authority per class of state.
-- Primary authority basis: `core/appdata/paths.py`, `core/appdb/engine.py`, `core/appdb/models.py`, `core/appdb/models_recipes.py`, `core/config/manager.py`, `core/api/routes/system_state.py`, `core/api/http.py`.
+- Primary authority basis: `core/appdata/paths.py`, `core/appdb/engine.py`, `core/appdb/models.py`, `core/appdb/models_recipes.py`, `core/appdb/models_invoices.py`, `core/config/manager.py`, `core/api/routes/system_state.py`, `core/api/http.py`.
 - Best use: Determine where state lives, which file or component owns it, and whether authority is canonical, split, or repo-local.
 - Refresh triggers: DB schema changes, path-helper changes, config-key changes, onboarding/first-run logic changes, state file relocations.
-- Highest-risk drift areas: Repo-local mutable state, mixed session state, ORM-vs-startup schema differences, and localStorage layered over backend first-run truth.
-- Key dependent files / modules: `core/appdata/paths.py`, `core/appdb/engine.py`, `core/appdb/models.py`, `core/appdb/models_recipes.py`, `core/config/manager.py`, `core/plugins/loader.py`, `core/api/routes/system_state.py`.
+- Highest-risk drift areas: Repo-local mutable state, mixed session state, ORM-vs-startup schema differences, invoice payment/inventory authority drift, and localStorage layered over backend first-run truth.
+- Key dependent files / modules: `core/appdata/paths.py`, `core/appdb/engine.py`, `core/appdb/models.py`, `core/appdb/models_recipes.py`, `core/appdb/models_invoices.py`, `core/config/manager.py`, `core/plugins/loader.py`, `core/api/routes/system_state.py`, `core/api/routes/invoices.py`.
 
 ## State Authority Matrix
 
@@ -13,7 +13,7 @@ Stability in this phase depends on one durable authority per class of state. Dur
 
 | State concern | Backing | Status | Authority | Notes |
 | --- | --- | --- | --- | --- |
-| Inventory, vendors/contacts, ledger, finance, recipes, manufacturing | DB-backed | Canonical | SQLite schema in `core/appdb/models.py` and `core/appdb/models_recipes.py` | Main durable business state. |
+| Inventory, vendors/contacts, ledger, finance, recipes, manufacturing, invoices | DB-backed | Canonical | SQLite schema in `core/appdb/models.py`, `core/appdb/models_recipes.py`, and `core/appdb/models_invoices.py` | Main durable business state. |
 | DB path selection | Config/env-derived | Canonical | `core/appdata/paths.py::resolve_db_path()` | Uses `BUS_DB` override or bus mode. |
 | Bus mode (`demo` / `prod`) | File/env-backed | Canonical | `core/appdata/paths.py::resolve_bus_mode()` | Priority: `bus_mode.json`, env var, flag file, default. |
 | App runtime config | File-backed | Canonical | `%LOCALAPPDATA%\BUSCore\config.json` via `core/config/manager.py` | Single durable app-runtime authority for launcher, UI, backup, updates, write gate, and persisted policy fields. |
@@ -24,6 +24,7 @@ Stability in this phase depends on one durable authority per class of state. Dur
 | First-run / demo readiness | Derived runtime state | Canonical | `GET /app/system/state` from DB counts + bus mode | UI adds secondary local flags on top. |
 | Onboarding complete / EULA accepted / imperial mode | localStorage/UI state | Secondary | `core/ui/app.js` | UI-facing state only; not the source of business truth. |
 | Session/auth state | Cookie + DB-backed auth sessions plus legacy runtime token | Claimed/unclaimed gate and management API implemented | `core.api.http`, `core/api/routes/auth.py`, `core/api/routes/users.py`, `core/auth/*`, `auth_sessions`, `AppState.tokens`, `session_token.txt`, `tgc.security.require_token_ctx` | Zero users preserves legacy local `bus_session` behavior. One or more users makes DB-backed `bus_auth_session` the authority for protected routes. Claimed sessions expire on revoke, `expires_at`, 30-day max age, or 12-hour idle timeout; valid use touches `last_seen_at` only after the touch interval. Session management can list/revoke auth sessions without exposing tokens or hashes. `tgc.security.require_token_ctx` remains a compatibility wrapper over `core.api.http`. |
+| UI theme variant | Browser localStorage | Presentation-only | `core/ui/js/theme.js`, `core/ui/js/cards/settings.js`, `core/ui/css/app.css` | Stored as `localStorage["bus.ui.themeVariant"]`; legacy `dark`, `system`, `current`, `default`, and `light` values are normalized client-side. Must not become backend config, auth, business, inventory, finance, or release-update authority. |
 | User accounts and identity state | DB-backed | Implemented as claimed-mode identity and management authority | `core/appdb/models_auth.py`, `core/auth/*` helpers, `core/api/routes/auth.py`, `core/api/routes/users.py`, and Security UI modules | Canonical state includes users, roles, permissions, sessions, recovery-code hashes, recovery-attempt counters, and audit events. `session_guard` uses auth user count to choose unclaimed vs claimed mode. User management can create/update/enable/disable users, assign roles, reset passwords, revoke sessions, regenerate recovery codes, and list audit events. Owner setup/user creation/password reset/recovery enforce a modest minimum password length. UI `localStorage` must not become auth, role, permission, recovery, or session authority. |
 | Capability manifest | File-backed generated state | Canonical | `%LOCALAPPDATA%\BUSCore\state\system_manifest.json` | Signed with local HMAC key. |
 
@@ -49,6 +50,8 @@ Stability in this phase depends on one durable authority per class of state. Dur
 | `item_batches` | Canonical | FIFO layers with `qty_initial`, `qty_remaining`, `unit_cost_cents`, `source_kind`, `source_id`. |
 | `item_movements` | Canonical | Base-int movement history; manufacturing oversell is forbidden by constraint/trigger. |
 | `cash_events` | Canonical | Finance ledger with `kind`, `amount_cents`, item linkage, and source correlation. |
+| `invoices` | Canonical | Local invoice header/status truth with contact/job linkage, invoice number, issued/due/paid/void timestamps, tax rate, notes, and invoice-linked payment source correlation. |
+| `invoice_lines` | Canonical | Billing line records with description, quantity, unit price, taxable flag, optional item linkage, and line ordering. Lines do not mutate inventory. |
 | `recipes` / `recipe_items` | Canonical | Output and component quantities are stored as base-int values. |
 | `manufacturing_runs` | Canonical | Execution history with `status`, `output_qty`, `meta`. |
 | `auth_users` / user table | Implemented claimed-mode management authority | DB-backed user authority; zero users means unclaimed mode, one or more users means claimed mode. No users are created automatically. User management never returns password hashes, and password inputs must pass the central minimum-length policy before hashing. |
@@ -88,6 +91,7 @@ This AppData tree is the intended durable local ownership boundary for Core-mana
 | `%LOCALAPPDATA%\BUSCore\secrets\secrets.json.enc` | Canonical | Encrypted secret-store fallback payload. |
 | `%LOCALAPPDATA%\BUSCore\state\system_manifest.json` | Canonical | Signed capability manifest. |
 | `%LOCALAPPDATA%\BUSCore\state\capabilities_hmac.key` | Canonical | Capability-manifest signing key. |
+| Browser `localStorage["bus.ui.themeVariant"]` | Presentation-only | Selected UI theme variant; not backend state or business authority. |
 
 ### Repo-local mutable state
 
@@ -158,8 +162,10 @@ UI `localStorage` may support display preferences or non-authoritative setup hin
 - Canonical: durable app-runtime config authority is `%LOCALAPPDATA%\BUSCore\config.json`; `%LOCALAPPDATA%\BUSCore\app\config.json` remains legacy compatibility input only.
 - Drifted: some live mutable state (`data/index_state.json`, `data/settings_plugins.json`) lives in repo `data/`, not AppData, which weakens the one-authority-per-state-class model.
 - Narrowed drift: validator authority is canonical in `core.api.http`, but session/auth state still spans cookie, `AppState.tokens`, global `SESSION_TOKEN`, and a token file.
+- Canonical boundary: invoice rows are local billing truth, invoice lines are not inventory movements, and invoice payment truth is represented by one invoice-linked sale cash event.
 - Drifted: `vendors.name` is declared unique in ORM metadata, but startup migration logic drops the unique-name index and recreates a non-unique one.
 - Secondary: onboarding suppression and EULA acceptance are localStorage flags layered on top of backend first-run truth.
+- Presentation-only: selected UI theme variant is browser localStorage state and is intentionally separate from `%LOCALAPPDATA%\BUSCore\config.json`.
 - Secondary: SQL migration snippets exist, but runtime schema authority is still primarily code-driven startup logic.
 
 ## Freeze Notes

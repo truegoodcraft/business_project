@@ -1134,6 +1134,7 @@ pre {
 #sidebar .sidebar-nav > li > a[data-route="recipes"]::before { background-image: url('/ui/assets/sidebar-icons/recipes.png'); }
 #sidebar .sidebar-nav > li > a[data-route="finance"]::before { background-image: url('/ui/assets/sidebar-icons/finance.png'); }
 #sidebar .sidebar-nav > li > a[data-route="jobs"]::before { background-image: url('/ui/assets/sidebar-icons/jobs.png'); }
+#sidebar .sidebar-nav > li > a[data-route="invoices"]::before { background-image: url('/ui/assets/sidebar-icons/invoices.png'); }
 #sidebar .sidebar-nav > li > a[data-route="settings"]::before { background-image: url('/ui/assets/sidebar-icons/settings.png'); }
 #sidebar .sidebar-nav > li > a[data-route="security"]::before { background-image: url('/ui/assets/sidebar-icons/settings.png'); }
 #sidebar .sidebar-nav > li > a[data-route="logs"]::before { background-image: url('/ui/assets/sidebar-icons/logs.png'); }

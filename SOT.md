@@ -1,6 +1,6 @@
 # TGC BUS Core — Unified Source of Truth
 
-**Version:** v1.2.4 **Updated:** 2026-06-17 **Status:** Stable **Authority:** `core/version.py` is the version authority. Where this document and code disagree, update this document.
+**Version:** v1.3.0 **Updated:** 2026-06-18 **Status:** Stable **Authority:** `core/version.py` is the version authority. Where this document and code disagree, update this document.
 
 ---
 
@@ -18,6 +18,7 @@
 
 * **Authority boundary:** Core owns the canonical business logic, durable data model, and operator-safe base workflows. Pro may automate, orchestrate, integrate, or accelerate around Core, but it MUST NOT supersede Core or redefine Core logic.
 * **Invoice authority:** Core owns local invoice truth. Invoice lines are billing records only and MUST NOT become inventory mutation authority. Invoice payment truth is exactly one local `CashEvent` with `kind="sale"`, `category="invoice"`, `source_kind="invoice"`, and `source_id="invoice:{id}"`. Pro-owned sending, payment links, portals, sync, recurring billing, reminders, and automation remain outside Core.
+* **Theme authority:** Core UI theme variants are presentation-only state. The active selector is the existing Settings theme dropdown, the selected variant is stored in browser `localStorage` key `bus.ui.themeVariant`, and CSS variables own the visual authority. Theme state MUST NOT become backend config, auth, business, inventory, finance, or release-update authority.
 
 * **Product framing:** Core is the product and trust anchor, not a crippled free tier. The system must remain complete and useful on its own.
 
@@ -841,7 +842,7 @@ POST   /app/manufacture => PRESENT
 
 * Active Settings UI no longer owns `close_to_tray`; launcher close behavior remains compatibility config only unless explicitly reintroduced.
 
-* Theme control is currently system-only/stubbed in active UI until alternate theme systems are intentionally shipped.
+* Theme control now ships as a UI-only selector in Settings with Forge Dark default, Clean Light, Workshop Slate, and High Contrast variants. It remains presentation-only browser state.
 
 * Update-check display/settings logic cleanup pass (UI behavior/presentation-level only).
 

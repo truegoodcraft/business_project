@@ -91,6 +91,57 @@ Its purpose is to preserve predictability and prevent silent contract drift. If 
   - Requires session auth and `require_writes`.
   - Returns `{ "ok": true, "restart_required": true }`.
 
+### Invoices
+
+- `GET /app/invoices`
+  - List local invoices.
+  - Optional filters: `status`, `contact_id`, `job_id`.
+  - Requires invoice read permission in claimed mode.
+
+- `POST /app/invoices`
+  - Create a draft invoice.
+  - Requires writes enabled and invoice write permission in claimed mode.
+  - Request body includes `contact_id`, optional `job_id`, optional `due_date`, optional `tax_rate_percent`, and optional `notes`.
+
+- `GET /app/invoices/{invoice_id}`
+  - Read invoice detail, including invoice lines and totals.
+  - Requires invoice read permission in claimed mode.
+
+- `GET /app/invoices/{invoice_id}/print`
+  - Return escaped local HTML for browser print / save-to-PDF.
+  - Requires invoice read permission in claimed mode.
+  - Does not introduce a PDF generation dependency or email/payment behavior.
+
+- `PATCH /app/invoices/{invoice_id}`
+  - Update draft invoice header fields.
+  - Requires writes enabled and invoice write permission in claimed mode.
+
+- `POST /app/invoices/{invoice_id}/lines`
+  - Add a draft invoice line.
+  - Requires writes enabled and invoice write permission in claimed mode.
+  - Invoice lines are billing records only; they do not mutate inventory.
+
+- `PATCH /app/invoices/{invoice_id}/lines/{line_id}`
+  - Update a draft invoice line.
+  - Requires writes enabled and invoice write permission in claimed mode.
+
+- `DELETE /app/invoices/{invoice_id}/lines/{line_id}`
+  - Delete a draft invoice line.
+  - Requires writes enabled and invoice write permission in claimed mode.
+
+- `POST /app/invoices/{invoice_id}/issue`
+  - Issue a draft invoice.
+  - Requires writes enabled and invoice write permission in claimed mode.
+
+- `POST /app/invoices/{invoice_id}/mark-paid`
+  - Mark an issued invoice paid.
+  - Emits one local sale `CashEvent` for invoice payment truth.
+  - Requires writes enabled and invoice write permission in claimed mode.
+
+- `POST /app/invoices/{invoice_id}/void`
+  - Void an invoice under local invoice authority.
+  - Requires writes enabled and invoice write permission in claimed mode.
+
 - `POST /app/db/export`
   - Create a DB export.
   - Protected router plus `require_writes`.

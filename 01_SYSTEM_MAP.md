@@ -4,13 +4,13 @@
 - Primary authority basis: `core/api/http.py`, `launcher.py`, `core/ui/app.js`, `core/appdb/*`, `core/appdata/paths.py`, `core/runtime/core_alpha.py`, `core/runtime/manifest_trust.py`, `core/runtime/manifest_keys.py`.
 - Best use: First read when locating canonical runtime surfaces or deciding where deeper truth lives.
 - Refresh triggers: Entrypoint changes, router remounting, new mutable-state authority, startup-flow changes, new external service dependencies.
-- Highest-risk drift areas: Split authority, session/auth drift, version/update drift, and repo-local mutable state outside AppData.
-- Key dependent files / modules: `core/api/http.py`, `launcher.py`, `core/ui/app.js`, `core/config/manager.py`, `core/config/paths.py`, `core/appdb/engine.py`, `core/runtime/core_alpha.py`, `core/runtime/manifest_trust.py`, `core/runtime/manifest_keys.py`.
+- Highest-risk drift areas: Split authority, session/auth drift, invoice payment/inventory authority drift, version/update drift, and repo-local mutable state outside AppData.
+- Key dependent files / modules: `core/api/http.py`, `launcher.py`, `core/ui/app.js`, `core/config/manager.py`, `core/config/paths.py`, `core/appdb/engine.py`, `core/appdb/models_invoices.py`, `core/api/routes/invoices.py`, `core/runtime/core_alpha.py`, `core/runtime/manifest_trust.py`, `core/runtime/manifest_keys.py`.
 
 ## Project identity
 
 - BUS Core is the sovereign local-first business utility runtime with a FastAPI backend and a static SPA frontend.
-- Repository evidence shows active domains for inventory, ledger/stock, recipes, manufacturing, contacts/vendors, finance, backups/imports, plugin-backed file/Drive cataloging, and default-on / opt-out update checks.
+- Repository evidence shows active domains for inventory, ledger/stock, recipes, manufacturing, contacts/vendors, invoices, finance, backups/imports, plugin-backed file/Drive cataloging, and default-on / opt-out update checks.
 - Native runtime is Windows-first (`launcher.py`, `BUS-Core.spec`); container runtime also exists (`Dockerfile`, `docker-compose.yml`) and defaults to host-loopback publishing.
 - Current stabilization priority is preserving one canonical surface per concern and preventing parallel truths from reappearing through alternate entrypoints, duplicated state authority, or update/version ambiguity.
 
@@ -26,6 +26,8 @@
 | UI routing / boot | Canonical | `core/ui/app.js`, `core/ui/shell.html` | Hash routes, onboarding redirects, version badge, startup update check. |
 | API contract | Canonical | Mounted routes in `core/api/http.py` and `core/api/routes/*` | Detailed in `02_API_AND_UI_CONTRACT_MAP.md`. |
 | Persistence schema | Canonical | `core/appdb/models.py`, `core/appdb/models_recipes.py`, `core/api/http.py::startup_migrations()` | SQL files in `migrations/` are supplementary, not the only authority. |
+| Invoice truth | Canonical | `core/appdb/models_invoices.py`, `core/services/invoices.py`, `core/api/routes/invoices.py` | Local invoice headers/lines/statuses are Core-owned. Invoice lines are billing records only, and paid invoices create one invoice-linked sale `CashEvent`; email, payment links, portals, sync, recurring billing, reminders, and automation remain outside Core. |
+| UI theme variants | Presentation-only | `core/ui/js/theme.js`, `core/ui/js/cards/settings.js`, `core/ui/css/app.css` | The existing Settings theme dropdown is the only selector. Variant choice lives in browser `localStorage` as `bus.ui.themeVariant` and must not become backend config or business authority. |
 | Durable settings config | Canonical | `%LOCALAPPDATA%\BUSCore\config.json` via `core/config/manager.py` | Root config is the single app-runtime settings authority; `%LOCALAPPDATA%\BUSCore\app\config.json` is legacy compatibility input only. |
 | Session/auth authority | Claimed/unclaimed global gate implemented | `core/api/http.py::session_guard`, `core.api.http.require_token_ctx`, `GET /session/token`, `core/api/routes/auth.py`, `core/auth/*`, and `auth_*` tables | `core.api.http` owns the global gate. Zero users preserves legacy local `bus_session` behavior. One or more users requires valid DB-backed `bus_auth_session` for protected routes; legacy `bus_session` no longer grants `/app/*` access. `/session/token` is unclaimed compatibility only and returns `login_required` once claimed. See `04_SECURITY_TRUST_AND_OPERATIONS.md`. |
 | Update check behavior | Canonical | `core/api/routes/update.py`, `core/services/update.py`, `core/config/manager.py` | UI contract lives in `core/ui/js/update-check.js`; client-side signed-manifest enforcement remains off. |
@@ -97,6 +99,7 @@ Stability in the current phase comes from keeping these authority lines singular
 | UI shell | Session bootstrap, system state, config, update check, domain APIs | `core/ui/app.js`, `core/ui/js/cards/*` |
 | Inventory UI | Items, stock mutation, finance refund, vendor/contact lookup | `core/ui/js/cards/inventory.js`, `core/ui/js/api/canonical.js` |
 | Manufacturing UI | Recipes, manufacture, ledger history | `core/ui/js/cards/manufacturing.js` |
+| Invoices UI | Invoice list/detail, draft lines, issue, paid, void, print | `core/ui/js/cards/invoices.js` |
 | Settings/Admin UI | Config, update check, DB export/import | `core/ui/js/cards/settings.js`, `core/ui/js/cards/admin.js` |
 | HTTP app | DB engine, journals, secrets, broker, capability registry | `core/api/http.py` |
 | `CoreAlpha` | Policy engine, journal manager, broker, plugin discovery, capability registry | `core/runtime/core_alpha.py` |
@@ -120,6 +123,7 @@ Stability in the current phase comes from keeping these authority lines singular
 | Config authority (`config.json` vs `app\\config.json`) | Resolved | `%LOCALAPPDATA%\BUSCore\config.json` is canonical; `%LOCALAPPDATA%\BUSCore\app\config.json` is legacy compatibility input only. | `03_DATA_CONFIG_AND_STATE_MODEL.md` |
 | Session/token split | Claimed-mode gate implemented | `core.api.http` is the canonical validator authority, `AppState.tokens` is the legacy unclaimed token source, `tgc.security.require_token_ctx` is a compatibility wrapper, and DB-backed `auth_sessions` are claimed-mode authority. `/session/token` remains unclaimed compatibility only and returns `login_required` once claimed. | `04_SECURITY_TRUST_AND_OPERATIONS.md` |
 | Version/update authority drift | Narrowed drift | `core/version.py` is now the public release/update source, `.github/workflows/release-mirror.yml` machine-checks `tag == v{VERSION}` and signs manifests before publishing; remaining drift is limited to client enforcement being off, declared-but-unverified artifact metadata, stable-only release automation, and release-history dependence on GitHub release assets. | `05_RELEASE_UPDATE_AND_DEPLOYMENT_FLOW.md` |
+| Invoice authority drift | Canonical boundary added | Core now owns local invoice truth, but invoice lines must remain billing-only records and invoice payment truth must remain one invoice-linked sale `CashEvent`; sending, payment processing, portals, sync, recurring billing, reminders, and automation are outside Core. | `02_API_AND_UI_CONTRACT_MAP.md`, `03_DATA_CONFIG_AND_STATE_MODEL.md` |
 | Repo-local mutable state | Drifted | Some live state is stored in repo `data/` instead of AppData. | `03_DATA_CONFIG_AND_STATE_MODEL.md` |
 | Placeholder/stale UI surfaces | Drifted | `#/runs`, `#/import`, backup UI, and stub transaction widgets can mislead contract assumptions. | `02_API_AND_UI_CONTRACT_MAP.md` |
 | Runtime authority | Canonical | Legacy alternate entry surfaces were removed; `scripts/launch.ps1` remains dev/smoke-only around the canonical factory. | This file |

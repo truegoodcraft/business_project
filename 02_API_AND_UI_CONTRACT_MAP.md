@@ -4,8 +4,8 @@
 - Primary authority basis: Mounted routes in `core/api/http.py`, `core/api/routes/*`, `core/reader/api.py`, `core/organizer/api.py`, and SPA usage in `core/ui/app.js`, `core/ui/js/**/*`.
 - Best use: Contract checking, route inventory, UI/backend coherence review, wrapper/drift detection.
 - Refresh triggers: Route additions/removals, router remounting, screen changes, payload shape changes, legacy-wrapper cleanup.
-- Highest-risk drift areas: Missing backup endpoints, transaction endpoints that remain backend stubs, `/app/logs` vs `/logs` naming collision, and any future route-level guard drift.
-- Key dependent files / modules: `core/api/http.py`, `core/api/routes/items.py`, `core/api/routes/recipes.py`, `core/api/routes/manufacturing.py`, `core/api/routes/ledger_api.py`, `core/api/routes/finance_api.py`, `core/ui/app.js`, `core/ui/js/cards/*`.
+- Highest-risk drift areas: Missing backup endpoints, transaction endpoints that remain backend stubs, `/app/logs` vs `/logs` naming collision, invoice payment/inventory authority drift, and any future route-level guard drift.
+- Key dependent files / modules: `core/api/http.py`, `core/api/routes/items.py`, `core/api/routes/recipes.py`, `core/api/routes/manufacturing.py`, `core/api/routes/ledger_api.py`, `core/api/routes/finance_api.py`, `core/api/routes/invoices.py`, `core/ui/app.js`, `core/ui/js/theme.js`, `core/ui/js/cards/*`.
 
 ## Top Contract Drift Risks
 
@@ -16,6 +16,7 @@ This map exists to keep authority boundaries explicit. Canonical, supported, sec
 - Canonical: `/session/token` authority is only `core/api/http.py`; it remains unclaimed-mode compatibility and returns `login_required` in claimed mode rather than minting a legacy app-access bypass.
 - Canonical: `/auth/state`, `/auth/setup-owner`, `/auth/login`, `/auth/logout`, `/auth/me`, `/auth/recover`, and `/auth/recovery-codes/regenerate` expose DB-backed auth account lifecycle over `bus_auth_session`. The SPA calls `/auth/state` during boot before protected app mounting, preserves legacy local behavior while unclaimed, requires login UI before normal screens once claimed without a current session, exposes account recovery from the claimed-mode login card, exposes recovery-code regeneration from Security management, and refreshes in-memory auth state after permission/session-sensitive Security UI actions.
 - Canonical: `/app/users`, `/app/roles`, `/app/sessions`, and `/app/audit` expose claimed-mode user, role, session, and audit management. The `#/security` UI consumes these routes when permitted; backend route-local permissions remain authoritative and no default users are created.
+- Canonical: `/app/invoices` exposes local invoice truth. Invoice lines are billing records only, invoice payment truth is one local invoice-linked sale cash event, and email/payment/customer-portal/accounting automation remains outside Core.
 - Drifted: `/app/logs` is the UI event-feed endpoint, while `/logs` is the text runtime log tail; similar names, different contracts.
 - Guard posture: Covered protected route families now declare route-local token and permission dependencies. Sensitive mutations retain existing write gates and owner-commit gates where already present; see `04_SECURITY_TRUST_AND_OPERATIONS.md`.
 - Password posture: owner setup, user creation, and password reset enforce the central modest minimum password policy from `core/auth/passwords.py` and return controlled `400` errors for blank or too-short passwords.
@@ -114,6 +115,17 @@ Silent contract drift is a stability risk. The purpose of this document is not t
 | `GET` | `/app/finance/profit` | Canonical | Explicit token dep | Profit snapshot. | `core/api/routes/finance_api.py` |
 | `GET` | `/app/finance/summary` | Canonical | Token + `finance.read` | Finance KPI summary. | `core/api/routes/finance_api.py` |
 | `GET` | `/app/finance/transactions` | Canonical | Explicit token dep | Mixed transaction feed. | `core/api/routes/finance_api.py` |
+| `GET` | `/app/invoices` | Canonical | Token + `invoices.read` | List local invoices with status/contact/job filters. | `core/api/routes/invoices.py` |
+| `POST` | `/app/invoices` | Canonical | Token + `invoices.write` + `require_writes` | Create draft invoice. | `core/api/routes/invoices.py` |
+| `GET` | `/app/invoices/{invoice_id}` | Canonical | Token + `invoices.read` | Read invoice detail and totals. | `core/api/routes/invoices.py` |
+| `GET` | `/app/invoices/{invoice_id}/print` | Canonical | Token + `invoices.read` | Render escaped printable invoice HTML. | `core/api/routes/invoices.py` |
+| `PATCH` | `/app/invoices/{invoice_id}` | Canonical | Token + `invoices.write` + `require_writes` | Update draft invoice header fields. | `core/api/routes/invoices.py` |
+| `POST` | `/app/invoices/{invoice_id}/lines` | Canonical | Token + `invoices.write` + `require_writes` | Add draft invoice line without inventory mutation. | `core/api/routes/invoices.py` |
+| `PATCH` | `/app/invoices/{invoice_id}/lines/{line_id}` | Canonical | Token + `invoices.write` + `require_writes` | Update draft invoice line. | `core/api/routes/invoices.py` |
+| `DELETE` | `/app/invoices/{invoice_id}/lines/{line_id}` | Canonical | Token + `invoices.write` + `require_writes` | Delete draft invoice line. | `core/api/routes/invoices.py` |
+| `POST` | `/app/invoices/{invoice_id}/issue` | Canonical | Token + `invoices.write` + `require_writes` | Issue draft invoice. | `core/api/routes/invoices.py` |
+| `POST` | `/app/invoices/{invoice_id}/mark-paid` | Canonical | Token + `invoices.write` + `require_writes` | Mark issued invoice paid and emit invoice-linked sale cash event. | `core/api/routes/invoices.py` |
+| `POST` | `/app/invoices/{invoice_id}/void` | Canonical | Token + `invoices.write` + `require_writes` | Void invoice. | `core/api/routes/invoices.py` |
 | `GET` | `/app/logs` | Canonical | Explicit token dep | Inventory/ledger event feed used by UI logs page. | `core/api/routes/logs_api.py` |
 
 ## Drifted or non-canonical `/app/*` surfaces
@@ -210,6 +222,7 @@ Silent contract drift is a stability risk. The purpose of this document is not t
 | `#/manufacturing` | Canonical | Manufacturing run screen. | `core/ui/js/cards/manufacturing.js` |
 | `#/recipes` | Canonical | Recipe screen; supports `#/recipes/{id}`. | `core/ui/js/cards/recipes.js` |
 | `#/contacts` | Canonical | Contacts/vendors/orgs screen; supports `#/contacts/{id}`. | `core/ui/js/cards/vendors.js` |
+| `#/invoices` | Canonical | Local invoice list/detail editor with draft, issue, paid, void, and print workflows. | `core/ui/app.js`, `core/ui/js/cards/invoices.js` |
 | `#/settings` | Canonical | Settings + admin/backup/import/export. | `core/ui/js/cards/settings.js`, `core/ui/js/cards/admin.js` |
 | `#/security` | Canonical | Current user, owner claim entry, recovery-code regeneration, users/roles, sessions, and audit management when permitted. | `core/ui/app.js`, `core/ui/js/auth.js`, `core/ui/js/auth-ui.js`, `core/ui/js/security.js` |
 | `#/logs` | Canonical | UI event-log screen backed by `/app/logs`. | `core/ui/js/logs.js` |
@@ -238,6 +251,7 @@ Silent contract drift is a stability risk. The purpose of this document is not t
 | Manufacturing | `/app/recipes`, `/app/recipes/{id}`, `/app/manufacture`, `/app/ledger/history` |
 | Recipes | `/app/items`, `/app/recipes`, `/app/recipes/{id}`, `/app/recipes` `POST`, `/app/recipes/{id}` `PUT|DELETE` |
 | Contacts | `/app/vendors?is_org=true`, `/app/vendors?is_vendor=true`, `/app/contacts?...`, `/app/contacts` `POST`, `/app/vendors/{id}` `PUT|DELETE`, `/app/contacts/{id}` `PUT|DELETE` |
+| Invoices | `/app/invoices`, `/app/invoices/{invoice_id}`, `/app/invoices/{invoice_id}/lines`, `/app/invoices/{invoice_id}/issue`, `/app/invoices/{invoice_id}/mark-paid`, `/app/invoices/{invoice_id}/void`, `/app/invoices/{invoice_id}/print` |
 | Settings | `/app/config`, `/app/update/check`, `/app/update/stage` |
 | Settings/Admin | `/app/db/export`, `/app/db/exports`, `/app/db/import/upload`, `/app/db/import/preview`, `/app/db/import/commit` |
 | Security | `/auth/state`, `/auth/recovery-codes/regenerate`, `/app/users`, `/app/roles`, `/app/sessions`, `/app/sessions/{id}/revoke`, `/app/audit` |

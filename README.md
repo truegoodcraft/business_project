@@ -72,6 +72,9 @@ https://buscore.ca/use-cases/laser-engraving-shop/?src=github_readme_usecase
 - **Recipes**  
   Define how materials become products. Costs are calculated using FIFO from real purchase batches.
 
+- **Jobs & Invoices**
+  Track customer work, create local draft invoices from jobs, issue invoices, mark them paid, void mistakes, and print invoice HTML for browser print or save-to-PDF.
+
 - **Assemblies & Products**  
   Build items from blueprints, set prices, and compare real costs to sales.
 
@@ -88,8 +91,10 @@ It is not a full accounting system—and is not trying to be.
 - **Open Source Core** — AGPLv3-licensed local infrastructure
 - **Precision Inventory** — FIFO batch valuation with metric units
 - **Manufacturing Engine** — Recipe-based builds with atomic commits
+- **Jobs & Invoices** — Local job tracking and invoice truth without cloud billing dependency
 - **Ledger & Audit Trail** — Complete movement history
 - **Local & Private** — SQLite database with encrypted backups
+- **Theme Variants** — Forge Dark default plus Clean Light, Workshop Slate, and High Contrast UI variants
 - **Windows Native, Docker Optional** — Native Windows runtime, container support for other environments
 
 ---
