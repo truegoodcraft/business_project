@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { apiGet, apiPost, ensureToken } from '../api.js';
 import { mountAdmin } from './admin.js';
+import { THEME_OPTIONS, applyTheme, getStoredThemeValue, normalizeTheme } from '../theme.js';
 
 export async function settingsCard(el) {
   el.innerHTML = '<div class="settings-loading">Loading settings...</div>';
@@ -45,10 +46,10 @@ export async function settingsCard(el) {
       <div class="settings-card settings-card--primary">
         <h3>System</h3>
         <label for="setting-theme" class="settings-label">Theme</label>
-        <select id="setting-theme" class="settings-select" disabled>
-          <option value="system">System (currently only mode)</option>
+        <select id="setting-theme" class="settings-select">
+          ${THEME_OPTIONS.map((theme) => `<option value="${theme.value}">${theme.label}</option>`).join('')}
         </select>
-        <p class="settings-subtext">Alternate themes are deferred. BUS Core uses system mode for now.</p>
+        <p class="settings-subtext">Theme selection is local to this browser and applies immediately.</p>
         <label class="settings-label">Launcher Behavior</label>
         <div class="settings-stack">
           <label class="settings-check-row">
@@ -148,7 +149,10 @@ export async function settingsCard(el) {
 
   // Populate
   const themeSelect = root.querySelector('#setting-theme');
-  themeSelect.value = 'system';
+  const configuredTheme = ui.theme || ui.style || ui.themeVariant;
+  const selectedTheme = normalizeTheme(getStoredThemeValue() || configuredTheme);
+  themeSelect.value = selectedTheme;
+  applyTheme(selectedTheme, { persist: false });
 
   root.querySelector('#setting-start-tray').checked = !!launcher.auto_start_in_tray;
   root.querySelector('#setting-backup-dir').value = backup.default_directory || '';
@@ -157,6 +161,10 @@ export async function settingsCard(el) {
   // Handlers
   const btnSave = root.querySelector('#btn-save');
   const feedback = root.querySelector('#save-feedback');
+
+  themeSelect?.addEventListener('change', () => {
+    applyTheme(themeSelect.value);
+  });
 
   btnSave.onclick = async () => {
     btnSave.disabled = true;
@@ -170,7 +178,7 @@ export async function settingsCard(el) {
 
     const payload = {
       ui: {
-        theme: 'system',
+        theme: ui.theme || 'system',
       },
       launcher: {
         auto_start_in_tray: root.querySelector('#setting-start-tray').checked,

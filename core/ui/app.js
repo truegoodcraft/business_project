@@ -34,6 +34,9 @@ import { mountFinance } from "./js/cards/finance.js";
 import { mountSecurity } from "./js/security.js";
 import { toMetricBase, DIM_DEFAULTS_IMPERIAL } from "./js/lib/units.js";
 import { bindSidebarUpdateControls, maybeRunStartupUpdateCheck } from "./js/update-check.js";
+import { initTheme } from "./js/theme.js";
+
+initTheme();
 
 const ROUTES = {
   '#/welcome': showWelcome,
