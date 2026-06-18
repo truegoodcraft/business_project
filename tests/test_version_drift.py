@@ -78,6 +78,15 @@ def test_release_mirror_reads_canonical_version_and_checks_tag_match():
     assert "does not match core/version.py VERSION" in workflow, (
         "release-mirror workflow must hard-fail when the release tag does not match the canonical VERSION."
     )
+    assert "Validate release ref target" in workflow, (
+        "release-mirror workflow must validate that a release tag targets the intended default-branch commit."
+    )
+    assert "DEFAULT_BRANCH_SHA" in workflow and "TAG_SHA" in workflow, (
+        "release-mirror workflow must compare the release tag target with the default branch before mirroring."
+    )
+    assert "Publish the release only after the version bump is on the default branch" in workflow, (
+        "release-mirror workflow must explain how to repair a tag created from the wrong commit."
+    )
     assert '--arg version "$CANONICAL_VERSION"' in workflow, (
         "release-mirror manifest latest.version must come from the canonical VERSION, not from tag parsing."
     )

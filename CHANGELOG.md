@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.3.1] - 2026-06-18
+
+### Release Guard Fix
+
+- Bumped public `VERSION` from `1.3.0` to `1.3.1` and reset `INTERNAL_VERSION` from `1.3.0.1` to `1.3.1.0` after the failed `v1.3.0` release tag was created from a commit that still reported `VERSION = "1.2.4"`.
+- Updated package metadata, Windows version metadata, SOT header, shell CSS/JS cache-busting tokens, and GitHub release notes for `v1.3.1`.
+- Hardened `.github/workflows/release-mirror.yml` so published release runs fetch full history and fail unless the release tag resolves to the checked-out commit and the current default-branch commit before any mirror/upload work starts.
+- Extended version-drift tests to require the release-mirror workflow's default-branch/tag-target guard and explicit repair guidance.
+
 ## [1.3.0] - 2026-06-18
 
 ### Invoice Truth MVP

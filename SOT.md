@@ -1,6 +1,6 @@
 # TGC BUS Core — Unified Source of Truth
 
-**Version:** v1.3.0 **Updated:** 2026-06-18 **Status:** Stable **Authority:** `core/version.py` is the version authority. Where this document and code disagree, update this document.
+**Version:** v1.3.1 **Updated:** 2026-06-18 **Status:** Stable **Authority:** `core/version.py` is the version authority. Where this document and code disagree, update this document.
 
 ---
 
@@ -128,7 +128,7 @@
 
 * `INTERNAL_VERSION` is not part of release tags, manifest generation, `latest.version`, update-check comparison logic, or any other strict SemVer validation path.
 
-* Release tags MUST equal `v{VERSION}`, and `.github/workflows/release-mirror.yml` machine-checks `tag == core/version.py::VERSION` before publishing manifest metadata.
+* Release tags MUST equal `v{VERSION}`, and `.github/workflows/release-mirror.yml` machine-checks `tag == core/version.py::VERSION` and release tag target == current default-branch commit before publishing manifest metadata.
 
 * Published manifest `latest.version` MUST come from `core/version.py::VERSION`; tags remain a checked release boundary, not a second public version authority.
 
@@ -1500,7 +1500,7 @@ Optional future-compatible fields may include a top-level `channels` map, a top-
 
 The manifest is the single source of truth for “latest release” metadata.
 
-Publishing a new release requires `core/version.py::VERSION`, the strict external release tag `v{VERSION}`, and hosted manifest metadata to agree. The release mirror workflow machine-checks that tag/version match before publishing manifest metadata.
+Publishing a new release requires `core/version.py::VERSION`, the strict external release tag `v{VERSION}`, the release tag target, the current default-branch commit, and hosted manifest metadata to agree. The release mirror workflow machine-checks tag/version and tag/default-branch target agreement before publishing manifest metadata.
 
 Canonical public release assets referenced by Lighthouse/manifest metadata MUST use `BUS-Core-<VERSION>.zip` naming.
 
