@@ -1,6 +1,8 @@
 import re
 from pathlib import Path
 
+from core.version import VERSION
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -19,6 +21,19 @@ def test_shell_still_uses_app_js_as_canonical_router() -> None:
     shell_html = (REPO_ROOT / "core" / "ui" / "shell.html").read_text(encoding="utf-8")
 
     assert '<script type="module" src="/ui/app.js' in shell_html
+
+
+def test_shell_assets_use_current_version_cache_token() -> None:
+    shell_html = (REPO_ROOT / "core" / "ui" / "shell.html").read_text(encoding="utf-8")
+
+    assert f'href="/ui/css/app.css?v=buscore-{VERSION}"' in shell_html
+    assert f'src="/ui/app.js?v=buscore-{VERSION}"' in shell_html
+
+
+def test_native_launcher_opens_versioned_shell_url() -> None:
+    launcher_py = (REPO_ROOT / "launcher.py").read_text(encoding="utf-8")
+
+    assert "/ui/shell.html?v=buscore-{CURRENT_VERSION}" in launcher_py
 
 
 def test_shell_exposes_auth_and_security_mount_points() -> None:

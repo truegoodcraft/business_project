@@ -289,7 +289,7 @@ def favicon():
 
 @app.get("/")
 def root():
-    return RedirectResponse(url="/ui/shell.html", status_code=307)
+    return RedirectResponse(url=f"/ui/shell.html?v=buscore-{VERSION}", status_code=307)
 # --- END UI MOUNT ---
 
 UI_STATIC_DIR = UI_DIR
@@ -398,10 +398,16 @@ def get_db(request: Request) -> Generator[Session, None, None]:
         db.close()
 
 
+def _mark_ui_response_uncacheable(resp: Response) -> None:
+    resp.headers["Cache-Control"] = "no-store, max-age=0, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+
+
 async def _nocache_ui(request: Request, call_next):
     resp = await call_next(request)
-    if os.environ.get("BUS_ROOT") and request.url.path.startswith("/ui/"):
-        resp.headers["Cache-Control"] = "no-store"
+    if request.url.path.startswith("/ui/"):
+        _mark_ui_response_uncacheable(resp)
     return resp
 
 
@@ -487,12 +493,12 @@ def dev_paths():
 
 @app.get("/ui", include_in_schema=False)
 def ui_root():
-    return RedirectResponse(url="/ui/shell.html", status_code=307)
+    return RedirectResponse(url=f"/ui/shell.html?v=buscore-{VERSION}", status_code=307)
 
 
 @app.get("/ui/index.html", include_in_schema=False)
 def ui_index():
-    return RedirectResponse(url="/ui/shell.html", status_code=307)
+    return RedirectResponse(url=f"/ui/shell.html?v=buscore-{VERSION}", status_code=307)
 
 
 @app.get("/health")
@@ -535,7 +541,7 @@ def health_detailed() -> Dict[str, Any]:
 
 @app.get("/")
 def _root():
-    return RedirectResponse(url="/ui/shell.html")
+    return RedirectResponse(url=f"/ui/shell.html?v=buscore-{VERSION}")
 
 
 TOKEN_FILE = DATA_DIR / "session_token.txt"

@@ -152,7 +152,7 @@ def show_console():
 # --- 3. Browser Helper ---
 def open_dashboard(port):
     """Opens dashboard in standard browser tab."""
-    url = f"http://127.0.0.1:{port}/ui/shell.html"
+    url = f"http://127.0.0.1:{port}/ui/shell.html?v=buscore-{CURRENT_VERSION}"
     webbrowser.open(url)
 
 

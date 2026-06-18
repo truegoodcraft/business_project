@@ -27,6 +27,8 @@
 - Updated Home's Latest Update card, README feature framing, API/UI contract docs, SOT version header, and generated GitHub release notes for `v1.3.0`.
 - Removed the accidentally tracked vendored GitHub CLI files from `.tools/` and ignored `.tools/` for future local tooling.
 - Added the Invoices sidebar icon mapping and release-tree icon asset.
+- Added UI cache-busting for the native launcher, root/UI redirects, shell CSS/JS asset URLs, and `/ui/*` response headers so browser tabs fetch the current frontend after an app update without requiring a manual hard reload.
+- Bumped `INTERNAL_VERSION` from `1.3.0.0` to `1.3.0.1` for the browser cache-busting release fix without changing public `VERSION`.
 
 ## [1.2.4] - 2026-06-17
 
