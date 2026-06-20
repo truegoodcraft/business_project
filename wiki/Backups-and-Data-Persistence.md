@@ -1,45 +1,42 @@
-> Status: Draft
+# Backup and Restore
 
-# Backups and Data Persistence
+BUS Core is local-first, so the operator is responsible for protecting local business data. Make a backup before Start Fresh, restore, major host changes, or container recreation.
 
-This page is a draft summary of what operators should currently treat as important persistence concerns.
+## Create an Encrypted Export
 
-## What Matters Most
+1. Open **Settings > Administration > Backup Export**.
+2. Enter a non-empty backup password.
+3. Select **Export**.
+4. Confirm the new file appears under available exports.
+5. Store the password separately and appropriately for your shop.
 
-The main BUS Core database is the critical durable business state.
+On Windows, exports are stored under `%LOCALAPPDATA%\BUSCore\exports` as encrypted `.db.gcm` files. The export is password-based AES-GCM; losing the password can make the backup unusable.
 
-Before using **Start Fresh Shop** or any reset-like workflow, export a backup from **Settings -> Administration -> Backup Export**. Enter a backup password, select **Export**, and confirm the saved export appears in the recent exports list before resetting real-shop data.
+## Restore: Preview, Then Commit
 
-For Docker-based setups, the primary persistence target should be:
+1. Open **Settings > Administration > Restore (Preview then Commit)**.
+2. Select a backup file or an available export and enter its password.
+3. Select **Preview**. Preview validates the container and schema and shows table counts without replacing the active database.
+4. Review the result and path.
+5. Select **Commit (archives journals)** only when you intend to replace the active database.
+6. Restart BUS Core when the UI reports that restart is required.
 
-```text
-/data/app.db
-```
+Commit enters maintenance mode, replaces database state through the guarded restore path, archives existing journals, and recreates empty journals. It is not an undo button. Keep the source export until you have verified the restored shop.
 
-## SQLite Sidecar Files
+## Windows Path Note
 
-Depending on runtime state, SQLite sidecar files may also exist alongside the main database, including files such as WAL or SHM companions.
+v1.3.2 fixed export, preview, and restore handling for Windows paths containing spaces or `#`. Use the in-app staged upload/preview flow rather than moving database files by hand.
 
-If those files exist during live operation, treat them as part of the active database state rather than as disposable clutter.
+## Docker Persistence
 
-## Before You Rely On Reset Or Update Flows
+The default container database is `/data/app.db` with `BUS_DB=/data/app.db`. Mount `/data` to durable host storage and verify the mount survives container recreation. SQLite may use active WAL/SHM sidecar files; do not copy or discard live database files casually. Prefer the in-app encrypted export.
 
-Before relying on container reset, recreation, or update workflows, make sure you understand:
+## Safety Boundaries
 
-- where the database file is actually stored
-- whether sidecar database files are present
-- whether your backup or export process captures what you expect
-- whether your storage mount remains attached after container changes
+- Preview before every commit.
+- Do not treat a filename in the export list as proof that you know its password or that an off-device copy exists.
+- Test restore in an appropriate environment before depending on a backup plan.
+- A local export on the same failing disk is not a complete disaster-recovery strategy.
+- BUS Core does not provide hosted backup or cloud sync.
 
-## Pending Audit Scope
-
-Exact persistence requirements for non-database state are still pending audit.
-
-That means operators should not yet assume a final answer for all BUS Core runtime state, including possible logs, journals, exports, config, secrets, session state, or future integration data.
-
-## Current Practical Advice
-
-- Persist `/data` when using Docker.
-- Verify that `BUS_DB=/data/app.db` is set.
-- Test restore assumptions before treating a reset or update flow as safe.
-- Keep this page in draft status until the non-DB persistence surface is audited more completely.
+Next: [Trust, Security, and Local-First](Trust-Security-and-Local-First.md).

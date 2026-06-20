@@ -26,6 +26,12 @@
 - Future Core updates will focus on bug fixes, safety, security/trust, backup and data protection, tester blockers, update/release reliability, small UX clarification, and documentation. New major workflow or domain expansion moves to BUS Pro discovery.
 - Still not included: full POS, full accounting, QuickBooks/Wave sync, automatic reorder, full job scheduling, cloud accounts, cloud sync, telemetry, payment links, customer portals, or recurring billing.
 
+### Operator Wiki Documentation
+
+- Expanded the BUS Core Wiki with operator-focused getting-started, first-shop workflow, inventory, recipes, manufacturing, Finance, backup/restore, local-first trust, updates, troubleshooting, and product-boundary guidance.
+- Cross-linked the Wiki around the verified v1.3.2 material-to-product workflow and replaced stale draft wording without changing runtime, API, security, update, backup/restore, or data behavior.
+- Bumped `INTERNAL_VERSION` from `1.3.2.0` to `1.3.2.1` for the documentation trace while leaving public `VERSION` at `1.3.2`.
+
 ## [1.3.1] - 2026-06-18
 
 ### Release Guard Fix

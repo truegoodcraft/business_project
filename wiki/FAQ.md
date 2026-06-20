@@ -1,31 +1,57 @@
-> Status: Draft
+# Troubleshooting and FAQ
 
-# FAQ
+## Why do I need a product before a recipe?
 
-## Is BUS Core cloud-based?
+A recipe must point to an existing Output Product. Create the inventory item, mark **This is a product**, save it, then create the recipe.
 
-Draft answer: BUS Core is intended to be local-first rather than a cloud-first hosted service.
+## Why did manufacturing fail with a shortage?
+
+At least one recipe input did not have enough available stock. Read the need, have, and missing quantities, then stock in the input, reduce the run, or correct the recipe. A failed shortage run does not partially consume inputs or create output.
+
+## Why does sale price matter?
+
+For Stock Out reason **Sold**, price supplies sales revenue used by Finance. The product's usual price is a starting point, not a locked price. BUS Core warns when the entered price is lower.
+
+## Is BUS Core a POS?
+
+No. It can record product stock-out and related sale value, but it is not a full checkout, payment-processing, receipt, or register system.
+
+## Is it accounting software?
+
+No. Finance provides operational sales, returns, COGS, expense, and profit visibility. It is not full double-entry accounting, bank reconciliation, payroll, or tax software.
+
+## Where is my data?
+
+Packaged Windows production data is under `%LOCALAPPDATA%\BUSCore\app\app.db`; demo data uses `app_demo.db`. Docker normally uses `/data/app.db`, which must be persistently mounted. See [Backup and Restore](Backups-and-Data-Persistence.md).
+
+## Does BUS Core use cloud sync or telemetry?
+
+No. Core has no forced cloud, cloud sync, or telemetry. Explicitly configured network features such as update checks or supported integrations can make their required requests.
 
 ## Does it require an account?
 
-Draft answer: local use is intended to work without a required cloud account. Final user-facing wording should stay aligned with canonical product docs.
+No hosted account is required. BUS Core can operate in unclaimed local mode; an operator can also claim an instance and configure local users and permissions.
 
-## Can I run it locally?
+## Can multiple users use it?
 
-Draft answer: yes, local operation is the main expected model.
+Local user accounts and permissions exist, but the default packaged and Docker deployments are loopback-only and are not a supported general multi-user network service. Do not expose BUS Core to a LAN or the internet based only on the presence of user accounts.
 
-## Can I run it in Docker?
+## Can I use QuickBooks or Wave?
 
-Draft answer: yes, but Docker deployment is still beta/community-tested. See [Docker Install](Docker-Install.md).
+BUS Core has no direct QuickBooks/Wave sync. Finance CSV export can support a separate manual bookkeeping process.
 
-## Where is my data stored?
+## Why can I not mark this stock-out as Sold?
 
-Draft answer: this depends on how BUS Core is deployed. Docker users should review [Backups and Data Persistence](Backups-and-Data-Persistence.md). A fuller persistence audit is still pending.
+Sold stock-out is currently supported for count items. For non-count items, use the accurate loss/theft/other reason, or model a count-based sale product when that reflects the real workflow.
 
-## How do I back it up?
+## What does Core frozen/stability mode mean?
 
-Draft answer: backup guidance is still being refined. Start with [Backups and Data Persistence](Backups-and-Data-Persistence.md) and verify your storage assumptions before relying on reset or update flows.
+Core remains maintained and useful. After v1.3.2, work focuses on reliability, security, data safety, release hygiene, documentation, tester blockers, and small clarity fixes. Major new workflow discovery moves to BUS Pro.
 
-## Where do I report bugs?
+## Is Docker supported?
 
-Use [Bug Reports](Bug-Reports.md).
+The Docker image and default Compose configuration exist, but Docker/Synology guidance remains community-tested. Keep the default loopback binding and persist `/data`. See [Docker Install](Docker-Install.md).
+
+## Where do I report a problem?
+
+Use [Bug Reports](Bug-Reports.md). Include the BUS Core version, install method, what you attempted, what happened, and whether demo or real-shop data was active.

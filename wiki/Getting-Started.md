@@ -1,60 +1,36 @@
 # Getting Started
 
-BUS Core is local-first shop infrastructure for inventory, recipes, manufacturing, and cost visibility. It is not a hosted SaaS account and it is not a full POS or accounting package.
+BUS Core is a downloadable, local-first app for inventory, recipes, manufacturing, and cost visibility. It is not a hosted SaaS account, full POS, or full accounting package.
 
-Core is feature-frozen and stability-focused after v1.3.2. It remains maintained, open-source, local-first infrastructure; future Core updates focus on safety, reliability, tester blockers, data protection, release hygiene, small UX clarification, and documentation. New major workflow or domain expansion moves to BUS Pro discovery.
+## 1. Choose an Install
 
-## Choose Your Install Path
+- [Windows Install](Windows-Install.md) for the packaged local Windows app.
+- [Docker Install](Docker-Install.md) for a container on the same machine.
+- [Synology NAS Docker Setup (Beta)](Synology-NAS-Docker-Setup-Beta.md) only if you are testing that community deployment.
 
-- [Windows Install](Windows-Install.md) for a local Windows setup.
-- [Docker Install](Docker-Install.md) for a container-based setup.
-- [Synology NAS Docker Setup (Beta)](Synology-NAS-Docker-Setup-Beta.md) if you are specifically testing on Synology NAS.
+Keep the default service on the machine's loopback interface. BUS Core's default setup is not a supported public-server or general multi-user network deployment.
 
-## First Launch
+## 2. Choose Demo or Real-Shop Data
 
-On first launch, choose the path that matches what you are doing:
+On first launch:
 
-- Use demo mode to explore seeded sample data.
-- Use Start Fresh when you are ready to create or reset the real-shop database.
-- Export a backup first from Settings -> Administration -> Backup Export if you need to keep existing real-shop data.
+- **Demo mode** uses a separate sample database. Use it to explore without mixing sample records into real-shop data.
+- **Start Fresh** switches to the production database and initializes a fresh real-shop workspace.
 
-Demo data is separate from the real-shop database.
+Start Fresh is a reset-like operation. If real-shop data already exists, first open **Settings > Administration > Backup Export**, enter a backup password, export, and confirm the export appears in the list.
 
-## First Workflow
+## 3. Complete One Small Workflow
 
-Run this path once before entering a large catalog:
+Do not enter the full catalog yet. Add one vendor, one material, one product, one recipe, one manufacturing run, and one sale. The [First Shop Workflow](First-Shop-Workflow.md) walks through the sequence.
 
-1. Add a vendor from Inventory or while creating an item.
-2. Add a raw material with an opening batch and unit cost.
-3. Add a product, check "This is a product", and enter its usual sale price.
-4. Open Recipes and create a recipe.
-5. Select the product as the Output Product.
-6. Add the raw material or component rows the recipe consumes.
-7. Open Manufacturing and select the recipe.
-8. Try a shortage case first if you want to verify the warning path.
-9. Run a successful manufacturing pass and confirm stock changes.
-10. Stock out the product as sold.
-11. Confirm the sale price starts from the usual product price and warns if you enter less.
-12. Open Finance and review sales, COGS, gross profit, and date presets.
-13. Check Settings -> Administration -> Backup Export, update status, Help, support, and report-issue links.
+## 4. Know Where Data Lives
 
-## Key Words
+On packaged Windows installs, the production database is under `%LOCALAPPDATA%\BUSCore\app\app.db`; demo data is in `app_demo.db`. Encrypted exports are under `%LOCALAPPDATA%\BUSCore\exports`.
 
-- Product: the inventory item you build or sell.
-- Recipe: the list of materials or components needed to make a product.
-- Output Product: the product a recipe adds to stock when manufactured.
-- Stock Out: reducing inventory for a sale, loss, theft, or correction.
+In the default Docker setup, the database is `/data/app.db`. The `/data` directory must be mounted to persistent storage. See [Backup and Restore](Backups-and-Data-Persistence.md) before relying on container recreation or updates.
 
-## Still Not Included
+## 5. Make a Backup
 
-BUS Core still does not include full POS, full accounting, QuickBooks/Wave sync, automatic reorder, full job scheduling, cloud accounts, cloud sync, telemetry, payment links, customer portals, or recurring billing.
+After the first successful workflow, make an encrypted backup export and keep its password somewhere appropriate for your shop. An export you cannot decrypt is not useful.
 
-## If You Are Beta Testing
-
-- Read the [Beta Testing Guide](Beta-Testing-Guide.md).
-- Report problems in [Bug Reports](Bug-Reports.md).
-- Suggest workflow improvements in [Feature Requests](Feature-Requests.md).
-
-## Scope Note
-
-Keep setup small at first. Add one vendor, one material, one product, one recipe, one manufacturing run, and one sale before expanding the catalog.
+Next: [First Shop Workflow](First-Shop-Workflow.md).
