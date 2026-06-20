@@ -44,3 +44,38 @@ def test_items_listing_excludes_archived_unless_included(bus_client):
     all_ids = {int(it["id"]) for it in all_items.json()}
     assert active_item_id in all_ids
     assert archived_item_id in all_ids
+
+
+def test_item_responses_include_vendor_id_for_form_preservation(bus_client):
+    client = bus_client["client"]
+
+    vendor_resp = client.post("/app/contacts", json={"name": "Vendor Preserve", "is_vendor": True})
+    assert vendor_resp.status_code == 201, vendor_resp.text
+    vendor_id = int(vendor_resp.json()["id"])
+
+    create_resp = client.post(
+        "/app/items",
+        json={
+            "name": "Vendor Preserve Item",
+            "dimension": "count",
+            "uom": "ea",
+            "vendor_id": vendor_id,
+        },
+    )
+    assert create_resp.status_code == 200, create_resp.text
+    created = create_resp.json()
+    item_id = int(created["id"])
+    assert created["vendor_id"] == vendor_id
+    assert created["vendor"] == "Vendor Preserve"
+
+    list_resp = client.get("/app/items")
+    assert list_resp.status_code == 200, list_resp.text
+    listed = next(it for it in list_resp.json() if int(it["id"]) == item_id)
+    assert listed["vendor_id"] == vendor_id
+    assert listed["vendor"] == "Vendor Preserve"
+
+    detail_resp = client.get(f"/app/items/{item_id}")
+    assert detail_resp.status_code == 200, detail_resp.text
+    detail = detail_resp.json()
+    assert detail["vendor_id"] == vendor_id
+    assert detail["vendor"] == "Vendor Preserve"

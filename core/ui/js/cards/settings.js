@@ -26,6 +26,17 @@ export async function settingsCard(el) {
   const updates = config.updates || {};
   const updatesEnabledAtLoad = updates.enabled !== false;
   const startupChecksEnabledAtLoad = updates.check_on_startup !== false;
+  let systemState = {};
+  try {
+    systemState = await apiGet('/app/system/state');
+  } catch (e) {
+    console.warn('Failed to load system state for settings', e);
+  }
+  const isDemoMode = systemState?.bus_mode === 'demo';
+  const onboardingHelp = isDemoMode
+    ? 'Restart the demo onboarding walkthrough from Settings.'
+    : 'Demo onboarding is only available in demo mode. For live-shop setup, open Getting Started.';
+  const onboardingAction = isDemoMode ? 'Run demo onboarding' : 'Open Getting Started';
 
   el.innerHTML = '';
   const root = document.createElement('div');
@@ -64,9 +75,9 @@ export async function settingsCard(el) {
         <div class="settings-stack">
           <label class="settings-check-row">
             <input type="checkbox" id="setting-updates-enabled" class="settings-check">
-            <span>Enable automatic update checks</span>
+            <span>Enable update checks</span>
           </label>
-          <p class="settings-subtext">Version and update status live in the sidebar, including manual "Check now".</p>
+          <p class="settings-subtext">Startup checks run once per launch. Version status and manual "Check now" live in the sidebar.</p>
         </div>
       </div>
 
@@ -100,9 +111,9 @@ export async function settingsCard(el) {
 
       <div class="settings-card settings-card--operational">
         <h3 class="settings-section-title">Onboarding</h3>
-        <p class="settings-subtext">Restart the first-run onboarding wizard from Settings.</p>
+        <p class="settings-subtext">${onboardingHelp}</p>
         <div class="settings-action-row">
-          <button type="button" data-action="run-onboarding" class="btn btn-secondary">Run onboarding</button>
+          <button type="button" data-action="run-onboarding" class="btn btn-secondary">${onboardingAction}</button>
         </div>
       </div>
 
@@ -132,6 +143,10 @@ export async function settingsCard(el) {
   }
 
   root.querySelector('[data-action="run-onboarding"]')?.addEventListener('click', () => {
+    if (!isDemoMode) {
+      window.open('/brand/wiki/Getting-Started.md', '_blank', 'noopener,noreferrer');
+      return;
+    }
     try {
       if (window.BUS_ONBOARDING?.clear) {
         window.BUS_ONBOARDING.clear();

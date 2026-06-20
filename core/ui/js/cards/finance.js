@@ -18,13 +18,52 @@ function isoDate(date) {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 }
 
+function startOfMonth(date) {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function endOfMonth(date) {
+  return new Date(date.getFullYear(), date.getMonth() + 1, 0);
+}
+
+function startOfQuarter(date) {
+  const qMonth = Math.floor(date.getMonth() / 3) * 3;
+  return new Date(date.getFullYear(), qMonth, 1);
+}
+
+function endOfQuarter(date) {
+  const qMonth = Math.floor(date.getMonth() / 3) * 3;
+  return new Date(date.getFullYear(), qMonth + 3, 0);
+}
+
+function financePresetRange(key, today = new Date()) {
+  const current = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  if (key === "last-30") {
+    const from = new Date(current);
+    from.setDate(current.getDate() - 29);
+    return { from, to: current };
+  }
+  if (key === "this-month") return { from: startOfMonth(current), to: current };
+  if (key === "last-month") {
+    const anchor = new Date(current.getFullYear(), current.getMonth() - 1, 1);
+    return { from: startOfMonth(anchor), to: endOfMonth(anchor) };
+  }
+  if (key === "this-quarter") return { from: startOfQuarter(current), to: current };
+  if (key === "last-quarter") {
+    const anchor = new Date(current.getFullYear(), current.getMonth() - 3, 1);
+    return { from: startOfQuarter(anchor), to: endOfQuarter(anchor) };
+  }
+  if (key === "this-year") return { from: new Date(current.getFullYear(), 0, 1), to: current };
+  return null;
+}
+
 export function mountFinance() {
   const host = document.querySelector('[data-role="finance-root"]');
   if (!host) return;
 
   const now = new Date();
   const fromDefault = new Date(now);
-  fromDefault.setDate(now.getDate() - 30);
+  fromDefault.setDate(now.getDate() - 29);
 
   host.classList.add('finance-shell');
   host.innerHTML = `
@@ -35,6 +74,14 @@ export function mountFinance() {
         <label class="finance-field">To<br/><input class="finance-input" data-role="finance-to" type="date" value="${isoDate(now)}"></label>
         <button class="finance-refresh-btn" data-role="finance-refresh" type="button">Refresh</button>
         <button class="finance-refresh-btn" data-role="finance-export" type="button">Export CSV</button>
+      </div>
+      <div class="finance-presets" aria-label="Date presets">
+        <button class="finance-preset-btn" data-preset="last-30" type="button">Last 30 days</button>
+        <button class="finance-preset-btn" data-preset="this-month" type="button">This month</button>
+        <button class="finance-preset-btn" data-preset="last-month" type="button">Last month</button>
+        <button class="finance-preset-btn" data-preset="this-quarter" type="button">This quarter</button>
+        <button class="finance-preset-btn" data-preset="last-quarter" type="button">Last quarter</button>
+        <button class="finance-preset-btn" data-preset="this-year" type="button">This year</button>
       </div>
       <div data-role="finance-summary" class="finance-summary-grid"></div>
       <div class="finance-table-wrap">
@@ -57,6 +104,7 @@ export function mountFinance() {
   const toInput = host.querySelector('[data-role="finance-to"]');
   const refreshBtn = host.querySelector('[data-role="finance-refresh"]');
   const exportBtn = host.querySelector('[data-role="finance-export"]');
+  const presetBtns = Array.from(host.querySelectorAll('[data-preset]'));
   const summaryEl = host.querySelector('[data-role="finance-summary"]');
   const txEl = host.querySelector('[data-role="finance-tx"]');
 
@@ -162,5 +210,14 @@ export function mountFinance() {
 
   refreshBtn?.addEventListener("click", refresh);
   exportBtn?.addEventListener("click", exportCsv);
+  presetBtns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const range = financePresetRange(btn.dataset.preset);
+      if (!range || !fromInput || !toInput) return;
+      fromInput.value = isoDate(range.from);
+      toInput.value = isoDate(range.to);
+      void refresh();
+    });
+  });
   refresh();
 }

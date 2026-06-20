@@ -13,8 +13,7 @@
 - Run once: `scripts/run_harvester.ps1` or `scripts/run_harvester.sh`
 - Add to Task Scheduler / cron for periodic ingestion.
 
-## Wave (backend only)
-- Set `WAVE_PAT` and `WAVE_BUSINESS_ID` in environment.
-- Suggestions: `GET /app/wave/suggestions`
-- Apply: `POST /app/wave/apply` (stub; future expansion)
+## Accounting Sync Boundary
+
+BUS Core does not include QuickBooks/Wave sync as part of Core. Keep ledger work focused on local inventory, batch, cash-event, and manufacturing truth. Any accounting-package integration remains outside this Core polish pass and requires owner review before it can become a supported release surface.
 

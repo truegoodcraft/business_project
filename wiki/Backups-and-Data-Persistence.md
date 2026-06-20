@@ -8,6 +8,8 @@ This page is a draft summary of what operators should currently treat as importa
 
 The main BUS Core database is the critical durable business state.
 
+Before using **Start Fresh Shop** or any reset-like workflow, export a backup from **Settings -> Administration -> Backup Export**. Enter a backup password, select **Export**, and confirm the saved export appears in the recent exports list before resetting real-shop data.
+
 For Docker-based setups, the primary persistence target should be:
 
 ```text

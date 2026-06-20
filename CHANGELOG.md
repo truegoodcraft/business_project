@@ -112,6 +112,24 @@
 
 ## [Unreleased]
 
+### LazoralltheCore / Laser Everything Community Polish Patch
+
+- Clarified the Recipe editor's Product / Recipe / Output Product language and item labels so first-time users know to create the product in Inventory before selecting it as a recipe output.
+- Aligned the new-item form so raw materials default to Material and the Product checkbox stays in sync with Item Type.
+- Polished Stock Out sale pricing so sold count items prefill from the selected product price while the sale price is untouched, show the usual product price, and warn non-blockingly when the sale is below the usual price.
+- Rejected negative Stock Out sale unit prices at the API boundary so sale cash events cannot record negative revenue through that field.
+- Made manufacturing and stock-out shortage errors human-readable with item names, need/have/missing quantities, and display units where available.
+- Display manufacturing history entries as `Run #<id>` instead of `Run <id>`.
+- Added UI-only Finance date presets for Last 30 days, this month, last month, this quarter, last quarter, and this year without adding tax logic, fiscal calendars, or export profiles.
+- Added stronger Start Fresh confirmation copy explaining that demo data is separate and real-shop data should be backed up first.
+- Added `vendor_id` to item response rows so the item form can preserve selected vendors reliably when editing.
+- Fixed the stock-out below-usual warning so clearing the sale price does not warn while the backend fallback price remains in effect.
+- Clarified Settings onboarding, startup update-check wording, and backup-export copy for live-shop setup and Start Fresh safety.
+- Aligned Home setup guidance with the first-shop path: vendor, raw material, product, recipe, manufacturing, sale, and finance.
+- Documented what changed since the Laser Everything first look and what remains outside Core: full POS, full accounting, QuickBooks/Wave sync, automatic reorder, full job scheduling, cloud accounts/sync, telemetry, payment links, customer portals, and recurring billing.
+- Bumped `INTERNAL_VERSION` from `1.3.1.0` to `1.3.1.1` for the scoped LazoralltheCore closeout without changing public `VERSION`.
+- Preserved the local-first Core boundary: no schema expansion, auth/write-gate changes, backup/restore trust changes, update/release authority changes, telemetry, cloud sync, Pro automation, or public `VERSION` bump.
+
 ### Changed
 - Bumped `INTERNAL_VERSION` from `1.1.1.14` to `1.1.1.15` for the recovery UI entry-point patch without changing public `VERSION`.
 - Added minimal claimed-mode recovery UI: login now exposes a recovery form for the existing `/auth/recover` backend route, validates password confirmation client-side, shows generic recovery failures, and returns to login with a success message without storing recovery data.

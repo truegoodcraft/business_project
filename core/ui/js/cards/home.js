@@ -11,10 +11,11 @@ const DISMISSED_NOTICE_KEY = 'bus.home.dismissedNotices';
 const DISCORD_URL = 'https://discord.gg/qp3rc5CxdM';
 
 const ACTIONS = {
-  addSupply: { href: '#/inventory', label: 'Add Supply', hint: 'Create a material or consumable' },
+  addVendor: { href: '#/contacts', label: 'Add Vendor', hint: 'Create a supplier contact' },
+  addSupply: { href: '#/inventory', label: 'Add Material', hint: 'Create a raw material or consumable' },
   adjustInventory: { href: '#/inventory', label: 'Adjust Inventory', hint: 'Stock in, consume, or correct' },
-  createBlueprint: { href: '#/recipes', label: 'Create Blueprint', hint: 'Define recipe and costs' },
-  buildProduct: { href: '#/manufacturing', label: 'Build Product', hint: 'Run production from a blueprint' },
+  createBlueprint: { href: '#/recipes', label: 'Create Recipe', hint: 'Define materials, output product, and costs' },
+  buildProduct: { href: '#/manufacturing', label: 'Manufacture Product', hint: 'Run production from a recipe' },
   viewJobs: { href: '#/jobs', label: 'View Jobs', hint: 'Open work commitments' },
 };
 
@@ -294,11 +295,14 @@ function renderSetupSteps() {
       <span class="bus-home-next-label">Start your shop setup</span>
     </div>
     <ol class="bus-home-steps">
-      <li><span>1</span><strong>Add your first supply</strong></li>
-      <li><span>2</span><strong>Create a blueprint</strong></li>
-      <li><span>3</span><strong>Build your first product</strong></li>
+      <li><span>1</span><strong>Add a vendor</strong></li>
+      <li><span>2</span><strong>Add your first material</strong></li>
+      <li><span>3</span><strong>Create the product you sell</strong></li>
+      <li><span>4</span><strong>Create a recipe</strong></li>
+      <li><span>5</span><strong>Manufacture your first product</strong></li>
     </ol>
     <div class="bus-home-action-row">
+      ${actionLink(ACTIONS.addVendor)}
       ${actionLink(ACTIONS.addSupply, 'bus-home-btn--primary')}
       ${actionLink(ACTIONS.createBlueprint)}
       ${actionLink(ACTIONS.buildProduct)}
@@ -352,10 +356,10 @@ function renderBench(data) {
     return `<h2>Shop Bench</h2>${renderSetupSteps()}`;
   }
   if (state === 'no-blueprints') {
-    return `<h2>Shop Bench</h2>${renderNextStep('Create a blueprint from your supplies.', ACTIONS.createBlueprint)}`;
+    return `<h2>Shop Bench</h2>${renderNextStep('Create the product you sell, then create a recipe from your materials.', ACTIONS.createBlueprint)}`;
   }
   if (state === 'no-builds') {
-    return `<h2>Shop Bench</h2>${renderNextStep('Build your first product from a blueprint.', ACTIONS.buildProduct, 'This proves your supply to blueprint to product flow and starts real costing.')}`;
+    return `<h2>Shop Bench</h2>${renderNextStep('Manufacture your first product from a recipe.', ACTIONS.buildProduct, 'This proves your material to recipe to product flow and starts real costing.')}`;
   }
   return `<h2>Shop Bench</h2>${renderActiveShop(data)}`;
 }
@@ -426,13 +430,13 @@ function renderUpdateCard(data) {
       ${updateLine}
       <p class="bus-home-side-label">What changed:</p>
       <ul class="bus-home-release-list">
-        <li>Invoices are now a first-class local workflow with draft, issue, paid, void, and print states.</li>
-        <li>Jobs can create draft invoices directly from job detail.</li>
-        <li>Settings now includes selectable UI themes with Forge Dark, Clean Light, Workshop Slate, and High Contrast.</li>
-        <li>Release metadata and update surfaces are aligned for this release boundary.</li>
+        <li>Recipe screens now explain Product, Recipe, and Output Product in shop-floor language.</li>
+        <li>Stock-out sales show the usual product price and warn when a sale is below it.</li>
+        <li>Manufacturing shortages and run labels are easier to read.</li>
+        <li>Finance now has common date presets for month, quarter, year, and recent views.</li>
       </ul>
       <p class="bus-home-side-label">Why it matters:</p>
-      <p>Billing, shop tracking, and visual comfort now live closer to the daily operator loop while staying local-first.</p>
+      <p>The first material to product to sale workflow is clearer while BUS Core stays local-first and focused on shop infrastructure.</p>
       <div class="bus-home-side-actions">
         <a href="/brand/CHANGELOG.md" target="_blank" rel="noopener noreferrer">Read full changelog</a>
       </div>
@@ -471,7 +475,7 @@ function renderSystemPanel(data) {
         <div class="bus-home-link-groups">
           <div>
             <span>Help</span>
-            <a href="/license/EULA.md" target="_blank" rel="noopener noreferrer">How BUS Core Works</a>
+            <a href="/brand/wiki/Getting-Started.md" target="_blank" rel="noopener noreferrer">How BUS Core Works</a>
             <a href="/brand/docs/DATA_LIFECYCLE.md" target="_blank" rel="noopener noreferrer">Data Safety</a>
             <a href="/brand/docs/ui_validation_matrix.md" target="_blank" rel="noopener noreferrer">Known Limits</a>
           </div>
@@ -549,7 +553,7 @@ function renderHome() {
       <header class="bus-home-header">
         <div class="bus-home-brand">
           <h1>BUS Core</h1>
-          <p>Local-first operating bench for inventory, blueprints, builds, and shop records.</p>
+          <p>Local-first operating bench for inventory, recipes, manufacturing, and shop records.</p>
         </div>
         <div class="bus-home-meta" aria-label="Status">
           <div class="bus-home-meta-row">Version: <code id="bus-version">...</code></div>

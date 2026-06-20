@@ -34,6 +34,26 @@ function findItem(itemId) {
   return _items.find((i) => String(i.id) === String(itemId));
 }
 
+function itemKindLabel(item) {
+  if (item?.is_product) return 'Product';
+  const rawType = String(item?.type || item?.item_type || '').trim();
+  if (rawType) return rawType;
+  return 'Material';
+}
+
+function itemOptionLabel(item) {
+  const name = item?.name || `Item #${item?.id ?? '?'}`;
+  return `${name} (${itemKindLabel(item)})`;
+}
+
+function recipeItemSortKey(item, output = false) {
+  const kind = itemKindLabel(item).toLowerCase();
+  const rank = output
+    ? (item?.is_product ? 0 : kind.includes('product') ? 1 : 2)
+    : (item?.is_product ? 2 : kind.includes('component') ? 1 : 0);
+  return `${rank}:${String(item?.name || '').toLowerCase()}`;
+}
+
 function decimalString(v) {
   const s = String(v ?? '').trim().replace(/,/g, '');
   if (s === '' || s === '.' || s === '-.') return '0';
@@ -298,8 +318,10 @@ function renderEditor(editor, leftPanel) {
     value: '',
     disabled: 'true',
     selected: _draft.output_item_id == null ? 'selected' : null,
-  }, '— Output Item —'));
-  _items.forEach((i) => outSel.append(el('option', { value: String(i.id) }, i.name)));
+  }, '-- Output product --'));
+  [..._items]
+    .sort((a, b) => recipeItemSortKey(a, true).localeCompare(recipeItemSortKey(b, true)))
+    .forEach((i) => outSel.append(el('option', { value: String(i.id) }, itemOptionLabel(i))));
   if (_draft.output_item_id != null) outSel.value = String(_draft.output_item_id);
 
   const outUomInput = el('select', {
@@ -326,11 +348,14 @@ function renderEditor(editor, leftPanel) {
   outQtyInput.addEventListener('input', () => { _draft.quantity_decimal = outQtyInput.value; });
 
   outputRow.append(
-    el('label', { class: 'recipes-row-label', text: 'Output' }),
+    el('label', { class: 'recipes-row-label', text: 'Output Product' }),
     outSel,
     outQtyInput,
     outUomInput,
   );
+  const outputHelp = el('div', { class: 'recipes-help' }, [
+    'Product is the inventory item you build or sell. Recipe is the material list that makes it. Output product is the item this recipe adds to stock. If the product is not listed, create it in Inventory first.'
+  ]);
 
   const flagsRow = el('div', { class: 'recipes-flags-row' });
   const archivedToggle = el('input', { type: 'checkbox' });
@@ -347,8 +372,11 @@ function renderEditor(editor, leftPanel) {
 
   const itemsBox = el('div', { class: 'recipes-items-box' });
   const itemsHeader = el('div', { class: 'recipes-items-header' }, [
-    el('h4', { class: 'recipes-items-title', text: 'Input Items' }),
+    el('h4', { class: 'recipes-items-title', text: 'Materials / Components' }),
     el('button', { class: 'btn small recipes-add-item-btn', text: '+ Add' }),
+  ]);
+  const itemsHelp = el('div', { class: 'recipes-help recipes-help--compact' }, [
+    'Choose the raw materials or components consumed when this product is manufactured.'
   ]);
 
   const table = el('table', { class: 'recipes-items-table' });
@@ -371,11 +399,13 @@ function renderEditor(editor, leftPanel) {
       itemSel.append(el('option', {
         value: '',
         selected: ri.item_id == null ? 'selected' : null,
-      }, '— Select —'));
-      _items.forEach((i) => itemSel.append(el('option', {
-        value: String(i.id),
-        selected: String(i.id) === String(ri.item_id) ? 'selected' : null,
-      }, i.name)));
+      }, '-- Select material/component --'));
+      [..._items]
+        .sort((a, b) => recipeItemSortKey(a, false).localeCompare(recipeItemSortKey(b, false)))
+        .forEach((i) => itemSel.append(el('option', {
+          value: String(i.id),
+          selected: String(i.id) === String(ri.item_id) ? 'selected' : null,
+        }, itemOptionLabel(i))));
       itemSel.addEventListener('change', () => {
         ri.item_id = itemSel.value ? Number(itemSel.value) : null;
         const meta = findItem(ri.item_id);
@@ -432,7 +462,7 @@ function renderEditor(editor, leftPanel) {
   };
 
   renderItemRows();
-  itemsBox.append(itemsHeader, table);
+  itemsBox.append(itemsHeader, itemsHelp, table);
 
   const actions = el('div', { class: 'recipes-actions' });
   const saveBtn = el('button', { class: 'btn primary recipes-save-btn', text: 'Save Recipe' });
@@ -472,11 +502,11 @@ function renderEditor(editor, leftPanel) {
 
     const errors = [];
     if (!nameVal) errors.push('Name is required.');
-    if (!Number.isInteger(outItemId) || outItemId <= 0) errors.push('Choose an output item.');
+    if (!Number.isInteger(outItemId) || outItemId <= 0) errors.push('Choose the output product this recipe adds to stock.');
     if (!isStrictPositiveDecimal(outQtyRaw)) errors.push('Output quantity must be a positive decimal.');
     errors.push(...itemErrors);
     // Intentional UI policy: require at least one component row even though backend permits empty items.
-    if (cleanedItems.length === 0) errors.push('Add at least one input item with quantity and uom.');
+    if (cleanedItems.length === 0) errors.push('Add at least one material or component with quantity and uom.');
     if (errors.length) throw new Error(errors.join(' '));
 
     const payload = {
@@ -539,5 +569,5 @@ function renderEditor(editor, leftPanel) {
   };
 
   actions.append(saveBtn, deleteBtn);
-  editor.append(nameRow, outputRow, flagsRow, notes, itemsBox, actions, status);
+  editor.append(nameRow, outputRow, outputHelp, flagsRow, notes, itemsBox, actions, status);
 }

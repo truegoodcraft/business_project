@@ -11,7 +11,7 @@
 
 This map exists to keep authority boundaries explicit. Canonical, supported, secondary, and legacy or drifted surfaces are separated so operators and maintainers can see where predictability is guaranteed and where compatibility or debt still exists.
 
-- Drifted: `core/ui/js/cards/backup.js` expects `/app/backup` or `/app.db`; no matching mounted backend route was found.
+- Aligned: backup UI points operators to the canonical encrypted Settings -> Administration export flow; raw `/app/backup` or `/app.db` routes are not mounted and are not canonical.
 - Removed: legacy `core/ui/js/cards/home_donuts.js` is no longer mounted; `/app/transactions/summary` and `/app/transactions` remain backend stubs and must not be called from claimed-mode login.
 - Canonical: `/session/token` authority is only `core/api/http.py`; it remains unclaimed-mode compatibility and returns `login_required` in claimed mode rather than minting a legacy app-access bypass.
 - Canonical: `/auth/state`, `/auth/setup-owner`, `/auth/login`, `/auth/logout`, `/auth/me`, `/auth/recover`, and `/auth/recovery-codes/regenerate` expose DB-backed auth account lifecycle over `bus_auth_session`. The SPA calls `/auth/state` during boot before protected app mounting, preserves legacy local behavior while unclaimed, requires login UI before normal screens once claimed without a current session, exposes account recovery from the claimed-mode login card, exposes recovery-code regeneration from Security management, and refreshes in-memory auth state after permission/session-sensitive Security UI actions.
@@ -236,7 +236,7 @@ Silent contract drift is a stability risk. The purpose of this document is not t
 
 | UI expectation | Status | Backend reality | Evidence |
 | --- | --- | --- | --- |
-| Backup export via `/app/backup` or `/app.db` | Drifted | No mounted route found. | `core/ui/js/cards/backup.js`, route inventory above |
+| Backup export via Settings -> Administration | Canonical | Uses encrypted `/app/db/export`; raw `/app/backup` and `/app.db` are not mounted. | `core/ui/js/cards/admin.js`, route inventory above |
 | Home dashboard transaction widgets | Removed | Endpoints exist as backend stubs, but the legacy widget is no longer mounted. | `core/api/routes/transactions.py` |
 | Dedicated `#/runs` and `#/import` screens | Drifted | Routes exist in SPA but render placeholders only. | `core/ui/app.js` |
 

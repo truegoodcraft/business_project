@@ -32,6 +32,7 @@ class ItemOut(BaseModel):
     price: Optional[float] = None
     is_product: bool = False
     notes: Optional[str] = None
+    vendor_id: Optional[int] = None
     vendor: Optional[str] = None
     location: Optional[str] = None
     type: Optional[str] = None

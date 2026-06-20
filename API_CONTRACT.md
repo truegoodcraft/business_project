@@ -179,11 +179,11 @@ Its purpose is to preserve predictability and prevent silent contract drift. If 
   - List item rows.
   - Excludes archived items by default.
   - `include_archived=true` returns both live and archived items.
-  - Response is an array of item records with identity, dimension/uom, on-hand display fields, and FIFO display fields.
+  - Response is an array of item records with identity, dimension/uom, `vendor_id`/vendor display, on-hand display fields, and FIFO display fields.
 
 - `GET /app/items/{item_id}`
   - Get item detail.
-  - Returns the item row plus `batches_summary`.
+  - Returns the item row, including `vendor_id`/vendor display, plus `batches_summary`.
   - Archived items remain readable.
 
 - `POST /app/items`
@@ -290,7 +290,7 @@ Its purpose is to preserve predictability and prevent silent contract drift. If 
     - `reason`
     - optional `note`
     - optional `record_cash_event`
-    - optional `sell_unit_price_cents`
+    - optional non-negative `sell_unit_price_cents`
   - Returns the stock mutation result object, including line allocation detail.
 
 - `GET /app/ledger/history`
@@ -518,7 +518,7 @@ These are mounted compatibility routes, not canonical routes for new callers. Wh
 
 ## 6. Remaining Known Drift
 
-- UI drift remains around nonexistent backup endpoints such as `/app/backup` and `/app.db`. Those routes are not mounted and are not canonical.
+- Backup UI should route operators to the canonical encrypted export flow at `POST /app/db/export`; raw `/app/backup` and `/app.db` routes are not mounted and are not canonical.
 - `/app/transactions` and `/app/transactions/summary` remain mounted stubs. They are real routes, but they are not canonical business contract.
 - Some supported routes rely on middleware-based auth rather than route-local auth declarations. This document reflects that reality instead of normalizing it away.
 - Some supported mutating routes also lack a route-local write gate today, notably `/app/purchase`, `/app/stock/in`, `/app/stock/out`, `/app/finance/expense`, and `/app/finance/refund`. That is current runtime truth, not a documented endorsement of a cleaner model.

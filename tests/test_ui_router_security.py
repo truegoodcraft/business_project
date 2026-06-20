@@ -137,7 +137,7 @@ def test_app_boot_checks_auth_state_before_protected_mount() -> None:
     app_js = (REPO_ROOT / "core" / "ui" / "app.js").read_text(encoding="utf-8")
 
     assert "await refreshAuthState();\n    if (!canMountNormalApp())" in app_js
-    assert "bindSidebarUpdateControls();\n    maybeRunStartupUpdateCheck();\n    await refreshAuthState();" in app_js
+    assert "bindSidebarUpdateControls();\n    mountBackupExport();\n    maybeRunStartupUpdateCheck();\n    await refreshAuthState();" in app_js
     assert "await maybeRunStartupUpdateCheck();" not in app_js
     assert "showLoginGate();" in app_js
     assert "openClaimScreen" in app_js
@@ -153,6 +153,42 @@ def test_startup_update_check_uses_public_path_without_auth_boot_dependencies() 
     assert "ensureToken" not in startup_section
     assert "/app/config" not in startup_section
     assert "apiGet" not in startup_section
+
+
+def test_lazorallthecore_pass1_ui_polish_is_scoped() -> None:
+    app_js = (REPO_ROOT / "core" / "ui" / "app.js").read_text(encoding="utf-8")
+    backup_js = (REPO_ROOT / "core" / "ui" / "js" / "cards" / "backup.js").read_text(encoding="utf-8")
+    finance_js = (REPO_ROOT / "core" / "ui" / "js" / "cards" / "finance.js").read_text(encoding="utf-8")
+    inventory_js = (REPO_ROOT / "core" / "ui" / "js" / "cards" / "inventory.js").read_text(encoding="utf-8")
+    manufacturing_js = (REPO_ROOT / "core" / "ui" / "js" / "cards" / "manufacturing.js").read_text(encoding="utf-8")
+    recipes_js = (REPO_ROOT / "core" / "ui" / "js" / "cards" / "recipes.js").read_text(encoding="utf-8")
+    settings_js = (REPO_ROOT / "core" / "ui" / "js" / "cards" / "settings.js").read_text(encoding="utf-8")
+
+    assert "Output Product" in recipes_js
+    assert "Product is the inventory item you build or sell." in recipes_js
+    assert "If the product is not listed, create it in Inventory first." in recipes_js
+    assert "Create output product" not in recipes_js
+
+    assert "Usual product price:" in inventory_js
+    assert "Below usual product price" in inventory_js
+    assert "priceText !== ''" in inventory_js
+    assert "below-cost" not in inventory_js.lower()
+
+    assert "Not enough ${name}: need" in manufacturing_js
+    assert "Run #${rid}" in manufacturing_js
+    assert "notes" not in manufacturing_js.split("function loadRecentRuns30d", 1)[1]
+
+    for preset in ("Last 30 days", "This month", "Last month", "This quarter", "Last quarter", "This year"):
+        assert preset in finance_js
+
+    assert "Demo data stays separate." in app_js
+    assert "Settings > Administration > Backup Export" in app_js
+    assert "Enable automatic update checks" not in settings_js
+    assert "Startup checks run once per launch." in settings_js
+
+    assert "/app/backup" not in backup_js
+    assert "/app.db" not in backup_js
+    assert "Settings > Administration > Backup Export" in backup_js
 
 
 def test_legacy_home_transaction_loader_is_not_mounted() -> None:
