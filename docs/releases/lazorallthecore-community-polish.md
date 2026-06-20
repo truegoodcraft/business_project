@@ -1,6 +1,6 @@
 # BUS Core LazoralltheCore Community Polish Patch
 
-Status: implementation pass notes, no public version bump.
+Status: folded into the official [BUS Core v1.3.2 release notes](v1.3.2.md).
 
 ## Summary
 
@@ -36,7 +36,7 @@ BUS Core still does not include:
 
 ## Boundary
 
-No schema expansion, route auth/write-gate changes, backup/restore trust changes, update/release/signing authority changes, telemetry, cloud sync, Pro automation, or public `VERSION` bump are part of this patch.
+No schema expansion, route auth/write-gate changes, backup/restore trust changes, update/release/signing authority changes, telemetry, cloud sync, or Pro automation are part of this patch. The public `VERSION` change to 1.3.2 is release metadata for the completed patch.
 
 ## Manual Smoke Checklist
 

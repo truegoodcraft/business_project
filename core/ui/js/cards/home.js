@@ -430,13 +430,12 @@ function renderUpdateCard(data) {
       ${updateLine}
       <p class="bus-home-side-label">What changed:</p>
       <ul class="bus-home-release-list">
-        <li>Recipe screens now explain Product, Recipe, and Output Product in shop-floor language.</li>
-        <li>Stock-out sales show the usual product price and warn when a sale is below it.</li>
-        <li>Manufacturing shortages and run labels are easier to read.</li>
-        <li>Finance now has common date presets for month, quarter, year, and recent views.</li>
+        <li>The Laser Everything/community polish patch makes the first shop workflow clearer.</li>
+        <li>Pricing guidance, shortage messages, and manufacturing run labels are easier to read.</li>
+        <li>Finance now has common date presets, with additional trust and release polish.</li>
       </ul>
       <p class="bus-home-side-label">Why it matters:</p>
-      <p>The first material to product to sale workflow is clearer while BUS Core stays local-first and focused on shop infrastructure.</p>
+      <p>Core is now feature-frozen and stability-focused: still maintained as local-first shop infrastructure, with future updates centered on safety, reliability, tester blockers, and clear documentation.</p>
       <div class="bus-home-side-actions">
         <a href="/brand/CHANGELOG.md" target="_blank" rel="noopener noreferrer">Read full changelog</a>
       </div>

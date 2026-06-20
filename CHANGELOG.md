@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.3.2] - 2026-06-20
+
+### LazoralltheCore / Laser Everything Community Polish Patch
+
+- Completed the Laser Everything/community feedback polish pass without expanding Core into new product domains.
+- Clarified Product, Recipe, and Output Item/Output Product wording across the first inventory-to-manufacturing workflow.
+- Updated Stock Out so sale price starts from the selected product price where available, shows the usual price, and warns non-blockingly below the usual price.
+- Made manufacturing and stock-out shortages human-readable with item names and need/have/missing quantities.
+- Displayed manufacturing history labels as `Run #N` and added common Finance date presets.
+- Strengthened Start Fresh and demo safety copy so operators know demo data is separate and real-shop data should be backed up first.
+- Added `vendor_id` to item responses for reliable item-form vendor preservation and rejected negative Stock Out sale unit prices.
+
+### Reliability and Test Closure
+
+- Fixed backup/restore SQLite URI handling for Windows paths containing spaces or `#`, with export/preview/commit regression coverage.
+- Reconciled the intentionally hardened `/dev/writes` CORS/session test contract without changing runtime auth, CORS, local-only, or write-gate behavior.
+- Fixed route/security test isolation so module reloads and synthetic FastAPI app state no longer make combined security suites order-dependent.
+
+### Release and Stability Boundary
+
+- Bumped public `VERSION` from `1.3.1` to `1.3.2` and reset `INTERNAL_VERSION` from `1.3.1.1` to `1.3.2.0` for the owner-approved public release boundary.
+- Updated package metadata, Windows version metadata, SOT header, shell asset cache-busting tokens, Home's Latest Update card, and official release notes for expected tag `v1.3.2`.
+- Core is now feature-frozen and stability-focused. It remains maintained local-first, open-source infrastructure with no forced cloud and no telemetry.
+- Future Core updates will focus on bug fixes, safety, security/trust, backup and data protection, tester blockers, update/release reliability, small UX clarification, and documentation. New major workflow or domain expansion moves to BUS Pro discovery.
+- Still not included: full POS, full accounting, QuickBooks/Wave sync, automatic reorder, full job scheduling, cloud accounts, cloud sync, telemetry, payment links, customer portals, or recurring billing.
+
 ## [1.3.1] - 2026-06-18
 
 ### Release Guard Fix
@@ -111,24 +137,6 @@
 - Bumped `VERSION` from `1.0.2` to `1.0.3`
 
 ## [Unreleased]
-
-### LazoralltheCore / Laser Everything Community Polish Patch
-
-- Clarified the Recipe editor's Product / Recipe / Output Product language and item labels so first-time users know to create the product in Inventory before selecting it as a recipe output.
-- Aligned the new-item form so raw materials default to Material and the Product checkbox stays in sync with Item Type.
-- Polished Stock Out sale pricing so sold count items prefill from the selected product price while the sale price is untouched, show the usual product price, and warn non-blockingly when the sale is below the usual price.
-- Rejected negative Stock Out sale unit prices at the API boundary so sale cash events cannot record negative revenue through that field.
-- Made manufacturing and stock-out shortage errors human-readable with item names, need/have/missing quantities, and display units where available.
-- Display manufacturing history entries as `Run #<id>` instead of `Run <id>`.
-- Added UI-only Finance date presets for Last 30 days, this month, last month, this quarter, last quarter, and this year without adding tax logic, fiscal calendars, or export profiles.
-- Added stronger Start Fresh confirmation copy explaining that demo data is separate and real-shop data should be backed up first.
-- Added `vendor_id` to item response rows so the item form can preserve selected vendors reliably when editing.
-- Fixed the stock-out below-usual warning so clearing the sale price does not warn while the backend fallback price remains in effect.
-- Clarified Settings onboarding, startup update-check wording, and backup-export copy for live-shop setup and Start Fresh safety.
-- Aligned Home setup guidance with the first-shop path: vendor, raw material, product, recipe, manufacturing, sale, and finance.
-- Documented what changed since the Laser Everything first look and what remains outside Core: full POS, full accounting, QuickBooks/Wave sync, automatic reorder, full job scheduling, cloud accounts/sync, telemetry, payment links, customer portals, and recurring billing.
-- Bumped `INTERNAL_VERSION` from `1.3.1.0` to `1.3.1.1` for the scoped LazoralltheCore closeout without changing public `VERSION`.
-- Preserved the local-first Core boundary: no schema expansion, auth/write-gate changes, backup/restore trust changes, update/release authority changes, telemetry, cloud sync, Pro automation, or public `VERSION` bump.
 
 ### Changed
 - Bumped `INTERNAL_VERSION` from `1.1.1.14` to `1.1.1.15` for the recovery UI entry-point patch without changing public `VERSION`.

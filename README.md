@@ -86,11 +86,15 @@ It is not a full accounting system—and is not trying to be.
 
 ## What Changed Since Laser Everything
 
-- Clearer Product / Recipe / Output Product language for the first setup path.
+- Clearer Product / Recipe / Output Item language for the first setup path, with the recipe UI labeling the selected result as Output Product.
 - Better stock-out sale price guidance, including usual product price display and below-usual warnings.
 - Readable shortage messages for manufacturing and stock-out failures.
 - Manufacturing history labels such as `Run #6`.
 - Finance date presets for common recent, month, quarter, and year views.
+
+## Stability Focus After v1.3.2
+
+Core is now feature-frozen and stability-focused. BUS Core remains maintained local-first, open-source shop infrastructure with no forced cloud and no telemetry. Future Core updates will focus on safety, reliability, tester blockers, backup and data protection, release/update hygiene, small UX clarifications, and documentation. New major workflow or domain expansion moves to BUS Pro discovery.
 
 ## Still Not Included
 

@@ -2,6 +2,8 @@
 
 BUS Core is local-first shop infrastructure for inventory, recipes, manufacturing, and cost visibility. It is not a hosted SaaS account and it is not a full POS or accounting package.
 
+Core is feature-frozen and stability-focused after v1.3.2. It remains maintained, open-source, local-first infrastructure; future Core updates focus on safety, reliability, tester blockers, data protection, release hygiene, small UX clarification, and documentation. New major workflow or domain expansion moves to BUS Pro discovery.
+
 ## Choose Your Install Path
 
 - [Windows Install](Windows-Install.md) for a local Windows setup.
