@@ -10,7 +10,7 @@ from typing import Literal, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from sqlalchemy import asc, func
 from sqlalchemy.orm import Session
 
@@ -97,7 +97,7 @@ class StockOutIn(BaseModel):
     reason: Literal["sold", "loss", "theft", "other"] = "sold"
     note: Optional[str] = None
     record_cash_event: bool = True
-    sell_unit_price_cents: Optional[int] = None
+    sell_unit_price_cents: Optional[int] = Field(default=None, ge=0)
 
 
 class StockOutCanonicalIn(BaseModel):
@@ -107,7 +107,7 @@ class StockOutCanonicalIn(BaseModel):
     reason: Literal["sold", "loss", "theft", "other"] = "sold"
     note: Optional[str] = None
     record_cash_event: bool = True
-    sell_unit_price_cents: Optional[int] = None
+    sell_unit_price_cents: Optional[int] = Field(default=None, ge=0)
 
 
 class StockInCanonicalIn(BaseModel):
@@ -273,7 +273,10 @@ def canonical_stock_out(
     _writes: None = Depends(require_writes),
 ):
     reject_legacy_qty_keys(raw)
-    body = StockOutCanonicalIn(**raw)
+    try:
+        body = StockOutCanonicalIn(**raw)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors())
     qty_base = _to_base_qty_for_item(db, body.item_id, body.quantity_decimal, body.uom)
     try:
         result = perform_stock_out_base(

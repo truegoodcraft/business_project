@@ -1,13 +1,13 @@
 # TGC Business Utility System — BUS Core
 [![Open BUS Core](https://img.shields.io/badge/Open%20BUS%20Core-Run%20It%20Now-FF6D00?style=for-the-badge&logo=windows&logoColor=white)](https://buscore.ca/?src=github_readme_1)
 
-Local-first. No accounts. No cloud. Runs offline.
+Local-first. No cloud account required. No cloud. Runs offline.
 
 
 A local-first inventory and manufacturing core for small shops that need durable control.
 
 
-No cloud dependency. No accounts. No forced lock-in.  
+No cloud dependency. No hosted account required. No forced lock-in.
 Your data stays on your machine, and the system remains usable offline.
 
 
@@ -40,7 +40,7 @@ With:
 
 - One local database
 - Real production costing
-- Full audit history
+- Ledger and movement history
 - Complete data ownership
 
 It is built for operators who want control and continuity, not SaaS dependency.
@@ -75,14 +75,30 @@ https://buscore.ca/use-cases/laser-engraving-shop/?src=github_readme_usecase
 - **Jobs & Invoices**
   Track customer work, create local draft invoices from jobs, issue invoices, mark them paid, void mistakes, and print invoice HTML for browser print or save-to-PDF.
 
-- **Assemblies & Products**  
-  Build items from blueprints, set prices, and compare real costs to sales.
+- **Manufacturing & Products**
+  Manufacture products from recipes, set product prices, and compare real costs to sales.
 
 - **Vendors**  
   Track supplier pricing and purchasing history over time.
 
 BUS Core focuses on operations and production costing.  
 It is not a full accounting system—and is not trying to be.
+
+## What Changed Since Laser Everything
+
+- Clearer Product / Recipe / Output Item language for the first setup path, with the recipe UI labeling the selected result as Output Product.
+- Better stock-out sale price guidance, including usual product price display and below-usual warnings.
+- Readable shortage messages for manufacturing and stock-out failures.
+- Manufacturing history labels such as `Run #6`.
+- Finance date presets for common recent, month, quarter, and year views.
+
+## Stability Focus After v1.3.2
+
+Core is now feature-frozen and stability-focused. BUS Core remains maintained local-first, open-source shop infrastructure with no forced cloud and no telemetry. Future Core updates will focus on safety, reliability, tester blockers, backup and data protection, release/update hygiene, small UX clarifications, and documentation. New major workflow or domain expansion moves to BUS Pro discovery.
+
+## Still Not Included
+
+BUS Core remains serious local-first shop infrastructure, not a SaaS funnel or a full business suite. It still does not include full POS, full accounting, QuickBooks/Wave sync, automatic reorder, full job scheduling, cloud accounts, cloud sync, telemetry, payment links, customer portals, or recurring billing.
 
 ---
 
@@ -93,7 +109,7 @@ It is not a full accounting system—and is not trying to be.
 - **Manufacturing Engine** — Recipe-based builds with atomic commits
 - **Jobs & Invoices** — Local job tracking and invoice truth without cloud billing dependency
 - **Ledger & Audit Trail** — Complete movement history
-- **Local & Private** — SQLite database with encrypted backups
+- **Local & Private** — SQLite database with password-based encrypted backup export support
 - **Theme Variants** — Forge Dark default plus Clean Light, Workshop Slate, and High Contrast UI variants
 - **Windows Native, Docker Optional** — Native Windows runtime, container support for other environments
 
@@ -147,17 +163,7 @@ See [`SOT.md`](SOT.md) for the canonical Source of Truth and system architecture
 
 ## Interface Gallery
 
-|                   Dashboard                   |                      Inventory                     |
-| :-------------------------------------------: | :------------------------------------------------: |
-| <img src="screenshots/Home.jpg" width="100%"> | <img src="screenshots/Inventory.jpg" width="100%"> |
-
-|                      Manufacturing                     |                     Recipes                     |
-| :----------------------------------------------------: | :---------------------------------------------: |
-| <img src="screenshots/Manufacturing.jpg" width="100%"> | <img src="screenshots/Recipe.jpg" width="100%"> |
-
-|                      Logs                     |                      Settings                     |
-| :-------------------------------------------: | :-----------------------------------------------: |
-| <img src="screenshots/Logs.jpg" width="100%"> | <img src="screenshots/Settings.jpg" width="100%"> |
+Screenshots are being refreshed for the current Product / Recipe / Manufacturing workflow. The workflow and release notes above are the authority for the current Core experience.
 
 ---
 

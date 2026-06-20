@@ -222,3 +222,78 @@ def test_stock_out_sold_with_ref_uses_provided_source_id_across_surfaces(bus_cli
     sold_entries = [entry for entry in entries if entry.get("op") == "sold" and int(entry.get("item_id")) == item_id]
     assert sold_entries
     assert sold_entries[-1]["source_id"] == provided_source_id
+
+
+def test_stock_out_sold_without_sale_price_uses_product_price(bus_client, monkeypatch, tmp_path):
+    client = bus_client["client"]
+    engine = bus_client["engine"]
+    models = bus_client["models"]
+    journal_path = tmp_path / "journals" / "inventory.jsonl"
+    _install_test_journal(monkeypatch, journal_path)
+
+    item_id = _create_count_item(client, "SoldProductPriceFallback")
+    seed = client.post(
+        "/app/purchase",
+        json={
+            "item_id": item_id,
+            "quantity_decimal": "10",
+            "uom": "ea",
+            "unit_cost_cents": 50,
+            "source_id": "seed-price-fallback",
+        },
+    )
+    assert seed.status_code == 200, seed.text
+
+    sold = client.post(
+        "/app/stock/out",
+        json={
+            "item_id": item_id,
+            "quantity_decimal": "2",
+            "uom": "ea",
+            "reason": "sold",
+            "record_cash_event": True,
+        },
+    )
+    assert sold.status_code == 200, sold.text
+    assert sold.json().get("ok") is True
+
+    with engine.SessionLocal() as db:
+        ce = (
+            db.query(models.CashEvent)
+            .filter(models.CashEvent.kind == "sale", models.CashEvent.item_id == item_id)
+            .order_by(models.CashEvent.id.desc())
+            .first()
+        )
+        assert ce is not None
+        assert ce.unit_price_cents == 250
+        assert ce.amount_cents == 500
+        assert ce.qty_base == 2000
+
+
+def test_stock_out_sold_rejects_negative_sale_price(bus_client):
+    client = bus_client["client"]
+    item_id = _create_count_item(client, "SoldRejectNegativePrice")
+    seed = client.post(
+        "/app/purchase",
+        json={
+            "item_id": item_id,
+            "quantity_decimal": "10",
+            "uom": "ea",
+            "unit_cost_cents": 50,
+            "source_id": "seed-negative-price",
+        },
+    )
+    assert seed.status_code == 200, seed.text
+
+    sold = client.post(
+        "/app/stock/out",
+        json={
+            "item_id": item_id,
+            "quantity_decimal": "2",
+            "uom": "ea",
+            "reason": "sold",
+            "record_cash_event": True,
+            "sell_unit_price_cents": -1,
+        },
+    )
+    assert sold.status_code == 422, sold.text

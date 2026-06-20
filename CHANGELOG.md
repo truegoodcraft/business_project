@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.3.2] - 2026-06-20
+
+### LazoralltheCore / Laser Everything Community Polish Patch
+
+- Completed the Laser Everything/community feedback polish pass without expanding Core into new product domains.
+- Clarified Product, Recipe, and Output Item/Output Product wording across the first inventory-to-manufacturing workflow.
+- Updated Stock Out so sale price starts from the selected product price where available, shows the usual price, and warns non-blockingly below the usual price.
+- Made manufacturing and stock-out shortages human-readable with item names and need/have/missing quantities.
+- Displayed manufacturing history labels as `Run #N` and added common Finance date presets.
+- Strengthened Start Fresh and demo safety copy so operators know demo data is separate and real-shop data should be backed up first.
+- Added `vendor_id` to item responses for reliable item-form vendor preservation and rejected negative Stock Out sale unit prices.
+
+### Reliability and Test Closure
+
+- Fixed backup/restore SQLite URI handling for Windows paths containing spaces or `#`, with export/preview/commit regression coverage.
+- Reconciled the intentionally hardened `/dev/writes` CORS/session test contract without changing runtime auth, CORS, local-only, or write-gate behavior.
+- Fixed route/security test isolation so module reloads and synthetic FastAPI app state no longer make combined security suites order-dependent.
+
+### Release and Stability Boundary
+
+- Bumped public `VERSION` from `1.3.1` to `1.3.2` and reset `INTERNAL_VERSION` from `1.3.1.1` to `1.3.2.0` for the owner-approved public release boundary.
+- Updated package metadata, Windows version metadata, SOT header, shell asset cache-busting tokens, Home's Latest Update card, and official release notes for expected tag `v1.3.2`.
+- Core is now feature-frozen and stability-focused. It remains maintained local-first, open-source infrastructure with no forced cloud and no telemetry.
+- Future Core updates will focus on bug fixes, safety, security/trust, backup and data protection, tester blockers, update/release reliability, small UX clarification, and documentation. New major workflow or domain expansion moves to BUS Pro discovery.
+- Still not included: full POS, full accounting, QuickBooks/Wave sync, automatic reorder, full job scheduling, cloud accounts, cloud sync, telemetry, payment links, customer portals, or recurring billing.
+
 ## [1.3.1] - 2026-06-18
 
 ### Release Guard Fix

@@ -130,6 +130,57 @@ function formatItemPrice(item) {
   return item?.fifo_unit_cost_display || (item?.price != null ? formatMoney(item.price) : '—');
 }
 
+function itemKindLabel(item) {
+  if (item?.is_product) return 'Product';
+  const rawType = String(item?.type || item?.item_type || '').trim();
+  if (rawType) return rawType;
+  return 'Material';
+}
+
+function selectedItemById(itemId) {
+  return (window.__inventory_items || []).find((x) => Number(x?.id) === Number(itemId));
+}
+
+function itemDisplayUnit(item, fallback = '') {
+  return (
+    item?.stock_on_hand_display?.unit ||
+    item?.display_unit ||
+    item?.unit ||
+    item?.uom ||
+    fallback ||
+    ''
+  );
+}
+
+function formatQuantityForItem(baseQty, item, fallbackUnit = '') {
+  const unit = itemDisplayUnit(item, fallbackUnit);
+  const dim = item?.dimension || dimensionForUnit(unit) || 'count';
+  const numericBase = Number(baseQty ?? 0);
+  if (!Number.isFinite(numericBase)) return `0${unit ? ` ${unit}` : ''}`;
+  let value = numericBase;
+  try {
+    value = dim === 'count' && String(unit || item?.uom || 'ea').toLowerCase() === 'ea'
+      ? numericBase / 1000
+      : fromBaseQty(numericBase, unit || item?.uom || 'ea', dim);
+  } catch {
+    value = Number(item?.stock_on_hand_display?.value ?? numericBase);
+  }
+  const rounded = Math.round(Number(value) * 1000) / 1000;
+  const text = Number.isInteger(rounded) ? String(rounded) : String(rounded).replace(/0+$/, '').replace(/\.$/, '');
+  return `${text}${unit ? ` ${unit}` : ''}`;
+}
+
+function formatShortageLine(shortage, fallbackItemId = null) {
+  const itemId = shortage?.item_id ?? shortage?.component ?? fallbackItemId;
+  const item = selectedItemById(itemId);
+  const name = item?.name || (itemId ? `Item #${itemId}` : 'Selected item');
+  const required = shortage?.required ?? shortage?.qty_needed ?? shortage?.needed ?? 0;
+  const available = shortage?.available ?? shortage?.on_hand ?? 0;
+  const missing = shortage?.missing ?? Math.max(0, Number(required || 0) - Number(available || 0));
+  const unit = itemDisplayUnit(item, shortage?.uom);
+  return `Not enough ${name}: need ${formatQuantityForItem(required, item, unit)}, have ${formatQuantityForItem(available, item, unit)}, missing ${formatQuantityForItem(missing, item, unit)}.`;
+}
+
 function toast(message, tone = 'ok') {
   const el = document.createElement('div');
   el.textContent = message;
@@ -233,7 +284,7 @@ export async function _mountInventory(container) {
     (state.items || []).forEach((it) => {
       const opt = document.createElement('option');
       opt.value = it.id;
-      opt.textContent = it.name || `Item #${it.id}`;
+      opt.textContent = `${it.name || `Item #${it.id}`} (${itemKindLabel(it)})`;
       opt.dataset.uom = (it.uom ?? it.display_unit ?? '').trim();
       opt.dataset.dimension = String(it.dimension || '').trim().toLowerCase();
       itemSelect.appendChild(opt);
@@ -284,7 +335,15 @@ export async function _mountInventory(container) {
     priceInput.min = '0';
     priceInput.placeholder = '0.00';
     priceInput.value = '';
-    priceRow.append(priceLabel, priceInput);
+    const priceWrap = document.createElement('div');
+    priceWrap.className = 'field-input';
+    const usualPriceHelp = document.createElement('div');
+    usualPriceHelp.className = 'stock-out-price-help';
+    const priceWarning = document.createElement('div');
+    priceWarning.className = 'stock-out-price-warning';
+    priceWarning.hidden = true;
+    priceWrap.append(priceInput, usualPriceHelp, priceWarning);
+    priceRow.append(priceLabel, priceWrap);
 
     const noteRow = document.createElement('div');
     noteRow.className = 'field-row';
@@ -316,6 +375,7 @@ export async function _mountInventory(container) {
     overlay.appendChild(card);
     overlay._inventoryCleanup = () => overlay.remove();
     document.body.appendChild(overlay);
+    let priceManuallyEdited = false;
 
     const close = () => overlay.remove();
     overlay.addEventListener('click', (ev) => {
@@ -324,7 +384,38 @@ export async function _mountInventory(container) {
     card.addEventListener('click', (ev) => ev.stopPropagation());
     cancelBtn.addEventListener('click', (ev) => { ev.preventDefault(); close(); });
 
-    function updatePriceVisibility() {
+    function selectedStockOutItem() {
+      return selectedItemById(Number(itemSelect.value || 0));
+    }
+
+    function productPrice(item) {
+      if (item?.price == null || item?.price === '') return null;
+      const value = Number(item?.price);
+      return Number.isFinite(value) ? value : null;
+    }
+
+    function updateSalePriceGuidance() {
+      const reason = String(reasonSelect.value || 'sold');
+      const item = selectedStockOutItem();
+      const usual = productPrice(item);
+      usualPriceHelp.textContent = '';
+      priceWarning.hidden = true;
+      priceWarning.textContent = '';
+      if (reason !== 'sold') return;
+      if (usual == null) {
+        usualPriceHelp.textContent = 'No usual product price is set for this item.';
+        return;
+      }
+      usualPriceHelp.textContent = `Usual product price: ${formatMoney(usual)}. Sale price can be changed for this stock-out.`;
+      const priceText = String(priceInput.value ?? '').trim();
+      const entered = Number(priceText);
+      if (priceText !== '' && Number.isFinite(entered) && entered < usual) {
+        priceWarning.textContent = `Below usual product price of ${formatMoney(usual)}.`;
+        priceWarning.hidden = false;
+      }
+    }
+
+    function updatePriceVisibility({ itemChanged = false } = {}) {
       const reason = String(reasonSelect.value || 'sold');
       priceRow.classList.toggle('hidden', reason !== 'sold');
       const opt = itemSelect.options[itemSelect.selectedIndex];
@@ -337,13 +428,17 @@ export async function _mountInventory(container) {
         errorBanner.hidden = true;
       }
       if (reason === 'sold') {
-        const itemId = Number(itemSelect.value || 0);
-        const item = (window.__inventory_items || []).find((x) => Number(x.id) === itemId);
-        if (item && priceInput.value === '') {
-          const p = Number(item.price ?? 0);
-          priceInput.value = Number.isFinite(p) ? String(p) : '';
+        const item = selectedStockOutItem();
+        if (item && (!priceManuallyEdited || itemChanged)) {
+          const p = productPrice(item);
+          if (p != null && !priceManuallyEdited) {
+            priceInput.value = String(p);
+          } else if (p == null && !priceManuallyEdited) {
+            priceInput.value = '';
+          }
         }
       }
+      updateSalePriceGuidance();
     }
 
     const updateStockOutUomState = () => {
@@ -360,8 +455,12 @@ export async function _mountInventory(container) {
       }
     };
 
+    priceInput.addEventListener('input', () => {
+      priceManuallyEdited = true;
+      updateSalePriceGuidance();
+    });
     itemSelect.addEventListener('change', () => {
-      updatePriceVisibility();
+      updatePriceVisibility({ itemChanged: true });
       updateStockOutUomState();
     });
     reasonSelect.addEventListener('change', updatePriceVisibility);
@@ -408,8 +507,11 @@ export async function _mountInventory(container) {
         };
         if (reason === 'sold') {
           payload.record_cash_event = true;
-          const dollars = Number(priceInput.value ?? 0);
-          payload.sell_unit_price_cents = Number.isFinite(dollars) ? Math.round(dollars * 100) : 0;
+          const trimmedPrice = String(priceInput.value ?? '').trim();
+          if (trimmedPrice !== '') {
+            const dollars = Number(trimmedPrice);
+            payload.sell_unit_price_cents = Number.isFinite(dollars) ? Math.round(dollars * 100) : 0;
+          }
         }
         await canonical.stockOut(payload);
         close();
@@ -418,7 +520,9 @@ export async function _mountInventory(container) {
       } catch (e) {
         const detail = e?.payload?.detail;
         const shortages = detail?.shortages;
-        const message = shortages ? `Insufficient stock:\n${JSON.stringify(shortages)}` : (detail || e?.message || 'Stock out failed');
+        const message = Array.isArray(shortages)
+          ? shortages.map((s) => formatShortageLine(s, itemId)).join('\n')
+          : (detail || e?.message || 'Stock out failed');
         errorBanner.textContent = message;
         errorBanner.hidden = false;
       }
@@ -1090,7 +1194,7 @@ export function openItemModal(item = null) {
     opt.textContent = label;
     typeSelect.appendChild(opt);
   });
-  typeSelect.value = item?.type ?? 'Product';
+  typeSelect.value = item?.type ?? (item?.is_product ? 'Product' : 'Material');
   typeWrap.appendChild(typeSelect);
   typeRow.append(typeLabel, typeWrap);
 
@@ -1347,6 +1451,16 @@ export function openItemModal(item = null) {
     updatePreview();
   }
 
+  function syncItemTypeProductState(source = '') {
+    if (source === 'type') {
+      isProductInput.checked = typeSelect.value === 'Product';
+    } else if (isProductInput.checked) {
+      typeSelect.value = 'Product';
+    } else if (typeSelect.value === 'Product') {
+      typeSelect.value = 'Material';
+    }
+  }
+
   function syncProductPriceVisibility() {
     if (!priceInput) return;
     const showPrice = isProductInput.checked;
@@ -1382,6 +1496,7 @@ export function openItemModal(item = null) {
     if (qtyVal !== undefined && qtyVal !== null) qtyInput.value = qtyVal;
     if (isProductInput) {
       isProductInput.checked = !!item?.is_product;
+      syncItemTypeProductState();
       if (priceInput && item?.price != null) priceInput.value = item.price;
       syncProductPriceVisibility();
     }
@@ -1455,7 +1570,16 @@ export function openItemModal(item = null) {
   });
   qtyInput.addEventListener('input', () => updatePreview());
   if (addBatchToggle) addBatchToggle.addEventListener('change', () => { syncBatchVisibility(); updatePreview(); });
-  isProductInput.addEventListener('change', () => { syncProductPriceVisibility(); updatePreview(); });
+  isProductInput.addEventListener('change', () => {
+    syncItemTypeProductState('product');
+    syncProductPriceVisibility();
+    updatePreview();
+  });
+  typeSelect.addEventListener('change', () => {
+    syncItemTypeProductState('type');
+    syncProductPriceVisibility();
+    updatePreview();
+  });
   if (addBatchBtn) addBatchBtn.addEventListener('click', () => openStockInModal());
   if (recordPurchaseBtn) recordPurchaseBtn.addEventListener('click', () => openPurchaseModal());
 
@@ -1895,7 +2019,7 @@ export function openItemModal(item = null) {
       sku: (fieldValue(fSku) || '').trim() || undefined,
       vendor_id: Number.isInteger(vendorIdValue) && vendorIdValue > 0 ? vendorIdValue : undefined,
       location: (fieldValue(fLocation) || '').trim() || undefined,
-      type: (expanded ? fieldValue(typeRow) : 'Product') || 'Product',
+      type: (expanded ? fieldValue(typeRow) : typeSelect.value) || (isProductInput.checked ? 'Product' : 'Material'),
       notes: expanded ? (notes.value.trim() || undefined) : undefined,
       dimension: dimensionVal,
       uom: unitVal,

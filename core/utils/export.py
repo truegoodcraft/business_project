@@ -26,6 +26,7 @@ import os
 import sqlite3
 import tempfile
 import time
+from contextlib import closing
 from pathlib import Path
 from typing import Callable, Dict, Optional
 
@@ -75,11 +76,12 @@ logger.debug("export paths initialized")
 
 def _connect_readonly(db_path: Path):
     # Prefer immutable read-only; fallback to plain ro
-    uri1 = f"file:{db_path.as_posix()}?mode=ro&immutable=1"
+    base_uri = Path(db_path).resolve(strict=False).as_uri()
+    uri1 = f"{base_uri}?mode=ro&immutable=1"
     try:
         return sqlite3.connect(uri1, uri=True)
     except sqlite3.Error:
-        uri2 = f"file:{db_path.as_posix()}?mode=ro"
+        uri2 = f"{base_uri}?mode=ro"
         return sqlite3.connect(uri2, uri=True)
 
 
@@ -87,7 +89,7 @@ def _count_rows(db_path: Path) -> Dict[str, int]:
     counts: Dict[str, int] = {"vendors": 0, "items": 0, "tasks": 0, "attachments": 0}
     if not db_path.exists():
         return counts
-    with _connect_readonly(db_path) as con:
+    with closing(_connect_readonly(db_path)) as con:
         cur = con.cursor()
         for t in counts.keys():
             try:
@@ -257,7 +259,7 @@ def import_preview(path: str, password: str) -> Dict[str, object]:
         except sqlite3.Error:
             return {"ok": False, "error": "bad_container"}
         try:
-            with _connect_readonly(tmp_path) as con:
+            with closing(_connect_readonly(tmp_path)) as con:
                 cur = con.cursor()
                 cur.execute("PRAGMA user_version")
                 row = cur.fetchone()
@@ -322,7 +324,7 @@ def import_commit(
             os.fsync(tf.fileno())
 
         try:
-            with _connect_readonly(tmp_db_path) as con:
+            with closing(_connect_readonly(tmp_db_path)) as con:
                 con.execute("PRAGMA schema_version")
         except sqlite3.Error:
             _retry_unlink(tmp_db_path)
@@ -366,7 +368,7 @@ def import_commit(
             "manifest": {"version": header.version},
         }
         try:
-            with _connect_readonly(APP_DB) as con:
+            with closing(_connect_readonly(APP_DB)) as con:
                 audit_entry["preview_counts"] = {**_count_rows(APP_DB)}
         except sqlite3.Error:
             audit_entry["preview_counts"] = {}

@@ -2,14 +2,18 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 from starlette.requests import Request
 
-from core.api import http
 import tgc.security as tgc_security
+
+
+def _current_http():
+    return importlib.import_module("core.api.http")
 
 
 
@@ -34,6 +38,7 @@ def make_request(
 
 
 def test_tgc_security_wrapper_delegates_to_canonical_validator(monkeypatch: pytest.MonkeyPatch) -> None:
+    http = _current_http()
     calls: list[Request] = []
 
     def _fake_require_token_ctx(request: Request):
@@ -51,6 +56,7 @@ def test_tgc_security_wrapper_delegates_to_canonical_validator(monkeypatch: pyte
 
 
 def test_validate_session_token_prefers_runtime_token_over_stale_mirror(monkeypatch: pytest.MonkeyPatch) -> None:
+    http = _current_http()
     runtime_token = "runtime-token"
     stale_token = "stale-token"
 
@@ -68,6 +74,7 @@ def test_validate_session_token_prefers_runtime_token_over_stale_mirror(monkeypa
 
 
 def test_extract_token_honors_configured_cookie_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    http = _current_http()
     monkeypatch.setattr(http.app.state.app_state.settings, "session_cookie_name", "custom_session")
 
     custom_req = make_request(cookies={"custom_session": "custom-token"}, app=http.app)

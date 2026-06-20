@@ -1377,6 +1377,24 @@ hr.thin {
   font-size: 0.9em;
 }
 
+.stock-out-price-help,
+.recipes-help {
+  color: #9fb2d0;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.stock-out-price-help {
+  margin-top: 4px;
+}
+
+.stock-out-price-warning {
+  margin-top: 5px;
+  color: var(--warning);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
 .demo-banner {
   display: flex;
   align-items: center;
@@ -3747,6 +3765,15 @@ hr.thin {
   flex-wrap: wrap;
 }
 
+.recipes-help {
+  margin: -4px 0 12px 100px;
+  max-width: 680px;
+}
+
+.recipes-help--compact {
+  margin: -4px 0 10px;
+}
+
 .recipes-row-label {
   width: 90px;
   color: #bfd0ea;
@@ -3955,6 +3982,26 @@ hr.thin {
   padding: 8px 12px;
   background: linear-gradient(180deg, #3f8cff, #3275dc);
   box-shadow: 0 8px 18px rgba(41, 120, 233, 0.25);
+}
+
+.finance-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.finance-preset-btn {
+  border-radius: 8px;
+  padding: 7px 10px;
+  border: 1px solid rgba(116, 143, 196, 0.36);
+  background: rgba(36, 50, 76, 0.9);
+  color: #dce7fb;
+}
+
+.finance-preset-btn:hover {
+  border-color: rgba(138, 170, 226, 0.62);
+  background: rgba(48, 68, 103, 0.95);
 }
 
 .finance-summary-grid {

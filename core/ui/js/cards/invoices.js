@@ -230,7 +230,7 @@ function render() {
     el('section', { class: 'invoices-header card' }, [
       el('div', { class: 'invoices-heading' }, [
         el('h1', { text: 'Invoices' }),
-        el('p', { text: 'Create, issue, and mark paid local invoices without introducing any Pro workflows.' }),
+        el('p', { text: 'Create, issue, and mark paid local invoices' }),
       ]),
       el('button', { class: 'btn primary invoices-new-btn', type: 'button', text: 'New Invoice', 'data-action': 'new-invoice' }),
     ]),

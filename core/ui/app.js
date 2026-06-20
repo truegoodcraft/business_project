@@ -297,6 +297,11 @@ function openClaimScreen() {
 async function handleStartFreshShop(button) {
   const trigger = button instanceof HTMLButtonElement ? button : null;
   const originalText = trigger?.textContent || 'Start Fresh Shop';
+  const ok = window.confirm(
+    'Create a blank real-shop database?\n\nDemo data stays separate. This creates or resets the real-shop database used outside demo mode. Export a backup first from Settings > Administration > Backup Export if you need to keep existing real-shop data.'
+  );
+  if (!ok) return;
+
   if (trigger) {
     trigger.disabled = true;
     trigger.textContent = 'Preparing...';
@@ -557,6 +562,7 @@ window.BUS_UNITS = {
 document.addEventListener('DOMContentLoaded', async () => {
   try {
     bindSidebarUpdateControls();
+    mountBackupExport();
     maybeRunStartupUpdateCheck();
     await refreshAuthState();
     if (!canMountNormalApp()) {

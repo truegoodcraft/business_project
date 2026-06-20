@@ -138,6 +138,11 @@ def _guard_test_app(monkeypatch: pytest.MonkeyPatch, *, allow_writes: bool) -> F
     app.include_router(logs_api.public_router)
     app.include_router(logs_api.router)
 
+    @app.middleware("http")
+    async def _mark_unclaimed_mode(request: Request, call_next):
+        request.state.auth_mode = "unclaimed"
+        return await call_next(request)
+
     app.dependency_overrides[require_token_ctx] = _require_test_token
     app.dependency_overrides[require_user] = _route_guard_user_context
     for route in app.routes:

@@ -79,17 +79,51 @@ function stockText(item) {
   return formatOnHandDisplay(item, { fallback: 'Unknown', allowLegacyFallbacks: false });
 }
 
+function displayUnitForItem(item, fallback = '') {
+  return (
+    item?.stock_on_hand_display?.unit ||
+    item?.display_unit ||
+    item?.unit ||
+    item?.uom ||
+    fallback ||
+    ''
+  );
+}
+
+function displayBaseQty(qtyBase, item, fallbackUnit = '') {
+  const unit = displayUnitForItem(item, fallbackUnit);
+  const dim = item?.dimension || dimensionForUnit(unit) || 'count';
+  const numericBase = Number(qtyBase ?? 0);
+  if (!Number.isFinite(numericBase)) return `0${unit ? ` ${unit}` : ''}`;
+  let value = numericBase;
+  try {
+    value = dim === 'count' && String(unit || item?.uom || 'ea').toLowerCase() === 'ea'
+      ? numericBase / 1000
+      : fromBaseQty(numericBase, unit || item?.uom || 'ea', dim);
+  } catch {
+    value = numericBase;
+  }
+  const rounded = Math.round(Number(value) * 1000) / 1000;
+  const text = Number.isInteger(rounded) ? String(rounded) : String(rounded).replace(/0+$/, '').replace(/\.$/, '');
+  return `${text}${unit ? ` ${unit}` : ''}`;
+}
+
+function formatShortageLine(shortage) {
+  const itemId = shortage?.item_id ?? shortage?.component ?? null;
+  const item = itemId != null && _state.itemById?.has(String(itemId)) ? _state.itemById.get(String(itemId)) : null;
+  const name = item?.name || (itemId != null ? `Item #${itemId}` : 'Required item');
+  const required = shortage?.required ?? 0;
+  const available = shortage?.available ?? shortage?.on_hand ?? 0;
+  const missing = shortage?.missing ?? Math.max(0, Number(required || 0) - Number(available || 0));
+  const unit = displayUnitForItem(item, shortage?.uom);
+  return `Not enough ${name}: need ${displayBaseQty(required, item, unit)}, have ${displayBaseQty(available, item, unit)}, missing ${displayBaseQty(missing, item, unit)}.`;
+}
+
 function formatManufactureError(err) {
   const payload = err?.payload || err?.data || {};
   const detail = payload?.detail ?? payload;
   if (detail && typeof detail === 'object' && detail.error === 'insufficient_stock' && Array.isArray(detail.shortages)) {
-    const rows = detail.shortages.map((s) => {
-      const itemId = s?.item_id ?? s?.component ?? '?';
-      const req = s?.required ?? '?';
-      const avail = s?.available ?? '?';
-      return `item ${itemId} need ${req}, have ${avail}`;
-    });
-    return `Insufficient stock: ${rows.join(' | ')}`;
+    return detail.shortages.map(formatShortageLine).join(' ');
   }
   if (detail?.message) return String(detail.message);
   if (typeof detail === 'string') return detail;
@@ -371,7 +405,7 @@ async function loadRecentRuns30d() {
 
   panel.innerHTML = `
     <div class="mf-runs-grid mf-runs-head">
-      <div>Recipe</div><div>Date</div><div>Qty</div>
+      <div>Run</div><div>Date</div><div>Qty</div>
     </div>
     <div id="mf-runs-body"></div>
   `;
@@ -416,7 +450,7 @@ async function loadRecentRuns30d() {
       const d = ts ? new Date(ts) : null;
       const dateStr = d ? d.toLocaleDateString() : '';
       const rid = r.source_id ? String(r.source_id) : null;
-      const recipeName = (rid && recipeNameCache[rid]) || (rid ? `Run ${rid}` : (r.source_kind ? String(r.source_kind) : '(manufacture)'));
+      const recipeName = rid ? `Run #${rid}` : (r.source_kind ? String(r.source_kind) : '(manufacture)');
       const qty = fmtHumanQty(r.quantity_decimal, r.uom);
       const row = document.createElement('div');
       row.className = 'mf-runs-grid mf-runs-row';

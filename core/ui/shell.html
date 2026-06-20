@@ -35,7 +35,7 @@
     document.documentElement.dataset.busTheme = theme;
   })();
   </script>
-  <link rel="stylesheet" href="/ui/css/app.css?v=buscore-1.3.1">
+  <link rel="stylesheet" href="/ui/css/app.css?v=buscore-1.3.2">
   <script>
   (function(){
     const href = "favicon.svg?v=buscore-8";
@@ -253,9 +253,9 @@
               <!-- Local tasks table lives in JS or existing markup -->
             </section>
             <section data-tab-panel="backup" class="tab-panel hidden">
-              <!-- Backup export button already present elsewhere; JS will wire -->
-              <button data-action="export-backup" class="btn btn-primary btn-block">Export</button>
-              <p>Downloads current app.db (or fallback endpoint).</p>
+              <!-- Backup export is handled from Settings > Administration. -->
+              <button data-action="export-backup" class="btn btn-primary btn-block">Open Backup Export</button>
+              <p>Use Settings &gt; Administration &gt; Backup Export for encrypted local backups.</p>
             </section>
           </div>
         </section>
@@ -340,6 +340,6 @@
     </div>
   </div>
 
-  <script type="module" src="/ui/app.js?v=buscore-1.3.1"></script>
+  <script type="module" src="/ui/app.js?v=buscore-1.3.2"></script>
 </body>
 </html>

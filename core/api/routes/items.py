@@ -161,6 +161,7 @@ def _row(it: Item, vendor_name: Optional[str] = None, on_hand: Optional[int] = N
         "is_product": bool(getattr(it, "is_product", False)),
         "notes": it.notes,
         # UI reads these (optional):
+        "vendor_id": int(it.vendor_id) if getattr(it, "vendor_id", None) is not None else None,
         "vendor": vendor_name,          # derived from vendor_id
         "location": getattr(it, "location", None),
         "type": getattr(it, "item_type", None),  # present if column exists

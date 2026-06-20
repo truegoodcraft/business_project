@@ -17,14 +17,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with TGC BUS Core.  If not, see <https://www.gnu.org/licenses/>.
 
-import { ensureToken, rawFetch } from '../api.js';
-
 export function mountBackup(container) {
   if (container) {
     container.innerHTML = `
       <div class="card">
-        <button type="button" data-action="export-backup">Export</button>
-        <small class="muted">Downloads current app.db (or fallback endpoint).</small>
+        <button type="button" data-action="export-backup">Open Backup Export</button>
+        <small class="muted">Use Settings > Administration > Backup Export for encrypted local backups.</small>
       </div>
     `;
   }
@@ -36,33 +34,9 @@ export function mountBackupExport() {
   if (!btn || btn.dataset.backupBound) return;
   btn.dataset.backupBound = '1';
 
-  btn.addEventListener('click', async () => {
-    try {
-      const token = await ensureToken();
-      const tryDownload = async (url, filename) => {
-        const res = await rawFetch(url, {
-          headers: { 'X-Session-Token': token },
-        });
-        if (!res.ok) return false;
-        const blob = await res.blob();
-        const link = document.createElement('a');
-        const href = URL.createObjectURL(blob);
-        link.href = href;
-        link.download = filename;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        URL.revokeObjectURL(href);
-        return true;
-      };
-
-      if (await tryDownload('/app/backup', 'app-backup.db')) return;
-      if (await tryDownload('/app.db', 'app.db')) return;
-      alert('No backup endpoint found.');
-    } catch (err) {
-      console.error('backup export failed', err);
-      alert('Could not export backup.');
-    }
+  btn.addEventListener('click', () => {
+    window.location.hash = '#/settings';
+    alert('Open Settings > Administration > Backup Export, enter a password, and export an encrypted backup.');
   });
 }
 

@@ -112,7 +112,7 @@ def test_integration_routes_and_cors(test_client: TestClient) -> None:
     body = writes.json()
     assert "enabled" in body
 
-    options = test_client.request(
+    untrusted_preflight = test_client.request(
         "OPTIONS",
         "/dev/writes",
         headers={
@@ -120,6 +120,8 @@ def test_integration_routes_and_cors(test_client: TestClient) -> None:
             "Access-Control-Request-Method": "POST",
         },
     )
-    assert options.status_code == 200
-    # verify CORS no longer reflects TOKEN_HEADER if we were checking that
-
+    assert untrusted_preflight.status_code == 400
+    assert untrusted_preflight.headers.get("access-control-allow-origin") not in {
+        "http://example.com",
+        "*",
+    }
