@@ -8,7 +8,11 @@ from fastapi import APIRouter, Depends
 from core.auth.dependencies import require_permission
 from core.auth.permissions import PERMISSION_UPDATES_CHECK, PERMISSION_UPDATES_STAGE
 from core.config.writes import require_writes
-from core.config.manager import load_config
+from core.config.manager import (
+    get_update_check_first_reported,
+    load_config,
+    set_update_check_first_reported,
+)
 from core.runtime.manifest_keys import active_manifest_public_keys
 from core.services.update import UpdateResult, UpdateService
 from core.services.update_stage import UpdateStageResult, UpdateStageService
@@ -20,6 +24,23 @@ router = APIRouter()
 
 def get_update_service() -> UpdateService:
     return UpdateService(trusted_manifest_public_keys=active_manifest_public_keys())
+
+
+def _read_first_reported() -> bool:
+    try:
+        return get_update_check_first_reported()
+    except Exception:
+        # A local-state read failure must never block the update check. Treat as
+        # already-reported so we do not risk inflating first_check on flaky IO.
+        return True
+
+
+def _record_first_reported() -> None:
+    try:
+        set_update_check_first_reported(True)
+    except Exception:
+        # Persisting the flag is best-effort; a failure here must not surface.
+        pass
 
 
 def get_update_stage_update_service() -> UpdateService:
@@ -61,10 +82,18 @@ def _stage_payload(result: UpdateStageResult) -> dict[str, object | None]:
 def check_for_updates() -> dict[str, object | None]:
     try:
         cfg = load_config().updates
-        result = get_update_service().check(
-            manifest_url=cfg.manifest_url,
-            channel=cfg.channel,
-        )
+        first_check = not _read_first_reported()
+        try:
+            result = get_update_service().check(
+                manifest_url=cfg.manifest_url,
+                channel=cfg.channel,
+                first_check=first_check,
+            )
+        finally:
+            # Record the first report after the attempt finishes, even on error
+            # or network failure, so a flaky network cannot spam first_check=true.
+            if first_check:
+                _record_first_reported()
         return _result_payload(result)
     except Exception:
         return _result_payload(

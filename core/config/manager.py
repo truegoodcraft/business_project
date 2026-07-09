@@ -239,6 +239,25 @@ def set_dev_writes_enabled(enabled: bool) -> None:
     _log.info("[write-gate] dev.writes_enabled persisted as %s in %s", bool(enabled), config_path())
 
 
+#: Canonical local-state key recording that this BUS Core profile has already
+#: reported a version-aware update check to Lighthouse. Stored at the top level
+#: of config.json (outside the pydantic-managed public sections) so it survives
+#: settings round-trips via save_config. It is a single aggregate-safe boolean —
+#: not an identity, dedupe token, or persistent client identifier.
+UPDATE_CHECK_FIRST_REPORTED_KEY = "update_check_first_reported"
+
+
+def get_update_check_first_reported() -> bool:
+    raw = _load_canonical_config_dict()
+    return bool(raw.get(UPDATE_CHECK_FIRST_REPORTED_KEY, False))
+
+
+def set_update_check_first_reported(reported: bool) -> None:
+    raw = _load_canonical_config_dict()
+    raw[UPDATE_CHECK_FIRST_REPORTED_KEY] = bool(reported)
+    _write_json_file(config_path(), raw)
+
+
 def load_policy_config() -> dict[str, Any]:
     raw = _load_canonical_config_dict()
     out: dict[str, Any] = {}

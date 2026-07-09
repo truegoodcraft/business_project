@@ -7,6 +7,7 @@ import json
 import re
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 
@@ -80,12 +81,18 @@ class UpdateService:
         self._trusted_manifest_public_keys = trusted_manifest_public_keys or {}
         self._require_signed_manifest = require_signed_manifest
 
-    def check(self, *, manifest_url: str, channel: str) -> UpdateResult:
+    def check(self, *, manifest_url: str, channel: str, first_check: bool | None = None) -> UpdateResult:
         if not _is_semver(CURRENT_VERSION):
             return self._error_result("invalid_current_version", "Current version is not strict SemVer.")
 
         try:
-            release = self.select_release(manifest_url=manifest_url, channel=channel)
+            outbound_url = _build_update_check_url(
+                manifest_url,
+                current_version=CURRENT_VERSION,
+                channel=channel,
+                first_check=first_check,
+            )
+            release = self.select_release(manifest_url=outbound_url, channel=channel)
 
             latest_version = release.version
             if not _is_semver(latest_version):
@@ -161,6 +168,57 @@ class UpdateService:
             error_code=code,
             error_message=message,
         )
+
+
+#: Aggregate-safe query params BUS Core appends to the Lighthouse update-check
+#: request. Explicitly identity-free: no install/device/user id, hostname,
+#: fingerprint, or dedupe token is ever added here.
+_UPDATE_CHECK_QUERY_KEYS = ("current_version", "channel", "first_check")
+
+
+def _build_update_check_url(
+    manifest_url: str,
+    *,
+    current_version: str | None,
+    channel: str | None,
+    first_check: bool | None,
+) -> str:
+    """Append aggregate-safe update-check params to ``manifest_url``.
+
+    Existing query params on the manifest URL are preserved; the app-provided
+    ``current_version``/``channel``/``first_check`` values win over any
+    same-named params already present. Never raises: on malformed input the
+    original ``manifest_url`` is returned unchanged so an update check is never
+    blocked by URL construction. An invalid/missing version is omitted rather
+    than sent.
+    """
+
+    try:
+        parts = urlsplit(manifest_url)
+        preserved = [
+            (key, value)
+            for key, value in parse_qsl(parts.query, keep_blank_values=True)
+            if key not in _UPDATE_CHECK_QUERY_KEYS
+        ]
+
+        added: list[tuple[str, str]] = []
+        if isinstance(current_version, str) and _is_semver(current_version):
+            added.append(("current_version", current_version))
+        added.append(("channel", _safe_channel(channel)))
+        if first_check is not None:
+            added.append(("first_check", "true" if first_check else "false"))
+
+        query = urlencode(preserved + added)
+        return urlunsplit((parts.scheme, parts.netloc, parts.path, query, parts.fragment))
+    except Exception:  # Never let query construction block an update check.
+        return manifest_url
+
+
+def _safe_channel(channel: str | None) -> str:
+    try:
+        return validate_update_channel(channel)
+    except UpdatePolicyError:
+        return DEFAULT_UPDATE_CHANNEL
 
 
 def _build_timeout(timeout_s: float) -> Any:

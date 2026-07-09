@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### Update-Check Analytics Repair (privacy-safe)
+
+- The outbound update-check request to Lighthouse now sends three aggregate-safe query params — `current_version`, `channel`, and `first_check` — making the active-install proxy real and adding a first-seen vs repeat-check split with no identity tracking.
+- `first_check=true` is sent only on the first version-aware update check for a local profile and `first_check=false` thereafter, backed by a single local boolean `update_check_first_reported` in `%LOCALAPPDATA%\BUSCore\config.json`. The flag is recorded after the request attempt finishes (even on error/failure) so a flaky network cannot inflate first-seen counts.
+- Existing query params on a configured `manifest_url` are preserved; app-provided values win on key collision; an invalid/missing version is omitted rather than blocking the check; an invalid channel falls back to `stable`.
+- No identity-bearing data is added: no install/device/user id, hostname, username, machine fingerprint, or dedupe/persistent-client token. The `/app/update/check` response contract, enable/disable and startup behavior, manifest/signature trust, and staging/download/install paths are unchanged.
+
 ## [1.3.2] - 2026-06-20
 
 ### LazoralltheCore / Laser Everything Community Polish Patch

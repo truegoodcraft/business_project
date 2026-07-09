@@ -438,7 +438,7 @@
 
 
 *
-**Config:** Update settings live in `%LOCALAPPDATA%\BUSCore\config.json` under `updates` (`enabled`, `channel`, `manifest_url`, `check_on_startup`). Strict SemVer required, and fetches time out at 4 seconds.
+**Config:** Update settings live in `%LOCALAPPDATA%\BUSCore\config.json` under `updates` (`enabled`, `channel`, `manifest_url`, `check_on_startup`). Strict SemVer required, and fetches time out at 4 seconds. A top-level local-state boolean `update_check_first_reported` records whether this profile has already reported a version-aware update check; it is a single aggregate-safe flag, not an identity or persistent client token, and survives settings saves.
 
 
 *
@@ -451,6 +451,10 @@
 
 *
 **Manual check:** Manual "Check now" always calls `GET /app/update/check` regardless of the startup-check setting.
+
+
+*
+**Update-check outbound params:** The outbound update-check request to Lighthouse appends three aggregate-safe query params to `updates.manifest_url`: `current_version` (runtime `VERSION`, omitted if not strict SemVer), `channel` (validated low-cardinality lane, falling back to `stable`), and `first_check` (`true` on the first version-aware check for the local profile, `false` thereafter, backed by `update_check_first_reported`). Pre-existing manifest-URL query params are preserved and app-provided values win on key collision. The request MUST NOT carry any identity — no install/device/user id, hostname, username, machine fingerprint, or dedupe/persistent-client token — consistent with Lighthouse's aggregate-only, no-identity posture.
 
 
 *
