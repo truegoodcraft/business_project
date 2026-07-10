@@ -2,10 +2,10 @@
 
 # BUS Core Privacy Statement
 
-Last updated: March 2026
+Last updated: July 10, 2026
 
 BUS Core is designed to run locally on your machine.
-Because of this architecture, the software collects little or no personal data.
+Because of this architecture, operational business records remain under the operator's control.
 
 ---
 
@@ -25,16 +25,11 @@ This data is not transmitted to the developer.
 
 ---
 
-## No Telemetry
+## Current Network Signals
 
-BUS Core does **not** include:
+Current BUS Core releases can make optional version-aware update checks. Those requests may include the current app version, release channel, and whether the local profile has previously attempted a version-aware check. They do not include an installation identifier, shop records, customer data, item or recipe data, invoice contents, quantities, financial values, file paths, or machine fingerprints.
 
-* usage tracking
-* analytics services
-* telemetry
-* advertising identifiers
-
-The software does not monitor how you use it.
+A broader limited product-telemetry system is approved for future development but is not shipped in the current release. Before it ships, it must use a versioned allowlist, provide clear first-run disclosure and settings control, allow easy opt-out, fail without affecting local work, and reject business-content fields.
 
 ---
 
@@ -66,7 +61,7 @@ This interface is accessible **only from your device by default**, unless you in
 
 If enabled, the software may check a public repository for new releases.
 
-These requests do not include operational data.
+These requests do not include operational business data or a persistent client identifier.
 
 Update checks can be disabled.
 

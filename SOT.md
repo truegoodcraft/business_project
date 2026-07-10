@@ -1,6 +1,6 @@
 # TGC BUS Core — Unified Source of Truth
 
-**Version:** v1.3.2 **Updated:** 2026-06-20 **Status:** Stable **Authority:** `core/version.py` is the version authority. Where this document and code disagree, update this document.
+**Version:** v1.3.2 **Updated:** 2026-07-10 **Status:** Stable **Authority:** `core/version.py` is the version authority. Where this document and code disagree, update this document.
 
 ---
 
@@ -10,17 +10,26 @@
 
 * **Product:** TGC BUS Core (Business Utility System).
 
-* **Audience:** Small and micro shops, makers, and anti-SaaS operators who need durable local control.
+* **Audience:** Small manufacturers, production shops, makers, and practical operators who need dependable control of inventory, recipes/BOMs, manufacturing, jobs, invoices, costs, and operating records.
 
-* **Constitutional doctrine:** BUS Core is the sovereign local system of record. It MUST remain fully usable offline, on local infrastructure, without Pro, without accounts, and without forced cloud dependency.
+* **Constitutional doctrine:** BUS Core Self-Managed is the sovereign customer-operated system of record. It MUST remain fully usable on local or self-hosted infrastructure without a subscription or forced cloud dependency. TGC Managed BUS is the optional commercial operating model in which True Good Craft hosts and manages an isolated BUS deployment for the customer.
 
 * **Trust posture:** Predictability, stability, operator safety, and long-term reliability are first-order product requirements. Feature growth does not outrank trust preservation.
 
-* **Authority boundary:** Core owns the canonical business logic, durable data model, and operator-safe base workflows. Pro may automate, orchestrate, integrate, or accelerate around Core, but it MUST NOT supersede Core or redefine Core logic.
+* **Authority boundary:** Core owns the canonical business logic, durable data model, and operator-safe base workflows. Hosting, authentication, backups, monitoring, migration, integrations, and bounded support may be added around Core for a managed deployment, but MUST NOT supersede Core or create a divergent product fork.
 * **Invoice authority:** Core owns local invoice truth. Invoice lines are billing records only and MUST NOT become inventory mutation authority. Invoice payment truth is exactly one local `CashEvent` with `kind="sale"`, `category="invoice"`, `source_kind="invoice"`, and `source_id="invoice:{id}"`. Pro-owned sending, payment links, portals, sync, recurring billing, reminders, and automation remain outside Core.
 * **Theme authority:** Core UI theme variants are presentation-only state. The active selector is the existing Settings theme dropdown, the selected variant is stored in browser `localStorage` key `bus.ui.themeVariant`, and CSS variables own the visual authority. Theme state MUST NOT become backend config, auth, business, inventory, finance, or release-update authority.
 
-* **Product framing:** Core is the product and trust anchor, not a crippled free tier. The system must remain complete and useful on its own.
+* **Product framing:** Core is the product and trust anchor, not a crippled free tier. The system must remain complete and useful on its own. The canonical offer is: run BUS Core yourself for free, or have True Good Craft host and manage it for you.
+
+### Approved transition direction
+
+* Manufacturing operations software for small shops is the primary product position.
+* BUS Core Self-Managed is free, open-source, local or self-hosted, customer-operated, portable, and requires no subscription.
+* TGC Managed BUS is the optional paid service direction for isolated hosting, browser access, authentication, updates, backups, monitoring, recovery, and bounded support.
+* Managed BUS is not represented as a generally available production service until a working intake and credible single-customer deployment baseline exist.
+* Absolute "no telemetry" claims are retired. Current shipped outbound behavior remains limited to documented update checks. A broader versioned product-telemetry contract is approved for future implementation only after Lighthouse enforces the allowlisted privacy contract and the application provides clear disclosure and control.
+* Business content, including customer, supplier, employee, item, recipe, invoice, quantity, financial, document, raw database, filepath, and machine-fingerprint data, MUST NOT enter product telemetry.
 
 
 
@@ -567,7 +576,7 @@
 
 
 * 
-**No Telemetry:** All analytics are computed locally from the SQLite DB.
+**Telemetry boundary:** Business analytics remain local to the SQLite DB. Current shipped outbound behavior is limited to documented update checks. Approved future product telemetry must be disclosed, controllable, allowlisted, non-blocking, versioned through Lighthouse, and prohibited from carrying business content.
 
 
 * 
@@ -1435,15 +1444,15 @@ Lighthouse is not required for Core's local runtime to function; it exists to su
 
 2.3 Non-goals
 
-Lighthouse is not a telemetry system.
+Lighthouse is the independent release-data and telemetry-contract service. It is not required for Core's local runtime.
 
 Lighthouse does not identify users, does not maintain install IDs, and does not attempt to derive “active users.”
 
 Lighthouse does not auto-update Core and does not run code on client machines.
 
-(3) POLICY COMPATIBILITY WITH CORE (“NO TELEMETRY”)
+(3) POLICY COMPATIBILITY WITH CORE
 
-Core’s product stance is local-first and “no forced cloud / no telemetry” 
+Core’s product stance is self-managed by default with no forced cloud dependency. Absolute "no telemetry" language is retired.
 
 Core sot
 
@@ -1453,19 +1462,19 @@ Core sot
 
 .
 
-Therefore Lighthouse is permitted only under these constraints:
+Lighthouse product telemetry is permitted only under these constraints:
 
 Aggregate-only counting (daily totals)
 
-No user identifiers (no install_id, no device ID, no account ID, no cookies)
+Only a random local installation identifier approved by the versioned contract; no hardware-derived ID, device fingerprint, account ID, username, or cookie identity
 
 No IP storage (no raw IP retention; no hashed IP uniqueness systems)
 
 No behavioral profiling or cross-day user linking
 
-Lighthouse is strictly an ops/release surface tool, not a product analytics channel
+Lighthouse remains an ops/release authority and becomes the narrow product-telemetry contract authority
 
-If Lighthouse is ever expanded beyond aggregate counters, it requires a new explicit SoT delta and must preserve Core’s default telemetry posture of “Disabled (local-only)” 
+Broader collection requires an explicit versioned allowlist, field rejection, retention policy, disclosure, opt-out behavior, and tests proving prohibited business content cannot be transmitted
 
 #TGC-BUS-Core SOT
 
@@ -1574,7 +1583,7 @@ Core sot
 
 Manifest checksum, size, release-notes, and artifact signature-style metadata are declared manifest metadata. Core validates their shape and retains them internally; manual update staging requires a trusted signed manifest before using `sha256` and `size_bytes` to hash-verify a cached ZIP artifact. Read-only update check still does not require signatures.
 
-Lighthouse is allowed to exist as the public manifest proxy + download redirect target that Core and the website can point at. This does not convert Core into a telemetry product.
+Lighthouse is the public manifest proxy, download redirect target, update-signal receiver, and future versioned product-telemetry contract authority. Its availability must never be required for normal local BUS Core operation.
 
 (7) ACCEPTANCE CRITERIA
 

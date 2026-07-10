@@ -136,7 +136,7 @@ Update checks are part of the trust model because they are optional and non-bloc
 
 Release and update trust here depends more on clear authority and honest limits than on a large automation footprint. The current boundary is: canonical version authority exists, authority mirrors and change-trace requirements are machine-checked, tag alignment is checked, manifests are signed during release publication, update-check metadata is normalized, channel-specific manifests are selected explicitly, manual staging requires trusted signed manifest metadata before executing artifact verification into version+sha keyed `verified_ready_versions`, and launcher handoff is policy-controlled on next start.
 
-Known remaining release/update work is explicit: deciding whether read-only update check should also require signed manifests, adding optional restart orchestration beyond restart/reopen guidance, and Docker release hardening if the container lane needs governed releases. There is still no auto-install, startup auto-update, telemetry, or silent background update behavior.
+Known remaining release/update work is explicit: deciding whether read-only update check should also require signed manifests, adding optional restart orchestration beyond restart/reopen guidance, and Docker release hardening if the container lane needs governed releases. There is still no auto-install, startup auto-update, broader product telemetry, or silent background update behavior; the documented update-check parameters remain the only shipped outbound product signal.
 
 ## Freeze Notes
 

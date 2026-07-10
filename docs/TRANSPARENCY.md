@@ -28,7 +28,8 @@ The BUS Core runtime is built for transparency and local control. This document 
 
 ## Telemetry & Diagnostics
 
-* **Telemetry**: Disabled. No network beacons, analytics, or background telemetry are emitted.
+* **Current product telemetry**: Broader product-usage telemetry is not shipped. Optional version-aware update checks may send the current version, release channel, and first-check state as documented.
+* **Approved future boundary**: Limited product telemetry may be added only through a versioned Lighthouse allowlist, with disclosure, settings control, easy opt-out, non-blocking failure, bounded retention, and tests preventing business-content transmission.
 * **Diagnostics**: `logs/` contains per-run append-only logs. `/logs` returns the last 200 lines for local inspection only.
 * **Policy simulator**: `/policy.simulate` offers an explicit alternative to legacy “dry-run” modes.
 
@@ -36,7 +37,7 @@ The BUS Core runtime is built for transparency and local control. This document 
 
 * **GitHub Sponsors**: https://github.com/sponsors/truegoodcraft
 * **BUS Core support page**: https://buscore.ca/support
-* Support links are documentation and repository metadata only; they do not enable telemetry, accounts, or cloud dependencies in the Core runtime.
+* Support and future Managed BUS links are voluntary navigation only; they do not enable telemetry, accounts, hosting, or cloud dependencies in the self-managed Core runtime.
 
 ## Plugins
 

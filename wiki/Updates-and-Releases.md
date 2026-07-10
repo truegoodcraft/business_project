@@ -14,9 +14,9 @@ There is no silent background auto-install. Read-only update discovery and trust
 
 ## v1.3.2 and Core Stability
 
-v1.3.2 is the community polish release. Core is now feature-frozen and stability-focused, not abandoned. Future Core changes prioritize bug fixes, data safety, backup/restore, security and trust, tester blockers, release/update reliability, documentation, and small UX clarification.
+v1.3.2 is the community polish release. BUS Core remains maintained as manufacturing operations software. Future changes continue to prioritize bug fixes, data safety, backup/restore, security and trust, tester blockers, release/update reliability, documentation, operator clarity, and evidence-backed manufacturing improvements.
 
-Major new workflow and domain discovery moves to BUS Pro. Core remains a complete, local-first, open-source product and does not require Pro.
+Core remains a complete open-source product that can be run locally or self-hosted without a subscription. The upcoming Managed BUS direction adds optional TGC operation around the same product rather than creating a divergent fork.
 
 ## Before Updating
 

@@ -26,7 +26,7 @@ Packaged Windows production data is under `%LOCALAPPDATA%\BUSCore\app\app.db`; d
 
 ## Does BUS Core use cloud sync or telemetry?
 
-No. Core has no forced cloud, cloud sync, or telemetry. Explicitly configured network features such as update checks or supported integrations can make their required requests.
+BUS Core has no forced cloud or cloud synchronization. Current releases can make optional version-aware update checks containing only the documented release fields. Broader limited product telemetry is approved as future work but is not shipped yet; it must be disclosed, controllable, easily disabled, and prohibited from carrying business content.
 
 ## Does it require an account?
 
@@ -46,7 +46,7 @@ Sold stock-out is currently supported for count items. For non-count items, use 
 
 ## What does Core frozen/stability mode mean?
 
-Core remains maintained and useful. After v1.3.2, work focuses on reliability, security, data safety, release hygiene, documentation, tester blockers, and small clarity fixes. Major new workflow discovery moves to BUS Pro.
+Core remains a maintained manufacturing operations product. After v1.3.2, work continues to prioritize reliability, security, data safety, release hygiene, documentation, tester blockers, and manufacturing workflows supported by real operating evidence.
 
 ## Is Docker supported?
 

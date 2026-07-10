@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Product and Privacy Direction Alignment
+
+- Reframed BUS Core as maintained manufacturing operations software with two operating choices: free self-managed BUS Core and the upcoming paid TGC Managed BUS service.
+- Retired current-documentation claims that Core is feature-frozen, that new product work belongs to a separate Pro product, or that BUS Core has an absolute "no telemetry" posture.
+- Documented the shipped truth: current outbound behavior remains limited to version-aware update checks. Broader product telemetry is approved future work and is not claimed as implemented.
+- Defined the future telemetry boundary: versioned Lighthouse allowlists, clear disclosure and control, non-blocking failure behavior, and an absolute prohibition on business-content payloads.
+- Bumped `INTERNAL_VERSION` from `1.3.2.1` to `1.3.2.2`; public `VERSION` remains `1.3.2`.
+
 ### Update-Check Analytics Repair (privacy-safe)
 
 - The outbound update-check request to Lighthouse now sends three aggregate-safe query params — `current_version`, `channel`, and `first_check` — making the active-install proxy real and adding a first-seen vs repeat-check split with no identity tracking.

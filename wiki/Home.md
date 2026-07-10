@@ -2,9 +2,9 @@
 
 # BUS Core Wiki
 
-BUS Core is local-first, open-source shop infrastructure for small makers, workshops, and owner-operators. It tracks inventory, recipes, manufacturing, sales-related stock movement, and cost visibility without requiring a hosted account, forced cloud service, or telemetry.
+BUS Core is open-source manufacturing operations software for small makers, workshops, and owner-operators. It tracks inventory, recipes/BOMs, manufacturing, jobs, invoices, stock movement, and cost visibility. Run it yourself for free, or use the upcoming TGC Managed BUS service when you want True Good Craft to host and manage it.
 
-BUS Core v1.3.2 is the community polish release. Core is now feature-frozen and stability-focused: it remains maintained, while future Core work concentrates on bug fixes, data safety, backup and restore, security and trust, release hygiene, tester blockers, documentation, and small UX clarity. Major new workflow discovery belongs to BUS Pro, not Core.
+BUS Core v1.3.2 is the community polish release. Core remains maintained, with continued emphasis on bug fixes, data safety, backup and restore, security and trust, release hygiene, tester blockers, documentation, operator clarity, and evidence-backed manufacturing improvements.
 
 ## Start Here
 

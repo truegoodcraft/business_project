@@ -19,7 +19,7 @@ This document explains how BUS Core handles data, where it is stored, and how op
 1. **Core-owned writes only** – Plugins never write to disk. All stateful writes go through Core primitives.
 2. **Two-phase writes** – `write()` and successful `transform()` calls record a journal entry before committing. Audit entries follow once commits/rollbacks resolve.
 3. **Crash safety** – On startup, the journal manager rolls back any entry without an audit record and appends a `rollback` event.
-4. **No telemetry** – Logs are local only; no remote upload or background diagnostics.
+4. **Limited network signals** – Logs and business records remain local. Current outbound behavior is limited to documented update checks; approved future product telemetry must be disclosed, controllable, allowlisted, and unable to carry business content.
 5. **Secrets in RAM** – Encryption keys are held in-memory; decrypted payloads are never written to disk.
 
 ## Retention & Rotation
