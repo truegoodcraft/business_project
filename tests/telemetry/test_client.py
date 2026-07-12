@@ -4,10 +4,11 @@ import inspect
 import json
 import tempfile
 import unittest
+import urllib.parse
 import uuid
 from pathlib import Path
 
-from core.telemetry.client import ALLOWED_EVENT_NAMES, MAX_ATTEMPTS, TelemetryClient
+from core.telemetry.client import ALLOWED_EVENT_NAMES, MAX_ATTEMPTS, TELEMETRY_ENDPOINT, TelemetryClient
 from core.config.manager import Config
 from core.version import VERSION
 
@@ -46,6 +47,17 @@ class TelemetryClientTests(unittest.TestCase):
         config = Config()
         self.assertTrue(config.telemetry.enabled)
         self.assertFalse(config.telemetry.disclosure_acknowledged)
+
+    def test_default_transport_destination_is_exact_audited_https_endpoint(self):
+        parsed = urllib.parse.urlsplit(TELEMETRY_ENDPOINT)
+        self.assertEqual(TELEMETRY_ENDPOINT, "https://lighthouse.buscore.ca/telemetry/v1/events")
+        self.assertEqual(parsed.scheme, "https")
+        self.assertEqual(parsed.hostname, "lighthouse.buscore.ca")
+        self.assertEqual(parsed.path, "/telemetry/v1/events")
+        self.assertFalse(parsed.username)
+        self.assertFalse(parsed.password)
+        self.assertFalse(parsed.query)
+        self.assertFalse(parsed.fragment)
 
     def test_first_run_and_settings_surfaces_are_explicit(self):
         repo = Path(__file__).resolve().parents[2]

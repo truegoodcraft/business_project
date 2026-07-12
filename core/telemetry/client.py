@@ -90,7 +90,9 @@ def _default_sender(payload: dict[str, Any]) -> int:
         headers={"Content-Type": "application/json"},
     )
     try:
-        with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
+        # B310 is a false positive here: Request receives the immutable, audited
+        # HTTPS-only TELEMETRY_ENDPOINT above rather than user-controlled input.
+        with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:  # nosec B310
             return int(response.status)
     except urllib.error.HTTPError as exc:
         return int(exc.code)

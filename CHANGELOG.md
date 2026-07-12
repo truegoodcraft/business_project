@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Security Audit CI repair
+- Documented and narrowly suppressed Bandit B310 at the product-telemetry `urlopen` call because its destination is the immutable audited HTTPS Lighthouse endpoint, not user-controlled input.
+- Added regression coverage for the exact telemetry scheme, host, path, and absence of credentials, query, or fragment.
+- Bumped internal working revision to `1.3.2.6`; public version remains `1.3.2` and telemetry behavior is unchanged.
+
 ### Managed BUS public inquiry link
 - Added a modest Settings link to the deployed TGC Managed BUS inquiry path with source/campaign attribution.
 - States plainly that TGC can host, update, back up, monitor, and support BUS Core while the complete free self-managed application remains available.
