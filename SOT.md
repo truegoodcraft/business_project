@@ -26,9 +26,9 @@
 
 * Manufacturing operations software for small shops is the primary product position.
 * BUS Core Self-Managed is free, open-source, local or self-hosted, customer-operated, portable, and requires no subscription.
-* TGC Managed BUS is the optional paid service direction for isolated hosting, browser access, authentication, updates, backups, monitoring, recovery, and bounded support.
+* TGC Managed BUS is an optional paid, manually provisioned service for isolated hosting, browser access, authentication, updates, backups, monitoring, recovery, and bounded support. Its canonical public intake is `https://buscore.ca/managed-bus-inquiry`.
 * Managed BUS is not represented as a generally available production service until a working intake and credible single-customer deployment baseline exist.
-* Absolute "no telemetry" claims are retired. Published v1.3.2 outbound behavior remains limited to documented update checks. The current repository working revision implements the Lighthouse schema-1.0 client with first-run disclosure, a settings control, meaningful opt-out, strict payload construction, a random local UUIDv4 installation identifier, a 100-event local queue, at most three delivery attempts, milestone deduplication, and fail-open operation. It MUST NOT be released before Lighthouse migration 0013 and Worker 1.22.0 are deployed and production-verified.
+* Absolute "no telemetry" claims are retired. Published v1.3.2 outbound behavior remains limited to documented update checks. The current repository working revision implements the Lighthouse schema-1.0 client with first-run disclosure, a settings control, meaningful opt-out, strict payload construction, a random local UUIDv4 installation identifier, a 100-event local queue, at most three delivery attempts, milestone deduplication, and fail-open operation. Lighthouse migration 0013 and Worker 1.22.1 are deployed and production-verified; any BUS Core public release remains owner-controlled.
 * Business content, including customer, supplier, employee, item, recipe, invoice, quantity, financial, document, raw database, filepath, and machine-fingerprint data, MUST NOT enter product telemetry.
 
 
@@ -576,7 +576,7 @@
 
 
 * 
-**Telemetry boundary:** Business analytics remain local to the SQLite DB. Published v1.3.2 outbound behavior is limited to documented update checks. The current working revision's optional product client emits only Lighthouse-allowlisted installation/release, module-use, workflow-milestone, and reliability event names with the exact schema-1.0 common context. It is disclosed, controllable, meaningfully optional, bounded, non-blocking, and prohibited from accepting business content. Lighthouse 1.22.0 plus migration 0013 must be live and verified before this client is released.
+**Telemetry boundary:** Business analytics remain local to the SQLite DB. Published v1.3.2 outbound behavior is limited to documented update checks. The current working revision's optional product client emits only Lighthouse-allowlisted installation/release, module-use, workflow-milestone, and reliability event names with the exact schema-1.0 common context. It is disclosed, controllable, meaningfully optional, bounded, non-blocking, and prohibited from accepting business content. Lighthouse 1.22.1 plus migration 0013 are live and production-verified; release timing remains owner-controlled.
 
 
 * 

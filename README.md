@@ -93,7 +93,7 @@ It is not a full accounting system—and is not trying to be.
 
 ## Product Direction After v1.3.2
 
-BUS Core remains a maintained manufacturing operations product. Reliability, safety, backups, data protection, release hygiene, and operator clarity remain priorities, while future product work follows demonstrated manufacturing needs. Operators may run the open-source product themselves or choose the upcoming TGC Managed BUS service when they want hosting, updates, backups, monitoring, and support handled for them.
+BUS Core remains a maintained manufacturing operations product. Reliability, safety, backups, data protection, release hygiene, and operator clarity remain priorities, while future product work follows demonstrated manufacturing needs. Operators may run the complete open-source product themselves or use the deployed Managed BUS inquiry when they want True Good Craft to host, update, back up, monitor, and support it through a scoped service engagement.
 
 Managed BUS is not yet represented here as a generally available production service. A public intake and a credible isolated deployment baseline must exist first.
 
@@ -101,7 +101,7 @@ Managed BUS is not yet represented here as a generally available production serv
 
 BUS Core remains serious manufacturing operations software, not a full accounting suite. It does not include full POS, full accounting, QuickBooks/Wave sync, automatic reorder, full job scheduling, cloud synchronization, payment links, customer portals, or recurring billing.
 
-Published v1.3.2 releases make optional version-aware update checks as documented below. The current repository working revision also implements a strict optional product-telemetry client: it waits for first-run disclosure, sends nothing when disabled, creates a random local UUIDv4 installation identifier, queues only allowlisted events, retries at most three times, and never blocks local work. Payloads contain only the event name, event ID, installation ID, timestamp, app version, release channel, and coarse operating-system category. Customer, supplier, employee, item, recipe, invoice, email, document, filepath, financial, quantity, database, username, and machine-fingerprint content cannot enter the payload constructor. This client must not be released before Lighthouse migration 0013 and Worker 1.22.0 are deployed and production-verified.
+Published v1.3.2 releases make optional version-aware update checks as documented below. The current repository working revision also implements a strict optional product-telemetry client: it waits for first-run disclosure, sends nothing when disabled, creates a random local UUIDv4 installation identifier, queues only allowlisted events, retries at most three times, and never blocks local work. Payloads contain only the event name, event ID, installation ID, timestamp, app version, release channel, and coarse operating-system category. Customer, supplier, employee, item, recipe, invoice, email, document, filepath, financial, quantity, database, username, and machine-fingerprint content cannot enter the payload constructor. Lighthouse migration 0013 and Worker 1.22.1 are deployed and production-verified; release timing remains owner-controlled.
 
 ---
 

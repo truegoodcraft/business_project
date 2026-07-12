@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Managed BUS public inquiry link
+- Added a modest Settings link to the deployed TGC Managed BUS inquiry path with source/campaign attribution.
+- States plainly that TGC can host, update, back up, monitor, and support BUS Core while the complete free self-managed application remains available.
+- Updated the telemetry explanation link to the canonical public `/telemetry` route without changing product telemetry behavior.
+- Bumped internal working revision to `1.3.2.5`; public version remains `1.3.2`.
+
 ### Optional Product Telemetry Client
 
 - Added a strict Lighthouse schema-1.0 client with a random locally generated UUIDv4 installation identifier; no hardware, username, filesystem, account, or machine-derived identity is used.

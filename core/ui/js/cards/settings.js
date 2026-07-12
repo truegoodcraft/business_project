@@ -98,7 +98,13 @@ export async function settingsCard(el) {
           <span>Share limited technical and product-usage events</span>
         </label>
         <p class="settings-subtext">Sends only a random installation ID, version/channel/OS category, coarse module use, first milestones, and reliability events. Business content is never included. Turning this off clears the unsent queue.</p>
-        <p class="settings-subtext"><a href="https://buscore.ca/privacy.html" target="_blank" rel="noopener noreferrer">Exactly what BUS Core sends and does not send</a></p>
+        <p class="settings-subtext"><a href="https://buscore.ca/telemetry" target="_blank" rel="noopener noreferrer">Exactly what BUS Core sends and does not send</a></p>
+      </div>
+
+      <div class="settings-card settings-card--primary">
+        <h3>Managed BUS</h3>
+        <p class="settings-subtext">Have TGC manage BUS for you. True Good Craft can host, update, back up, monitor, and support BUS Core. The free self-managed application remains complete.</p>
+        <p class="settings-subtext"><a href="https://buscore.ca/managed-bus-inquiry?src=buscore-settings&amp;utm_source=bus-core&amp;utm_medium=app-link&amp;utm_campaign=managed-bus" target="_blank" rel="noopener noreferrer">Discuss TGC Managed BUS</a></p>
       </div>
 
       <div class="settings-card settings-card--primary">
