@@ -16,6 +16,7 @@ from core.config.writes import require_writes
 from core.services import invoices as invoice_service
 from core.policy.guard import require_owner_commit
 from core.services import jobs as jobs_service
+from core.telemetry import emit_telemetry
 from tgc.security import require_token_ctx
 from tgc.state import AppState, get_state
 
@@ -212,7 +213,10 @@ def transition_job_status(
     _state: AppState = Depends(get_state),
 ):
     require_owner_commit(req)
-    return jobs_service.transition_job_status(db, job_id, body.status)
+    result = jobs_service.transition_job_status(db, job_id, body.status)
+    if body.status.strip().lower() == "done":
+        emit_telemetry("first_job_completed")
+    return result
 
 
 @router.post("/{job_id}/invoice")
@@ -225,4 +229,6 @@ def create_job_invoice(
     _token: str = Depends(require_token_ctx),
     _state: AppState = Depends(get_state),
 ):
-    return invoice_service.create_invoice_from_job(db, job_id, body.model_dump(exclude_unset=True))
+    result = invoice_service.create_invoice_from_job(db, job_id, body.model_dump(exclude_unset=True))
+    emit_telemetry("first_invoice_created")
+    return result

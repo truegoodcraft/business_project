@@ -11,6 +11,7 @@ from core.auth.permissions import PERMISSION_SETTINGS_MANAGE, PERMISSION_SETTING
 from core.config.writes import require_writes
 from core.config.manager import load_config, save_config
 from core.config.update_policy import UpdatePolicyError
+from core.telemetry import clear_telemetry_queue, emit_telemetry
 from tgc.security import require_token_ctx
 
 router = APIRouter()
@@ -43,5 +44,20 @@ def update_config(
     dev_payload = payload.get("dev")
     if isinstance(dev_payload, dict) and "writes_enabled" in dev_payload:
         request.app.state.allow_writes = bool(dev_payload["writes_enabled"])
+    telemetry_payload = payload.get("telemetry")
+    if isinstance(telemetry_payload, dict):
+        enabled = bool(telemetry_payload.get("enabled", load_config().telemetry.enabled))
+        acknowledged = bool(
+            telemetry_payload.get(
+                "disclosure_acknowledged",
+                load_config().telemetry.disclosure_acknowledged,
+            )
+        )
+        if not enabled:
+            clear_telemetry_queue()
+        elif acknowledged:
+            emit_telemetry("installation_first_launch")
+        return {"ok": True, "restart_required": False}
+    if isinstance(dev_payload, dict) and "writes_enabled" in dev_payload:
         return {"ok": True, "restart_required": False}
     return {"ok": True, "restart_required": True}

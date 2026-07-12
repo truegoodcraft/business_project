@@ -76,15 +76,21 @@ class UpdatesConfig(BaseModel):
         return validate_verified_launch_policy(value)
 
 
+class TelemetryConfig(BaseModel):
+    enabled: bool = True
+    disclosure_acknowledged: bool = False
+
+
 class Config(BaseModel):
     launcher: LauncherConfig = Field(default_factory=LauncherConfig)
     ui: UIConfig = Field(default_factory=UIConfig)
     backup: BackupConfig = Field(default_factory=BackupConfig)
     dev: DevConfig = Field(default_factory=DevConfig)
     updates: UpdatesConfig = Field(default_factory=UpdatesConfig)
+    telemetry: TelemetryConfig = Field(default_factory=TelemetryConfig)
 
 
-_PUBLIC_SECTIONS = ("launcher", "ui", "backup", "dev", "updates")
+_PUBLIC_SECTIONS = ("launcher", "ui", "backup", "dev", "updates", "telemetry")
 
 
 def _legacy_config_path() -> Path:

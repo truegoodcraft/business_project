@@ -2,7 +2,7 @@
 
 ## Local-First Means
 
-BUS Core Self-Managed remains usable on local infrastructure without a hosted account, subscription, or forced cloud dependency. On packaged Windows installs, business data and configuration live under `%LOCALAPPDATA%\BUSCore`; in Docker, the main database is normally under the operator-mounted `/data` directory. Current outbound behavior is limited to documented optional update checks; broader product telemetry is not shipped in the current release.
+BUS Core Self-Managed remains usable on local infrastructure without a hosted account, subscription, or forced cloud dependency. On packaged Windows installs, business data and configuration live under `%LOCALAPPDATA%\BUSCore`; in Docker, the main database is normally under the operator-mounted `/data` directory. Published v1.3.2 outbound behavior is limited to documented optional update checks. The current working revision adds a disclosed, optional, fail-open product client that cannot accept business content and remains release-gated on Lighthouse-first deployment verification.
 
 BUS Core does not send inventory, recipe, customer, or finance data to a BUS Core cloud sync service because Core has no cloud sync service. Features you explicitly configure, such as update checks or supported external integrations, may make the network requests needed for those features.
 
@@ -20,7 +20,7 @@ Mutating operations use the app's session, permission, write-gate, and route-spe
 
 Update checks are optional and non-blocking. A manual update stage requires a trusted signed manifest, verifies the declared ZIP hash and size when present, safely extracts it, and verifies the Windows executable's Authenticode publisher and pinned signer identity before it can become verified-ready. The update check itself remains read-only and retains unsigned-manifest compatibility for discovery, so do not describe every piece of update metadata as signed.
 
-Use official project release locations and read [Updates and Releases](Updates-and-Releases.md). Core has no silent background auto-update. Any future limited product telemetry must be disclosed, controllable, non-blocking, and restricted by the versioned Lighthouse contract.
+Use official project release locations and read [Updates and Releases](Updates-and-Releases.md). Core has no silent background auto-update. Lighthouse's versioned telemetry contract is implemented in its repository but is not yet production-deployed or production-verified. Any future BUS Core client must be disclosed, controllable, meaningfully optional, non-blocking, restricted by that live verified contract, and unable to carry business content.
 
 ## Your Responsibilities
 

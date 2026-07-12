@@ -26,11 +26,15 @@ Packaged Windows production data is under `%LOCALAPPDATA%\BUSCore\app\app.db`; d
 
 ## Does BUS Core use cloud sync or telemetry?
 
-BUS Core has no forced cloud or cloud synchronization. Current releases can make optional version-aware update checks containing only the documented release fields. Broader limited product telemetry is approved as future work but is not shipped yet; it must be disclosed, controllable, easily disabled, and prohibited from carrying business content.
+BUS Core has no forced cloud or cloud synchronization. Published v1.3.2 releases can make optional version-aware update checks containing only the documented release fields. The current working revision also contains an optional disclosed product client with an obvious Settings opt-out, strict allowlists, bounded retries, and no business-content fields. It remains release-gated until Lighthouse 1.22.0 and migration 0013 are live and verified.
 
 ## Does it require an account?
 
 No hosted account is required. BUS Core can operate in unclaimed local mode; an operator can also claim an instance and configure local users and permissions.
+
+## Can True Good Craft manage BUS Core for me?
+
+TGC Managed BUS is the upcoming paid operating option for customers who want TGC to host and manage an isolated BUS Core deployment, including updates, backups, monitoring, recovery, and bounded support. It uses the same BUS Core foundation rather than a divergent application, but it is not generally available yet.
 
 ## Can multiple users use it?
 
@@ -44,9 +48,9 @@ BUS Core has no direct QuickBooks/Wave sync. Finance CSV export can support a se
 
 Sold stock-out is currently supported for count items. For non-count items, use the accurate loss/theft/other reason, or model a count-based sale product when that reflects the real workflow.
 
-## What does Core frozen/stability mode mean?
+## Is BUS Core frozen?
 
-Core remains a maintained manufacturing operations product. After v1.3.2, work continues to prioritize reliability, security, data safety, release hygiene, documentation, tester blockers, and manufacturing workflows supported by real operating evidence.
+No. Core remains a maintained manufacturing operations product. After v1.3.2, work continues to prioritize reliability, security, data safety, release hygiene, documentation, tester blockers, and manufacturing workflows supported by real operating evidence.
 
 ## Is Docker supported?
 

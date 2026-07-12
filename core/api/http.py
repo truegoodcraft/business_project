@@ -110,6 +110,7 @@ from core.api.routes import transactions as transactions_routes
 from core.api.routes import config as config_routes
 from core.api.routes import update as update_routes
 from core.api.routes import system_state as system_state_routes
+from core.api.routes import telemetry as telemetry_routes
 from core.api.routes import auth as auth_routes
 from core.api.routes import users as users_routes
 from core.auth.dependencies import require_permission
@@ -137,6 +138,7 @@ from core.appdb.migrate import ensure_invoice_bootstrap, ensure_vendors_flags
 from core.appdb.models import Base
 from core.appdb.paths import ui_dir
 from core.appdata.paths import db_path_for_mode, resolve_bus_mode
+from core.telemetry import emit_telemetry, start_telemetry_flush
 from core.runtime.instance_lock import acquire_db_owner_lock
 from core.utils.pathsafe import PathSafetyError, resolve_path_under_roots
 
@@ -187,11 +189,22 @@ def _check_state(state_b64: str) -> bool:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.db_owner_lock = acquire_db_owner_lock(DB_FILE, app_root=BUS_ROOT, port=None)
-    startup_migrations()
-    _buscore_writeflag_startup()
-    ensure_core_initialized()
-    await _auto_index_if_stale()
-    await _start_indexer_event()
+    try:
+        startup_migrations()
+    except Exception:
+        emit_telemetry("migration_failure", deduplicate=False)
+        emit_telemetry("startup_failure", deduplicate=False)
+        raise
+    try:
+        _buscore_writeflag_startup()
+        ensure_core_initialized()
+        await _auto_index_if_stale()
+        await _start_indexer_event()
+    except Exception:
+        emit_telemetry("startup_failure", deduplicate=False)
+        raise
+    emit_telemetry("installation_first_launch")
+    start_telemetry_flush()
     try:
         yield
     finally:
@@ -241,6 +254,7 @@ async def _validation_exc_handler(request: Request, exc: RequestValidationError)
 
 @app.exception_handler(Exception)
 async def _unhandled_exc_handler(request: Request, exc: Exception):
+    emit_telemetry("unhandled_application_error", deduplicate=False)
     try:
         log(
             f'[error] req="{getattr(request.state, "req_id", "-")}" '
@@ -260,6 +274,24 @@ async def _correlation(request: Request, call_next):
     request.state.req_id = req_id
     response = await call_next(request)
     response.headers[CORRELATION_HEADER] = req_id
+    return response
+
+
+_SUCCESS_MILESTONES = {
+    ("POST", "/app/items"): "first_inventory_item_created",
+    ("POST", "/app/recipes"): "first_recipe_created",
+    ("POST", "/app/manufacturing/run"): "first_manufacturing_run_completed",
+    ("POST", "/app/manufacture"): "first_manufacturing_run_completed",
+    ("POST", "/app/invoices"): "first_invoice_created",
+}
+
+
+@app.middleware("http")
+async def _telemetry_milestones(request: Request, call_next):
+    response = await call_next(request)
+    event_name = _SUCCESS_MILESTONES.get((request.method.upper(), request.url.path))
+    if event_name and response.status_code < 400:
+        emit_telemetry(event_name)
     return response
 
 
@@ -1163,12 +1195,18 @@ def app_export(
 ):
     if not req.password:
         raise HTTPException(status_code=400, detail={"error": "password_required"})
-    res = export_db(req.password)
+    try:
+        res = export_db(req.password)
+    except Exception:
+        emit_telemetry("backup_failure", deduplicate=False)
+        raise
     if not res.get("ok"):
+        emit_telemetry("backup_failure", deduplicate=False)
         raise HTTPException(
             status_code=400,
             detail={"error": res.get("error", "export_failed")},
         )
+    emit_telemetry("backup_completed", deduplicate=False)
     return res
 
 
@@ -1215,6 +1253,7 @@ def app_import_commit(
     _permission=Depends(require_permission(PERMISSION_BACKUP_RESTORE)),
     _w: None = Depends(require_writes),
 ):
+    emit_telemetry("restore_attempted", deduplicate=False)
     app = request.app
     dev = os.environ.get("BUS_DEV") in {"1", "true", "True"}
     _log = lambda s: log(f"[restore] commit: {s}")
@@ -1268,7 +1307,17 @@ def app_import_commit(
             if dev and res.get("info"):
                 _log(f"debug info suppressed from response: {res.get('info')}")
             raise HTTPException(status_code=400, detail=detail)
+        emit_telemetry("restore_completed", deduplicate=False)
+        emit_telemetry("import_completed", deduplicate=False)
         return _safe_import_commit_response(res)
+    except HTTPException:
+        emit_telemetry("restore_failure", deduplicate=False)
+        emit_telemetry("import_failed", deduplicate=False)
+        raise
+    except Exception:
+        emit_telemetry("restore_failure", deduplicate=False)
+        emit_telemetry("import_failed", deduplicate=False)
+        raise
     finally:
         app.state.maintenance = False
         try:
@@ -2594,6 +2643,7 @@ def create_app():
         app.include_router(finance_router, prefix="/app")
         app.include_router(transactions_routes.router, prefix="/app")
         app.include_router(config_routes.router, prefix="/app")
+        app.include_router(telemetry_routes.router, prefix="/app")
         app.include_router(update_routes.router, prefix="/app")
         app.include_router(system_state_routes.router, prefix="/app")
         app.include_router(users_routes.router, prefix="/app")
@@ -2614,6 +2664,8 @@ APP.mount("/license", StaticFiles(directory=str(LICENSE_DIR)), name="license")
 
 def build_app():
     global CORE, RUN_ID, SESSION_TOKEN, LOG_FILE
+    from core.config.manager import load_config as load_runtime_config
+
     policy_path = Path("config/policy.json")
     CORE = CoreAlpha(policy_path=policy_path)
     RUN_ID = CORE.run_id
@@ -2623,7 +2675,15 @@ def build_app():
     app.state.broker = get_broker()
     LOG_FILE = LOGS / f"core_{RUN_ID}.log"
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    banner = f"[trust] mode={CORE.policy.mode} telemetry=off data={DATA} logs={LOGS}"
+    telemetry_cfg = load_runtime_config().telemetry
+    telemetry_status = (
+        "enabled"
+        if telemetry_cfg.enabled and telemetry_cfg.disclosure_acknowledged
+        else "disabled"
+        if telemetry_cfg.disclosure_acknowledged
+        else "awaiting_disclosure"
+    )
+    banner = f"[trust] mode={CORE.policy.mode} telemetry={telemetry_status} data={DATA} logs={LOGS}"
     print(banner)
     log(banner)
     return app, SESSION_TOKEN

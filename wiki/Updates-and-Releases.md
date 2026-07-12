@@ -18,6 +18,8 @@ v1.3.2 is the community polish release. BUS Core remains maintained as manufactu
 
 Core remains a complete open-source product that can be run locally or self-hosted without a subscription. The upcoming Managed BUS direction adds optional TGC operation around the same product rather than creating a divergent fork.
 
+Published v1.3.2 releases send only the documented optional version-aware update-check fields. The current working revision implements the broader optional client but it is not part of v1.3.2 and must not be released before Lighthouse 1.22.0 plus migration 0013 are deployed and production-verified.
+
 ## Before Updating
 
 1. Read the release notes.

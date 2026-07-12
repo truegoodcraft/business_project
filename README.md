@@ -101,7 +101,7 @@ Managed BUS is not yet represented here as a generally available production serv
 
 BUS Core remains serious manufacturing operations software, not a full accounting suite. It does not include full POS, full accounting, QuickBooks/Wave sync, automatic reorder, full job scheduling, cloud synchronization, payment links, customer portals, or recurring billing.
 
-Current releases make optional version-aware update checks as documented below. A broader, limited product-telemetry system is approved as future work but is not shipped yet. Before it ships, Lighthouse must enforce a versioned allowlist and BUS Core must provide clear disclosure, a settings control, easy opt-out, and tests proving business content cannot be transmitted.
+Published v1.3.2 releases make optional version-aware update checks as documented below. The current repository working revision also implements a strict optional product-telemetry client: it waits for first-run disclosure, sends nothing when disabled, creates a random local UUIDv4 installation identifier, queues only allowlisted events, retries at most three times, and never blocks local work. Payloads contain only the event name, event ID, installation ID, timestamp, app version, release channel, and coarse operating-system category. Customer, supplier, employee, item, recipe, invoice, email, document, filepath, financial, quantity, database, username, and machine-fingerprint content cannot enter the payload constructor. This client must not be released before Lighthouse migration 0013 and Worker 1.22.0 are deployed and production-verified.
 
 ---
 

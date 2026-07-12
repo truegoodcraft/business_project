@@ -36,6 +36,7 @@ import { mountSecurity } from "./js/security.js";
 import { toMetricBase, DIM_DEFAULTS_IMPERIAL } from "./js/lib/units.js";
 import { bindSidebarUpdateControls, maybeRunStartupUpdateCheck } from "./js/update-check.js";
 import { initTheme } from "./js/theme.js";
+import { showTelemetryDisclosureIfNeeded, trackModuleOpen } from "./js/telemetry.js";
 
 initTheme();
 
@@ -528,6 +529,7 @@ async function onRouteChange() {
   const fn = ROUTES[hash] || (detailMatch ? ROUTES[baseHash] : null);
   if (fn) {
     await fn();
+    trackModuleOpen(route);
     return;
   }
 
@@ -544,6 +546,8 @@ window.addEventListener('hashchange', () => {
 window.addEventListener('load', async () => {
   await runInitialBootRedirect();
   if (!canMountNormalApp()) return;
+  await ensureToken();
+  await showTelemetryDisclosureIfNeeded();
   onRouteChange().catch(err => console.error('route change failed', err));
 });
 

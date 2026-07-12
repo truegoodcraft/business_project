@@ -1,6 +1,6 @@
 # Getting Started
 
-BUS Core is a downloadable, local-first app for inventory, recipes, manufacturing, and cost visibility. It is not a hosted SaaS account, full POS, or full accounting package.
+BUS Core Self-Managed is manufacturing operations software you can download and run locally or self-host for free. It covers inventory, recipes/BOMs, manufacturing, jobs, invoices, and cost visibility; it is not a full POS or full accounting package. TGC Managed BUS is the upcoming optional service for customers who want True Good Craft to operate the same BUS Core foundation for them, but it is not generally available yet.
 
 ## 1. Choose an Install
 

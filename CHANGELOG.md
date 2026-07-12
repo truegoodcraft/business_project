@@ -2,13 +2,30 @@
 
 ## [Unreleased]
 
+### Optional Product Telemetry Client
+
+- Added a strict Lighthouse schema-1.0 client with a random locally generated UUIDv4 installation identifier; no hardware, username, filesystem, account, or machine-derived identity is used.
+- Added first-run disclosure and a Settings control. Product telemetry sends nothing before disclosure acknowledgement or while disabled; opting out clears the unsent queue.
+- Added exact allowlisted installation/release, coarse module-use, first-workflow-milestone, backup/restore/import, and reliability events without detailed click tracking.
+- Added a 100-event local queue, stable event IDs for retry deduplication, at most three delivery attempts, bounded two-second requests, safe 4xx/older-server handling, and fail-open local operation.
+- Added strict payload tests proving arbitrary fields and business content cannot enter serialization, plus identifier persistence, opt-out, outage, retry, version/channel, milestone-deduplication, and compatibility coverage.
+- Kept public `VERSION` at `1.3.2` and bumped `INTERNAL_VERSION` from `1.3.2.3` to `1.3.2.4`. Release remains gated on Lighthouse 1.22.0 migration/deployment and production-payload verification.
+
 ### Product and Privacy Direction Alignment
 
 - Reframed BUS Core as maintained manufacturing operations software with two operating choices: free self-managed BUS Core and the upcoming paid TGC Managed BUS service.
 - Retired current-documentation claims that Core is feature-frozen, that new product work belongs to a separate Pro product, or that BUS Core has an absolute "no telemetry" posture.
-- Documented the shipped truth: current outbound behavior remains limited to version-aware update checks. Broader product telemetry is approved future work and is not claimed as implemented.
-- Defined the future telemetry boundary: versioned Lighthouse allowlists, clear disclosure and control, non-blocking failure behavior, and an absolute prohibition on business-content payloads.
+- Established the pre-client baseline that published v1.3.2 outbound behavior remains limited to version-aware update checks; the optional client implemented later in this Unreleased section does not change that published release truth.
+- Defined the telemetry boundary later implemented below: versioned Lighthouse allowlists, clear disclosure and control, non-blocking failure behavior, and an absolute prohibition on business-content payloads.
 - Bumped `INTERNAL_VERSION` from `1.3.2.1` to `1.3.2.2`; public `VERSION` remains `1.3.2`.
+
+### Ecosystem Truth Reconciliation
+
+- Clarified that Lighthouse's versioned allowlisted telemetry contract is implemented but not production-deployed or verified; the later client work in this Unreleased section remains release-gated on that deployment.
+- Aligned privacy, security, release, and operator guidance around the same shipped boundary: optional version-aware update checks only, no business-content payloads, and no telemetry dependency for normal self-managed operation.
+- Clarified that Self-Managed BUS Core remains complete and subscription-free and that the upcoming, not-yet-generally-available TGC Managed BUS service operates the same foundation rather than a divergent fork.
+- Marked the original Lighthouse v1 aggregate-only SOT delta as preserved history so its superseded storage and identifier limits are not mistaken for the current repository-implemented contract.
+- Bumped `INTERNAL_VERSION` from `1.3.2.2` to `1.3.2.3`; public `VERSION` remains `1.3.2`.
 
 ### Update-Check Analytics Repair (privacy-safe)
 

@@ -24,6 +24,7 @@ export async function settingsCard(el) {
   const ui = config.ui || {};
   const backup = config.backup || {};
   const updates = config.updates || {};
+  const telemetry = config.telemetry || {};
   const updatesEnabledAtLoad = updates.enabled !== false;
   const startupChecksEnabledAtLoad = updates.check_on_startup !== false;
   let systemState = {};
@@ -88,6 +89,16 @@ export async function settingsCard(el) {
           <span>American mode (Imperial units)</span>
         </label>
         <p class="sub settings-subtext">Show inches/feet, ounces, and fluid ounces in the UI. Values are converted to metric before saving.</p>
+      </div>
+
+      <div class="settings-card settings-card--primary">
+        <h3>Privacy &amp; telemetry</h3>
+        <label class="settings-check-row">
+          <input type="checkbox" id="setting-telemetry-enabled" class="settings-check">
+          <span>Share limited technical and product-usage events</span>
+        </label>
+        <p class="settings-subtext">Sends only a random installation ID, version/channel/OS category, coarse module use, first milestones, and reliability events. Business content is never included. Turning this off clears the unsent queue.</p>
+        <p class="settings-subtext"><a href="https://buscore.ca/privacy.html" target="_blank" rel="noopener noreferrer">Exactly what BUS Core sends and does not send</a></p>
       </div>
 
       <div class="settings-card settings-card--primary">
@@ -172,6 +183,7 @@ export async function settingsCard(el) {
   root.querySelector('#setting-start-tray').checked = !!launcher.auto_start_in_tray;
   root.querySelector('#setting-backup-dir').value = backup.default_directory || '';
   root.querySelector('#setting-updates-enabled').checked = updatesEnabledAtLoad;
+  root.querySelector('#setting-telemetry-enabled').checked = telemetry.enabled !== false;
 
   // Handlers
   const btnSave = root.querySelector('#btn-save');
@@ -206,6 +218,9 @@ export async function settingsCard(el) {
 
     try {
       await ensureToken();
+      await apiPost('/app/telemetry/preference', {
+        enabled: root.querySelector('#setting-telemetry-enabled').checked,
+      });
       const res = await apiPost('/app/config', payload);
       if (res.ok) {
         feedback.style.opacity = '1';

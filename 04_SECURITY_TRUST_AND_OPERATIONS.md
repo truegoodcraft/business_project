@@ -53,7 +53,9 @@ Core trust is not only about preventing compromise. It is also about preserving 
 | Conservative ready promotion | Bridge groundwork | `core/services/update_promote.py`, `core/runtime/update_cache.py` | Local update cache state | Internal helper writes version+sha keyed `verified_ready_versions` only when `hash_verified`, `extracted`, and `exe_verified` agree on version/channel/hash/path data and the confined ZIP, version directory, and EXE still exist. |
 | Verified handoff on next start | Canonical | `launcher.py` | Native launcher startup | After DB ownership lock, launcher scans verified-ready records, chooses the newest SemVer version newer than the running `VERSION`, and applies launch policy (`ask`, `always_newest`, `current_only`) without overwriting the running EXE. |
 
-Manual update staging remains authenticated, write-gated, and user-triggered. This patch release does not introduce auto-install, startup auto-update, broader product telemetry, or silent background update behavior; the documented version-aware update-check signal remains the only shipped outbound product signal.
+Manual update staging remains authenticated, write-gated, and user-triggered. This patch release does not introduce auto-install, startup auto-update, or silent background update behavior. Published v1.3.2 still sends only the documented update-check signal; the current working revision's optional broader telemetry client is release-gated on Lighthouse deployment and production verification.
+
+Lighthouse 1.22.0 implements the versioned contract but is not yet production-deployed or verified. This working revision implements the corresponding client with disclosure, opt-out, strict allowlists, bounded queue/retry, and fail-open behavior. It must not be released first. Contract readiness is not live collection, and neither deployment nor telemetry failure may become a prerequisite for normal self-managed operation. Business content remains prohibited from telemetry payloads.
 
 ## Trust model
 

@@ -1,6 +1,6 @@
 # TGC BUS Core — Unified Source of Truth
 
-**Version:** v1.3.2 **Updated:** 2026-07-10 **Status:** Stable **Authority:** `core/version.py` is the version authority. Where this document and code disagree, update this document.
+**Version:** v1.3.2 **Updated:** 2026-07-12 **Status:** Stable **Authority:** `core/version.py` is the version authority. Where this document and code disagree, update this document.
 
 ---
 
@@ -28,7 +28,7 @@
 * BUS Core Self-Managed is free, open-source, local or self-hosted, customer-operated, portable, and requires no subscription.
 * TGC Managed BUS is the optional paid service direction for isolated hosting, browser access, authentication, updates, backups, monitoring, recovery, and bounded support.
 * Managed BUS is not represented as a generally available production service until a working intake and credible single-customer deployment baseline exist.
-* Absolute "no telemetry" claims are retired. Current shipped outbound behavior remains limited to documented update checks. A broader versioned product-telemetry contract is approved for future implementation only after Lighthouse enforces the allowlisted privacy contract and the application provides clear disclosure and control.
+* Absolute "no telemetry" claims are retired. Published v1.3.2 outbound behavior remains limited to documented update checks. The current repository working revision implements the Lighthouse schema-1.0 client with first-run disclosure, a settings control, meaningful opt-out, strict payload construction, a random local UUIDv4 installation identifier, a 100-event local queue, at most three delivery attempts, milestone deduplication, and fail-open operation. It MUST NOT be released before Lighthouse migration 0013 and Worker 1.22.0 are deployed and production-verified.
 * Business content, including customer, supplier, employee, item, recipe, invoice, quantity, financial, document, raw database, filepath, and machine-fingerprint data, MUST NOT enter product telemetry.
 
 
@@ -576,7 +576,7 @@
 
 
 * 
-**Telemetry boundary:** Business analytics remain local to the SQLite DB. Current shipped outbound behavior is limited to documented update checks. Approved future product telemetry must be disclosed, controllable, allowlisted, non-blocking, versioned through Lighthouse, and prohibited from carrying business content.
+**Telemetry boundary:** Business analytics remain local to the SQLite DB. Published v1.3.2 outbound behavior is limited to documented update checks. The current working revision's optional product client emits only Lighthouse-allowlisted installation/release, module-use, workflow-milestone, and reliability event names with the exact schema-1.0 common context. It is disclosed, controllable, meaningfully optional, bounded, non-blocking, and prohibited from accepting business content. Lighthouse 1.22.0 plus migration 0013 must be live and verified before this client is released.
 
 
 * 
@@ -1401,6 +1401,8 @@ Release-agent validation for this delta is complete when:
 - `pytest` is re-run and passes in the target release environment.
 - Canonical smoke harness is run via `scripts/smoke.ps1` in a suitable Windows/PowerShell-capable environment and results are attached.
 - Spot-check confirms no reintroduction of UoM defaulting in action flows and no header-clobber behavior in the httpx shim.
+
+> **Historical record note (2026-07-12):** The following Lighthouse v1 delta is preserved as implementation history. Its aggregate-only storage model, prohibition on installation identifiers, and prohibition on per-request event records describe that original v1 contract; they are not the current authority for the newer versioned telemetry contract and client. Current authority is the product/privacy boundary near the top of this SOT together with Lighthouse 1.22.0. Migration 0013 and the Worker are not yet production-deployed or verified, so the current working client remains release-gated.
 
 [DELTA HEADER]
 SOT_VERSION_AT_START: v0.11.0

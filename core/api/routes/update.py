@@ -17,6 +17,7 @@ from core.runtime.manifest_keys import active_manifest_public_keys
 from core.services.update import UpdateResult, UpdateService
 from core.services.update_stage import UpdateStageResult, UpdateStageService
 from core.version import VERSION as CURRENT_VERSION
+from core.telemetry import emit_telemetry
 from tgc.security import require_token_ctx
 
 router = APIRouter()
@@ -80,6 +81,7 @@ def _stage_payload(result: UpdateStageResult) -> dict[str, object | None]:
 
 @router.get("/update/check")
 def check_for_updates() -> dict[str, object | None]:
+    emit_telemetry("update_check", deduplicate=False)
     try:
         cfg = load_config().updates
         first_check = not _read_first_reported()
@@ -94,8 +96,11 @@ def check_for_updates() -> dict[str, object | None]:
             # or network failure, so a flaky network cannot spam first_check=true.
             if first_check:
                 _record_first_reported()
+        if result.error_code:
+            emit_telemetry("update_failure", deduplicate=False)
         return _result_payload(result)
     except Exception:
+        emit_telemetry("update_failure", deduplicate=False)
         return _result_payload(
             UpdateResult(
                 current_version=CURRENT_VERSION,
@@ -115,8 +120,11 @@ def stage_update(
     _writes: None = Depends(require_writes),
 ) -> dict[str, object | None]:
     try:
-        return _stage_payload(get_update_stage_service().stage_from_config())
+        result = get_update_stage_service().stage_from_config()
+        emit_telemetry("update_success" if result.ok else "update_failure", deduplicate=False)
+        return _stage_payload(result)
     except Exception:
+        emit_telemetry("update_failure", deduplicate=False)
         return _stage_payload(
             UpdateStageResult(
                 ok=False,
