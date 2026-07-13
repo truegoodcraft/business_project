@@ -15,6 +15,7 @@ SKIP_DIRS = {
     ".mypy_cache",
     ".pytest_cache",
     ".ruff_cache",
+    ".tools",
     ".venv",
     "__pycache__",
     "build",

@@ -1,0 +1,7 @@
+# Governed Windows release-build environment.
+# Runtime dependencies are required because PyInstaller analyzes and bundles them.
+-r requirements.txt
+
+# Keep the frozen-runtime toolchain deterministic across release builds.
+pyinstaller==6.21.0
+pyinstaller-hooks-contrib==2026.6

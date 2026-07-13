@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Release build integrity
+- Fixed the Windows release build so missing runtime/build dependencies and any non-zero PyInstaller exit fail before a launcher-only artifact can be copied, signed, or bundled.
+- Made the onefile contract explicit, pinned the tested PyInstaller toolchain, and added structural CArchive, unsigned/signed launch-smoke, hash, and final-ZIP verification gates.
+- Added focused regression coverage for the expected build mode, governed dependencies, embedded runtime, launch ordering, and rejection of launcher-only ZIPs.
+- Bumped the internal working revision to `1.4.0.1`; public version remains `1.4.0`.
+
 ## [1.4.0] - 2026-07-13
 
 ### Release-blocker closure

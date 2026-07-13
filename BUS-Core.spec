@@ -31,6 +31,10 @@ exe = EXE(
     a.datas,
     [],
     name='BUS-Core',
+    # Canonical Windows release format: a self-contained onefile executable.
+    # Keep these explicit so a future PyInstaller default cannot change the contract.
+    exclude_binaries=False,
+    append_pkg=True,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

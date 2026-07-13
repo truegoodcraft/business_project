@@ -9,7 +9,8 @@ param(
   [switch]$Release,
   [string]$SignerThumbprint = "55474aa9a2d562022a6590d487045e069457f985",
   [string]$TimestampUrl = "http://timestamp.digicert.com",
-  [string]$SignToolPath = "signtool"
+  [string]$SignToolPath = "signtool",
+  [string]$BuildPythonPath = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -47,6 +48,151 @@ function Assert-ValidSignature {
   }
 }
 
+function Invoke-NativeChecked {
+  param(
+    [string]$FilePath,
+    [string[]]$Arguments,
+    [string]$Description
+  )
+
+  # Windows PowerShell can promote native stderr to NativeCommandError when the
+  # global preference is Stop. Preserve the output and judge native success only
+  # by the process exit code.
+  $previousPreference = $ErrorActionPreference
+  try {
+    $ErrorActionPreference = "Continue"
+    & $FilePath @Arguments 2>&1 | ForEach-Object { Write-Host $_ }
+    $exitCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previousPreference
+  }
+
+  if ($exitCode -ne 0) {
+    throw "$Description failed with exit code $exitCode."
+  }
+}
+
+function Invoke-NativeCapture {
+  param(
+    [string]$FilePath,
+    [string[]]$Arguments,
+    [string]$Description
+  )
+
+  $previousPreference = $ErrorActionPreference
+  try {
+    $ErrorActionPreference = "Continue"
+    $output = @(& $FilePath @Arguments 2>&1)
+    $exitCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previousPreference
+  }
+
+  if ($exitCode -ne 0) {
+    $details = ($output | ForEach-Object { $_.ToString() }) -join [Environment]::NewLine
+    throw "$Description failed with exit code $exitCode.`n$details"
+  }
+
+  return (($output | ForEach-Object { $_.ToString() }) -join [Environment]::NewLine).Trim()
+}
+
+function Assert-OnefileArchive {
+  param(
+    [string]$PythonPath,
+    [string]$VerifierPath,
+    [string]$ExecutablePath
+  )
+
+  Invoke-NativeChecked `
+    -FilePath $PythonPath `
+    -Arguments @($VerifierPath, "exe", $ExecutablePath) `
+    -Description "Onefile archive verification for '$ExecutablePath'"
+}
+
+function Assert-LaunchSmoke {
+  param(
+    [string]$ExecutablePath,
+    [string]$SmokeRoot,
+    [string]$Label
+  )
+
+  $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+  $listener.Start()
+  $port = ([System.Net.IPEndPoint]$listener.LocalEndpoint).Port
+  $listener.Stop()
+
+  $localAppData = Join-Path $SmokeRoot $Label
+  $configRoot = Join-Path $localAppData "BUSCore"
+  New-Item -ItemType Directory -Path $configRoot -Force | Out-Null
+  $smokeConfig = '{"launcher":{"auto_start_in_tray":true},"updates":{"verified_launch_policy":"current_only"}}'
+  [System.IO.File]::WriteAllText(
+    (Join-Path $configRoot "config.json"),
+    $smokeConfig,
+    [System.Text.UTF8Encoding]::new($false)
+  )
+
+  $savedLocalAppData = $env:LOCALAPPDATA
+  $savedBusMode = $env:BUS_MODE
+  $savedBusDb = $env:BUS_DB
+  $process = $null
+  try {
+    $env:LOCALAPPDATA = $localAppData
+    $env:BUS_MODE = "demo"
+    Remove-Item Env:BUS_DB -ErrorAction SilentlyContinue
+
+    $process = Start-Process `
+      -FilePath $ExecutablePath `
+      -ArgumentList @("--port", $port) `
+      -PassThru `
+      -WindowStyle Hidden
+
+    # A newly-created executable can incur a one-time Windows Defender scan.
+    # Keep the smoke bounded while allowing a genuinely cold onefile launch.
+    $deadline = [DateTime]::UtcNow.AddSeconds(120)
+    $ready = $false
+    while ([DateTime]::UtcNow -lt $deadline) {
+      Start-Sleep -Milliseconds 500
+      if ($process.HasExited) {
+        throw "Launch smoke '$Label' exited early with code $($process.ExitCode): $ExecutablePath"
+      }
+      try {
+        $response = Invoke-WebRequest `
+          -Uri "http://127.0.0.1:$port/ui/shell.html" `
+          -UseBasicParsing `
+          -TimeoutSec 2
+        if ($response.StatusCode -eq 200) {
+          $ready = $true
+          break
+        }
+      } catch {
+        # Startup may still be extracting the onefile archive or initializing the DB.
+      }
+    }
+
+    if (-not $ready) {
+      throw "Launch smoke '$Label' timed out waiting for the UI: $ExecutablePath"
+    }
+    Write-Host "[PASS] Launch smoke ($Label): HTTP 200 on port $port" -ForegroundColor Green
+  } finally {
+    if ($null -ne $process -and -not $process.HasExited) {
+      $previousPreference = $ErrorActionPreference
+      try {
+        $ErrorActionPreference = "Continue"
+        & taskkill.exe /PID $process.Id /T /F *> $null
+      } finally {
+        $ErrorActionPreference = $previousPreference
+      }
+    }
+    $env:LOCALAPPDATA = $savedLocalAppData
+    $env:BUS_MODE = $savedBusMode
+    if ($null -eq $savedBusDb) {
+      Remove-Item Env:BUS_DB -ErrorAction SilentlyContinue
+    } else {
+      $env:BUS_DB = $savedBusDb
+    }
+  }
+}
+
 function New-ReleaseBundle {
   param(
     [string]$VersionedExe,
@@ -54,7 +200,9 @@ function New-ReleaseBundle {
     [string]$LicensePath,
     [string]$SotPath,
     [string]$DistPath,
-    [string]$BundleName
+    [string]$BundleName,
+    [string]$PythonPath,
+    [string]$VerifierPath
   )
 
   if (!(Test-Path $VersionedExe -PathType Leaf)) {
@@ -135,6 +283,19 @@ function New-ReleaseBundle {
     $archive.Dispose()
   }
 
+  Invoke-NativeChecked `
+    -FilePath $PythonPath `
+    -Arguments @(
+      $VerifierPath,
+      "zip",
+      $zipPath,
+      "--expected-exe",
+      $expectedExeName,
+      "--expected-exe-source",
+      $VersionedExe
+    ) `
+    -Description "Release ZIP verification for '$zipPath'"
+
   return $zipPath
 }
 
@@ -158,12 +319,14 @@ if (!(Test-Path $spec)) {
   throw "Spec not found: $spec`nExpected '$Name.spec' at repo root."
 }
 
-# -----------------------------
-# Clean build outputs
-# -----------------------------
-Write-Host "[INFO] Cleaning previous builds" -ForegroundColor Cyan
-Remove-Item -Recurse -Force $BUILD -ErrorAction SilentlyContinue
-Remove-Item -Recurse -Force $DIST  -ErrorAction SilentlyContinue
+$buildRequirements = Join-Path $ROOT "requirements-build.txt"
+$artifactVerifier = Join-Path $ROOT "scripts\verify_release_artifact.py"
+if (!(Test-Path $buildRequirements -PathType Leaf)) {
+  throw "Governed build requirements not found: $buildRequirements"
+}
+if (!(Test-Path $artifactVerifier -PathType Leaf)) {
+  throw "Release artifact verifier not found: $artifactVerifier"
+}
 
 # -----------------------------
 # Env (prod mode)
@@ -174,13 +337,21 @@ $env:APP_VERSION = $Version
 # -----------------------------
 # Ensure PyInstaller is available
 # -----------------------------
-# Prefer existing venv if present; do not auto-nuke unless you want that policy.
-$venvPy = Join-Path $ROOT ".venv\Scripts\python.exe"
+# Prefer the repository venv, while allowing an explicit isolated Python 3.11
+# environment for reproducible build agents and forensic rebuilds.
+$venvPy = if ([string]::IsNullOrWhiteSpace($BuildPythonPath)) {
+  Join-Path $ROOT ".venv\Scripts\python.exe"
+} else {
+  $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($BuildPythonPath)
+}
 if (!(Test-Path $venvPy)) {
-  throw "Missing venv at .venv. Create it once, then reuse.`nExpected: $venvPy"
+  throw "Build Python not found. Create a Python 3.11 venv or pass -BuildPythonPath.`nExpected: $venvPy"
 }
 
-$pyMM = (& $venvPy -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')").Trim()
+$pyMM = Invoke-NativeCapture `
+  -FilePath $venvPy `
+  -Arguments @("-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')") `
+  -Description "Build Python version probe"
 if ($pyMM -ne "3.11") {
   throw "Build venv must be Python 3.11.x (got $pyMM). Recreate .venv with: py -3.11 -m venv .venv"
 }
@@ -203,12 +374,39 @@ $VMAJOR = [int]$verParts[0]
 $VMINOR = [int]$verParts[1]
 $VPATCH = [int]$verParts[2]
 
-# Ensure pyinstaller exists in the venv
-& $venvPy -m pip show pyinstaller *> $null
-if ($LASTEXITCODE -ne 0) {
-  Write-Host "[INFO] Installing PyInstaller into .venv" -ForegroundColor Cyan
-  & $venvPy -m pip install --upgrade pyinstaller
+# Install the governed runtime and build inputs. This is intentionally not an
+# unconstrained PyInstaller upgrade; requirements-build.txt pins the toolchain.
+Write-Host "[INFO] Ensuring governed build dependencies" -ForegroundColor Cyan
+Invoke-NativeChecked `
+  -FilePath $venvPy `
+  -Arguments @("-m", "pip", "install", "--disable-pip-version-check", "-r", $buildRequirements) `
+  -Description "Governed build dependency installation"
+Invoke-NativeChecked `
+  -FilePath $venvPy `
+  -Arguments @("-m", "pip", "check") `
+  -Description "Build dependency consistency check"
+
+$pyInstallerVersion = Invoke-NativeCapture `
+  -FilePath $venvPy `
+  -Arguments @("-c", "import importlib.metadata as m; from PIL import Image; print(m.version('pyinstaller'))") `
+  -Description "PyInstaller and Pillow dependency probe"
+$expectedPyInstallerVersion = (
+  Select-String -LiteralPath $buildRequirements -Pattern '^pyinstaller==([^\s]+)$'
+).Matches.Groups[1].Value
+if ([string]::IsNullOrWhiteSpace($expectedPyInstallerVersion)) {
+  throw "requirements-build.txt must contain an exact pyinstaller==X.Y.Z pin."
 }
+if ($pyInstallerVersion -ne $expectedPyInstallerVersion) {
+  throw "PyInstaller version drift: expected $expectedPyInstallerVersion, got $pyInstallerVersion."
+}
+Write-Host "[INFO] PyInstaller: $pyInstallerVersion (governed pin)" -ForegroundColor DarkGray
+
+# -----------------------------
+# Clean build outputs only after the environment is proven usable
+# -----------------------------
+Write-Host "[INFO] Cleaning previous builds" -ForegroundColor Cyan
+Remove-Item -Recurse -Force $BUILD -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force $DIST  -ErrorAction SilentlyContinue
 
 # -----------------------------
 # Write Windows version-info file (Explorer metadata)
@@ -255,10 +453,10 @@ Write-Host "[INFO] Version info written: $versionFile" -ForegroundColor DarkGray
 # Build via SPEC (canonical)
 # -----------------------------
 Write-Host "[INFO] Running PyInstaller (SPEC, expected ONEFILE)" -ForegroundColor Cyan
-& $venvPy -m PyInstaller `
-  --noconfirm `
-  --clean `
-  $spec
+Invoke-NativeChecked `
+  -FilePath $venvPy `
+  -Arguments @("-m", "PyInstaller", "--noconfirm", "--clean", $spec) `
+  -Description "PyInstaller onefile build"
 
 # -----------------------------
 # Post: Validate onefile output
@@ -277,10 +475,29 @@ if (Test-Path $internalPath) {
   throw "Build produced ONEDIR artifacts ($internalPath). Expected ONEFILE only. Fix the .spec (remove COLLECT and exclude_binaries)."
 }
 
+Assert-OnefileArchive `
+  -PythonPath $venvPy `
+  -VerifierPath $artifactVerifier `
+  -ExecutablePath $exeOut
+
 # Optional: rename output to include version (keeps releases sane)
 $finalExe = Join-Path $DIST "$Name-$Version.exe"
 $VersionedExe = $finalExe
 Copy-Item $exeOut $VersionedExe -Force
+
+$sourceHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $exeOut).Hash
+$versionedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $VersionedExe).Hash
+if ($sourceHash -ne $versionedHash) {
+  throw "Versioned copy hash mismatch before signing: '$VersionedExe'."
+}
+Assert-OnefileArchive `
+  -PythonPath $venvPy `
+  -VerifierPath $artifactVerifier `
+  -ExecutablePath $VersionedExe
+Assert-LaunchSmoke `
+  -ExecutablePath $VersionedExe `
+  -SmokeRoot (Join-Path $BUILD "launch-smoke") `
+  -Label "unsigned-versioned"
 
 $zipOut = $null
 
@@ -303,6 +520,15 @@ if ($Sign) {
   if ($LASTEXITCODE -ne 0) {
     throw "signtool verification failed for: $VersionedExe"
   }
+
+  Assert-OnefileArchive `
+    -PythonPath $venvPy `
+    -VerifierPath $artifactVerifier `
+    -ExecutablePath $VersionedExe
+  Assert-LaunchSmoke `
+    -ExecutablePath $VersionedExe `
+    -SmokeRoot (Join-Path $BUILD "launch-smoke") `
+    -Label "signed-versioned"
 }
 
 if ($Bundle) {
@@ -312,7 +538,9 @@ if ($Bundle) {
     -LicensePath (Join-Path $ROOT "license") `
     -SotPath (Join-Path $ROOT "SOT.md") `
     -DistPath $DIST `
-    -BundleName "$Name-$Version"
+    -BundleName "$Name-$Version" `
+    -PythonPath $venvPy `
+    -VerifierPath $artifactVerifier
 }
 
 Write-Host "[PASS] Build complete (ONEFILE): $VersionedExe" -ForegroundColor Green
