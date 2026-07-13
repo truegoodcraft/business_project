@@ -1,5 +1,79 @@
 # Changelog
 
+## [Unreleased]
+
+## [1.4.0] - 2026-07-13
+
+### Release-blocker closure
+- Enforced at most one non-void invoice per job with a migration-safe partial unique index, idempotent create-from-job behavior, stable manual-link conflicts, and concurrency coverage.
+- Made note invoice lines server-canonical non-financial records and recalculated cleared quantities to zero before issue or payment.
+- Removed quantity mutation from item metadata routes, keeping stock changes behind canonical batch/movement/journal services.
+- Rejected negative and non-finite prices at item, job, invoice, conversion, purchase, stock-in, and stock-out fallback boundaries before partial mutation.
+- Rebuilt the shared API fixture around one lifespan-managed production graph, canonical startup migrations, hermetic runtime paths, mounted-router isolation, and repeated-client identity checks.
+- Removed stale packaged API/changelog/README copies, synchronized retained privacy/update truth, and added staged-package drift coverage.
+
+### Release identity
+- Selected public version `1.4.0`, reset `INTERNAL_VERSION` to `1.4.0.0`, and updated governed package, Windows, SOT, UI cache-token, Home update-card, and release-note surfaces.
+- Expected public artifact name is `BUS-Core-1.4.0.zip`; no tag, publication, deployment, or release is part of this cleanup pass.
+
+### Complete release-test gate repair
+- Made shared API tests deterministic in production mode unless a test explicitly opts into development behavior, preserving the documented sanitized error envelope regardless of the caller's shell environment.
+- Replaced stale Contacts and desktop-lifecycle setup with the canonical isolated application fixture and added fresh-database regression coverage for invoice tables and `document_sequences` seeding.
+- Made verified-update handoff tests derive a version newer than the current public version instead of relying on the obsolete `1.2.3` fixture.
+- Added the canonical `SOT.md` to embedded and ZIP release packaging under `license/SOT.md`, with packaging assertions that fail if it is omitted.
+- Bumped internal working revision to `1.3.2.8`; public version remains `1.3.2`.
+
+### Final pre-release workflow and UI pass
+- Restored the Jobs-to-Invoices action, opening an existing linked invoice when present to avoid accidental duplicates.
+- Added route titles and scroll reset, compact narrow-screen navigation, visible keyboard focus, keyboard-operable rows, explicit empty states, accessible quick-create dialogs, and unsaved-change protection.
+- Made manufacturing shortages visible before submission while preserving the backend as the transaction authority.
+- Clarified CAD throughout operational screens and invoice printouts, improved narrow invoice printing, and aligned telemetry help links to the canonical public route.
+- Repaired cross-shell UI contract-audit parity and expanded regression coverage for the release-critical workflows.
+- Bumped internal working revision to `1.3.2.7`; public version remains `1.3.2`.
+
+### Security Audit CI repair
+- Documented and narrowly suppressed Bandit B310 at the product-telemetry `urlopen` call because its destination is the immutable audited HTTPS Lighthouse endpoint, not user-controlled input.
+- Added regression coverage for the exact telemetry scheme, host, path, and absence of credentials, query, or fragment.
+- Bumped internal working revision to `1.3.2.6`; public version remains `1.3.2` and telemetry behavior is unchanged.
+
+### Managed BUS public inquiry link
+- Added a modest Settings link to the deployed TGC Managed BUS inquiry path with source/campaign attribution.
+- States plainly that TGC can host, update, back up, monitor, and support BUS Core while the complete free self-managed application remains available.
+- Updated the telemetry explanation link to the canonical public `/telemetry` route without changing product telemetry behavior.
+- Bumped internal working revision to `1.3.2.5`; public version remains `1.3.2`.
+
+### Optional Product Telemetry Client
+
+- Added a strict Lighthouse schema-1.0 client with a random locally generated UUIDv4 installation identifier; no hardware, username, filesystem, account, or machine-derived identity is used.
+- Added first-run disclosure and a Settings control. Product telemetry sends nothing before disclosure acknowledgement or while disabled; opting out clears the unsent queue.
+- Added exact allowlisted installation/release, coarse module-use, first-workflow-milestone, backup/restore/import, and reliability events without detailed click tracking.
+- Added a 100-event local queue, stable event IDs for retry deduplication, at most three delivery attempts, bounded two-second requests, safe 4xx/older-server handling, and fail-open local operation.
+- Added strict payload tests proving arbitrary fields and business content cannot enter serialization, plus identifier persistence, opt-out, outage, retry, version/channel, milestone-deduplication, and compatibility coverage.
+- Kept public `VERSION` at `1.3.2` and bumped `INTERNAL_VERSION` from `1.3.2.3` to `1.3.2.4`. Release remains gated on Lighthouse 1.22.0 migration/deployment and production-payload verification.
+
+### Product and Privacy Direction Alignment
+
+- Reframed BUS Core as maintained manufacturing operations software with two operating choices: free self-managed BUS Core and the upcoming paid TGC Managed BUS service.
+- Retired current-documentation claims that Core is feature-frozen, that new product work belongs to a separate Pro product, or that BUS Core has an absolute "no telemetry" posture.
+- Established the pre-client baseline that published v1.3.2 outbound behavior remains limited to version-aware update checks; the optional client implemented later in this Unreleased section does not change that published release truth.
+- Defined the telemetry boundary later implemented below: versioned Lighthouse allowlists, clear disclosure and control, non-blocking failure behavior, and an absolute prohibition on business-content payloads.
+- Bumped `INTERNAL_VERSION` from `1.3.2.1` to `1.3.2.2`; public `VERSION` remains `1.3.2`.
+
+### Ecosystem Truth Reconciliation
+
+- Clarified that Lighthouse's versioned allowlisted telemetry contract is implemented but not production-deployed or verified; the later client work in this Unreleased section remains release-gated on that deployment.
+- Aligned privacy, security, release, and operator guidance around the same shipped boundary: optional version-aware update checks only, no business-content payloads, and no telemetry dependency for normal self-managed operation.
+- Clarified that Self-Managed BUS Core remains complete and subscription-free and that the upcoming, not-yet-generally-available TGC Managed BUS service operates the same foundation rather than a divergent fork.
+- Marked the original Lighthouse v1 aggregate-only SOT delta as preserved history so its superseded storage and identifier limits are not mistaken for the current repository-implemented contract.
+- Bumped `INTERNAL_VERSION` from `1.3.2.2` to `1.3.2.3`; public `VERSION` remains `1.3.2`.
+
+### Update-Check Analytics Repair (privacy-safe)
+
+- The outbound update-check request to Lighthouse now sends three aggregate-safe query params — `current_version`, `channel`, and `first_check` — making the active-install proxy real and adding a first-seen vs repeat-check split with no identity tracking.
+- `first_check=true` is sent only on the first version-aware update check for a local profile and `first_check=false` thereafter, backed by a single local boolean `update_check_first_reported` in `%LOCALAPPDATA%\BUSCore\config.json`. The flag is recorded after the request attempt finishes (even on error/failure) so a flaky network cannot inflate first-seen counts.
+- Existing query params on a configured `manifest_url` are preserved; app-provided values win on key collision; an invalid/missing version is omitted rather than blocking the check; an invalid channel falls back to `stable`.
+- No identity-bearing data is added: no install/device/user id, hostname, username, machine fingerprint, or dedupe/persistent-client token. The `/app/update/check` response contract, enable/disable and startup behavior, manifest/signature trust, and staging/download/install paths are unchanged.
+
 ## [1.3.2] - 2026-06-20
 
 ### LazoralltheCore / Laser Everything Community Polish Patch

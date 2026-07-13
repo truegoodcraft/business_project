@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 import uuid
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -21,6 +21,20 @@ def _require_qty_base(qty_base: int) -> int:
     if not isinstance(qty_base, int) or qty_base <= 0:
         raise ValueError("qty_base_must_be_positive_int")
     return qty_base
+
+
+def _require_nonnegative_cents(value: Any, *, field: str) -> int:
+    try:
+        decimal_value = Decimal(str(value).strip())
+    except (InvalidOperation, ValueError) as exc:
+        raise ValueError(f"{field}_invalid") from exc
+    if (
+        not decimal_value.is_finite()
+        or decimal_value < 0
+        or decimal_value != decimal_value.to_integral_value()
+    ):
+        raise ValueError(f"{field}_invalid")
+    return int(decimal_value)
 
 
 def _append_inventory_journal(entry: dict[str, Any]) -> None:
@@ -77,7 +91,7 @@ def perform_stock_in_base(
     meta: dict | None,
 ) -> dict[str, Any]:
     qty = _require_qty_base(int(qty_base))
-    unit_cost = int(unit_cost_cents or 0)
+    unit_cost = _require_nonnegative_cents(unit_cost_cents or 0, field="unit_cost_cents")
     source_kind = str((meta or {}).get("source_kind") or "stock_in")
     source_id = ref if ref is not None else (meta or {}).get("source_id")
     batch_id = add_batch(session, int(item_id), qty, unit_cost, source_kind, source_id)
@@ -117,12 +131,19 @@ def perform_stock_out_base(
             raise ValueError("sold_cash_event_count_only")
 
         if data.get("sell_unit_price_cents") is not None:
-            unit_price_cents = int(data["sell_unit_price_cents"])
+            unit_price_cents = _require_nonnegative_cents(
+                data["sell_unit_price_cents"], field="sell_unit_price_cents"
+            )
         else:
-            unit_price_cents = int(
-                (Decimal(str(getattr(it, "price", 0) or 0)) * Decimal("100")).quantize(
-                    Decimal("1"), rounding=ROUND_HALF_UP
-                )
+            try:
+                stored_price = Decimal(str(getattr(it, "price", 0) or 0))
+            except (InvalidOperation, ValueError) as exc:
+                raise ValueError("stored_item_price_invalid") from exc
+            if not stored_price.is_finite() or stored_price < 0:
+                raise ValueError("stored_item_price_invalid")
+            unit_price_cents = _require_nonnegative_cents(
+                (stored_price * Decimal("100")).quantize(Decimal("1"), rounding=ROUND_HALF_UP),
+                field="stored_item_price",
             )
 
         qty_each = Decimal(qty) / Decimal(1000)
@@ -180,22 +201,32 @@ def perform_purchase_base(
     notes: str | None = None,
     created_at: datetime | None = None,
 ) -> dict[str, Any]:
-    created: list[int] = []
-    cash_event_ids: list[int] = []
     source_ids = _provided_purchase_source_ids(lines)
     if len(source_ids) > 1:
         raise ValueError("multiple_purchase_source_ids_not_supported")
     source_id = source_ids[0] if source_ids else uuid.uuid4().hex
     effective_created_at = created_at or datetime.utcnow()
 
+    # Validate the entire request before writing a batch, movement, cash event,
+    # or journal entry. This keeps a bad later price from partially applying an
+    # otherwise valid earlier purchase line.
+    prepared_lines: list[tuple[int, int, int, str, Item]] = []
     for line in lines:
         qty = _require_qty_base(int(line.get("qty_base", 0)))
         item_id = int(line["item_id"])
-        unit_cost = int(line.get("unit_cost_cents") or 0)
+        unit_cost = _require_nonnegative_cents(
+            line.get("unit_cost_cents") or 0, field="unit_cost_cents"
+        )
         source_kind = str(line.get("source_kind") or "purchase")
         item = session.get(Item, item_id)
         if item is None:
             raise LookupError("item_not_found")
+        prepared_lines.append((qty, item_id, unit_cost, source_kind, item))
+
+    created: list[int] = []
+    cash_event_ids: list[int] = []
+
+    for qty, item_id, unit_cost, source_kind, item in prepared_lines:
         total_amount_cents = _purchase_total_amount_cents(unit_cost, qty, item)
         batch_id = add_batch(session, item_id, qty, unit_cost, source_kind, source_id)
         created.append(int(batch_id))

@@ -52,6 +52,7 @@ function New-ReleaseBundle {
     [string]$VersionedExe,
     [string]$ReadmePath,
     [string]$LicensePath,
+    [string]$SotPath,
     [string]$DistPath,
     [string]$BundleName
   )
@@ -65,6 +66,9 @@ function New-ReleaseBundle {
   if (!(Test-Path $LicensePath -PathType Container)) {
     throw "Cannot bundle: license folder not found: $LicensePath"
   }
+  if (!(Test-Path $SotPath -PathType Leaf)) {
+    throw "Cannot bundle: SOT.md not found: $SotPath"
+  }
 
   $bundleRoot = Join-Path $DistPath "_bundle"
   $stagePath = Join-Path $bundleRoot $BundleName
@@ -76,6 +80,7 @@ function New-ReleaseBundle {
   Copy-Item $VersionedExe (Join-Path $stagePath (Split-Path -Leaf $VersionedExe)) -Force
   Copy-Item $ReadmePath (Join-Path $stagePath "README.md") -Force
   Copy-Item $LicensePath (Join-Path $stagePath "license") -Recurse -Force
+  Copy-Item $SotPath (Join-Path $stagePath "license\SOT.md") -Force
 
   Remove-Item -Force $zipPath -ErrorAction SilentlyContinue
   Compress-Archive -Path (Join-Path $stagePath "*") -DestinationPath $zipPath -Force
@@ -86,6 +91,7 @@ function New-ReleaseBundle {
     $rootExeCount = 0
     $rootReadmeCount = 0
     $licenseFileCount = 0
+    $licenseSotCount = 0
     $expectedExeName = Split-Path -Leaf $VersionedExe
 
     foreach ($entry in $archive.Entries) {
@@ -101,6 +107,9 @@ function New-ReleaseBundle {
         $rootReadmeCount++
       } elseif ($parts.Count -gt 1 -and $parts[0] -eq "license" -and -not [string]::IsNullOrEmpty($entry.Name)) {
         $licenseFileCount++
+        if ($entryPath -eq "license/SOT.md") {
+          $licenseSotCount++
+        }
       }
     }
 
@@ -118,6 +127,9 @@ function New-ReleaseBundle {
     }
     if ($licenseFileCount -lt 1) {
       throw "Bundle verification failed for '$zipPath': expected at least one file under 'license/'."
+    }
+    if ($licenseSotCount -ne 1) {
+      throw "Bundle verification failed for '$zipPath': expected one 'license/SOT.md' entry, found $licenseSotCount."
     }
   } finally {
     $archive.Dispose()
@@ -298,6 +310,7 @@ if ($Bundle) {
     -VersionedExe $VersionedExe `
     -ReadmePath (Join-Path $ROOT "README.md") `
     -LicensePath (Join-Path $ROOT "license") `
+    -SotPath (Join-Path $ROOT "SOT.md") `
     -DistPath $DIST `
     -BundleName "$Name-$Version"
 }

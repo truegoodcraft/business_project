@@ -36,6 +36,7 @@ import { mountSecurity } from "./js/security.js";
 import { toMetricBase, DIM_DEFAULTS_IMPERIAL } from "./js/lib/units.js";
 import { bindSidebarUpdateControls, maybeRunStartupUpdateCheck } from "./js/update-check.js";
 import { initTheme } from "./js/theme.js";
+import { showTelemetryDisclosureIfNeeded, trackModuleOpen } from "./js/telemetry.js";
 
 initTheme();
 
@@ -57,6 +58,54 @@ const ROUTES = {
   '#/': showInventory,
   '': showInventory,
 };
+
+const ROUTE_TITLES = Object.freeze({
+  welcome: 'Welcome',
+  home: 'Home',
+  jobs: 'Jobs',
+  invoices: 'Invoices',
+  inventory: 'Inventory',
+  manufacturing: 'Manufacturing',
+  recipes: 'Recipes',
+  contacts: 'Contacts',
+  settings: 'Settings',
+  security: 'Security',
+  logs: 'Logs',
+  finance: 'Finance',
+});
+
+const unsavedState = { dirty: false };
+let acceptedHash = window.location.hash || '#/home';
+let restoringHash = false;
+
+window.BUS_UNSAVED = {
+  get dirty() {
+    return unsavedState.dirty;
+  },
+  set(dirty) {
+    unsavedState.dirty = !!dirty;
+  },
+  confirmDiscard(message = 'Discard unsaved changes?') {
+    if (!unsavedState.dirty) return true;
+    if (!window.confirm(message)) return false;
+    unsavedState.dirty = false;
+    return true;
+  },
+};
+
+document.addEventListener('click', (event) => {
+  const link = event.target?.closest?.('a[href^="#/"]');
+  if (!link || link.getAttribute('href') === window.location.hash || !unsavedState.dirty) return;
+  if (window.BUS_UNSAVED.confirmDiscard('Leave this screen and discard unsaved changes?')) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+}, true);
+
+window.addEventListener('beforeunload', (event) => {
+  if (!unsavedState.dirty) return;
+  event.preventDefault();
+  event.returnValue = '';
+});
 
 const ONBOARDING_STORAGE_KEY = 'bus.onboarding.completed';
 
@@ -486,12 +535,24 @@ async function onRouteChange() {
   authGateElement()?.classList.add('hidden');
   await ensureToken();
   const raw = window.location.hash || '#/home';
+  if (restoringHash) {
+    restoringHash = false;
+    return;
+  }
+  if (raw !== acceptedHash && unsavedState.dirty
+      && !window.BUS_UNSAVED.confirmDiscard('Leave this screen and discard unsaved changes?')) {
+    restoringHash = true;
+    window.location.hash = acceptedHash;
+    return;
+  }
   const canonical = normalizeHash(raw);
 
   if (canonical !== raw) {
+    acceptedHash = canonical;
     window.location.hash = canonical;
     return;
   }
+  acceptedHash = canonical;
 
   if (inDemoMode() && !isOnboardingComplete() && canonical !== '#/welcome') {
     setBootHash('#/welcome');
@@ -516,6 +577,11 @@ async function onRouteChange() {
 
   const route = normalizeRoute(baseHash);
 
+  document.title = `BUS Core - ${ROUTE_TITLES[route] || 'Not Found'}`;
+  const main = document.getElementById('main');
+  if (main) main.scrollTop = 0;
+  window.scrollTo(0, 0);
+
   setActiveNav(route);
 
   document.querySelector('[data-role="settings-screen"]')?.classList.add('hidden');
@@ -528,6 +594,7 @@ async function onRouteChange() {
   const fn = ROUTES[hash] || (detailMatch ? ROUTES[baseHash] : null);
   if (fn) {
     await fn();
+    trackModuleOpen(route);
     return;
   }
 
@@ -544,6 +611,8 @@ window.addEventListener('hashchange', () => {
 window.addEventListener('load', async () => {
   await runInitialBootRedirect();
   if (!canMountNormalApp()) return;
+  await ensureToken();
+  await showTelemetryDisclosureIfNeeded();
   onRouteChange().catch(err => console.error('route change failed', err));
 });
 

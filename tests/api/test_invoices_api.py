@@ -119,7 +119,10 @@ def test_invoice_totals_taxable_toggle_and_issue_rules(bus_client):
     empty_invoice = _create_invoice(client, contact_id)
     issue_empty = client.post(f"/app/invoices/{empty_invoice['id']}/issue", json={})
     assert issue_empty.status_code == 400
-    assert issue_empty.json()["detail"] == "invoice_issue_requires_line"
+    assert issue_empty.json()["detail"] == {
+        "error": "bad_request",
+        "message": "invoice_issue_requires_line",
+    }
 
     issued = client.post(f"/app/invoices/{invoice['id']}/issue", json={})
     assert issued.status_code == 200, issued.text
@@ -154,11 +157,17 @@ def test_paid_invoice_cannot_be_financially_edited_and_void_invoice_cannot_be_pa
         json={"unit_price_cents": 2500},
     )
     assert edit_line.status_code == 400
-    assert edit_line.json()["detail"] == "invoice_edit_forbidden_after_paid"
+    assert edit_line.json()["detail"] == {
+        "error": "bad_request",
+        "message": "invoice_edit_forbidden_after_paid",
+    }
 
     edit_header = client.patch(f"/app/invoices/{invoice['id']}", json={"tax_rate_percent": "15"})
     assert edit_header.status_code == 400
-    assert edit_header.json()["detail"] == "invoice_edit_forbidden_after_paid"
+    assert edit_header.json()["detail"] == {
+        "error": "bad_request",
+        "message": "invoice_edit_forbidden_after_paid",
+    }
 
     voidable = _create_invoice(client, contact_id)
     created_voidable = client.post(
@@ -178,7 +187,10 @@ def test_paid_invoice_cannot_be_financially_edited_and_void_invoice_cannot_be_pa
 
     pay_void = client.post(f"/app/invoices/{voidable['id']}/mark-paid", json={})
     assert pay_void.status_code == 400
-    assert pay_void.json()["detail"] == "invoice_void_cannot_be_paid"
+    assert pay_void.json()["detail"] == {
+        "error": "bad_request",
+        "message": "invoice_void_cannot_be_paid",
+    }
 
 
 def test_invoice_print_returns_html_and_escapes_unsafe_text(bus_client):
@@ -207,8 +219,115 @@ def test_invoice_print_returns_html_and_escapes_unsafe_text(bus_client):
     assert response.status_code == 200, response.text
     assert response.headers["content-type"].startswith("text/html")
     assert "INV-1001" in response.text
-    assert "$33.90" in response.text
+    assert "CAD $33.90" in response.text
+    assert "Generated locally with BUS Core" in response.text
+    assert "@media screen and (max-width:700px)" in response.text
     assert "&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;" in response.text
     assert "&lt;img src=x onerror=alert(1)&gt;" in response.text
     assert "<script>alert(\"x\")</script>" not in response.text
     assert "<img src=x onerror=alert(1)>" not in response.text
+
+
+def test_clearing_quantity_and_converting_to_note_zeroes_financial_truth(bus_client):
+    client = bus_client["client"]
+    contact_id = _create_contact(bus_client, "Note Semantics Contact")
+    invoice = _create_invoice(client, contact_id, tax_rate_percent="13")
+    financial = client.post(
+        f"/app/invoices/{invoice['id']}/lines",
+        json={
+            "line_type": "service",
+            "description": "Originally billable",
+            "quantity_decimal": "2",
+            "uom": "hr",
+            "unit_price_cents": 1000,
+            "taxable": True,
+        },
+    )
+    assert financial.status_code == 200, financial.text
+    line_id = int(financial.json()["id"])
+
+    cleared = client.patch(
+        f"/app/invoices/{invoice['id']}/lines/{line_id}",
+        json={"quantity_decimal": None, "uom": None},
+    )
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json()["line_subtotal_cents"] == 0
+
+    restored = client.patch(
+        f"/app/invoices/{invoice['id']}/lines/{line_id}",
+        json={"quantity_decimal": "2", "uom": "hr"},
+    )
+    assert restored.status_code == 200, restored.text
+    assert restored.json()["line_subtotal_cents"] == 2000
+
+    converted = client.patch(
+        f"/app/invoices/{invoice['id']}/lines/{line_id}",
+        json={
+            "line_type": "note",
+            "quantity_decimal": "999",
+            "uom": "hr",
+            "unit_price_cents": 999999,
+            "taxable": True,
+        },
+    )
+    assert converted.status_code == 200, converted.text
+    converted_body = converted.json()
+    assert converted_body["line_type"] == "note"
+    assert converted_body["quantity_decimal"] is None
+    assert converted_body["uom"] is None
+    assert converted_body["unit_price_cents"] is None
+    assert converted_body["taxable"] is False
+    assert converted_body["line_subtotal_cents"] == 0
+
+    remaining = client.post(
+        f"/app/invoices/{invoice['id']}/lines",
+        json={
+            "line_type": "fee",
+            "description": "Remaining non-taxable amount",
+            "quantity_decimal": "1",
+            "uom": "ea",
+            "unit_price_cents": 500,
+            "taxable": False,
+        },
+    )
+    assert remaining.status_code == 200, remaining.text
+    detail = client.get(f"/app/invoices/{invoice['id']}").json()
+    assert detail["subtotal_cents"] == 500
+    assert detail["tax_cents"] == 0
+    assert detail["total_cents"] == 500
+
+    assert client.post(f"/app/invoices/{invoice['id']}/issue", json={}).status_code == 200
+    paid = client.post(f"/app/invoices/{invoice['id']}/mark-paid", json={})
+    assert paid.status_code == 200, paid.text
+    with bus_client["engine"].SessionLocal() as db:
+        event = db.get(bus_client["models"].CashEvent, int(paid.json()["paid_cash_event_id"]))
+        assert event is not None
+        assert event.amount_cents == 500
+
+
+def test_note_can_convert_back_to_financial_line(bus_client):
+    client = bus_client["client"]
+    contact_id = _create_contact(bus_client, "Note Restore Contact")
+    invoice = _create_invoice(client, contact_id, tax_rate_percent="13")
+    note = client.post(
+        f"/app/invoices/{invoice['id']}/lines",
+        json={"line_type": "note", "description": "Initially informational"},
+    )
+    assert note.status_code == 200, note.text
+
+    restored = client.patch(
+        f"/app/invoices/{invoice['id']}/lines/{note.json()['id']}",
+        json={
+            "line_type": "service",
+            "quantity_decimal": "1",
+            "uom": "hr",
+            "unit_price_cents": 300,
+            "taxable": True,
+        },
+    )
+    assert restored.status_code == 200, restored.text
+    assert restored.json()["line_subtotal_cents"] == 300
+    detail = client.get(f"/app/invoices/{invoice['id']}").json()
+    assert detail["subtotal_cents"] == 300
+    assert detail["tax_cents"] == 39
+    assert detail["total_cents"] == 339

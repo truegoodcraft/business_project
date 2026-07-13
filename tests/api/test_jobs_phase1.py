@@ -209,7 +209,10 @@ def test_job_line_quantity_rejects_invalid_or_missing_uom_with_stable_codes(bus_
         },
     )
     assert invalid_uom.status_code == 400
-    assert invalid_uom.json()["detail"] == "invalid_uom"
+    assert invalid_uom.json()["detail"] == {
+        "error": "bad_request",
+        "message": "invalid_uom",
+    }
 
     missing_uom = client.post(
         f"/app/jobs/{job['id']}/lines",
@@ -221,7 +224,10 @@ def test_job_line_quantity_rejects_invalid_or_missing_uom_with_stable_codes(bus_
         },
     )
     assert missing_uom.status_code == 400
-    assert missing_uom.json()["detail"] == "uom_required"
+    assert missing_uom.json()["detail"] == {
+        "error": "bad_request",
+        "message": "uom_required",
+    }
 
 
 def test_manual_job_events_are_reference_only(bus_client):

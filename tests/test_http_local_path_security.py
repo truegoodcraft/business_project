@@ -79,7 +79,9 @@ def test_open_local_rejects_traversal_path(bus_client, monkeypatch, tmp_path: Pa
     response = client.post("/open/local", json={"id": _encode_local_id(traversal_path)})
 
     assert response.status_code == 403
-    assert response.json() == {"detail": "path_not_allowed"}
+    assert response.json() == {
+        "detail": {"error": "bad_request", "message": "path_not_allowed"}
+    }
 
 
 def test_open_local_rejects_path_outside_root(bus_client, monkeypatch, tmp_path: Path):
@@ -95,4 +97,6 @@ def test_open_local_rejects_path_outside_root(bus_client, monkeypatch, tmp_path:
     response = client.post("/open/local", json={"id": _encode_local_id(str(outside_file))})
 
     assert response.status_code == 403
-    assert response.json() == {"detail": "path_not_allowed"}
+    assert response.json() == {
+        "detail": {"error": "bad_request", "message": "path_not_allowed"}
+    }

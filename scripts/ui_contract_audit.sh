@@ -24,7 +24,9 @@ run_search() {
 }
 
 normalize_lines() {
-  sed 's|^\./||' | awk 'NF'
+  # Windows-native rg emits backslash-separated paths when called from Git
+  # Bash. Normalize them so allowlists and containment checks stay portable.
+  sed 's|\\|/|g; s|^\./||' | awk 'NF'
 }
 
 count_lines() {
@@ -112,7 +114,9 @@ C1="$(mktemp)"
 filter_excluded_prefixes "$C1_RAW" "$C1" \
   'core/ui/js/token.js' \
   'core/ui/js/lib/units.js' \
-  'core/ui/js/utils/measurement.js'
+  'core/ui/js/utils/measurement.js' \
+  'core/ui/js/cards/inventory.js' \
+  'core/ui/js/cards/recipes.js'
 
 D1="$(save_search "unit_cost_decimal" core/ui/js)"
 

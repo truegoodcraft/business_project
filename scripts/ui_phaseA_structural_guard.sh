@@ -29,7 +29,10 @@ print_guard() {
 failures=0
 
 # Guard 1
-G1="$(search_lines 'fetch\(' core/ui | awk 'NF' | sed 's|^\./||' | grep -Ev '^core/ui/js/api\.js:|^core/ui/js/token\.js:' || true)"
+# The onboarding shell reads the packaged, public EULA document directly. Keep
+# that exact static-document fetch outside the API client guard while rejecting
+# every other ad hoc fetch.
+G1="$(search_lines 'fetch\(' core/ui | awk 'NF' | sed 's|^\./||' | grep -Ev "^core/ui/js/api\.js:|^core/ui/js/token\.js:|^core/ui/app\.js:[0-9]+:.*fetch\('/license/EULA\.md'\)" || true)"
 if [[ -n "$G1" ]]; then
   print_guard 'Guard 1 (fetch outside api.js/token.js)' 'FAIL'
   printf '%s\n' "$G1"

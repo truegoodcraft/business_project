@@ -86,7 +86,9 @@ def test_restore_commit_response_suppresses_dev_debug_info(bus_client, monkeypat
     response = client.post("/app/db/import/commit", json={"path": "backup.db.gcm", "password": "pw"})
 
     assert response.status_code == 400
-    assert response.json() == {"detail": {"error": "commit_failed"}}
+    assert response.json() == {
+        "detail": {"error": "commit_failed", "message": None}
+    }
     assert "secret" not in response.text
     assert "RuntimeError" not in response.text
 

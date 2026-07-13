@@ -96,7 +96,7 @@ function formatDate(value) {
 
 function formatMoney(cents) {
   const value = Number(cents || 0) / 100;
-  return value.toLocaleString(undefined, { style: 'currency', currency: 'USD' });
+  return value.toLocaleString('en-CA', { style: 'currency', currency: 'CAD' });
 }
 
 function actionLink(action, extraClass = '') {
@@ -430,12 +430,12 @@ function renderUpdateCard(data) {
       ${updateLine}
       <p class="bus-home-side-label">What changed:</p>
       <ul class="bus-home-release-list">
-        <li>The Laser Everything/community polish patch makes the first shop workflow clearer.</li>
-        <li>Pricing guidance, shortage messages, and manufacturing run labels are easier to read.</li>
-        <li>Finance now has common date presets, with additional trust and release polish.</li>
+        <li>Jobs and invoices now enforce one active invoice per job and exact note-line totals.</li>
+        <li>Inventory and price mutations are validated at authoritative service boundaries.</li>
+        <li>Release bootstrap, packaging documents, and the complete serial test gate are coherent.</li>
       </ul>
       <p class="bus-home-side-label">Why it matters:</p>
-      <p>Core is now feature-frozen and stability-focused: still maintained as local-first shop infrastructure, with future updates centered on safety, reliability, tester blockers, and clear documentation.</p>
+      <p>This maintenance release protects invoice, cash, stock, and packaged-document truth while preserving BUS Core's local-first operating model.</p>
       <div class="bus-home-side-actions">
         <a href="/brand/CHANGELOG.md" target="_blank" rel="noopener noreferrer">Read full changelog</a>
       </div>

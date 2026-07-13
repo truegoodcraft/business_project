@@ -178,7 +178,7 @@ async function renderNewRunForm(parent) {
 
   const card = el('div', { class: 'card' });
   const headerRow = el('div', { class: 'mfg-header-row' }, [
-    el('h2', { text: 'New Manufacturing Run' }),
+    el('h1', { text: 'New Manufacturing Run' }),
     el('a', { href: '#/recipes', class: 'btn small mfg-manage-recipes' }, 'Manage Recipes'),
   ]);
 
@@ -223,7 +223,7 @@ async function renderNewRunForm(parent) {
   tableContainer.append(emptyMsg);
 
   const btnRow = el('div', { class: 'mfg-btn-row' });
-  const statusMsg = el('span', { class: 'mfg-status-msg', 'data-tone': 'neutral' });
+  const statusMsg = el('span', { class: 'mfg-status-msg', 'data-tone': 'neutral', role: 'status', 'aria-live': 'polite' });
   const runBtn = el('button', { class: 'btn primary mfg-run-btn', disabled: 'true' }, 'Run Production');
   btnRow.append(statusMsg, runBtn);
 
@@ -267,11 +267,13 @@ async function renderNewRunForm(parent) {
       tbody.innerHTML = '';
       setProjectionVisible(true);
       runBtn.disabled = false;
+      setStatus('', 'neutral');
 
       const baseOutput = decimalToNumber(fullRecipe.quantity_decimal || '1');
       const requestedOutput = decimalToNumber(qtyInput.value || fullRecipe.quantity_decimal || '1');
       if (Number.isFinite(baseOutput) && baseOutput > 0 && Number.isFinite(requestedOutput) && requestedOutput > 0) {
         const factor = requestedOutput / baseOutput;
+        const projectedShortages = [];
 
         (fullRecipe.items || []).forEach((ri) => {
           const row = el('tr', { class: 'mfg-projection-row' });
@@ -279,14 +281,33 @@ async function renderNewRunForm(parent) {
           const stock = stockText(item);
           const scaledChange = scaleQuantityDecimal(ri.quantity_decimal || '0', factor);
           const change = fmtHumanQty(`-${scaledChange}`, ri.uom || ri.item?.uom);
+          const required = decimalToNumber(scaledChange);
+          const available = decimalToNumber(item?.stock_on_hand_display?.value);
+          const componentUnit = String(ri.uom || ri.item?.uom || '').trim().toLowerCase();
+          const stockUnit = String(item?.stock_on_hand_display?.unit || item?.uom || '').trim().toLowerCase();
+          const shortage = !(ri.optional ?? ri.is_optional)
+            && componentUnit === stockUnit
+            && Number.isFinite(required)
+            && Number.isFinite(available)
+            && required > available;
+          if (shortage) {
+            row.classList.add('mfg-projection-row--shortage');
+            projectedShortages.push(
+              `${ri.item?.name || `Item #${ri.item_id}`} is short by ${fmtHumanQty(toDecimalString(String(required - available)), componentUnit)}`,
+            );
+          }
           row.append(
             el('td', { text: ri.item?.name || `Item #${ri.item_id}` }),
-            el('td', { class: 'mfg-muted-cell', text: (ri.optional ?? ri.is_optional) ? 'Optional' : 'Input' }),
+            el('td', { class: shortage ? 'mfg-shortage-cell' : 'mfg-muted-cell', text: shortage ? 'Shortage' : ((ri.optional ?? ri.is_optional) ? 'Optional' : 'Input') }),
             el('td', { class: 'mfg-col-right', text: stock }),
             el('td', { class: 'mfg-col-right', text: change }),
           );
           tbody.append(row);
         });
+
+        if (projectedShortages.length) {
+          setStatus(`Projected shortage: ${projectedShortages.join('; ')}. Running will be blocked without changing stock.`, 'error');
+        }
 
         if (fullRecipe.output_item_id) {
           const row = el('tr', { class: 'mfg-projection-row' });

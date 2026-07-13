@@ -10,7 +10,8 @@ a = Analysis(
     binaries=[],
     datas=[
         (str(ROOT / 'core' / 'ui'), 'core/ui'),
-        (str(ROOT / 'license'), 'license'),   # <-- ONLY CHANGE (bundle license folder)
+        (str(ROOT / 'license'), 'license'),
+        (str(ROOT / 'SOT.md'), 'license'),
     ],
     hiddenimports=[],
     hookspath=[],

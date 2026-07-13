@@ -53,7 +53,9 @@ Core trust is not only about preventing compromise. It is also about preserving 
 | Conservative ready promotion | Bridge groundwork | `core/services/update_promote.py`, `core/runtime/update_cache.py` | Local update cache state | Internal helper writes version+sha keyed `verified_ready_versions` only when `hash_verified`, `extracted`, and `exe_verified` agree on version/channel/hash/path data and the confined ZIP, version directory, and EXE still exist. |
 | Verified handoff on next start | Canonical | `launcher.py` | Native launcher startup | After DB ownership lock, launcher scans verified-ready records, chooses the newest SemVer version newer than the running `VERSION`, and applies launch policy (`ask`, `always_newest`, `current_only`) without overwriting the running EXE. |
 
-Manual update staging remains authenticated, write-gated, and user-triggered. This patch release does not introduce auto-install, startup auto-update, telemetry, or silent background update behavior.
+Manual update staging remains authenticated, write-gated, and user-triggered. This release does not introduce auto-install, startup auto-update, or silent background update behavior. BUS Core v1.4.0 includes the disclosed optional product telemetry client described in the SOT and privacy statement.
+
+Lighthouse 1.22.1 and migration 0013 are deployed and production-verified. The corresponding client has disclosure, opt-out, strict allowlists, bounded queue/retry, and fail-open behavior. Neither Lighthouse availability nor telemetry delivery may become a prerequisite for normal self-managed operation. Business content remains prohibited from telemetry payloads.
 
 ## Trust model
 
@@ -68,7 +70,7 @@ Manual update staging remains authenticated, write-gated, and user-triggered. Th
 
 | Topic | Status | Repository evidence |
 | --- | --- | --- |
-| Local-first runtime | Canonical | Local DB, AppData state, localhost default binding, no telemetry path in main runtime. |
+| Self-managed runtime | Canonical | Local DB, AppData state, localhost default binding, and only the documented optional update-check signal in the current runtime. |
 | External dependencies | Canonical | Google OAuth/Drive APIs and hosted update manifest fetches are the main external calls. |
 | Policy engine | Canonical | `CoreAlpha` loads deny-by-default rules from `config/policy.json`. |
 | Writes default model | Canonical | Writes are enabled unless env/config disables them. |

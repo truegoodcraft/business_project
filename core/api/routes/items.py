@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # core/api/routes/items.py
+import math
+from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response
@@ -19,33 +21,10 @@ from tgc.state import AppState, get_state
 
 router = APIRouter(tags=["items"])
 
-UOMS = {"ea", "g", "kg", "mg", "mm", "cm", "m", "mm2", "cm2", "m2", "mm3", "cm3", "m3", "ml"}
-MAX_INT64 = 2**63 - 1
-
-
 def _derive_qty_and_unit(uom: str, qty_stored: int) -> tuple[float, str]:
     if uom == "ea":
         return float(qty_stored), "ea"
     return qty_stored / 100.0, uom
-
-
-def _round_half_away_from_zero(val: float) -> int:
-    sign = -1 if val < 0 else 1
-    return int((abs(val) + 0.5) // 1 * sign)
-
-
-def _guard_int_bounds(value: int):
-    if abs(int(value)) > MAX_INT64:
-        raise HTTPException(status_code=400, detail="quantity overflow: exceeds 64-bit integer")
-
-
-def _to_stored(qty: float, uom: str) -> int:
-    if uom == "ea":
-        stored = _round_half_away_from_zero(qty)
-    else:
-        stored = _round_half_away_from_zero(qty * 100)
-    _guard_int_bounds(stored)
-    return stored
 
 
 def _cents_to_display(cents: int) -> str:
@@ -85,30 +64,33 @@ def _fifo_unit_cost(db: Session, item_id: int, unit_label: str) -> Tuple[Optiona
     return cents_int, f"{_cents_to_display(cents_int)} / {unit_label}"
 
 
-def _apply_qty_fields(it: Item, payload: Dict[str, Any], resp: Optional[Response] = None):
-    uom = (payload.get("uom") or payload.get("unit") or getattr(it, "uom", "ea") or "ea").lower()
-    if uom not in UOMS:
-        raise HTTPException(status_code=400, detail="unsupported uom")
-    qty_stored = payload.get("qty_stored")
-    used_legacy = False
-    if qty_stored is None:
-        if "qty" in payload:
-            qty_val = payload.get("qty") or 0
-            qty_stored = _to_stored(float(qty_val), uom)
-            used_legacy = True
-        else:
-            qty_stored = getattr(it, "qty_stored", 0) or 0
-    else:
-        try:
-            qty_stored = int(qty_stored)
-        except Exception as exc:  # pragma: no cover - defensive
-            raise HTTPException(status_code=400, detail="qty_stored must be integer") from exc
-        _guard_int_bounds(qty_stored)
+def _reject_quantity_mutation(payload: Dict[str, Any]) -> None:
+    if "qty" in payload or "qty_stored" in payload:
+        raise HTTPException(status_code=400, detail="inventory_quantity_requires_stock_movement")
 
-    it.uom = uom
-    it.qty_stored = qty_stored
-    if used_legacy and resp is not None:
-        resp.headers["X-BUS-Deprecation"] = "qty/unit"
+
+def _validated_item_price(payload: Dict[str, Any]) -> tuple[bool, float | None]:
+    if "price_decimal" in payload:
+        raw_value = payload.get("price_decimal")
+    elif "price" in payload:
+        raw_value = payload.get("price")
+    else:
+        return False, None
+
+    # Preserve the existing optional-price contract. An empty UI product price
+    # means zero, while a null metadata field means no price update.
+    if raw_value is None:
+        return True, None
+    if isinstance(raw_value, str) and not raw_value.strip():
+        raw_value = "0"
+    try:
+        decimal_value = Decimal(str(raw_value).strip())
+        float_value = float(decimal_value)
+    except (InvalidOperation, ValueError, OverflowError) as exc:
+        raise HTTPException(status_code=400, detail="item_price_invalid") from exc
+    if not decimal_value.is_finite() or decimal_value < 0 or not math.isfinite(float_value):
+        raise HTTPException(status_code=400, detail="item_price_invalid")
+    return True, float_value
 
 def _items_with_onhand(db: Session):
     onhand_sq = (
@@ -271,6 +253,7 @@ def create_item(
     _state: AppState = Depends(get_state),
 ) -> Dict[str, Any]:
     require_owner_commit(req)
+    _reject_quantity_mutation(payload)
 
     location = (payload.get("location") or "").strip() or None
     item_type = payload.get("item_type") or payload.get("type")
@@ -281,12 +264,7 @@ def create_item(
     if uom not in UNIT_MULTIPLIER.get(dimension, {}):
         raise HTTPException(status_code=400, detail="unsupported uom")
     is_product = bool(payload.get("is_product"))
-    price_val = payload.get("price")
-    if payload.get("price_decimal") is not None:
-        try:
-            price_val = float(payload.get("price_decimal") or 0)
-        except (TypeError, ValueError):  # Compatibility fallback: retain raw price when decimal parsing fails.
-            pass
+    price_provided, price_val = _validated_item_price(payload)
 
     # Fallback upsert path used by the UI when adjusting non-existing items:
     item_id = payload.get("id")
@@ -299,7 +277,7 @@ def create_item(
         for f in ("name", "sku", "notes", "vendor_id"):
             if f in payload:
                 setattr(it, f, payload[f])
-        if ("price" in payload) or ("price_decimal" in payload) or is_product:
+        if price_provided or is_product:
             if price_val is not None:
                 it.price = price_val
             elif is_product:
@@ -317,7 +295,8 @@ def create_item(
                 pass
         if not getattr(it, "name", None):
             it.name = f"Item {item_id}"
-        _apply_qty_fields(it, payload, resp)
+        if it.id is None or getattr(it, "qty_stored", None) is None:
+            it.qty_stored = 0
     else:
         it = Item(
             name=payload.get("name") or "Unnamed Item",
@@ -359,6 +338,7 @@ def update_item(
     _state: AppState = Depends(get_state),
 ) -> Dict[str, Any]:
     require_owner_commit(req)
+    _reject_quantity_mutation(payload)
 
     it = db.query(Item).get(item_id)
     if not it:
@@ -372,17 +352,12 @@ def update_item(
         raise HTTPException(status_code=400, detail="unsupported dimension")
     if uom not in UNIT_MULTIPLIER.get(dimension, {}):
         raise HTTPException(status_code=400, detail="unsupported uom")
-    price_val = payload.get("price")
-    if payload.get("price_decimal") is not None:
-        try:
-            price_val = float(payload.get("price_decimal") or 0)
-        except (TypeError, ValueError):  # Compatibility fallback: retain raw price when decimal parsing fails.
-            pass
+    price_provided, price_val = _validated_item_price(payload)
 
     for f in ("name", "sku", "notes", "vendor_id"):
         if f in payload:
             setattr(it, f, payload[f])
-    if ("price" in payload) or ("price_decimal" in payload) or ("is_product" in payload):
+    if price_provided or ("is_product" in payload):
         if price_val is not None:
             it.price = price_val
         elif payload.get("is_product"):
@@ -399,8 +374,6 @@ def update_item(
         except AttributeError:  # Compatibility fallback: older Item models may not expose item_type.
             pass
 
-    payload = {**payload, "uom": uom}
-    _apply_qty_fields(it, payload, resp)
     db.commit()
     db.refresh(it)
     vname = None

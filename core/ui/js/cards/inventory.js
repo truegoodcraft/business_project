@@ -120,14 +120,18 @@ function handleInventoryDeepLink() {
 
 function formatMoney(n) {
   const v = Number(n ?? 0);
-  return v.toLocaleString(undefined, { style: 'currency', currency: 'USD' });
+  return v.toLocaleString('en-CA', { style: 'currency', currency: 'CAD' });
 }
 
 function formatItemPrice(item) {
   if (item?.is_product) {
     return item?.price != null ? formatMoney(item.price) : '—';
   }
-  return item?.fifo_unit_cost_display || (item?.price != null ? formatMoney(item.price) : '—');
+  if (item?.fifo_unit_cost_cents != null) {
+    const costUnit = item?.stock_on_hand_display?.unit || item.uom || item.unit || 'unit';
+    return `${formatMoney(Number(item.fifo_unit_cost_cents) / 100)} / ${costUnit}`;
+  }
+  return item?.price != null ? formatMoney(item.price) : '—';
 }
 
 function itemKindLabel(item) {
@@ -199,8 +203,23 @@ function renderTable(state) {
     const n = state.items.length;
     state.countEl.textContent = `${n} item${n === 1 ? '' : 's'}`;
   }
+  if (!state.items.length) {
+    tbody.append(el('tr', { class: 'inventory-empty-row' }, [
+      el('td', {
+        class: 'inventory-empty-cell',
+        colspan: '5',
+        text: 'No inventory items yet. Add the first material or product above.',
+      }),
+    ]));
+    return;
+  }
   state.items.forEach((item) => {
-    const row = el('tr', { 'data-role': 'item-row', 'data-id': item.id });
+    const row = el('tr', {
+      'data-role': 'item-row',
+      'data-id': item.id,
+      tabindex: '0',
+      'aria-label': `Open ${item.name || 'item'} details`,
+    });
     const vendorText = item.vendor?.name || item.vendor || '—';
     const priceText = formatItemPrice(item);
     row.append(
@@ -751,7 +770,7 @@ export async function _mountInventory(container) {
 
   const countEl = el('span', { class: 'inventory-count-pill', text: '0 items' });
   const header = el('header', { class: 'inventory-header' }, [
-    el('div', { class: 'inventory-title', text: 'Inventory' }),
+    el('h1', { class: 'inventory-title', text: 'Inventory' }),
     el('p', { class: 'inventory-kicker', text: 'Track materials, quantity on hand, and pricing context.' }),
     countEl,
   ]);
@@ -820,6 +839,15 @@ export async function _mountInventory(container) {
       state.items = state.items.filter((it) => it.id !== id);
       renderTable(state);
     }
+  });
+  table.addEventListener('keydown', async (event) => {
+    if (!['Enter', ' '].includes(event.key)) return;
+    const row = event.target.closest('tr[data-role="item-row"]');
+    if (!row) return;
+    event.preventDefault();
+    const id = Number(row.getAttribute('data-id'));
+    const item = state.items.find((entry) => entry.id === id);
+    if (item) await toggleDetailsRow(table, row, item);
   });
 
   function kv(label, value) {

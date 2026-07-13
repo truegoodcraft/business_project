@@ -1,14 +1,13 @@
 # TGC Business Utility System — BUS Core
 [![Open BUS Core](https://img.shields.io/badge/Open%20BUS%20Core-Run%20It%20Now-FF6D00?style=for-the-badge&logo=windows&logoColor=white)](https://buscore.ca/?src=github_readme_1)
 
-Local-first. No cloud account required. No cloud. Runs offline.
+Manufacturing operations software for small shops.
 
 
-A local-first inventory and manufacturing core for small shops that need durable control.
+A practical inventory and manufacturing system for small shops that need durable control.
 
 
-No cloud dependency. No hosted account required. No forced lock-in.
-Your data stays on your machine, and the system remains usable offline.
+Run BUS Core yourself for free, or have True Good Craft host and manage it for you. The self-managed product requires no hosted account or subscription, remains usable offline, and keeps its data portable.
 
 
 ![License](https://img.shields.io/badge/License-AGPLv3-blue.svg)
@@ -27,7 +26,7 @@ BUS Core is the sovereign local system of record for workshops that build real t
 
 It is meant to be boring in the right ways: stable, predictable, reviewable, and fully usable on its own.
 
-Core owns the canonical business logic, local data model, and operator-safe base workflows. Any Pro or companion tooling is additive around Core, not a prerequisite for using it.
+Core owns the canonical business logic, local data model, and operator-safe base workflows. Managed hosting and services remain optional and must not create a divergent BUS fork.
 
 It replaces:
 
@@ -92,13 +91,17 @@ It is not a full accounting system—and is not trying to be.
 - Manufacturing history labels such as `Run #6`.
 - Finance date presets for common recent, month, quarter, and year views.
 
-## Stability Focus After v1.3.2
+## Product Direction After v1.3.2
 
-Core is now feature-frozen and stability-focused. BUS Core remains maintained local-first, open-source shop infrastructure with no forced cloud and no telemetry. Future Core updates will focus on safety, reliability, tester blockers, backup and data protection, release/update hygiene, small UX clarifications, and documentation. New major workflow or domain expansion moves to BUS Pro discovery.
+BUS Core remains a maintained manufacturing operations product. Reliability, safety, backups, data protection, release hygiene, and operator clarity remain priorities, while future product work follows demonstrated manufacturing needs. Operators may run the complete open-source product themselves or use the deployed Managed BUS inquiry when they want True Good Craft to host, update, back up, monitor, and support it through a scoped service engagement.
+
+Managed BUS is not yet represented here as a generally available production service. A public intake and a credible isolated deployment baseline must exist first.
 
 ## Still Not Included
 
-BUS Core remains serious local-first shop infrastructure, not a SaaS funnel or a full business suite. It still does not include full POS, full accounting, QuickBooks/Wave sync, automatic reorder, full job scheduling, cloud accounts, cloud sync, telemetry, payment links, customer portals, or recurring billing.
+BUS Core remains serious manufacturing operations software, not a full accounting suite. It does not include full POS, full accounting, QuickBooks/Wave sync, automatic reorder, full job scheduling, cloud synchronization, payment links, customer portals, or recurring billing.
+
+BUS Core v1.4.0 makes optional version-aware update checks and includes a strict optional product-telemetry client: it waits for first-run disclosure, sends nothing when disabled, creates a random local UUIDv4 installation identifier, queues only allowlisted events, retries at most three times, and never blocks local work. Payloads contain only the event name, event ID, installation ID, timestamp, app version, release channel, and coarse operating-system category. Customer, supplier, employee, item, recipe, invoice, email, document, filepath, financial, quantity, database, username, and machine-fingerprint content cannot enter the payload constructor. Lighthouse migration 0013 and Worker 1.22.1 are deployed and production-verified; tagging and release timing remain owner-controlled.
 
 ---
 

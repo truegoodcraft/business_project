@@ -1,6 +1,6 @@
 # TGC BUS Core — Unified Source of Truth
 
-**Version:** v1.3.2 **Updated:** 2026-06-20 **Status:** Stable **Authority:** `core/version.py` is the version authority. Where this document and code disagree, update this document.
+**Version:** v1.4.0 **Updated:** 2026-07-13 **Status:** Stable **Authority:** `core/version.py` is the version authority. Where this document and code disagree, update this document.
 
 ---
 
@@ -10,17 +10,27 @@
 
 * **Product:** TGC BUS Core (Business Utility System).
 
-* **Audience:** Small and micro shops, makers, and anti-SaaS operators who need durable local control.
+* **Audience:** Small manufacturers, production shops, makers, and practical operators who need dependable control of inventory, recipes/BOMs, manufacturing, jobs, invoices, costs, and operating records.
 
-* **Constitutional doctrine:** BUS Core is the sovereign local system of record. It MUST remain fully usable offline, on local infrastructure, without Pro, without accounts, and without forced cloud dependency.
+* **Constitutional doctrine:** BUS Core Self-Managed is the sovereign customer-operated system of record. It MUST remain fully usable on local or self-hosted infrastructure without a subscription or forced cloud dependency. TGC Managed BUS is the optional commercial operating model in which True Good Craft hosts and manages an isolated BUS deployment for the customer.
 
 * **Trust posture:** Predictability, stability, operator safety, and long-term reliability are first-order product requirements. Feature growth does not outrank trust preservation.
 
-* **Authority boundary:** Core owns the canonical business logic, durable data model, and operator-safe base workflows. Pro may automate, orchestrate, integrate, or accelerate around Core, but it MUST NOT supersede Core or redefine Core logic.
-* **Invoice authority:** Core owns local invoice truth. Invoice lines are billing records only and MUST NOT become inventory mutation authority. Invoice payment truth is exactly one local `CashEvent` with `kind="sale"`, `category="invoice"`, `source_kind="invoice"`, and `source_id="invoice:{id}"`. Pro-owned sending, payment links, portals, sync, recurring billing, reminders, and automation remain outside Core.
+* **Authority boundary:** Core owns the canonical business logic, durable data model, and operator-safe base workflows. Hosting, authentication, backups, monitoring, migration, integrations, and bounded support may be added around Core for a managed deployment, but MUST NOT supersede Core or create a divergent product fork.
+* **Invoice authority:** Core owns local invoice truth. At most one non-void invoice may link to a job; the database partial unique index is the concurrency authority and create-from-job reopens the existing active invoice. Note lines are non-financial, with null quantity/price, non-taxable state, and zero subtotal. Invoice lines are billing records only and MUST NOT become inventory mutation authority. Invoice payment truth is exactly one local `CashEvent` with `kind="sale"`, `category="invoice"`, `source_kind="invoice"`, and `source_id="invoice:{id}"`. Pro-owned sending, payment links, portals, sync, recurring billing, reminders, and automation remain outside Core.
+* **Inventory and price authority:** Item metadata creation starts stock at zero and metadata routes MUST NOT assign `qty` or `qty_stored`; every quantity change flows through canonical batch, movement, and journal mutation services. Item, job-line, invoice-line, purchase, and sale prices MUST be finite and non-negative before any durable or journal mutation. Zero price remains valid.
 * **Theme authority:** Core UI theme variants are presentation-only state. The active selector is the existing Settings theme dropdown, the selected variant is stored in browser `localStorage` key `bus.ui.themeVariant`, and CSS variables own the visual authority. Theme state MUST NOT become backend config, auth, business, inventory, finance, or release-update authority.
 
-* **Product framing:** Core is the product and trust anchor, not a crippled free tier. The system must remain complete and useful on its own.
+* **Product framing:** Core is the product and trust anchor, not a crippled free tier. The system must remain complete and useful on its own. The canonical offer is: run BUS Core yourself for free, or have True Good Craft host and manage it for you.
+
+### Approved transition direction
+
+* Manufacturing operations software for small shops is the primary product position.
+* BUS Core Self-Managed is free, open-source, local or self-hosted, customer-operated, portable, and requires no subscription.
+* TGC Managed BUS is an optional paid, manually provisioned service for isolated hosting, browser access, authentication, updates, backups, monitoring, recovery, and bounded support. Its canonical public intake is `https://buscore.ca/managed-bus-inquiry`.
+* Managed BUS is not represented as a generally available production service until a working intake and credible single-customer deployment baseline exist.
+* Absolute "no telemetry" claims are retired. BUS Core v1.4.0 includes the Lighthouse schema-1.0 client with first-run disclosure, a settings control, meaningful opt-out, strict payload construction, a random local UUIDv4 installation identifier, a 100-event local queue, at most three delivery attempts, milestone deduplication, and fail-open operation. Lighthouse migration 0013 and Worker 1.22.1 are deployed and production-verified; any tag or public release remains owner-controlled.
+* Business content, including customer, supplier, employee, item, recipe, invoice, quantity, financial, document, raw database, filepath, and machine-fingerprint data, MUST NOT enter product telemetry.
 
 
 
@@ -158,7 +168,7 @@
 
 * `scripts/build_core.ps1 -Release` is the current release-mode build path: it builds the versioned EXE, signs only `dist/BUS-Core-<VERSION>.exe`, verifies the Authenticode result internally, verifies the signer thumbprint against `55474AA9A2D562022A6590D487045E069457F985`, and bundles the canonical public ZIP `dist/BUS-Core-<VERSION>.zip`.
 
-* The canonical public release ZIP remains `BUS-Core-<VERSION>.zip`. The ZIP opens directly to the signed versioned EXE, `README.md`, and `license/`; the build script does not add evidence files, checksum files, release reports, or other bundle extras.
+* The canonical public release ZIP remains `BUS-Core-<VERSION>.zip`. The ZIP opens directly to the signed versioned EXE, `README.md`, and `license/`; `license/SOT.md` is copied from the canonical root `SOT.md` during packaging so the operational authority ships without maintaining a divergent source duplicate. The build script does not add evidence files, checksum files, release reports, or other bundle extras.
 
 * Code-signing credential material is still not stored, encoded, or automated in the repo. If the certificate provider requires a password, PIN, or hardware-token action, the operator enters it through the normal Windows / `signtool` prompt flow.
 
@@ -438,7 +448,7 @@
 
 
 *
-**Config:** Update settings live in `%LOCALAPPDATA%\BUSCore\config.json` under `updates` (`enabled`, `channel`, `manifest_url`, `check_on_startup`). Strict SemVer required, and fetches time out at 4 seconds.
+**Config:** Update settings live in `%LOCALAPPDATA%\BUSCore\config.json` under `updates` (`enabled`, `channel`, `manifest_url`, `check_on_startup`). Strict SemVer required, and fetches time out at 4 seconds. A top-level local-state boolean `update_check_first_reported` records whether this profile has already reported a version-aware update check; it is a single aggregate-safe flag, not an identity or persistent client token, and survives settings saves.
 
 
 *
@@ -451,6 +461,10 @@
 
 *
 **Manual check:** Manual "Check now" always calls `GET /app/update/check` regardless of the startup-check setting.
+
+
+*
+**Update-check outbound params:** The outbound update-check request to Lighthouse appends three aggregate-safe query params to `updates.manifest_url`: `current_version` (runtime `VERSION`, omitted if not strict SemVer), `channel` (validated low-cardinality lane, falling back to `stable`), and `first_check` (`true` on the first version-aware check for the local profile, `false` thereafter, backed by `update_check_first_reported`). Pre-existing manifest-URL query params are preserved and app-provided values win on key collision. The request MUST NOT carry any identity — no install/device/user id, hostname, username, machine fingerprint, or dedupe/persistent-client token — consistent with Lighthouse's aggregate-only, no-identity posture.
 
 
 *
@@ -563,7 +577,7 @@
 
 
 * 
-**No Telemetry:** All analytics are computed locally from the SQLite DB.
+**Telemetry boundary:** Business analytics remain local to the SQLite DB. BUS Core v1.4.0's optional product client emits only Lighthouse-allowlisted installation/release, module-use, workflow-milestone, and reliability event names with the exact schema-1.0 common context. It is disclosed, controllable, meaningfully optional, bounded, non-blocking, and prohibited from accepting business content. Lighthouse 1.22.1 plus migration 0013 are live and production-verified; release timing remains owner-controlled.
 
 
 * 
@@ -1389,6 +1403,8 @@ Release-agent validation for this delta is complete when:
 - Canonical smoke harness is run via `scripts/smoke.ps1` in a suitable Windows/PowerShell-capable environment and results are attached.
 - Spot-check confirms no reintroduction of UoM defaulting in action flows and no header-clobber behavior in the httpx shim.
 
+> **Historical record note (2026-07-13):** The following Lighthouse v1 delta is preserved as implementation history. Its aggregate-only storage model, prohibition on installation identifiers, and prohibition on per-request event records describe that original v1 contract; they are not the current authority for the newer versioned telemetry contract and client. Current authority is the product/privacy boundary near the top of this SOT together with deployed, production-verified Lighthouse 1.22.1 and migration 0013.
+
 [DELTA HEADER]
 SOT_VERSION_AT_START: v0.11.0
 SESSION_LABEL: BUS Core Lighthouse — Release Manifest Proxy + Aggregate Infra Counters + Discord Ops Channel
@@ -1431,15 +1447,15 @@ Lighthouse is not required for Core's local runtime to function; it exists to su
 
 2.3 Non-goals
 
-Lighthouse is not a telemetry system.
+Lighthouse is the independent release-data and telemetry-contract service. It is not required for Core's local runtime.
 
 Lighthouse does not identify users, does not maintain install IDs, and does not attempt to derive “active users.”
 
 Lighthouse does not auto-update Core and does not run code on client machines.
 
-(3) POLICY COMPATIBILITY WITH CORE (“NO TELEMETRY”)
+(3) POLICY COMPATIBILITY WITH CORE
 
-Core’s product stance is local-first and “no forced cloud / no telemetry” 
+Core’s product stance is self-managed by default with no forced cloud dependency. Absolute "no telemetry" language is retired.
 
 Core sot
 
@@ -1449,19 +1465,19 @@ Core sot
 
 .
 
-Therefore Lighthouse is permitted only under these constraints:
+Lighthouse product telemetry is permitted only under these constraints:
 
 Aggregate-only counting (daily totals)
 
-No user identifiers (no install_id, no device ID, no account ID, no cookies)
+Only a random local installation identifier approved by the versioned contract; no hardware-derived ID, device fingerprint, account ID, username, or cookie identity
 
 No IP storage (no raw IP retention; no hashed IP uniqueness systems)
 
 No behavioral profiling or cross-day user linking
 
-Lighthouse is strictly an ops/release surface tool, not a product analytics channel
+Lighthouse remains an ops/release authority and becomes the narrow product-telemetry contract authority
 
-If Lighthouse is ever expanded beyond aggregate counters, it requires a new explicit SoT delta and must preserve Core’s default telemetry posture of “Disabled (local-only)” 
+Broader collection requires an explicit versioned allowlist, field rejection, retention policy, disclosure, opt-out behavior, and tests proving prohibited business content cannot be transmitted
 
 #TGC-BUS-Core SOT
 
@@ -1570,7 +1586,7 @@ Core sot
 
 Manifest checksum, size, release-notes, and artifact signature-style metadata are declared manifest metadata. Core validates their shape and retains them internally; manual update staging requires a trusted signed manifest before using `sha256` and `size_bytes` to hash-verify a cached ZIP artifact. Read-only update check still does not require signatures.
 
-Lighthouse is allowed to exist as the public manifest proxy + download redirect target that Core and the website can point at. This does not convert Core into a telemetry product.
+Lighthouse is the public manifest proxy, download redirect target, update-signal receiver, and future versioned product-telemetry contract authority. Its availability must never be required for normal local BUS Core operation.
 
 (7) ACCEPTANCE CRITERIA
 

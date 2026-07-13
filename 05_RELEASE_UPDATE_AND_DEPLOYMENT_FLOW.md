@@ -52,7 +52,7 @@ In the current stabilization phase, trustworthy release infrastructure means ope
 4. `scripts/build_core.ps1` reads `VERSION` from `core/version.py` unless an explicit override is passed, validates `X.Y.Z`, writes Windows version metadata, builds the one-file EXE, and copies `dist/BUS-Core.exe` to `dist/BUS-Core-<VERSION>.exe`.
 5. Without `-Sign`, `-Bundle`, or `-Release`, the script remains the normal build path and stops after the versioned EXE copy.
 6. `scripts/build_core.ps1 -Release` now performs the local release build boundary: it builds the versioned EXE, signs only `dist/BUS-Core-<VERSION>.exe`, verifies Authenticode validity and the signer thumbprint `55474AA9A2D562022A6590D487045E069457F985`, optionally verifies through `signtool`, and bundles `dist/BUS-Core-<VERSION>.zip`.
-7. The release ZIP is created from a clean staging folder and contains only the signed versioned EXE, `README.md`, and `license/` at the ZIP root.
+7. The release ZIP is created from a clean staging folder and contains only the signed versioned EXE, `README.md`, and `license/` at the ZIP root. Packaging copies the canonical root `SOT.md` to `license/SOT.md` and verifies that exact archive entry, avoiding a divergent source-tree copy.
 8. The script does not store or automate signing passwords/PINs; any required credential entry remains in the Windows certificate-provider / `signtool` prompt flow.
 9. GitHub release creation, Lighthouse/R2 mirroring, manifest signing, and manifest publication remain outside `scripts/build_core.ps1`.
 10. `scripts/release-check.ps1` now validates the current release chain truthfully: isolated smoke, canonical build script, and artifact existence checks for both current EXE names.
@@ -82,6 +82,7 @@ Manifest compatibility is a release boundary for this bridge release: deployed c
 3. Route loads the configured `updates.channel` and `updates.manifest_url` from `%LOCALAPPDATA%\BUSCore\config.json`.
 4. `UpdateService.check()` validates the current runtime version as strict SemVer.
 5. Service validates the manifest URL and configured channel, fetches JSON with timeout and size caps, normalizes supported manifest shapes, supports signed manifest unwrapping when present, validates optional metadata shape, and compares the selected release version against runtime `VERSION`. Read-only update check still preserves unsigned-manifest compatibility.
+   - The outbound check request appends three aggregate-safe query params to the manifest URL: `current_version` (runtime `VERSION`, omitted if not strict SemVer), `channel` (validated low-cardinality lane, falling back to `stable`), and `first_check` (`true` on the first version-aware check for this local profile, `false` thereafter). Any pre-existing query params on `updates.manifest_url` are preserved; the app-provided values win on key collision. No identity is ever added — no install/device/user id, hostname, username, machine fingerprint, or dedupe/persistent-client token. The `first_check` state is a single local boolean `update_check_first_reported` in `%LOCALAPPDATA%\BUSCore\config.json`, set after the request attempt finishes (even on error) so a flaky network cannot inflate first-seen counts.
 6. Route returns normalized response keys: `current_version`, `latest_version`, `update_available`, `download_url`, `error_code`, `error_message`.
 7. UI shows a manual Update button when `update_available` is true.
 8. Clicking Update calls `POST /app/update/stage` (auth + write-gated) which requires a trusted signed manifest, then performs hash-verified ZIP download, safe extraction, EXE trust verification, and conservative version+sha keyed `verified_ready_versions` promotion. Legacy `verified_ready` remains only a compatibility/latest pointer.
@@ -89,6 +90,8 @@ Manifest compatibility is a release boundary for this bridge release: deployed c
 10. On next start, launcher evaluates all `verified_ready_versions` records after DB lock, filters to versions newer than the running `VERSION`, selects the newest eligible SemVer candidate, and applies verified launch policy without overwriting the running EXE.
 
 Update checks are part of the trust model because they are optional and non-blocking. Core remains usable without them, and an unavailable manifest host should not prevent normal local operation.
+
+The current update-check parameters are distinct from the broader product-telemetry contract. Lighthouse 1.22.0 and the current BUS Core working revision implement their respective receiver and client sides, but neither is live collection. Release order is mandatory: set the Lighthouse rate-control secret, apply migration 0013, deploy and verify Lighthouse, then release BUS Core. The client retains fail-open local operation and prohibits business-content payloads.
 
 ## Implemented vs documented vs assumed release/update elements
 
@@ -135,7 +138,7 @@ Update checks are part of the trust model because they are optional and non-bloc
 
 Release and update trust here depends more on clear authority and honest limits than on a large automation footprint. The current boundary is: canonical version authority exists, authority mirrors and change-trace requirements are machine-checked, tag alignment is checked, manifests are signed during release publication, update-check metadata is normalized, channel-specific manifests are selected explicitly, manual staging requires trusted signed manifest metadata before executing artifact verification into version+sha keyed `verified_ready_versions`, and launcher handoff is policy-controlled on next start.
 
-Known remaining release/update work is explicit: deciding whether read-only update check should also require signed manifests, adding optional restart orchestration beyond restart/reopen guidance, and Docker release hardening if the container lane needs governed releases. There is still no auto-install, startup auto-update, telemetry, or silent background update behavior.
+Known remaining release/update work is explicit: deciding whether read-only update check should also require signed manifests, adding optional restart orchestration beyond restart/reopen guidance, Docker release hardening if the container lane needs governed releases, and completing the Lighthouse-first telemetry deployment verification. There is still no auto-install, startup auto-update, or silent background update behavior.
 
 ## Freeze Notes
 

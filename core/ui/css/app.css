@@ -199,6 +199,11 @@ body {
 }
 * { box-sizing: border-box; }
 
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 3px solid var(--accent-2);
+  outline-offset: 2px;
+}
+
 #sidebar {
   flex: 0 0 210px;
   width: 210px;
@@ -1750,7 +1755,57 @@ hr.thin {
     width: 100%;
     height: auto;
     min-height: 0;
-    overflow: visible;
+    overflow: hidden;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    padding: 7px 8px 8px;
+    box-shadow: 0 10px 26px rgba(5, 10, 22, 0.5);
+  }
+
+  #sidebar .brand {
+    min-width: 0;
+  }
+
+  #sidebar .tgc-brand {
+    min-height: 36px;
+    margin: 0 0 6px;
+    padding: 7px 10px;
+    flex-direction: row;
+    align-items: center;
+  }
+
+  #sidebar .tgc-brand-title {
+    font-size: 1.05rem;
+  }
+
+  #sidebar .tgc-brand-mark-wrap {
+    display: none;
+  }
+
+  #sidebar .sidebar-nav {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: thin;
+    padding-bottom: 2px;
+  }
+
+  #sidebar .sidebar-nav > li {
+    flex: 0 0 auto;
+  }
+
+  #sidebar .nav-section,
+  #sidebar .sidebar-update-zone {
+    display: none;
+  }
+
+  #sidebar .sidebar-nav > li > a {
+    min-height: 38px;
+    margin: 0;
+    padding: 7px 10px;
+    white-space: nowrap;
   }
 
   #main {
@@ -1758,6 +1813,7 @@ hr.thin {
     height: auto;
     min-height: 0;
     overflow: visible;
+    padding: 12px;
   }
 
   .auth-banner,
@@ -3301,6 +3357,18 @@ hr.thin {
   font-size: 0.73rem;
 }
 
+.inventory-empty-cell {
+  padding: 24px 12px !important;
+  text-align: center;
+  color: var(--muted);
+}
+
+.inventory-shell tr[data-role="item-row"]:focus-visible,
+.recipe-row:focus-visible {
+  outline: 3px solid var(--accent-2);
+  outline-offset: -3px;
+}
+
 .inventory-shell .inventory-controls {
   margin-bottom: 12px;
   gap: 8px;
@@ -3537,6 +3605,15 @@ hr.thin {
 
 .mfg-projection-row {
   border-bottom: 1px solid rgba(69, 88, 119, 0.24);
+}
+
+.mfg-projection-row--shortage {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+.mfg-shortage-cell {
+  color: var(--danger);
+  font-weight: 700;
 }
 
 .mfg-col-right {

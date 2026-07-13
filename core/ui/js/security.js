@@ -369,7 +369,7 @@ export async function mountSecurity(container, options = {}) {
   container.innerHTML = `
     <div class="security-shell">
       <div class="security-heading">
-        <h2>Security</h2>
+        <h1>Security</h1>
         <p>Manage claimed-mode identity, sessions, and audit visibility according to your backend permissions.</p>
       </div>
       <div class="security-status-line" data-role="security-status" data-tone="neutral" aria-live="polite"></div>

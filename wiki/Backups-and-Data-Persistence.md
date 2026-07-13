@@ -37,6 +37,6 @@ The default container database is `/data/app.db` with `BUS_DB=/data/app.db`. Mou
 - Do not treat a filename in the export list as proof that you know its password or that an off-device copy exists.
 - Test restore in an appropriate environment before depending on a backup plan.
 - A local export on the same failing disk is not a complete disaster-recovery strategy.
-- BUS Core does not provide hosted backup or cloud sync.
+- BUS Core Self-Managed does not provide hosted backup or cloud sync; the operator owns backup and recovery. The upcoming, not-yet-generally-available TGC Managed BUS service is intended to add managed backup and recovery around the same portable BUS Core foundation.
 
 Next: [Trust, Security, and Local-First](Trust-Security-and-Local-First.md).

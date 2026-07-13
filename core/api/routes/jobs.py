@@ -5,7 +5,8 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, Query, Request
-from pydantic import BaseModel
+from fastapi.exceptions import RequestValidationError
+from pydantic import BaseModel, ValidationError
 from sqlalchemy.orm import Session
 
 from core.api.utils.quantity_guard import reject_legacy_qty_keys
@@ -16,10 +17,21 @@ from core.config.writes import require_writes
 from core.services import invoices as invoice_service
 from core.policy.guard import require_owner_commit
 from core.services import jobs as jobs_service
+from core.telemetry import emit_telemetry
 from tgc.security import require_token_ctx
 from tgc.state import AppState, get_state
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
+
+
+def _validated_request(model_type, raw: dict):
+    try:
+        return model_type(**raw)
+    except ValidationError as exc:
+        # These two routes accept raw bodies so they can reject legacy
+        # quantity keys before model normalization. Re-emit model failures as
+        # FastAPI request validation so the canonical error envelope applies.
+        raise RequestValidationError(exc.errors()) from exc
 
 
 class JobCreateRequest(BaseModel):
@@ -148,7 +160,7 @@ def create_job_line(
 ):
     require_owner_commit(req)
     reject_legacy_qty_keys(raw)
-    body = JobLineCreateRequest(**raw)
+    body = _validated_request(JobLineCreateRequest, raw)
     return jobs_service.create_line(db, job_id, body.model_dump())
 
 
@@ -166,7 +178,7 @@ def patch_job_line(
 ):
     require_owner_commit(req)
     reject_legacy_qty_keys(raw)
-    body = JobLineUpdateRequest(**raw)
+    body = _validated_request(JobLineUpdateRequest, raw)
     return jobs_service.update_line(db, job_id, line_id, body.model_dump(exclude_unset=True))
 
 
@@ -212,7 +224,10 @@ def transition_job_status(
     _state: AppState = Depends(get_state),
 ):
     require_owner_commit(req)
-    return jobs_service.transition_job_status(db, job_id, body.status)
+    result = jobs_service.transition_job_status(db, job_id, body.status)
+    if body.status.strip().lower() == "done":
+        emit_telemetry("first_job_completed")
+    return result
 
 
 @router.post("/{job_id}/invoice")
@@ -225,4 +240,6 @@ def create_job_invoice(
     _token: str = Depends(require_token_ctx),
     _state: AppState = Depends(get_state),
 ):
-    return invoice_service.create_invoice_from_job(db, job_id, body.model_dump(exclude_unset=True))
+    result = invoice_service.create_invoice_from_job(db, job_id, body.model_dump(exclude_unset=True))
+    emit_telemetry("first_invoice_created")
+    return result
