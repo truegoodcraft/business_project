@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from fastapi import HTTPException
@@ -46,6 +47,22 @@ def _validate_line_status(status: str) -> str:
     if value not in JOB_LINE_STATUSES:
         raise HTTPException(status_code=400, detail="invalid_job_line_status")
     return value
+
+
+def _validate_unit_price_cents(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        decimal_value = Decimal(str(value).strip())
+    except (InvalidOperation, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="unit_price_cents_invalid") from exc
+    if (
+        not decimal_value.is_finite()
+        or decimal_value < 0
+        or decimal_value != decimal_value.to_integral_value()
+    ):
+        raise HTTPException(status_code=400, detail="unit_price_cents_invalid")
+    return int(decimal_value)
 
 
 def _get_job(db: Session, job_id: int) -> Job:
@@ -363,7 +380,7 @@ def create_line(db: Session, job_id: int, payload: dict[str, Any]) -> dict[str, 
         description=_clean_required_text(payload.get("description"), "description"),
         qty_base=qty_base,
         display_uom=display_uom,
-        unit_price_cents=payload.get("unit_price_cents"),
+        unit_price_cents=_validate_unit_price_cents(payload.get("unit_price_cents")),
         status=status,
         sort_order=int(payload.get("sort_order") or 0),
     )
@@ -400,7 +417,7 @@ def update_line(db: Session, job_id: int, line_id: int, payload: dict[str, Any])
     if "recipe_id" in payload:
         line.recipe_id = payload["recipe_id"]
     if "unit_price_cents" in payload:
-        line.unit_price_cents = payload["unit_price_cents"]
+        line.unit_price_cents = _validate_unit_price_cents(payload["unit_price_cents"])
     if "status" in payload:
         line.status = _validate_line_status(payload["status"])
     if "sort_order" in payload and payload["sort_order"] is not None:

@@ -5,7 +5,8 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, Query, Request
-from pydantic import BaseModel
+from fastapi.exceptions import RequestValidationError
+from pydantic import BaseModel, ValidationError
 from sqlalchemy.orm import Session
 
 from core.api.utils.quantity_guard import reject_legacy_qty_keys
@@ -21,6 +22,16 @@ from tgc.security import require_token_ctx
 from tgc.state import AppState, get_state
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
+
+
+def _validated_request(model_type, raw: dict):
+    try:
+        return model_type(**raw)
+    except ValidationError as exc:
+        # These two routes accept raw bodies so they can reject legacy
+        # quantity keys before model normalization. Re-emit model failures as
+        # FastAPI request validation so the canonical error envelope applies.
+        raise RequestValidationError(exc.errors()) from exc
 
 
 class JobCreateRequest(BaseModel):
@@ -149,7 +160,7 @@ def create_job_line(
 ):
     require_owner_commit(req)
     reject_legacy_qty_keys(raw)
-    body = JobLineCreateRequest(**raw)
+    body = _validated_request(JobLineCreateRequest, raw)
     return jobs_service.create_line(db, job_id, body.model_dump())
 
 
@@ -167,7 +178,7 @@ def patch_job_line(
 ):
     require_owner_commit(req)
     reject_legacy_qty_keys(raw)
-    body = JobLineUpdateRequest(**raw)
+    body = _validated_request(JobLineUpdateRequest, raw)
     return jobs_service.update_line(db, job_id, line_id, body.model_dump(exclude_unset=True))
 
 
