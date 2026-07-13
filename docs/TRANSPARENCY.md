@@ -28,8 +28,8 @@ The BUS Core runtime is built for transparency and local control. This document 
 
 ## Telemetry & Diagnostics
 
-* **Current product telemetry**: Broader product-usage telemetry is not shipped. Optional version-aware update checks may send the current version, release channel, and first-check state as documented.
-* **Approved future boundary**: Limited product telemetry may be added only through a versioned Lighthouse allowlist, with disclosure, settings control, easy opt-out, non-blocking failure, bounded retention, and tests preventing business-content transmission.
+* **Current product telemetry**: Optional version-aware update checks may send the current version, release channel, and first-check state as documented. The optional product client sends only versioned Lighthouse-allowlisted event names and coarse common context after first-run disclosure and opt-in.
+* **Enforced boundary**: Product telemetry has a Settings opt-out, clears its unsent queue when disabled, fails without blocking local work, uses bounded queue/retry behavior, and cannot accept business-content fields.
 * **Diagnostics**: `logs/` contains per-run append-only logs. `/logs` returns the last 200 lines for local inspection only.
 * **Policy simulator**: `/policy.simulate` offers an explicit alternative to legacy “dry-run” modes.
 

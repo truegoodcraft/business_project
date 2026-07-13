@@ -1,6 +1,6 @@
 # TGC BUS Core — Unified Source of Truth
 
-**Version:** v1.3.2 **Updated:** 2026-07-12 **Status:** Stable **Authority:** `core/version.py` is the version authority. Where this document and code disagree, update this document.
+**Version:** v1.3.3 **Updated:** 2026-07-13 **Status:** Stable **Authority:** `core/version.py` is the version authority. Where this document and code disagree, update this document.
 
 ---
 
@@ -17,7 +17,8 @@
 * **Trust posture:** Predictability, stability, operator safety, and long-term reliability are first-order product requirements. Feature growth does not outrank trust preservation.
 
 * **Authority boundary:** Core owns the canonical business logic, durable data model, and operator-safe base workflows. Hosting, authentication, backups, monitoring, migration, integrations, and bounded support may be added around Core for a managed deployment, but MUST NOT supersede Core or create a divergent product fork.
-* **Invoice authority:** Core owns local invoice truth. Invoice lines are billing records only and MUST NOT become inventory mutation authority. Invoice payment truth is exactly one local `CashEvent` with `kind="sale"`, `category="invoice"`, `source_kind="invoice"`, and `source_id="invoice:{id}"`. Pro-owned sending, payment links, portals, sync, recurring billing, reminders, and automation remain outside Core.
+* **Invoice authority:** Core owns local invoice truth. At most one non-void invoice may link to a job; the database partial unique index is the concurrency authority and create-from-job reopens the existing active invoice. Note lines are non-financial, with null quantity/price, non-taxable state, and zero subtotal. Invoice lines are billing records only and MUST NOT become inventory mutation authority. Invoice payment truth is exactly one local `CashEvent` with `kind="sale"`, `category="invoice"`, `source_kind="invoice"`, and `source_id="invoice:{id}"`. Pro-owned sending, payment links, portals, sync, recurring billing, reminders, and automation remain outside Core.
+* **Inventory and price authority:** Item metadata creation starts stock at zero and metadata routes MUST NOT assign `qty` or `qty_stored`; every quantity change flows through canonical batch, movement, and journal mutation services. Item, job-line, invoice-line, purchase, and sale prices MUST be finite and non-negative before any durable or journal mutation. Zero price remains valid.
 * **Theme authority:** Core UI theme variants are presentation-only state. The active selector is the existing Settings theme dropdown, the selected variant is stored in browser `localStorage` key `bus.ui.themeVariant`, and CSS variables own the visual authority. Theme state MUST NOT become backend config, auth, business, inventory, finance, or release-update authority.
 
 * **Product framing:** Core is the product and trust anchor, not a crippled free tier. The system must remain complete and useful on its own. The canonical offer is: run BUS Core yourself for free, or have True Good Craft host and manage it for you.
@@ -28,7 +29,7 @@
 * BUS Core Self-Managed is free, open-source, local or self-hosted, customer-operated, portable, and requires no subscription.
 * TGC Managed BUS is an optional paid, manually provisioned service for isolated hosting, browser access, authentication, updates, backups, monitoring, recovery, and bounded support. Its canonical public intake is `https://buscore.ca/managed-bus-inquiry`.
 * Managed BUS is not represented as a generally available production service until a working intake and credible single-customer deployment baseline exist.
-* Absolute "no telemetry" claims are retired. Published v1.3.2 outbound behavior remains limited to documented update checks. The current repository working revision implements the Lighthouse schema-1.0 client with first-run disclosure, a settings control, meaningful opt-out, strict payload construction, a random local UUIDv4 installation identifier, a 100-event local queue, at most three delivery attempts, milestone deduplication, and fail-open operation. Lighthouse migration 0013 and Worker 1.22.1 are deployed and production-verified; any BUS Core public release remains owner-controlled.
+* Absolute "no telemetry" claims are retired. BUS Core v1.3.3 includes the Lighthouse schema-1.0 client with first-run disclosure, a settings control, meaningful opt-out, strict payload construction, a random local UUIDv4 installation identifier, a 100-event local queue, at most three delivery attempts, milestone deduplication, and fail-open operation. Lighthouse migration 0013 and Worker 1.22.1 are deployed and production-verified; any tag or public release remains owner-controlled.
 * Business content, including customer, supplier, employee, item, recipe, invoice, quantity, financial, document, raw database, filepath, and machine-fingerprint data, MUST NOT enter product telemetry.
 
 
@@ -576,7 +577,7 @@
 
 
 * 
-**Telemetry boundary:** Business analytics remain local to the SQLite DB. Published v1.3.2 outbound behavior is limited to documented update checks. The current working revision's optional product client emits only Lighthouse-allowlisted installation/release, module-use, workflow-milestone, and reliability event names with the exact schema-1.0 common context. It is disclosed, controllable, meaningfully optional, bounded, non-blocking, and prohibited from accepting business content. Lighthouse 1.22.1 plus migration 0013 are live and production-verified; release timing remains owner-controlled.
+**Telemetry boundary:** Business analytics remain local to the SQLite DB. BUS Core v1.3.3's optional product client emits only Lighthouse-allowlisted installation/release, module-use, workflow-milestone, and reliability event names with the exact schema-1.0 common context. It is disclosed, controllable, meaningfully optional, bounded, non-blocking, and prohibited from accepting business content. Lighthouse 1.22.1 plus migration 0013 are live and production-verified; release timing remains owner-controlled.
 
 
 * 
@@ -1402,7 +1403,7 @@ Release-agent validation for this delta is complete when:
 - Canonical smoke harness is run via `scripts/smoke.ps1` in a suitable Windows/PowerShell-capable environment and results are attached.
 - Spot-check confirms no reintroduction of UoM defaulting in action flows and no header-clobber behavior in the httpx shim.
 
-> **Historical record note (2026-07-12):** The following Lighthouse v1 delta is preserved as implementation history. Its aggregate-only storage model, prohibition on installation identifiers, and prohibition on per-request event records describe that original v1 contract; they are not the current authority for the newer versioned telemetry contract and client. Current authority is the product/privacy boundary near the top of this SOT together with Lighthouse 1.22.0. Migration 0013 and the Worker are not yet production-deployed or verified, so the current working client remains release-gated.
+> **Historical record note (2026-07-13):** The following Lighthouse v1 delta is preserved as implementation history. Its aggregate-only storage model, prohibition on installation identifiers, and prohibition on per-request event records describe that original v1 contract; they are not the current authority for the newer versioned telemetry contract and client. Current authority is the product/privacy boundary near the top of this SOT together with deployed, production-verified Lighthouse 1.22.1 and migration 0013.
 
 [DELTA HEADER]
 SOT_VERSION_AT_START: v0.11.0

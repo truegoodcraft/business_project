@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [1.3.3] - 2026-07-13
+
+### Release-blocker closure
+- Enforced at most one non-void invoice per job with a migration-safe partial unique index, idempotent create-from-job behavior, stable manual-link conflicts, and concurrency coverage.
+- Made note invoice lines server-canonical non-financial records and recalculated cleared quantities to zero before issue or payment.
+- Removed quantity mutation from item metadata routes, keeping stock changes behind canonical batch/movement/journal services.
+- Rejected negative and non-finite prices at item, job, invoice, conversion, purchase, stock-in, and stock-out fallback boundaries before partial mutation.
+- Rebuilt the shared API fixture around one lifespan-managed production graph, canonical startup migrations, hermetic runtime paths, mounted-router isolation, and repeated-client identity checks.
+- Removed stale packaged API/changelog/README copies, synchronized retained privacy/update truth, and added staged-package drift coverage.
+
+### Release identity
+- Selected unused public version `1.3.3`, reset `INTERNAL_VERSION` to `1.3.3.0`, and updated governed package, Windows, SOT, UI cache-token, Home update-card, and release-note surfaces.
+- Expected public artifact name is `BUS-Core-1.3.3.zip`; no tag, publication, deployment, or release is part of this repair pass.
+
 ### Complete release-test gate repair
 - Made shared API tests deterministic in production mode unless a test explicitly opts into development behavior, preserving the documented sanitized error envelope regardless of the caller's shell environment.
 - Replaced stale Contacts and desktop-lifecycle setup with the canonical isolated application fixture and added fresh-database regression coverage for invoice tables and `document_sequences` seeding.
