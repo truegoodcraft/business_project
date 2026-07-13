@@ -5,11 +5,12 @@ from pathlib import Path
 
 def test_canonical_endpoints_exist(bus_client):
     app = bus_client["api_http"].APP
+    openapi_paths = app.openapi().get("paths", {})
     routes = {
-        (m, r.path)
-        for r in app.routes
-        for m in getattr(r, "methods", set())
-        if m not in {"HEAD", "OPTIONS"}
+        (method.upper(), path)
+        for path, operations in openapi_paths.items()
+        for method in operations
+        if method.lower() in {"get", "post", "put", "patch", "delete"}
     }
     targets = {
         ("POST", "/app/stock/in"),
@@ -38,7 +39,8 @@ def test_canonical_endpoints_exist(bus_client):
         ("POST", "/app/jobs/{job_id}/events"),
         ("POST", "/app/jobs/{job_id}/status"),
     }
-    assert targets.issubset(routes)
+    missing = targets - routes
+    assert not missing, f"canonical routes missing from OpenAPI: {sorted(missing)}"
 
 
 def test_legacy_wrappers_emit_deprecation_header(bus_client, monkeypatch):

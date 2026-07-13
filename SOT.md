@@ -167,7 +167,7 @@
 
 * `scripts/build_core.ps1 -Release` is the current release-mode build path: it builds the versioned EXE, signs only `dist/BUS-Core-<VERSION>.exe`, verifies the Authenticode result internally, verifies the signer thumbprint against `55474AA9A2D562022A6590D487045E069457F985`, and bundles the canonical public ZIP `dist/BUS-Core-<VERSION>.zip`.
 
-* The canonical public release ZIP remains `BUS-Core-<VERSION>.zip`. The ZIP opens directly to the signed versioned EXE, `README.md`, and `license/`; the build script does not add evidence files, checksum files, release reports, or other bundle extras.
+* The canonical public release ZIP remains `BUS-Core-<VERSION>.zip`. The ZIP opens directly to the signed versioned EXE, `README.md`, and `license/`; `license/SOT.md` is copied from the canonical root `SOT.md` during packaging so the operational authority ships without maintaining a divergent source duplicate. The build script does not add evidence files, checksum files, release reports, or other bundle extras.
 
 * Code-signing credential material is still not stored, encoded, or automated in the repo. If the certificate provider requires a password, PIN, or hardware-token action, the operator enters it through the normal Windows / `signtool` prompt flow.
 

@@ -25,6 +25,7 @@ BUS_MODULES_TO_RESET = [
     "core.api.routes.jobs",
     "core.api.routes.ledger_api",
     "core.api.routes.manufacturing",
+    "core.api.routes.update",
     "core.api.routes.users",
     "core.api.routes.vendors",
     "core.appdata.paths",
@@ -49,6 +50,7 @@ BUS_MODULES_TO_RESET = [
     "core.journal.manufacturing",
     "core.services.invoices",
     "core.services.jobs",
+    "core.services.update",
     "core.manufacturing.service",
     "core.policy.store",
     "core.services.models",
@@ -59,7 +61,13 @@ BUS_MODULES_TO_RESET = [
 
 def reset_bus_modules(module_names: list[str]) -> None:
     for module_name in module_names:
-        sys.modules.pop(module_name, None)
+        module = sys.modules.pop(module_name, None)
+        parent_name, separator, child_name = module_name.rpartition(".")
+        if module is None or not separator:
+            continue
+        parent = sys.modules.get(parent_name)
+        if parent is not None and getattr(parent, child_name, None) is module:
+            delattr(parent, child_name)
 
 
 @pytest.fixture()
@@ -93,7 +101,10 @@ def bus_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.
     if hasattr(request, "param"):
         bus_dev = str(request.param)
     if bus_dev is None:
-        bus_dev = os.getenv("BUS_DEV", "0")
+        # The shared API fixture is production-mode by default regardless of
+        # the developer's shell. Tests that exercise dev behavior opt in via
+        # an indirect parameter or marker.
+        bus_dev = "0"
     monkeypatch.setenv("BUS_DEV", bus_dev)
     if not os.getenv("BUS_INVENTORY_JOURNAL"):
         monkeypatch.setenv("BUS_INVENTORY_JOURNAL", str(tmp_path / "journals" / "inventory.jsonl"))
@@ -122,7 +133,6 @@ def bus_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.
     recipes_module = importlib.reload(recipes_module)
     jobs_module = importlib.reload(jobs_module)
     services_models = importlib.reload(services_models)
-    api_http = importlib.reload(api_http)
 
     bus_app_state(api_http)
     api_http.app.state.allow_writes = True

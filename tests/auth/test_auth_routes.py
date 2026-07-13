@@ -412,14 +412,16 @@ def test_claimed_session_token_does_not_create_legacy_bypass(bus_client):
 
 
 def test_claimed_mode_allows_public_update_check_only(bus_client, monkeypatch):
-    from core.api.routes import update as update_routes
     from core.services.update import UpdateResult
+    from core.version import VERSION
+
+    update_routes = bus_client["api_http"].update_routes
 
     class FakeUpdateService:
-        def check(self, *, manifest_url: str, channel: str):
+        def check(self, *, manifest_url: str, channel: str, first_check: bool = False):
             return UpdateResult(
-                current_version="1.2.1",
-                latest_version="1.2.1",
+                current_version=VERSION,
+                latest_version=VERSION,
                 update_available=False,
                 download_url=None,
                 error_code=None,
@@ -434,8 +436,8 @@ def test_claimed_mode_allows_public_update_check_only(bus_client, monkeypatch):
     update_response = client.get("/app/update/check")
     assert update_response.status_code == 200, update_response.text
     assert update_response.json() == {
-        "current_version": "1.2.1",
-        "latest_version": "1.2.1",
+        "current_version": VERSION,
+        "latest_version": VERSION,
         "update_available": False,
         "download_url": None,
         "error_code": None,
@@ -684,7 +686,7 @@ def test_used_recovery_code_cannot_be_reused_and_failures_are_generic(bus_client
     )
 
     assert reused.status_code == 401
-    assert reused.json() == {"detail": {"error": "recovery_failed"}}
+    assert reused.json() == {"detail": {"error": "recovery_failed", "message": None}}
     assert wrong_user.status_code == 401
     assert wrong_user.json() == reused.json()
     assert wrong_code.status_code == 401
@@ -694,7 +696,7 @@ def test_used_recovery_code_cannot_be_reused_and_failures_are_generic(bus_client
 def test_recovery_rate_limit_blocks_repeated_failures_with_generic_response(bus_client):
     _setup_owner(bus_client["client"])
     client = _anonymous_client(bus_client)
-    generic_body = {"detail": {"error": "recovery_failed"}}
+    generic_body = {"detail": {"error": "recovery_failed", "message": None}}
     for index in range(5):
         response = client.post(
             "/auth/recover",
@@ -739,7 +741,7 @@ def test_recovery_code_regeneration_invalidates_old_unused_codes_and_audits(bus_
         json={"username": "owner", "recovery_code": old_code, "new_password": "new secure password"},
     )
     assert old_recovery.status_code == 401
-    assert old_recovery.json() == {"detail": {"error": "recovery_failed"}}
+    assert old_recovery.json() == {"detail": {"error": "recovery_failed", "message": None}}
 
     new_recovery = _anonymous_client(bus_client).post(
         "/auth/recover",

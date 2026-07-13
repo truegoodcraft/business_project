@@ -52,7 +52,7 @@ In the current stabilization phase, trustworthy release infrastructure means ope
 4. `scripts/build_core.ps1` reads `VERSION` from `core/version.py` unless an explicit override is passed, validates `X.Y.Z`, writes Windows version metadata, builds the one-file EXE, and copies `dist/BUS-Core.exe` to `dist/BUS-Core-<VERSION>.exe`.
 5. Without `-Sign`, `-Bundle`, or `-Release`, the script remains the normal build path and stops after the versioned EXE copy.
 6. `scripts/build_core.ps1 -Release` now performs the local release build boundary: it builds the versioned EXE, signs only `dist/BUS-Core-<VERSION>.exe`, verifies Authenticode validity and the signer thumbprint `55474AA9A2D562022A6590D487045E069457F985`, optionally verifies through `signtool`, and bundles `dist/BUS-Core-<VERSION>.zip`.
-7. The release ZIP is created from a clean staging folder and contains only the signed versioned EXE, `README.md`, and `license/` at the ZIP root.
+7. The release ZIP is created from a clean staging folder and contains only the signed versioned EXE, `README.md`, and `license/` at the ZIP root. Packaging copies the canonical root `SOT.md` to `license/SOT.md` and verifies that exact archive entry, avoiding a divergent source-tree copy.
 8. The script does not store or automate signing passwords/PINs; any required credential entry remains in the Windows certificate-provider / `signtool` prompt flow.
 9. GitHub release creation, Lighthouse/R2 mirroring, manifest signing, and manifest publication remain outside `scripts/build_core.ps1`.
 10. `scripts/release-check.ps1` now validates the current release chain truthfully: isolated smoke, canonical build script, and artifact existence checks for both current EXE names.

@@ -119,7 +119,10 @@ def test_invoice_totals_taxable_toggle_and_issue_rules(bus_client):
     empty_invoice = _create_invoice(client, contact_id)
     issue_empty = client.post(f"/app/invoices/{empty_invoice['id']}/issue", json={})
     assert issue_empty.status_code == 400
-    assert issue_empty.json()["detail"] == "invoice_issue_requires_line"
+    assert issue_empty.json()["detail"] == {
+        "error": "bad_request",
+        "message": "invoice_issue_requires_line",
+    }
 
     issued = client.post(f"/app/invoices/{invoice['id']}/issue", json={})
     assert issued.status_code == 200, issued.text
@@ -154,11 +157,17 @@ def test_paid_invoice_cannot_be_financially_edited_and_void_invoice_cannot_be_pa
         json={"unit_price_cents": 2500},
     )
     assert edit_line.status_code == 400
-    assert edit_line.json()["detail"] == "invoice_edit_forbidden_after_paid"
+    assert edit_line.json()["detail"] == {
+        "error": "bad_request",
+        "message": "invoice_edit_forbidden_after_paid",
+    }
 
     edit_header = client.patch(f"/app/invoices/{invoice['id']}", json={"tax_rate_percent": "15"})
     assert edit_header.status_code == 400
-    assert edit_header.json()["detail"] == "invoice_edit_forbidden_after_paid"
+    assert edit_header.json()["detail"] == {
+        "error": "bad_request",
+        "message": "invoice_edit_forbidden_after_paid",
+    }
 
     voidable = _create_invoice(client, contact_id)
     created_voidable = client.post(
@@ -178,7 +187,10 @@ def test_paid_invoice_cannot_be_financially_edited_and_void_invoice_cannot_be_pa
 
     pay_void = client.post(f"/app/invoices/{voidable['id']}/mark-paid", json={})
     assert pay_void.status_code == 400
-    assert pay_void.json()["detail"] == "invoice_void_cannot_be_paid"
+    assert pay_void.json()["detail"] == {
+        "error": "bad_request",
+        "message": "invoice_void_cannot_be_paid",
+    }
 
 
 def test_invoice_print_returns_html_and_escapes_unsafe_text(bus_client):

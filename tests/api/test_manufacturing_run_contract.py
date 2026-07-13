@@ -3,13 +3,12 @@ from __future__ import annotations
 
 import pytest
 
-pytestmark = pytest.mark.api
+pytestmark = [pytest.mark.api, pytest.mark.bus_dev("1")]
 
 
 @pytest.fixture()
-def manufacturing_client(monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest):
-    monkeypatch.setenv("BUS_DEV", "1")
-    env = request.getfixturevalue("bus_client")
+def manufacturing_client(bus_client):
+    env = bus_client
     return {
         "client": env["client"],
         "engine": env["engine"],

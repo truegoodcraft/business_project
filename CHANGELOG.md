@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Complete release-test gate repair
+- Made shared API tests deterministic in production mode unless a test explicitly opts into development behavior, preserving the documented sanitized error envelope regardless of the caller's shell environment.
+- Replaced stale Contacts and desktop-lifecycle setup with the canonical isolated application fixture and added fresh-database regression coverage for invoice tables and `document_sequences` seeding.
+- Made verified-update handoff tests derive a version newer than the current public version instead of relying on the obsolete `1.2.3` fixture.
+- Added the canonical `SOT.md` to embedded and ZIP release packaging under `license/SOT.md`, with packaging assertions that fail if it is omitted.
+- Bumped internal working revision to `1.3.2.8`; public version remains `1.3.2`.
+
 ### Final pre-release workflow and UI pass
 - Restored the Jobs-to-Invoices action, opening an existing linked invoice when present to avoid accidental duplicates.
 - Added route titles and scroll reset, compact narrow-screen navigation, visible keyboard focus, keyboard-operable rows, explicit empty states, accessible quick-create dialogs, and unsaved-change protection.

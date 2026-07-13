@@ -100,7 +100,9 @@ def test_create_item_rejects_invalid_dimension(bus_client: dict[str, Any]):
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "unsupported dimension"
+    assert response.json() == {
+        "detail": {"error": "bad_request", "message": "unsupported dimension"}
+    }
 
 
 def test_add_item_ui_payload_shape_for_grams_with_opening_batch(bus_client: dict[str, Any]):

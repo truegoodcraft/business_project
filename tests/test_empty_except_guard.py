@@ -42,7 +42,9 @@ def _iter_python_files() -> list[Path]:
         dirs[:] = [
             dirname
             for dirname in dirs
-            if dirname not in SKIP_DIRS and not dirname.startswith(".tmp")
+            if dirname not in SKIP_DIRS
+            and not dirname.startswith(".tmp")
+            and not (Path(current_root) / dirname / "pyvenv.cfg").is_file()
         ]
         for filename in filenames:
             if filename.endswith(".py"):

@@ -1,96 +1,17 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-from __future__ import annotations
-
-import importlib
-
 import pytest
-from fastapi.testclient import TestClient
-
-from tests.conftest import reset_bus_modules
 
 pytestmark = pytest.mark.api
 
 
 @pytest.fixture()
-def contacts_client(tmp_path, monkeypatch):
-    # Isolate DB for each test run
-    home = tmp_path / "buscore"
-    monkeypatch.setenv("BUSCORE_HOME", str(home))
-    home.mkdir(parents=True, exist_ok=True)
-    (home / "app").mkdir(parents=True, exist_ok=True)
+def contacts_client(bus_client):
+    """Use the product's canonical isolated schema/bootstrap fixture."""
 
-    reset_bus_modules(
-        [
-            "core.api.http",
-            "core.appdb.models",
-            "core.appdb.engine",
-            "core.services.models",
-            "core.api.routes.vendors",
-            "core.api.routes.items",
-            "core.appdb.session",
-            "tgc.state",
-            "tgc.settings",
-        ]
-    )
-
-    import core.appdb.engine as engine_module
-    import core.appdb.models as models_module
-    import core.services.models as services_models
-    import core.api.http as api_http
-    import tgc.state as state_module
-    import tgc.settings as settings_module
-
-    # Reload modules so they pick up the isolated BUSCORE_HOME
-    engine_module = importlib.reload(engine_module)
-    models_module = importlib.reload(models_module)
-    services_models = importlib.reload(services_models)
-    api_http = importlib.reload(api_http)
-    state_module = importlib.reload(state_module)
-    settings_module = importlib.reload(settings_module)
-
-    models_module.Base.metadata.create_all(bind=engine_module.ENGINE)
-
-    # Initialize application state and schema without relying on lifespan hooks.
-    app = api_http.create_app()
-    settings = settings_module.Settings()
-    app.state.app_state = state_module.init_state(settings)
-    api_http.startup_migrations()
-    from core.config.writes import set_writes_enabled
-
-    set_writes_enabled(True)
-
-    with engine_module.SessionLocal() as db:
-        db.query(models_module.Vendor).delete()
+    with bus_client["engine"].SessionLocal() as db:
+        db.query(bus_client["models"].Vendor).delete()
         db.commit()
-        assert db.query(models_module.Vendor).count() == 0
-
-    client = TestClient(app)
-    token_resp = client.get("/session/token")
-    assert token_resp.status_code == 200
-
-    # Manual cookie propagation for test environment (Robust handling for list vs dict headers)
-    cookie_val = None
-    if isinstance(token_resp.headers, list):
-        for k, v in token_resp.headers:
-            if k.lower() == "set-cookie":
-                cookie_val = v
-                break
-    elif hasattr(token_resp.headers, "get"):
-        cookie_val = token_resp.headers.get("set-cookie")
-
-    if cookie_val:
-        val = cookie_val.split(";")[0]
-        client.headers.update({"Cookie": val})
-
-    with engine_module.SessionLocal() as db:
-        db.query(models_module.Vendor).delete()
-        db.commit()
-
-    return {
-        "client": client,
-        "engine": engine_module,
-        "models": models_module,
-    }
+    return bus_client
 
 
 def test_get_contacts_returns_empty_list(contacts_client):

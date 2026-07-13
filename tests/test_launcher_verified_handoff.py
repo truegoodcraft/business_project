@@ -83,6 +83,11 @@ def _state(version: str, exe_path: Path) -> dict:
     return {"verified_ready": {"version": version, "exe_path": str(exe_path), "sha256": "a" * 64}}
 
 
+def _future_version(launcher) -> str:
+    major, _minor, _patch = (int(part) for part in launcher.CURRENT_VERSION.split("."))
+    return f"{major + 1}.0.0"
+
+
 def test_no_verified_ready_keeps_current(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     launcher = _import_launcher(monkeypatch)
 
@@ -135,6 +140,8 @@ def test_verified_ready_newer_current_only_is_ignored(monkeypatch: pytest.Monkey
 
 def test_verified_ready_newer_always_newest_launches(monkeypatch: pytest.MonkeyPatch):
     launcher = _import_launcher(monkeypatch)
+    future_version = _future_version(launcher)
+    future_exe = f"C:/cache/versions/{future_version}/BUS-Core.exe"
     calls: list[tuple[str, int, bool]] = []
     monkeypatch.setattr(
         launcher,
@@ -151,8 +158,8 @@ def test_verified_ready_newer_always_newest_launches(monkeypatch: pytest.MonkeyP
         "read_state",
         lambda _root, active_version: {
             "verified_ready": {
-                "version": "1.2.3",
-                "exe_path": "C:/cache/versions/1.2.3/BUS-Core.exe",
+                "version": future_version,
+                "exe_path": future_exe,
                 "sha256": "a" * 64,
             }
         },
@@ -160,12 +167,12 @@ def test_verified_ready_newer_always_newest_launches(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(
         launcher.Path,
         "exists",
-        lambda self: str(self).replace("\\", "/") == "C:/cache/versions/1.2.3/BUS-Core.exe",
+        lambda self: str(self).replace("\\", "/") == future_exe,
     )
     monkeypatch.setattr(
         launcher.Path,
         "is_file",
-        lambda self: str(self).replace("\\", "/") == "C:/cache/versions/1.2.3/BUS-Core.exe",
+        lambda self: str(self).replace("\\", "/") == future_exe,
     )
 
     launched = launcher._maybe_handoff_to_verified_ready(
@@ -176,12 +183,14 @@ def test_verified_ready_newer_always_newest_launches(monkeypatch: pytest.MonkeyP
 
     assert launched is True
     assert len(calls) == 1
-    assert calls[0][0].replace("\\", "/") == "C:/cache/versions/1.2.3/BUS-Core.exe"
+    assert calls[0][0].replace("\\", "/") == future_exe
     assert calls[0][1:] == (8765, False)
 
 
 def test_verified_ready_newer_ask_yes_attempts_launch(monkeypatch: pytest.MonkeyPatch):
     launcher = _import_launcher(monkeypatch)
+    future_version = _future_version(launcher)
+    future_exe = f"C:/cache/versions/{future_version}/BUS-Core.exe"
     calls: list[tuple[str, int, bool]] = []
     monkeypatch.setattr(launcher.os, "name", "nt", raising=False)
     monkeypatch.setattr(
@@ -204,8 +213,8 @@ def test_verified_ready_newer_ask_yes_attempts_launch(monkeypatch: pytest.Monkey
         "read_state",
         lambda _root, active_version: {
             "verified_ready": {
-                "version": "1.2.3",
-                "exe_path": "C:/cache/versions/1.2.3/BUS-Core.exe",
+                "version": future_version,
+                "exe_path": future_exe,
                 "sha256": "a" * 64,
             }
         },
@@ -213,12 +222,12 @@ def test_verified_ready_newer_ask_yes_attempts_launch(monkeypatch: pytest.Monkey
     monkeypatch.setattr(
         launcher.Path,
         "exists",
-        lambda self: str(self).replace("\\", "/") == "C:/cache/versions/1.2.3/BUS-Core.exe",
+        lambda self: str(self).replace("\\", "/") == future_exe,
     )
     monkeypatch.setattr(
         launcher.Path,
         "is_file",
-        lambda self: str(self).replace("\\", "/") == "C:/cache/versions/1.2.3/BUS-Core.exe",
+        lambda self: str(self).replace("\\", "/") == future_exe,
     )
 
     launched = launcher._maybe_handoff_to_verified_ready(
