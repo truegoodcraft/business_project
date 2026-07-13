@@ -168,7 +168,9 @@ Updates to BUS Core may be released periodically.
 
 Updates are **optional**.
 
-The software does not automatically update itself and does not require remote connections to operate.
+The software does not require remote connections to operate. If the operator enables update checks, BUS Core may check for a newer release at startup or when requested. An update is staged only after an operator requests it and its trust metadata is verified; an enabled launcher handoff may start that verified staged version on a later launch.
+
+BUS Core does not silently overwrite the running installation, launch an unverified artifact, or force an operator to update.
 
 Users may update, remain on older versions, or maintain their own modified versions.
 

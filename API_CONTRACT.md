@@ -102,6 +102,7 @@ Its purpose is to preserve predictability and prevent silent contract drift. If 
   - Create a draft invoice.
   - Requires writes enabled and invoice write permission in claimed mode.
   - Request body includes `contact_id`, optional `job_id`, optional `due_date`, optional `tax_rate_percent`, and optional `notes`.
+  - A `job_id` already linked to a non-void invoice returns a stable conflict; the database enforces this under concurrent requests.
 
 - `GET /app/invoices/{invoice_id}`
   - Read invoice detail, including invoice lines and totals.
@@ -120,6 +121,7 @@ Its purpose is to preserve predictability and prevent silent contract drift. If 
   - Add a draft invoice line.
   - Requires writes enabled and invoice write permission in claimed mode.
   - Invoice lines are billing records only; they do not mutate inventory.
+  - Note lines are server-canonical non-financial rows: quantity, unit price, tax contribution, and subtotal are cleared to zero-equivalent state.
 
 - `PATCH /app/invoices/{invoice_id}/lines/{line_id}`
   - Update a draft invoice line.
@@ -190,11 +192,15 @@ Its purpose is to preserve predictability and prevent silent contract drift. If 
   - Create an item.
   - Requires `require_writes`, session auth, and owner commit.
   - Contract-stable fields are item/catalog fields such as `name`, `sku`, `dimension`, `uom`, `price`, `notes`, `vendor_id`, `location`, `item_type`, and `is_product`.
+  - Stock always initializes at zero. `qty` and `qty_stored` are rejected because stock authority belongs to canonical stock movement routes.
+  - A supplied price must be finite and non-negative; zero is valid.
   - Returns the created item record.
 
 - `PUT /app/items/{item_id}`
   - Update an item.
   - Requires `require_writes`, session auth, and owner commit.
+  - `qty` and `qty_stored` are rejected and cannot change on-hand, batches, movements, or the inventory journal.
+  - A supplied price must be finite and non-negative; zero is valid.
   - Returns the updated item record.
 
 - `DELETE /app/items/{item_id}`

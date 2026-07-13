@@ -27,11 +27,11 @@ This data is not transmitted to the developer.
 
 ## Current Network Signals
 
-Current BUS Core releases can make optional version-aware update checks. Those requests may include the current app version, release channel, and whether the local profile has previously attempted a version-aware check. They do not include an installation identifier, shop records, customer data, item or recipe data, invoice contents, quantities, financial values, file paths, or machine fingerprints.
+BUS Core can make optional version-aware update checks. Those requests may include the current app version, release channel, and whether the local profile has previously attempted a version-aware check. They do not include an installation identifier, shop records, customer data, item or recipe data, invoice contents, quantities, financial values, file paths, or machine fingerprints.
 
-Published v1.3.2 releases do not contain the broader product client. The current repository working revision implements it behind a first-run disclosure and settings control, and it sends nothing until that disclosure is acknowledged with telemetry enabled. It uses a random locally generated UUIDv4 installation identifier and sends only allowlisted event names with an event ID, timestamp, app version, release channel, and coarse operating-system category. It queues at most 100 events, retries at most three times, and discards unsupported older-server responses without affecting local work. Turning telemetry off clears the unsent queue.
+The packaged product client implements optional telemetry behind a first-run disclosure and settings control, and it sends nothing until that disclosure is acknowledged with telemetry enabled. It uses a random locally generated UUIDv4 installation identifier and sends only allowlisted event names with an event ID, timestamp, app version, release channel, and coarse operating-system category. It queues at most 100 events, retries at most three times, and discards unsupported older-server responses without affecting local work. Turning telemetry off clears the unsent queue.
 
-The payload constructor cannot accept customer, supplier, employee, item, recipe, invoice, email, document, filepath, financial, quantity, raw database, username, hardware, or machine-fingerprint content. Lighthouse migration 0013 and Worker 1.22.0 must be deployed and production-verified before this client is released.
+The payload constructor cannot accept customer, supplier, employee, item, recipe, invoice, email, document, filepath, financial, quantity, raw database, username, hardware, or machine-fingerprint content. Lighthouse migration 0013 and Worker 1.22.1 are deployed and production-verified.
 
 ---
 
@@ -57,7 +57,7 @@ This interface is accessible **only from your device by default**, unless you in
 
 ## Optional Update Checks
 
-If enabled, the software may check a public repository for new releases.
+If enabled, the software may check the public BUS Core release service for new releases.
 
 These requests do not include operational business data or a persistent client identifier.
 

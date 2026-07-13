@@ -34,12 +34,12 @@ def test_removed_runtime_references_are_not_advertised() -> None:
             "docs/TRANSPARENCY.md",
             "docs/DATA_LIFECYCLE.md",
             "docs/windows-runbook.md",
-            "license/README.md",
             "launcher.py",
         )
     )
     assert "core.api.http:APP" not in checked
     assert "python app.py" not in checked
+    assert not (REPO_ROOT / "license" / "README.md").exists()
 
 
 def test_scripts_launch_is_demoted_to_dev_helper() -> None:
