@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-## [1.3.3] - 2026-07-13
+## [1.4.0] - 2026-07-13
 
 ### Release-blocker closure
 - Enforced at most one non-void invoice per job with a migration-safe partial unique index, idempotent create-from-job behavior, stable manual-link conflicts, and concurrency coverage.
@@ -13,8 +13,8 @@
 - Removed stale packaged API/changelog/README copies, synchronized retained privacy/update truth, and added staged-package drift coverage.
 
 ### Release identity
-- Selected unused public version `1.3.3`, reset `INTERNAL_VERSION` to `1.3.3.0`, and updated governed package, Windows, SOT, UI cache-token, Home update-card, and release-note surfaces.
-- Expected public artifact name is `BUS-Core-1.3.3.zip`; no tag, publication, deployment, or release is part of this repair pass.
+- Selected public version `1.4.0`, reset `INTERNAL_VERSION` to `1.4.0.0`, and updated governed package, Windows, SOT, UI cache-token, Home update-card, and release-note surfaces.
+- Expected public artifact name is `BUS-Core-1.4.0.zip`; no tag, publication, deployment, or release is part of this cleanup pass.
 
 ### Complete release-test gate repair
 - Made shared API tests deterministic in production mode unless a test explicitly opts into development behavior, preserving the documented sanitized error envelope regardless of the caller's shell environment.

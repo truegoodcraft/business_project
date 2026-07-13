@@ -2,7 +2,7 @@
 
 ## Local-First Means
 
-BUS Core Self-Managed remains usable on local infrastructure without a hosted account, subscription, or forced cloud dependency. On packaged Windows installs, business data and configuration live under `%LOCALAPPDATA%\BUSCore`; in Docker, the main database is normally under the operator-mounted `/data` directory. BUS Core v1.3.3 supports documented optional update checks and a disclosed, optional, fail-open product client that cannot accept business content.
+BUS Core Self-Managed remains usable on local infrastructure without a hosted account, subscription, or forced cloud dependency. On packaged Windows installs, business data and configuration live under `%LOCALAPPDATA%\BUSCore`; in Docker, the main database is normally under the operator-mounted `/data` directory. BUS Core v1.4.0 supports documented optional update checks and a disclosed, optional, fail-open product client that cannot accept business content.
 
 BUS Core does not send inventory, recipe, customer, or finance data to a BUS Core cloud sync service because Core has no cloud sync service. Features you explicitly configure, such as update checks or supported external integrations, may make the network requests needed for those features.
 

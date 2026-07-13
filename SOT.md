@@ -1,6 +1,6 @@
 # TGC BUS Core — Unified Source of Truth
 
-**Version:** v1.3.3 **Updated:** 2026-07-13 **Status:** Stable **Authority:** `core/version.py` is the version authority. Where this document and code disagree, update this document.
+**Version:** v1.4.0 **Updated:** 2026-07-13 **Status:** Stable **Authority:** `core/version.py` is the version authority. Where this document and code disagree, update this document.
 
 ---
 
@@ -29,7 +29,7 @@
 * BUS Core Self-Managed is free, open-source, local or self-hosted, customer-operated, portable, and requires no subscription.
 * TGC Managed BUS is an optional paid, manually provisioned service for isolated hosting, browser access, authentication, updates, backups, monitoring, recovery, and bounded support. Its canonical public intake is `https://buscore.ca/managed-bus-inquiry`.
 * Managed BUS is not represented as a generally available production service until a working intake and credible single-customer deployment baseline exist.
-* Absolute "no telemetry" claims are retired. BUS Core v1.3.3 includes the Lighthouse schema-1.0 client with first-run disclosure, a settings control, meaningful opt-out, strict payload construction, a random local UUIDv4 installation identifier, a 100-event local queue, at most three delivery attempts, milestone deduplication, and fail-open operation. Lighthouse migration 0013 and Worker 1.22.1 are deployed and production-verified; any tag or public release remains owner-controlled.
+* Absolute "no telemetry" claims are retired. BUS Core v1.4.0 includes the Lighthouse schema-1.0 client with first-run disclosure, a settings control, meaningful opt-out, strict payload construction, a random local UUIDv4 installation identifier, a 100-event local queue, at most three delivery attempts, milestone deduplication, and fail-open operation. Lighthouse migration 0013 and Worker 1.22.1 are deployed and production-verified; any tag or public release remains owner-controlled.
 * Business content, including customer, supplier, employee, item, recipe, invoice, quantity, financial, document, raw database, filepath, and machine-fingerprint data, MUST NOT enter product telemetry.
 
 
@@ -577,7 +577,7 @@
 
 
 * 
-**Telemetry boundary:** Business analytics remain local to the SQLite DB. BUS Core v1.3.3's optional product client emits only Lighthouse-allowlisted installation/release, module-use, workflow-milestone, and reliability event names with the exact schema-1.0 common context. It is disclosed, controllable, meaningfully optional, bounded, non-blocking, and prohibited from accepting business content. Lighthouse 1.22.1 plus migration 0013 are live and production-verified; release timing remains owner-controlled.
+**Telemetry boundary:** Business analytics remain local to the SQLite DB. BUS Core v1.4.0's optional product client emits only Lighthouse-allowlisted installation/release, module-use, workflow-milestone, and reliability event names with the exact schema-1.0 common context. It is disclosed, controllable, meaningfully optional, bounded, non-blocking, and prohibited from accepting business content. Lighthouse 1.22.1 plus migration 0013 are live and production-verified; release timing remains owner-controlled.
 
 
 * 
