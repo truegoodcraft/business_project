@@ -7,6 +7,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any
 
 from fastapi import HTTPException
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from core.appdb.models import CashEvent, Item, Vendor
@@ -75,6 +76,22 @@ def _validate_line_type(line_type: str) -> str:
     return normalized
 
 
+def _validate_unit_price_cents(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        decimal_value = Decimal(str(value).strip())
+    except (InvalidOperation, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="unit_price_cents_invalid") from exc
+    if (
+        not decimal_value.is_finite()
+        or decimal_value < 0
+        or decimal_value != decimal_value.to_integral_value()
+    ):
+        raise HTTPException(status_code=400, detail="unit_price_cents_invalid")
+    return int(decimal_value)
+
+
 def _get_contact(db: Session, contact_id: int) -> Vendor:
     contact = db.get(Vendor, int(contact_id))
     if contact is None:
@@ -87,6 +104,32 @@ def _get_job(db: Session, job_id: int) -> Job:
     if job is None:
         raise HTTPException(status_code=404, detail="invoice_job_not_found")
     return job
+
+
+def _active_invoice_for_job(
+    db: Session,
+    job_id: int,
+    *,
+    exclude_invoice_id: int | None = None,
+) -> Invoice | None:
+    query = db.query(Invoice).filter(
+        Invoice.job_id == int(job_id),
+        Invoice.status != "void",
+    )
+    if exclude_invoice_id is not None:
+        query = query.filter(Invoice.id != int(exclude_invoice_id))
+    return query.order_by(Invoice.id.asc()).first()
+
+
+def _raise_active_invoice_conflict(invoice: Invoice) -> None:
+    raise HTTPException(
+        status_code=409,
+        detail={
+            "error": "invoice_job_active_exists",
+            "message": "Job already has an active invoice.",
+            "invoice_id": int(invoice.id),
+        },
+    )
 
 
 def _get_invoice(db: Session, invoice_id: int) -> Invoice:
@@ -169,12 +212,15 @@ def generate_invoice_number(db: Session) -> str:
 
 
 def _line_subtotal_cents(line: InvoiceLine) -> int:
+    if line.line_type == "note":
+        return 0
+    unit_price_cents = _validate_unit_price_cents(line.unit_price_cents) or 0
     quantity = _parse_decimal(line.quantity_decimal, allow_null=True)
     if quantity is None:
-        return int(line.line_subtotal_cents or 0)
+        return 0
     if quantity < 0:
         raise HTTPException(status_code=400, detail="quantity_decimal_invalid")
-    return _round_to_cents(quantity * Decimal(int(line.unit_price_cents or 0)))
+    return _round_to_cents(quantity * Decimal(unit_price_cents))
 
 
 def recalculate_invoice_totals(db: Session, invoice_id: int) -> dict[str, int]:
@@ -223,6 +269,9 @@ def create_invoice(db: Session, payload: dict[str, Any]) -> dict[str, Any]:
     job_id = payload.get("job_id")
     if job_id is not None:
         _get_job(db, int(job_id))
+        existing = _active_invoice_for_job(db, int(job_id))
+        if existing is not None:
+            _raise_active_invoice_conflict(existing)
     invoice = Invoice(
         invoice_number=generate_invoice_number(db),
         contact_id=int(contact_id),
@@ -232,10 +281,18 @@ def create_invoice(db: Session, payload: dict[str, Any]) -> dict[str, Any]:
         tax_rate_basis_points=_tax_basis_points_from_percent(payload.get("tax_rate_percent")),
         notes=payload.get("notes"),
     )
-    db.add(invoice)
-    db.flush()
-    recalculate_invoice_totals(db, int(invoice.id))
-    db.commit()
+    try:
+        db.add(invoice)
+        db.flush()
+        recalculate_invoice_totals(db, int(invoice.id))
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        if job_id is not None:
+            existing = _active_invoice_for_job(db, int(job_id))
+            if existing is not None:
+                _raise_active_invoice_conflict(existing)
+        raise exc
     db.refresh(invoice)
     return _serialize_invoice(invoice, include_lines=True)
 
@@ -243,19 +300,24 @@ def create_invoice(db: Session, payload: dict[str, Any]) -> dict[str, Any]:
 def _validate_line_payload(db: Session, payload: dict[str, Any]) -> dict[str, Any]:
     line_type = _validate_line_type(payload.get("line_type"))
     description = _clean_required_text(payload.get("description"), "description")
-    quantity_decimal = _parse_optional_text(payload.get("quantity_decimal"))
-    if quantity_decimal is not None:
-        quantity = _parse_decimal(quantity_decimal, allow_null=False)
-        if quantity is None or quantity < 0:
-            raise HTTPException(status_code=400, detail="quantity_decimal_invalid")
-    uom = _parse_optional_text(payload.get("uom"))
-    if quantity_decimal is not None and uom is None:
-        raise HTTPException(status_code=400, detail="uom_required")
-    if quantity_decimal is None and uom is not None:
-        raise HTTPException(status_code=400, detail="uom_requires_quantity_decimal")
-    unit_price_cents = payload.get("unit_price_cents")
-    if unit_price_cents is not None and int(unit_price_cents) < 0:
-        raise HTTPException(status_code=400, detail="unit_price_cents_invalid")
+    if line_type == "note":
+        quantity_decimal = None
+        uom = None
+        unit_price_cents = None
+        taxable = False
+    else:
+        quantity_decimal = _parse_optional_text(payload.get("quantity_decimal"))
+        if quantity_decimal is not None:
+            quantity = _parse_decimal(quantity_decimal, allow_null=False)
+            if quantity is None or quantity < 0:
+                raise HTTPException(status_code=400, detail="quantity_decimal_invalid")
+        uom = _parse_optional_text(payload.get("uom"))
+        if quantity_decimal is not None and uom is None:
+            raise HTTPException(status_code=400, detail="uom_required")
+        if quantity_decimal is None and uom is not None:
+            raise HTTPException(status_code=400, detail="uom_requires_quantity_decimal")
+        unit_price_cents = _validate_unit_price_cents(payload.get("unit_price_cents"))
+        taxable = bool(payload.get("taxable", True))
     item_id = payload.get("item_id")
     if item_id is not None and db.get(Item, int(item_id)) is None:
         raise HTTPException(status_code=404, detail="invoice_item_not_found")
@@ -267,8 +329,8 @@ def _validate_line_payload(db: Session, payload: dict[str, Any]) -> dict[str, An
         "description": description,
         "quantity_decimal": quantity_decimal,
         "uom": uom,
-        "unit_price_cents": int(unit_price_cents) if unit_price_cents is not None else None,
-        "taxable": bool(payload.get("taxable", True)),
+        "unit_price_cents": unit_price_cents,
+        "taxable": taxable,
         "sort_order": int(payload.get("sort_order") or 0),
         "item_id": int(item_id) if item_id is not None else None,
         "job_line_id": int(job_line_id) if job_line_id is not None else None,
@@ -463,6 +525,13 @@ def update_invoice(db: Session, invoice_id: int, payload: dict[str, Any]) -> dic
             invoice.job_id = None
         else:
             _get_job(db, int(payload["job_id"]))
+            existing = _active_invoice_for_job(
+                db,
+                int(payload["job_id"]),
+                exclude_invoice_id=int(invoice.id),
+            )
+            if existing is not None:
+                _raise_active_invoice_conflict(existing)
             invoice.job_id = int(payload["job_id"])
     if "due_date" in payload:
         invoice.due_date = payload["due_date"]
@@ -470,8 +539,21 @@ def update_invoice(db: Session, invoice_id: int, payload: dict[str, Any]) -> dic
         invoice.notes = payload["notes"]
     if "tax_rate_percent" in payload:
         invoice.tax_rate_basis_points = _tax_basis_points_from_percent(payload["tax_rate_percent"])
-    recalculate_invoice_totals(db, int(invoice.id))
-    db.commit()
+    try:
+        recalculate_invoice_totals(db, int(invoice.id))
+        db.commit()
+    except IntegrityError as exc:
+        requested_job_id = payload.get("job_id")
+        db.rollback()
+        if requested_job_id is not None:
+            existing = _active_invoice_for_job(
+                db,
+                int(requested_job_id),
+                exclude_invoice_id=int(invoice_id),
+            )
+            if existing is not None:
+                _raise_active_invoice_conflict(existing)
+        raise exc
     db.refresh(invoice)
     return _serialize_invoice(invoice, include_lines=True)
 
@@ -580,17 +662,9 @@ def create_invoice_from_job(db: Session, job_id: int, payload: dict[str, Any] | 
     job = _get_job(db, job_id)
     if job.contact_id is None:
         raise HTTPException(status_code=400, detail="invoice_job_contact_required")
-    invoice = Invoice(
-        invoice_number=generate_invoice_number(db),
-        contact_id=int(job.contact_id),
-        job_id=int(job.id),
-        status="draft",
-        due_date=(payload or {}).get("due_date") or job.due_date,
-        tax_rate_basis_points=_tax_basis_points_from_percent((payload or {}).get("tax_rate_percent")),
-        notes=(payload or {}).get("notes"),
-    )
-    db.add(invoice)
-    db.flush()
+    existing = _active_invoice_for_job(db, int(job.id))
+    if existing is not None:
+        return _serialize_invoice(existing, include_lines=True)
     lines = (
         db.query(JobLine)
         .filter(JobLine.job_id == int(job.id))
@@ -600,22 +674,42 @@ def create_invoice_from_job(db: Session, job_id: int, payload: dict[str, Any] | 
         .all()
     )
     for line in lines:
-        db.add(
-            InvoiceLine(
-                invoice_id=int(invoice.id),
-                job_line_id=int(line.id),
-                item_id=int(line.item_id) if line.item_id is not None else None,
-                line_type=line.line_type,
-                description=line.description,
-                quantity_decimal=_job_line_quantity_decimal(db, line),
-                uom=line.display_uom,
-                unit_price_cents=int(line.unit_price_cents) if line.unit_price_cents is not None else None,
-                taxable=True,
-                sort_order=int(line.sort_order or 0),
+        _validate_unit_price_cents(line.unit_price_cents)
+    invoice = Invoice(
+        invoice_number=generate_invoice_number(db),
+        contact_id=int(job.contact_id),
+        job_id=int(job.id),
+        status="draft",
+        due_date=(payload or {}).get("due_date") or job.due_date,
+        tax_rate_basis_points=_tax_basis_points_from_percent((payload or {}).get("tax_rate_percent")),
+        notes=(payload or {}).get("notes"),
+    )
+    try:
+        db.add(invoice)
+        db.flush()
+        for line in lines:
+            db.add(
+                InvoiceLine(
+                    invoice_id=int(invoice.id),
+                    job_line_id=int(line.id),
+                    item_id=int(line.item_id) if line.item_id is not None else None,
+                    line_type=line.line_type,
+                    description=line.description,
+                    quantity_decimal=_job_line_quantity_decimal(db, line),
+                    uom=line.display_uom,
+                    unit_price_cents=_validate_unit_price_cents(line.unit_price_cents),
+                    taxable=True,
+                    sort_order=int(line.sort_order or 0),
+                )
             )
-        )
-    db.flush()
-    recalculate_invoice_totals(db, int(invoice.id))
-    db.commit()
+        db.flush()
+        recalculate_invoice_totals(db, int(invoice.id))
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        existing = _active_invoice_for_job(db, int(job.id))
+        if existing is not None:
+            return _serialize_invoice(existing, include_lines=True)
+        raise
     db.refresh(invoice)
     return _serialize_invoice(invoice, include_lines=True)

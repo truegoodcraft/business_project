@@ -36,6 +36,45 @@ def ensure_invoice_bootstrap(engine: Engine) -> None:
         )
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_invoices_invoice_number ON invoices(invoice_number)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_invoice_lines_invoice_sort ON invoice_lines(invoice_id, sort_order, id)"))
+        # Older working revisions allowed more than one non-void invoice to
+        # retain the same job link. Preserve every invoice and its financial
+        # state, but keep only the most authoritative link (paid, then issued,
+        # then draft; oldest id breaks ties) before installing the invariant.
+        active_links = conn.execute(
+            text(
+                """
+                SELECT id, job_id, status
+                FROM invoices
+                WHERE job_id IS NOT NULL AND status <> 'void'
+                ORDER BY job_id,
+                         CASE status
+                           WHEN 'paid' THEN 0
+                           WHEN 'issued' THEN 1
+                           ELSE 2
+                         END,
+                         id
+                """
+            )
+        ).mappings().all()
+        claimed_job_ids: set[int] = set()
+        for row in active_links:
+            job_id = int(row["job_id"])
+            if job_id not in claimed_job_ids:
+                claimed_job_ids.add(job_id)
+                continue
+            conn.execute(
+                text("UPDATE invoices SET job_id = NULL WHERE id = :invoice_id"),
+                {"invoice_id": int(row["id"])},
+            )
+        conn.execute(
+            text(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_invoices_active_job
+                ON invoices(job_id)
+                WHERE job_id IS NOT NULL AND status <> 'void'
+                """
+            )
+        )
         conn.execute(
             text(
                 """

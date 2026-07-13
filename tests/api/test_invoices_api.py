@@ -226,3 +226,108 @@ def test_invoice_print_returns_html_and_escapes_unsafe_text(bus_client):
     assert "&lt;img src=x onerror=alert(1)&gt;" in response.text
     assert "<script>alert(\"x\")</script>" not in response.text
     assert "<img src=x onerror=alert(1)>" not in response.text
+
+
+def test_clearing_quantity_and_converting_to_note_zeroes_financial_truth(bus_client):
+    client = bus_client["client"]
+    contact_id = _create_contact(bus_client, "Note Semantics Contact")
+    invoice = _create_invoice(client, contact_id, tax_rate_percent="13")
+    financial = client.post(
+        f"/app/invoices/{invoice['id']}/lines",
+        json={
+            "line_type": "service",
+            "description": "Originally billable",
+            "quantity_decimal": "2",
+            "uom": "hr",
+            "unit_price_cents": 1000,
+            "taxable": True,
+        },
+    )
+    assert financial.status_code == 200, financial.text
+    line_id = int(financial.json()["id"])
+
+    cleared = client.patch(
+        f"/app/invoices/{invoice['id']}/lines/{line_id}",
+        json={"quantity_decimal": None, "uom": None},
+    )
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json()["line_subtotal_cents"] == 0
+
+    restored = client.patch(
+        f"/app/invoices/{invoice['id']}/lines/{line_id}",
+        json={"quantity_decimal": "2", "uom": "hr"},
+    )
+    assert restored.status_code == 200, restored.text
+    assert restored.json()["line_subtotal_cents"] == 2000
+
+    converted = client.patch(
+        f"/app/invoices/{invoice['id']}/lines/{line_id}",
+        json={
+            "line_type": "note",
+            "quantity_decimal": "999",
+            "uom": "hr",
+            "unit_price_cents": 999999,
+            "taxable": True,
+        },
+    )
+    assert converted.status_code == 200, converted.text
+    converted_body = converted.json()
+    assert converted_body["line_type"] == "note"
+    assert converted_body["quantity_decimal"] is None
+    assert converted_body["uom"] is None
+    assert converted_body["unit_price_cents"] is None
+    assert converted_body["taxable"] is False
+    assert converted_body["line_subtotal_cents"] == 0
+
+    remaining = client.post(
+        f"/app/invoices/{invoice['id']}/lines",
+        json={
+            "line_type": "fee",
+            "description": "Remaining non-taxable amount",
+            "quantity_decimal": "1",
+            "uom": "ea",
+            "unit_price_cents": 500,
+            "taxable": False,
+        },
+    )
+    assert remaining.status_code == 200, remaining.text
+    detail = client.get(f"/app/invoices/{invoice['id']}").json()
+    assert detail["subtotal_cents"] == 500
+    assert detail["tax_cents"] == 0
+    assert detail["total_cents"] == 500
+
+    assert client.post(f"/app/invoices/{invoice['id']}/issue", json={}).status_code == 200
+    paid = client.post(f"/app/invoices/{invoice['id']}/mark-paid", json={})
+    assert paid.status_code == 200, paid.text
+    with bus_client["engine"].SessionLocal() as db:
+        event = db.get(bus_client["models"].CashEvent, int(paid.json()["paid_cash_event_id"]))
+        assert event is not None
+        assert event.amount_cents == 500
+
+
+def test_note_can_convert_back_to_financial_line(bus_client):
+    client = bus_client["client"]
+    contact_id = _create_contact(bus_client, "Note Restore Contact")
+    invoice = _create_invoice(client, contact_id, tax_rate_percent="13")
+    note = client.post(
+        f"/app/invoices/{invoice['id']}/lines",
+        json={"line_type": "note", "description": "Initially informational"},
+    )
+    assert note.status_code == 200, note.text
+
+    restored = client.patch(
+        f"/app/invoices/{invoice['id']}/lines/{note.json()['id']}",
+        json={
+            "line_type": "service",
+            "quantity_decimal": "1",
+            "uom": "hr",
+            "unit_price_cents": 300,
+            "taxable": True,
+        },
+    )
+    assert restored.status_code == 200, restored.text
+    assert restored.json()["line_subtotal_cents"] == 300
+    detail = client.get(f"/app/invoices/{invoice['id']}").json()
+    assert detail["subtotal_cents"] == 300
+    assert detail["tax_cents"] == 39
+    assert detail["total_cents"] == 339
