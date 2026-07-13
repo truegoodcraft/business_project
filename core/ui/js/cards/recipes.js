@@ -243,7 +243,7 @@ function renderList(container, editor) {
   container.innerHTML = '';
 
   const header = el('div', { class: 'recipes-list-header' }, [
-    el('h2', { class: 'recipes-list-title', text: 'Recipes' }),
+    el('h1', { class: 'recipes-list-title', text: 'Recipes' }),
     el('button', { class: 'btn primary small recipes-new-btn', text: '+ New' }),
   ]);
   header.lastChild.onclick = () => {
@@ -262,19 +262,31 @@ function renderList(container, editor) {
   const paint = (term = '') => {
     list.innerHTML = '';
     const q = term.trim().toLowerCase();
-    _recipes
-      .filter((r) => !q || String(r.name || '').toLowerCase().includes(q))
-      .forEach((r) => {
-        const row = el('div', { class: 'recipe-row' }, [
+    const matches = _recipes.filter((r) => !q || String(r.name || '').toLowerCase().includes(q));
+    if (!matches.length) {
+      list.append(el('div', {
+        class: 'recipes-empty',
+        text: q ? 'No recipes match this filter.' : 'No recipes yet. Select + New to define a product recipe.',
+      }));
+      return;
+    }
+    matches.forEach((r) => {
+        const row = el('div', { class: 'recipe-row', role: 'button', tabindex: '0' }, [
           el('span', { class: 'recipe-row-name', text: r.name }),
           el('span', { class: 'recipe-row-arrow', text: '→' }),
         ]);
         if (r.id === _activeId) row.classList.add('active');
-        row.onclick = async () => {
+        const openRecipe = async () => {
           _activeId = r.id;
           _draft = normalizeRecipe(await RecipesAPI.get(r.id));
           renderEditor(editor, container);
         };
+        row.onclick = openRecipe;
+        row.addEventListener('keydown', (event) => {
+          if (!['Enter', ' '].includes(event.key)) return;
+          event.preventDefault();
+          void openRecipe();
+        });
         list.append(row);
       });
   };

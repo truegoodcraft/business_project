@@ -265,7 +265,7 @@ def test_jobs_phase2_ui_uses_only_jobs_and_read_lookup_endpoints() -> None:
 
     endpoints = sorted(set(re.findall(r"['`](/app/[^'`]+)", jobs_js)))
     assert endpoints
-    allowed_prefixes = ("/app/jobs", "/app/contacts", "/app/items", "/app/recipes")
+    allowed_prefixes = ("/app/jobs", "/app/contacts", "/app/items", "/app/recipes", "/app/invoices")
     for endpoint in endpoints:
         assert endpoint.startswith(allowed_prefixes), endpoint
 
@@ -284,6 +284,36 @@ def test_jobs_phase2_ui_uses_only_jobs_and_read_lookup_endpoints() -> None:
     assert "apiPost(`/app/jobs/${job.id}/status`, { status })" in jobs_js
     assert "apiPost(`/app/jobs/${job.id}/lines`, payload)" in jobs_js
     assert "apiPost(`/app/jobs/${job.id}/events`, { event_type: 'note', message: text })" in jobs_js
+
+
+def test_final_ui_pass_protects_core_navigation_and_job_invoice_handoff() -> None:
+    app_js = (REPO_ROOT / "core" / "ui" / "app.js").read_text(encoding="utf-8")
+    jobs_js = (REPO_ROOT / "core" / "ui" / "js" / "cards" / "jobs.js").read_text(encoding="utf-8")
+    css = (REPO_ROOT / "core" / "ui" / "css" / "app.css").read_text(encoding="utf-8")
+
+    assert "else if (key === 'disabled') node.disabled = !!value;" in jobs_js
+    assert "linkedInvoiceForJob" in jobs_js
+    assert "apiGet('/app/invoices')" in jobs_js
+    assert "window.BUS_UNSAVED" in app_js
+    assert "restoringHash" in app_js
+    assert "main.scrollTop = 0" in app_js
+    assert "ROUTE_TITLES" in app_js
+    assert "#sidebar .sidebar-nav" in css
+    assert "overflow-x: auto" in css
+
+
+def test_final_ui_pass_exposes_empty_shortage_and_keyboard_states() -> None:
+    inventory_js = (REPO_ROOT / "core" / "ui" / "js" / "cards" / "inventory.js").read_text(encoding="utf-8")
+    recipes_js = (REPO_ROOT / "core" / "ui" / "js" / "cards" / "recipes.js").read_text(encoding="utf-8")
+    manufacturing_js = (REPO_ROOT / "core" / "ui" / "js" / "cards" / "manufacturing.js").read_text(encoding="utf-8")
+
+    assert "No inventory items yet." in inventory_js
+    assert "tabindex: '0'" in inventory_js
+    assert "['Enter', ' ']" in inventory_js
+    assert "No recipes yet." in recipes_js
+    assert "role: 'button', tabindex: '0'" in recipes_js
+    assert "Projected shortage:" in manufacturing_js
+    assert "mfg-projection-row--shortage" in manufacturing_js
 
 
 def test_invoices_phase1_ui_uses_only_invoice_contact_and_job_endpoints() -> None:

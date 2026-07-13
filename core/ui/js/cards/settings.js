@@ -45,7 +45,7 @@ export async function settingsCard(el) {
 
   root.innerHTML = `
     <header class="settings-page-header">
-      <div class="card-title settings-page-title">Settings</div>
+      <h1 class="card-title settings-page-title">Settings</h1>
       <p class="settings-page-kicker">Configure system behavior, updates, and recovery controls.</p>
     </header>
 

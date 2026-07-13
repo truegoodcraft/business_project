@@ -68,7 +68,7 @@ export function mountFinance() {
   host.classList.add('finance-shell');
   host.innerHTML = `
     <div class="card finance-card">
-      <h2>Finance</h2>
+      <h1>Finance</h1>
       <div class="finance-controls">
         <label class="finance-field">From<br/><input class="finance-input" data-role="finance-from" type="date" value="${isoDate(fromDefault)}"></label>
         <label class="finance-field">To<br/><input class="finance-input" data-role="finance-to" type="date" value="${isoDate(now)}"></label>

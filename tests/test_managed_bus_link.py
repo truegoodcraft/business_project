@@ -3,6 +3,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SETTINGS = ROOT / "core" / "ui" / "js" / "cards" / "settings.js"
+DISCLOSURE = ROOT / "core" / "ui" / "js" / "telemetry.js"
 
 
 def test_settings_has_literal_managed_bus_inquiry_link():
@@ -24,6 +25,7 @@ def test_settings_link_has_safe_external_navigation_and_no_upgrade_gates():
 
 
 def test_telemetry_explanation_uses_canonical_route():
-    source = SETTINGS.read_text(encoding="utf-8")
-    assert "https://buscore.ca/telemetry" in source
-    assert "https://buscore.ca/privacy.html" not in source
+    for path in (SETTINGS, DISCLOSURE):
+        source = path.read_text(encoding="utf-8")
+        assert "https://buscore.ca/telemetry" in source
+        assert "https://buscore.ca/privacy.html" not in source

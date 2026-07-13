@@ -37,7 +37,7 @@ export async function showTelemetryDisclosureIfNeeded() {
     <h2 id="telemetry-disclosure-title">Help improve BUS Core</h2>
     <p>BUS Core can send limited technical and product-usage events: a random installation ID, app version, release channel, operating-system category, major modules opened, first workflow milestones, and reliability events.</p>
     <p>It does not send customers, suppliers, employees, item or recipe names, invoice contents, email addresses, documents, file paths, financial values, quantities, database records, usernames, or machine fingerprints.</p>
-    <p>Telemetry is optional, never blocks local work, and can be changed later in Settings. <a href="https://buscore.ca/privacy.html" target="_blank" rel="noopener noreferrer">Read the exact privacy explanation</a>.</p>
+    <p>Telemetry is optional, never blocks local work, and can be changed later in Settings. <a href="https://buscore.ca/telemetry" target="_blank" rel="noopener noreferrer">Read the exact privacy explanation</a>.</p>
     <div style="display:flex;gap:.75rem;justify-content:flex-end;flex-wrap:wrap">
       <button type="button" class="btn btn-secondary" data-choice="off">Don't share</button>
       <button type="button" class="btn btn-primary" data-choice="on">Share limited telemetry</button>

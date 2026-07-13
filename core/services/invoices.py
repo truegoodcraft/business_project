@@ -342,7 +342,7 @@ def _format_invoice_print_date(value: Any, fallback: str = "—") -> str:
 
 def _format_invoice_money(cents: Any) -> str:
     value = Decimal(int(cents or 0)) / Decimal("100")
-    return f"${value:,.2f}"
+    return f"CAD ${value:,.2f}"
 
 
 def render_invoice_print_html(db: Session, invoice_id: int) -> str:
@@ -397,15 +397,17 @@ def render_invoice_print_html(db: Session, invoice_id: int) -> str:
         ".totals-row{display:flex;justify-content:space-between;border-bottom:1px solid #d0d0d0;padding:8px 0;gap:12px;}"
         ".totals-row strong{font-size:16px;}"
         ".notes{margin-top:24px;border:1px solid #d0d0d0;border-radius:8px;padding:12px;white-space:pre-wrap;}"
-        "@media print{body{margin:16px;}.page{max-width:none;}}"
+        "@media screen and (max-width:700px){body{margin:16px;}.header{flex-direction:column;gap:10px;}"
+        ".meta{grid-template-columns:1fr;}table{display:block;overflow-x:auto;white-space:nowrap;}}"
+        "@media print{body{margin:16px;}.page{max-width:none;}tr{break-inside:avoid;}.notes{break-inside:avoid;}}"
         "</style>"
         "</head>"
         "<body>"
         "<div class=\"page\">"
         "<div class=\"header\">"
         "<div>"
-        "<h1>BUS Core</h1>"
-        "<div class=\"muted\">Printable local invoice</div>"
+        "<h1>Invoice</h1>"
+        "<div class=\"muted\">Generated locally with BUS Core · All amounts CAD</div>"
         "</div>"
         "<div>"
         f"<h2>{escape(str(invoice.get('invoice_number') or f'Invoice #{invoice_id}'))}</h2>"

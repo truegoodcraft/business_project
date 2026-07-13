@@ -1,16 +1,16 @@
 # UI Contract Audit Report
 
-- Timestamp (UTC): 2026-05-13T22:41:54Z
-- Repo: D:\# Dev Test\BUSCore-Test\TGC-BUS-Core
+- Timestamp (UTC): 2026-07-13T00:23:58Z
+- Repo: D:\# Dev Test\TGC-BUS-Core
 - Search tool: rg
 - Overall status: **PASS**
 
 ## Commands
 
 ```bash
-rg -n "/api/" core/ui/js
-rg -n "/ledger/" core/ui/js
-rg -n "/manufacturing/" core/ui/js
+rg -n "['\"]/api/" core/ui/js
+rg -n "['\"]/ledger/" core/ui/js
+rg -n "['\"]/manufacturing/" core/ui/js
 rg -n "\bstock_in\b|manufacturing/run|ledger/movements" core/ui/js
 rg -n "\bqty\b\s*:|\bqty_base\b\s*:|\bquantity_int\b\s*:|\boutput_qty\b\s*:|\bqty_required\b\s*:" core/ui/js
 rg -n "\*1000\b|/1000\b|\bbaseQty\b|\bmultiplier\b" core/ui/js
@@ -26,7 +26,7 @@ rg -n "/auth/state|/auth/setup-owner|/auth/login|/auth/logout|/auth/me" core/ui/
 ## Guard Scope Notes
 
 - Forbidden endpoint and canonical containment checks are exact quoted endpoint searches to avoid regex quoting drift across shells.
-- Payload-key and multiplier/base searches remain active. Known compatibility matches are narrowly excluded only for `core/ui/js/token.js` (imperial wrapper payload conversion) and `core/ui/js/cards/recipes.js` (recipe unit label state); new matches elsewhere fail the audit.
+- Payload-key and multiplier/base searches remain active. Known conversion/display helpers are narrowly excluded in `token.js`, `lib/units.js`, `utils/measurement.js`, Inventory display formatting, and the recipe micro-unit label; new matches elsewhere fail the audit.
 - Auth endpoint checks require `/auth/*` strings to live in `core/ui/js/auth.js`, keeping auth UI screens behind the small auth client instead of ad hoc endpoints.
 
 ## Forbidden endpoint strings found: /api/ (0)

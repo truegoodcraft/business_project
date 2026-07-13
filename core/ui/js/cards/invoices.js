@@ -88,7 +88,35 @@ function toast(message, tone = 'ok') {
 
 function moneyFromCents(cents) {
   const value = Number(cents || 0) / 100;
-  return value.toLocaleString(undefined, { style: 'currency', currency: 'USD' });
+  return value.toLocaleString('en-CA', { style: 'currency', currency: 'CAD' });
+}
+
+function statusLabel(value) {
+  const text = String(value || '');
+  return text ? `${text[0].toUpperCase()}${text.slice(1)}` : '';
+}
+
+function setDirty(dirty) {
+  window.BUS_UNSAVED?.set?.(dirty);
+}
+
+function confirmDiscard(message = 'Discard unsaved invoice changes?') {
+  return window.BUS_UNSAVED?.confirmDiscard?.(message) ?? true;
+}
+
+function watchForm(form) {
+  const markDirty = () => {
+    form.dataset.busDirty = 'true';
+    setDirty(true);
+  };
+  form.addEventListener('input', markDirty);
+  form.addEventListener('change', markDirty);
+}
+
+function confirmOtherDirtyForms(form, message) {
+  const otherDirty = Array.from(host()?.querySelectorAll('form[data-bus-dirty="true"]') || [])
+    .some((candidate) => candidate !== form);
+  return !otherDirty || confirmDiscard(message);
 }
 
 function centsFromMoney(value) {
@@ -230,7 +258,7 @@ function render() {
     el('section', { class: 'invoices-header card' }, [
       el('div', { class: 'invoices-heading' }, [
         el('h1', { text: 'Invoices' }),
-        el('p', { text: 'Create, issue, and mark paid local invoices' }),
+        el('p', { text: 'Create, issue, and mark paid local invoices. All amounts are CAD.' }),
       ]),
       el('button', { class: 'btn primary invoices-new-btn', type: 'button', text: 'New Invoice', 'data-action': 'new-invoice' }),
     ]),
@@ -240,6 +268,7 @@ function render() {
     ]),
   );
   root.querySelector('[data-action="new-invoice"]')?.addEventListener('click', () => {
+    if (!confirmDiscard()) return;
     state.selectedId = null;
     state.selectedInvoice = null;
     state.lineEditId = null;
@@ -277,10 +306,18 @@ function renderListPanel() {
   }
 
   search.addEventListener('input', () => {
+    if (!confirmDiscard('Filter invoices and discard unsaved changes?')) {
+      search.value = state.search;
+      return;
+    }
     state.search = search.value;
     render();
   });
   status.addEventListener('change', () => {
+    if (!confirmDiscard('Filter invoices and discard unsaved changes?')) {
+      status.value = state.status;
+      return;
+    }
     state.status = status.value;
     render();
   });
@@ -294,13 +331,14 @@ function renderInvoiceRow(invoice) {
   if (String(invoice.id) === String(state.selectedId)) row.classList.add('active');
   row.append(
     el('span', { class: 'invoices-row-number', text: invoice.invoice_number || `Invoice #${invoice.id}` }),
-    el('span', { class: `invoices-badge invoices-badge--${invoice.status || 'draft'}`, text: invoice.status || 'draft' }),
+    el('span', { class: `invoices-badge invoices-badge--${invoice.status || 'draft'}`, text: statusLabel(invoice.status || 'draft') }),
     el('span', { class: 'invoices-row-meta', text: contactName(invoice.contact_id) }),
     el('span', { class: 'invoices-row-meta', text: invoice.job_id ? jobName(invoice.job_id) : 'Manual invoice' }),
     el('span', { class: 'invoices-row-meta', text: `Due ${formatDate(invoice.due_date, 'No due date')}` }),
     el('span', { class: 'invoices-row-total', text: moneyFromCents(invoice.total_cents) }),
   );
   row.addEventListener('click', async () => {
+    if (!confirmDiscard('Open another invoice and discard unsaved changes?')) return;
     try {
       state.lineEditId = null;
       setInvoiceRoute(invoice.id);
@@ -393,6 +431,7 @@ function renderInvoiceForm(invoice) {
   ]);
 
   form.append(el('div', { class: 'invoices-detail-head' }, headChildren), grid, field('Notes', notes), error, actions);
+  if (!readonly) watchForm(form);
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     await saveInvoice(form, invoice);
@@ -425,6 +464,7 @@ function hideFormError(form) {
 }
 
 async function saveInvoice(form, existingInvoice) {
+  if (!confirmOtherDirtyForms(form, 'Save this invoice and discard unsaved line changes?')) return;
   hideFormError(form);
   const data = new FormData(form);
   const contactId = parseOptionalInt(data.get('contact_id'));
@@ -450,6 +490,7 @@ async function saveInvoice(form, existingInvoice) {
     }
     state.selectedId = saved.id;
     state.selectedInvoice = saved;
+    setDirty(false);
     setInvoiceRoute(saved.id);
     await loadInvoices({ keepSelection: true });
     render();
@@ -489,13 +530,13 @@ function renderInvoiceActions(invoice) {
 
   if (invoice.status === 'draft') {
     const issueBtn = el('button', { class: 'btn primary', type: 'button', text: 'Issue Invoice' });
-    const voidBtn = el('button', { class: 'btn secondary', type: 'button', text: 'Void Invoice' });
+    const voidBtn = el('button', { class: 'btn danger', type: 'button', text: 'Void Invoice' });
     issueBtn.addEventListener('click', () => issueInvoice(invoice));
     voidBtn.addEventListener('click', () => voidInvoice(invoice));
     row.append(printBtn, issueBtn, voidBtn);
   } else if (invoice.status === 'issued') {
     const paidBtn = el('button', { class: 'btn primary', type: 'button', text: 'Mark Paid' });
-    const voidBtn = el('button', { class: 'btn secondary', type: 'button', text: 'Void Invoice' });
+    const voidBtn = el('button', { class: 'btn danger', type: 'button', text: 'Void Invoice' });
     paidBtn.addEventListener('click', () => markInvoicePaid(invoice));
     voidBtn.addEventListener('click', () => voidInvoice(invoice));
     row.append(printBtn, paidBtn, voidBtn);
@@ -515,6 +556,8 @@ function openInvoicePrint(invoice) {
 }
 
 async function issueInvoice(invoice) {
+  if (!confirmDiscard('Issue this invoice and discard unsaved edits?')) return;
+  if (!window.confirm('Issue this invoice? Its customer, lines, tax, and totals will become read-only.')) return;
   try {
     await apiPost(`/app/invoices/${invoice.id}/issue`, {});
     await loadInvoices({ keepSelection: true });
@@ -526,6 +569,7 @@ async function issueInvoice(invoice) {
 }
 
 async function markInvoicePaid(invoice) {
+  if (!confirmDiscard('Mark this invoice paid and discard unsaved edits?')) return;
   const confirmed = window.confirm('Mark this invoice paid? BUS Core will record one local finance revenue event.');
   if (!confirmed) return;
   try {
@@ -539,6 +583,7 @@ async function markInvoicePaid(invoice) {
 }
 
 async function voidInvoice(invoice) {
+  if (!confirmDiscard('Void this invoice and discard unsaved edits?')) return;
   const confirmed = window.confirm('Void this invoice? This keeps the invoice but prevents payment.');
   if (!confirmed) return;
   try {
@@ -591,6 +636,7 @@ function renderLineRow(invoice, line) {
       el('button', { type: 'button', class: 'btn small danger', text: 'Delete' }),
     ]);
     actions.children[0].addEventListener('click', () => {
+      if (!confirmDiscard('Edit this line and discard other unsaved changes?')) return;
       state.lineEditId = line.id;
       render();
     });
@@ -697,9 +743,11 @@ function renderLineForm(invoice) {
   );
 
   form.querySelector('[data-action="cancel-line-edit"]')?.addEventListener('click', () => {
+    if (!confirmDiscard('Cancel line editing and discard changes?')) return;
     state.lineEditId = null;
     render();
   });
+  watchForm(form);
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     await saveLine(invoice, form, editing);
@@ -708,6 +756,7 @@ function renderLineForm(invoice) {
 }
 
 async function saveLine(invoice, form, editing) {
+  if (!confirmOtherDirtyForms(form, 'Save this line and discard other unsaved invoice changes?')) return;
   hideFormError(form);
   const data = new FormData(form);
   const description = String(data.get('description') || '').trim();
@@ -741,6 +790,7 @@ async function saveLine(invoice, form, editing) {
       toast('Line added.');
     }
     state.lineEditId = null;
+    setDirty(false);
     await loadSelectedInvoice(invoice.id, { rerender: false });
     await loadInvoices({ keepSelection: true });
     render();
@@ -750,7 +800,13 @@ async function saveLine(invoice, form, editing) {
 }
 
 function openInvoiceContactModal({ form, contactSelect, existingInvoice }) {
-  const overlay = el('div', { class: 'contacts-modal', role: 'dialog', 'aria-modal': 'true' });
+  const returnFocus = document.activeElement;
+  const overlay = el('div', {
+    class: 'contacts-modal',
+    role: 'dialog',
+    'aria-modal': 'true',
+    'aria-labelledby': 'invoices-new-contact-title',
+  });
   const box = el('div', { class: 'contacts-modal-box' });
   const name = el('input', {
     class: 'invoices-input',
@@ -777,7 +833,7 @@ function openInvoiceContactModal({ form, contactSelect, existingInvoice }) {
 
   box.append(
     el('div', { class: 'contacts-modal-title-row' }, [
-      el('div', { class: 'contacts-modal-title', text: 'New Contact' }),
+      el('div', { id: 'invoices-new-contact-title', class: 'contacts-modal-title', text: 'New Contact' }),
       el('button', { class: 'btn ghost', type: 'button', text: 'Close', 'data-action': 'close-contact-modal' }),
     ]),
     el('p', { class: 'contacts-modal-body', text: 'Create a contact and keep working in invoices.' }),
@@ -786,11 +842,34 @@ function openInvoiceContactModal({ form, contactSelect, existingInvoice }) {
   overlay.append(box);
   document.body.append(overlay);
 
-  const close = () => overlay.remove();
+  const close = () => {
+    overlay.remove();
+    returnFocus?.focus?.();
+  };
   cancel.addEventListener('click', close);
   overlay.querySelector('[data-action="close-contact-modal"]')?.addEventListener('click', close);
   overlay.addEventListener('click', (event) => {
     if (event.target === overlay) close();
+  });
+  overlay.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      close();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const focusable = Array.from(overlay.querySelectorAll('button, input, select, textarea, [tabindex]:not([tabindex="-1"])'))
+      .filter((control) => !control.disabled && control.getClientRects().length);
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
   });
 
   modalForm.addEventListener('submit', async (event) => {
@@ -872,6 +951,7 @@ export async function mountInvoices() {
 }
 
 export function unmountInvoices() {
+  setDirty(false);
   const root = host();
   if (root) root.replaceChildren();
   state = newState();

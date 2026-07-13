@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Final pre-release workflow and UI pass
+- Restored the Jobs-to-Invoices action, opening an existing linked invoice when present to avoid accidental duplicates.
+- Added route titles and scroll reset, compact narrow-screen navigation, visible keyboard focus, keyboard-operable rows, explicit empty states, accessible quick-create dialogs, and unsaved-change protection.
+- Made manufacturing shortages visible before submission while preserving the backend as the transaction authority.
+- Clarified CAD throughout operational screens and invoice printouts, improved narrow invoice printing, and aligned telemetry help links to the canonical public route.
+- Repaired cross-shell UI contract-audit parity and expanded regression coverage for the release-critical workflows.
+- Bumped internal working revision to `1.3.2.7`; public version remains `1.3.2`.
+
 ### Security Audit CI repair
 - Documented and narrowly suppressed Bandit B310 at the product-telemetry `urlopen` call because its destination is the immutable audited HTTPS Lighthouse endpoint, not user-controlled input.
 - Added regression coverage for the exact telemetry scheme, host, path, and absence of credentials, query, or fragment.

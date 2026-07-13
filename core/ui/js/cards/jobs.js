@@ -27,6 +27,7 @@ function newState() {
     contacts: [],
     items: [],
     recipes: [],
+    invoices: [],
     search: '',
     status: '',
     lineEditId: null,
@@ -43,6 +44,7 @@ function el(tag, attrs = {}, children = []) {
     if (value === null || value === undefined) return;
     if (key === 'class') node.className = value;
     else if (key === 'text') node.textContent = value;
+    else if (key === 'disabled') node.disabled = !!value;
     else node.setAttribute(key, value);
   });
   (Array.isArray(children) ? children : [children]).forEach((child) => {
@@ -81,7 +83,41 @@ function toast(message, tone = 'ok') {
 
 function moneyFromCents(cents) {
   const value = Number(cents || 0) / 100;
-  return value.toLocaleString(undefined, { style: 'currency', currency: 'USD' });
+  return value.toLocaleString('en-CA', { style: 'currency', currency: 'CAD' });
+}
+
+function statusLabel(value) {
+  const text = String(value || '');
+  return text ? `${text[0].toUpperCase()}${text.slice(1)}` : '';
+}
+
+function setDirty(dirty) {
+  window.BUS_UNSAVED?.set?.(dirty);
+}
+
+function confirmDiscard(message = 'Discard unsaved job changes?') {
+  return window.BUS_UNSAVED?.confirmDiscard?.(message) ?? true;
+}
+
+function watchForm(form) {
+  const markDirty = () => {
+    form.dataset.busDirty = 'true';
+    setDirty(true);
+  };
+  form.addEventListener('input', markDirty);
+  form.addEventListener('change', markDirty);
+}
+
+function confirmOtherDirtyForms(form, message) {
+  const otherDirty = Array.from(host()?.querySelectorAll('form[data-bus-dirty="true"]') || [])
+    .some((candidate) => candidate !== form);
+  return !otherDirty || confirmDiscard(message);
+}
+
+function linkedInvoiceForJob(jobId) {
+  return state.invoices.find((invoice) => (
+    String(invoice.job_id) === String(jobId) && invoice.status !== 'void'
+  )) || null;
 }
 
 function centsFromMoney(value) {
@@ -206,13 +242,15 @@ async function loadContacts() {
 }
 
 async function loadReferenceData() {
-  const [items, recipes] = await Promise.all([
+  const [items, recipes, invoices] = await Promise.all([
     apiGet('/app/items').catch(() => []),
     apiGet('/app/recipes').catch(() => []),
+    apiGet('/app/invoices').catch(() => []),
   ]);
   await loadContacts();
   state.items = Array.isArray(items) ? items : [];
   state.recipes = Array.isArray(recipes) ? recipes : [];
+  state.invoices = Array.isArray(invoices) ? invoices : [];
 }
 
 async function loadJobs({ keepSelection = true } = {}) {
@@ -269,6 +307,7 @@ function render() {
   root.append(header, layout);
 
   root.querySelector('[data-action="new-job"]')?.addEventListener('click', () => {
+    if (!confirmDiscard()) return;
     state.selectedId = null;
     state.selectedJob = null;
     state.lineEditId = null;
@@ -307,10 +346,18 @@ function renderListPanel() {
   panel.append(filters, count, list);
 
   search.addEventListener('input', () => {
+    if (!confirmDiscard('Filter jobs and discard unsaved changes?')) {
+      search.value = state.search;
+      return;
+    }
     state.search = search.value;
     render();
   });
   status.addEventListener('change', () => {
+    if (!confirmDiscard('Filter jobs and discard unsaved changes?')) {
+      status.value = state.status;
+      return;
+    }
     state.status = status.value;
     render();
   });
@@ -323,12 +370,13 @@ function renderJobRow(job) {
   const due = dueTone(job);
   row.append(
     el('span', { class: 'jobs-row-title', text: job.title || `Job #${job.id}` }),
-    el('span', { class: `jobs-badge jobs-badge--${job.status || 'draft'}`, text: job.status || 'draft' }),
+    el('span', { class: `jobs-badge jobs-badge--${job.status || 'draft'}`, text: statusLabel(job.status || 'draft') }),
     el('span', { class: `jobs-row-due jobs-row-due--${due}`, text: formatDate(job.due_date) }),
     el('span', { class: 'jobs-row-meta', text: job.contact_display || contactName(job.contact_id) }),
     el('span', { class: 'jobs-row-meta', text: `${job.line_count || 0} line${Number(job.line_count || 0) === 1 ? '' : 's'} | ${moneyFromCents(job.estimated_value_cents)}` }),
   );
   row.addEventListener('click', async () => {
+    if (!confirmDiscard('Open another job and discard unsaved changes?')) return;
     try {
       state.lineEditId = null;
       await loadSelectedJob(job.id);
@@ -400,13 +448,16 @@ function renderJobForm(job) {
     ]),
   ]);
   if (!isNew) {
+    const linkedInvoice = linkedInvoiceForJob(job.id);
     const invoiceBtn = el('button', {
       class: 'btn secondary',
       type: 'button',
-      text: 'Create Invoice',
+      text: linkedInvoice ? `Open ${linkedInvoice.invoice_number || 'Invoice'}` : 'Create Invoice',
       'data-action': 'create-job-invoice',
       disabled: !job?.contact_id,
-      title: job?.contact_id ? 'Create a draft invoice from this job.' : 'Add a contact before invoicing this job.',
+      title: linkedInvoice
+        ? 'Open the existing invoice linked to this job.'
+        : (job?.contact_id ? 'Create a draft invoice from this job.' : 'Add a contact before invoicing this job.'),
     });
     head.append(invoiceBtn);
   }
@@ -426,13 +477,20 @@ function renderJobForm(job) {
   ]);
 
   form.append(head, grid, field('Notes', notes), error, actions);
+  watchForm(form);
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     await saveJob(form, job);
   });
   form.querySelector('[data-action="create-job-invoice"]')?.addEventListener('click', async () => {
     if (!job?.id) return;
+    if (!confirmDiscard('Open invoicing and discard unsaved job changes?')) return;
     try {
+      const existingInvoice = linkedInvoiceForJob(job.id);
+      if (existingInvoice?.id) {
+        window.location.hash = `#/invoices/${encodeURIComponent(existingInvoice.id)}`;
+        return;
+      }
       const invoice = await apiPost(`/app/jobs/${job.id}/invoice`, {});
       toast('Draft invoice created from job.');
       if (invoice?.id) {
@@ -470,6 +528,7 @@ function hideFormError(form) {
 }
 
 async function saveJob(form, existingJob) {
+  if (!confirmOtherDirtyForms(form, 'Save this job and discard unsaved line or note changes?')) return;
   const data = new FormData(form);
   const title = String(data.get('title') || '').trim();
   if (!title) {
@@ -494,6 +553,7 @@ async function saveJob(form, existingJob) {
     }
     state.selectedId = saved.id;
     state.selectedJob = saved;
+    setDirty(false);
     await loadJobs({ keepSelection: true });
     render();
   } catch (error) {
@@ -502,7 +562,13 @@ async function saveJob(form, existingJob) {
 }
 
 function openJobContactModal({ form, contactSelect, existingJob }) {
-  const overlay = el('div', { class: 'contacts-modal', role: 'dialog', 'aria-modal': 'true' });
+  const returnFocus = document.activeElement;
+  const overlay = el('div', {
+    class: 'contacts-modal',
+    role: 'dialog',
+    'aria-modal': 'true',
+    'aria-labelledby': 'jobs-new-contact-title',
+  });
   const box = el('div', { class: 'contacts-modal-box' });
   const name = el('input', {
     class: 'jobs-input',
@@ -529,7 +595,7 @@ function openJobContactModal({ form, contactSelect, existingJob }) {
 
   box.append(
     el('div', { class: 'contacts-modal-title-row' }, [
-      el('div', { class: 'contacts-modal-title', text: 'New Contact' }),
+      el('div', { id: 'jobs-new-contact-title', class: 'contacts-modal-title', text: 'New Contact' }),
       el('button', { class: 'btn ghost', type: 'button', text: 'Close', 'data-action': 'close-contact-modal' }),
     ]),
     el('p', { class: 'contacts-modal-body', text: 'Create a contact and keep working in Jobs.' }),
@@ -538,11 +604,34 @@ function openJobContactModal({ form, contactSelect, existingJob }) {
   overlay.append(box);
   document.body.append(overlay);
 
-  const close = () => overlay.remove();
+  const close = () => {
+    overlay.remove();
+    returnFocus?.focus?.();
+  };
   cancel.addEventListener('click', close);
   overlay.querySelector('[data-action="close-contact-modal"]')?.addEventListener('click', close);
   overlay.addEventListener('click', (event) => {
     if (event.target === overlay) close();
+  });
+  overlay.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      close();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const focusable = Array.from(overlay.querySelectorAll('button, input, select, textarea, [tabindex]:not([tabindex="-1"])'))
+      .filter((control) => !control.disabled && control.getClientRects().length);
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
   });
 
   modalForm.addEventListener('submit', async (event) => {
@@ -612,10 +701,11 @@ function renderStatusControls(job) {
   );
   const buttons = el('div', { class: 'jobs-status-buttons' });
   JOB_STATUSES.forEach((status) => {
-    const btn = el('button', { class: 'jobs-status-btn', type: 'button', text: status, 'data-status': status });
+    const btn = el('button', { class: 'jobs-status-btn', type: 'button', text: statusLabel(status), 'data-status': status });
     btn.classList.toggle('active', job.status === status);
     btn.addEventListener('click', async () => {
       if (job.status === status) return;
+      if (!confirmDiscard('Change job status and discard unsaved edits?')) return;
       try {
         state.selectedJob = await apiPost(`/app/jobs/${job.id}/status`, { status });
         await loadJobs({ keepSelection: true });
@@ -665,6 +755,7 @@ function renderLineRow(job, line) {
     el('button', { type: 'button', class: 'btn small danger', text: 'Delete' }),
   ]);
   actions.children[0].addEventListener('click', () => {
+    if (!confirmDiscard('Edit this line and discard other unsaved changes?')) return;
     state.lineEditId = line.id;
     render();
   });
@@ -766,9 +857,11 @@ function renderLineForm(job) {
   );
 
   form.querySelector('[data-action="cancel-line-edit"]')?.addEventListener('click', () => {
+    if (!confirmDiscard('Cancel line editing and discard changes?')) return;
     state.lineEditId = null;
     render();
   });
+  watchForm(form);
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     await saveLine(job, form, editing);
@@ -777,6 +870,7 @@ function renderLineForm(job) {
 }
 
 async function saveLine(job, form, editing) {
+  if (!confirmOtherDirtyForms(form, 'Save this line and discard other unsaved job changes?')) return;
   hideFormError(form);
   const data = new FormData(form);
   const description = String(data.get('description') || '').trim();
@@ -828,6 +922,7 @@ async function saveLine(job, form, editing) {
       toast('Line added.');
     }
     state.lineEditId = null;
+    setDirty(false);
     await loadSelectedJob(job.id, { rerender: false });
     await loadJobs({ keepSelection: true });
     render();
@@ -877,8 +972,10 @@ function renderEventForm(job) {
       el('button', { class: 'btn primary', type: 'submit', text: 'Add Note' }),
     ]),
   );
+  watchForm(form);
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
+    if (!confirmOtherDirtyForms(form, 'Add this note and discard other unsaved job changes?')) return;
     const text = String(new FormData(form).get('message') || '').trim();
     if (!text) {
       showFormError(form, 'Message is required.');
@@ -886,6 +983,7 @@ function renderEventForm(job) {
     }
     try {
       await apiPost(`/app/jobs/${job.id}/events`, { event_type: 'note', message: text });
+      setDirty(false);
       await loadSelectedJob(job.id, { rerender: false });
       render();
       toast('Note added.');
@@ -917,6 +1015,7 @@ export async function mountJobs() {
 }
 
 export function unmountJobs() {
+  setDirty(false);
   const root = host();
   if (root) root.innerHTML = '';
   state = newState();

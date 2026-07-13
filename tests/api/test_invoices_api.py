@@ -207,7 +207,9 @@ def test_invoice_print_returns_html_and_escapes_unsafe_text(bus_client):
     assert response.status_code == 200, response.text
     assert response.headers["content-type"].startswith("text/html")
     assert "INV-1001" in response.text
-    assert "$33.90" in response.text
+    assert "CAD $33.90" in response.text
+    assert "Generated locally with BUS Core" in response.text
+    assert "@media screen and (max-width:700px)" in response.text
     assert "&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;" in response.text
     assert "&lt;img src=x onerror=alert(1)&gt;" in response.text
     assert "<script>alert(\"x\")</script>" not in response.text

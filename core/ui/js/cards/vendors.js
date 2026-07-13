@@ -171,7 +171,7 @@ export function mountContacts(host) {
   const headLeft = document.createElement('div');
   headLeft.className = 'contacts-head-left';
 
-  const title = document.createElement('h2');
+  const title = document.createElement('h1');
   title.textContent = 'Contacts';
   title.className = 'contacts-title';
 

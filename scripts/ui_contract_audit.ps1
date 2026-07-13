@@ -77,12 +77,12 @@ function Merge-Endpoint-Matches {
   param([string]$Endpoint)
   $doubleQuoted = Run-Search ('"' + $Endpoint + '"') 'core/ui/js'
   $singleQuoted = Run-Search ("'" + $Endpoint + "'") 'core/ui/js'
-  return @($doubleQuoted + $singleQuoted | Sort-Object -Unique)
+  return @((@($doubleQuoted) + @($singleQuoted)) | Sort-Object -Unique)
 }
 
-$A1 = Save-Lines 'a1_api' (Merge-Endpoint-Matches '/api/')
-$A2 = Save-Lines 'a2_ledger' (Merge-Endpoint-Matches '/ledger/')
-$A3 = Save-Lines 'a3_mfg' (Merge-Endpoint-Matches '/manufacturing/')
+$A1 = Save-Lines 'a1_api' (Run-Search '[''"]/api/' 'core/ui/js')
+$A2 = Save-Lines 'a2_ledger' (Run-Search '[''"]/ledger/' 'core/ui/js')
+$A3 = Save-Lines 'a3_mfg' (Run-Search '[''"]/manufacturing/' 'core/ui/js')
 $A4 = Save-Lines 'a4_tokens' (Run-Search '\bstock_in\b|manufacturing/run|ledger/movements' 'core/ui/js')
 
 $B1 = Save-Lines 'b_qtykeys' (Exclude-KnownLines `
@@ -90,7 +90,7 @@ $B1 = Save-Lines 'b_qtykeys' (Exclude-KnownLines `
   @('core/ui/js/token.js:'))
 $C1 = Save-Lines 'c_multiplier' (Exclude-KnownLines `
   (Run-Search '\*1000\b|/1000\b|\bbaseQty\b|\bmultiplier\b' 'core/ui/js') `
-  @('core/ui/js/cards/recipes.js:'))
+  @('core/ui/js/token.js:', 'core/ui/js/lib/units.js:', 'core/ui/js/utils/measurement.js:', 'core/ui/js/cards/inventory.js:', 'core/ui/js/cards/recipes.js:'))
 $D1 = Save-Lines 'd_finance' (Run-Search 'unit_cost_decimal' 'core/ui/js')
 
 $EStockIn = Save-Lines 'e_stock_in' (Merge-Endpoint-Matches '/app/stock/in')
@@ -140,9 +140,9 @@ $report.Add('')
 $report.Add('## Commands')
 $report.Add('')
 $report.Add('```bash')
-$report.Add('rg -n "/api/" core/ui/js')
-$report.Add('rg -n "/ledger/" core/ui/js')
-$report.Add('rg -n "/manufacturing/" core/ui/js')
+$report.Add('rg -n "[''\"]/api/" core/ui/js')
+$report.Add('rg -n "[''\"]/ledger/" core/ui/js')
+$report.Add('rg -n "[''\"]/manufacturing/" core/ui/js')
 $report.Add('rg -n "\bstock_in\b|manufacturing/run|ledger/movements" core/ui/js')
 $report.Add('rg -n "\bqty\b\s*:|\bqty_base\b\s*:|\bquantity_int\b\s*:|\boutput_qty\b\s*:|\bqty_required\b\s*:" core/ui/js')
 $report.Add('rg -n "\*1000\b|/1000\b|\bbaseQty\b|\bmultiplier\b" core/ui/js')
@@ -158,7 +158,7 @@ $report.Add('')
 $report.Add('## Guard Scope Notes')
 $report.Add('')
 $report.Add('- Forbidden endpoint and canonical containment checks are exact quoted endpoint searches to avoid regex quoting drift across shells.')
-$report.Add('- Payload-key and multiplier/base searches remain active. Known compatibility matches are narrowly excluded only for `core/ui/js/token.js` (imperial wrapper payload conversion) and `core/ui/js/cards/recipes.js` (recipe unit label state); new matches elsewhere fail the audit.')
+$report.Add('- Payload-key and multiplier/base searches remain active. Known conversion/display helpers are narrowly excluded in `token.js`, `lib/units.js`, `utils/measurement.js`, Inventory display formatting, and the recipe micro-unit label; new matches elsewhere fail the audit.')
 $report.Add('- Auth endpoint checks require `/auth/*` strings to live in `core/ui/js/auth.js`, keeping auth UI screens behind the small auth client instead of ad hoc endpoints.')
 $report.Add('')
 

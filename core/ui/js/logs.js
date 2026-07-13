@@ -82,7 +82,7 @@ export function mountLogsPage(root) {
   root.classList.add("logs-shell");
   root.innerHTML = `
     <div class="card logs-card">
-      <div class="card-title logs-title">Logs</div>
+      <h1 class="card-title logs-title">Logs</h1>
       <div class="logs-wrap">
         <div class="logs-head"><div>Date/Time</div><div>Domain</div><div>Summary</div></div>
         <div class="logs-scroller" data-role="logs-scroll">
