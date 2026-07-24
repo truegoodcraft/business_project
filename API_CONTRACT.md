@@ -45,16 +45,24 @@ Its purpose is to preserve predictability and prevent silent contract drift. If 
   - Requires `require_writes`.
   - Returns `{ "ok": true, "restart_required": true }`.
 
-- `GET /app/update/check`
+- `GET /app/telemetry/status`
+  - Requires `settings.read`.
+  - Returns local delivery diagnostics: enabled state, pending/acknowledged/rejected/dead-letter counts, last successful delivery time, last HTTP status, and last error category.
+
+- `GET /app/update/check?source=startup|manual`
   - Canonical in-app update check.
   - Auth is middleware-based, not route-local.
-  - Returns exactly:
+  - `source` defaults to `manual`. Manual checks always run; startup checks enforce saved update policy and run at most once per app launch.
+  - Returns:
     - `current_version`
     - `latest_version`
     - `update_available`
     - `download_url`
     - `error_code`
     - `error_message`
+    - `check_source`
+    - `check_performed`
+    - `skip_reason`
 
 - `POST /app/update/stage`
   - Canonical manual update staging route.

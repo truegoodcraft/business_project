@@ -8,6 +8,7 @@ import time
 import uuid
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -21,22 +22,21 @@ _log = logging.getLogger(__name__)
 SCHEMA_VERSION = "1.0"
 TELEMETRY_ENDPOINT = "https://lighthouse.buscore.ca/telemetry/v1/events"
 MAX_QUEUE_EVENTS = 100
+MAX_DEAD_LETTER_EVENTS = 100
 MAX_ATTEMPTS = 3
 REQUEST_TIMEOUT_SECONDS = 2.0
 RETRY_DELAYS_SECONDS = (1.0, 5.0, 30.0)
 
 EVENT_CATEGORIES: dict[str, tuple[str, ...]] = {
     "installation_release": (
-        "installation_first_launch", "update_check", "update_success", "update_failure",
-    ),
-    "module_use": (
-        "inventory_opened", "recipes_opened", "manufacturing_opened",
-        "jobs_opened", "invoices_opened", "settings_opened",
+        "installation_first_launch", "version_first_seen",
+        "update_check_startup", "update_check_manual", "update_staged", "update_failure",
     ),
     "workflow_milestone": (
-        "first_inventory_item_created", "first_recipe_created",
+        "first_stock_recorded", "first_contact_created", "first_recipe_created",
         "first_manufacturing_run_completed", "first_job_completed",
-        "first_invoice_created", "backup_completed", "restore_attempted",
+        "first_invoice_issued", "first_finance_entry_recorded",
+        "first_backup_exported", "restore_attempted",
         "restore_completed", "import_completed", "import_failed",
     ),
     "reliability": (
@@ -45,15 +45,18 @@ EVENT_CATEGORIES: dict[str, tuple[str, ...]] = {
     ),
 }
 ALLOWED_EVENT_NAMES = frozenset(name for names in EVENT_CATEGORIES.values() for name in names)
-MODULE_EVENT_NAMES = frozenset(EVENT_CATEGORIES["module_use"])
 MILESTONE_EVENT_NAMES = frozenset(
-    ("installation_first_launch",)
-    + EVENT_CATEGORIES["workflow_milestone"][:5]
+    ("installation_first_launch", "version_first_seen")
+    + tuple(name for name in EVENT_CATEGORIES["workflow_milestone"] if name.startswith("first_"))
 )
 
 
 def _utc_timestamp() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def _timestamp_from_epoch(value: float) -> str:
+    return datetime.fromtimestamp(value, timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 def _os_category() -> str:
@@ -82,7 +85,29 @@ def _write_json(path: Path, value: Any) -> None:
     tmp.replace(path)
 
 
-def _default_sender(payload: dict[str, Any]) -> int:
+@dataclass(frozen=True)
+class DeliveryResult:
+    status: int | None
+    acknowledged_event_ids: frozenset[str] = frozenset()
+    error_category: str | None = None
+
+
+def _delivery_result(status: int, raw: bytes) -> DeliveryResult:
+    body: Any = None
+    try:
+        body = json.loads(raw.decode("utf-8")) if raw else None
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        body = None
+    acknowledged = frozenset(
+        str(value)
+        for value in (body.get("acknowledged_event_ids", []) if isinstance(body, dict) else [])
+        if isinstance(value, str)
+    )
+    error = body.get("error") if isinstance(body, dict) and isinstance(body.get("error"), str) else None
+    return DeliveryResult(status=status, acknowledged_event_ids=acknowledged, error_category=error)
+
+
+def _default_sender(payload: dict[str, Any]) -> DeliveryResult:
     request = urllib.request.Request(
         TELEMETRY_ENDPOINT,
         data=json.dumps(payload, separators=(",", ":")).encode("utf-8"),
@@ -93,9 +118,9 @@ def _default_sender(payload: dict[str, Any]) -> int:
         # B310 is a false positive here: Request receives the immutable, audited
         # HTTPS-only TELEMETRY_ENDPOINT above rather than user-controlled input.
         with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:  # nosec B310
-            return int(response.status)
+            return _delivery_result(int(response.status), response.read(MAX_QUEUE_EVENTS * 1024))
     except urllib.error.HTTPError as exc:
-        return int(exc.code)
+        return _delivery_result(int(exc.code), exc.read(MAX_QUEUE_EVENTS * 1024))
 
 
 class TelemetryClient:
@@ -110,7 +135,8 @@ class TelemetryClient:
         *,
         state_path: Path | None = None,
         queue_path: Path | None = None,
-        sender: Callable[[dict[str, Any]], int] | None = None,
+        dead_letter_path: Path | None = None,
+        sender: Callable[[dict[str, Any]], DeliveryResult | int | dict[str, Any]] | None = None,
         enabled_getter: Callable[[], bool] | None = None,
         channel_getter: Callable[[], str] | None = None,
         now: Callable[[], float] | None = None,
@@ -120,6 +146,7 @@ class TelemetryClient:
         root = state_dir()
         self.state_path = state_path or (root / "telemetry_state.json")
         self.queue_path = queue_path or (root / "telemetry_queue.json")
+        self.dead_letter_path = dead_letter_path or (root / "telemetry_dead_letter.json")
         self.sender = sender or _default_sender
         self.enabled_getter = enabled_getter or self._configured_enabled
         self.channel_getter = channel_getter or (lambda: load_config().updates.channel)
@@ -140,30 +167,47 @@ class TelemetryClient:
             raw = {}
         milestones = raw.get("milestones")
         raw["milestones"] = milestones if isinstance(milestones, list) else []
+        for key in ("acknowledged_count", "rejected_count", "dead_letter_count"):
+            try:
+                raw[key] = max(0, int(raw.get(key, 0) or 0))
+            except (TypeError, ValueError):
+                raw[key] = 0
+        raw["last_successful_delivery_at"] = raw.get("last_successful_delivery_at")
+        raw["last_status"] = raw.get("last_status")
+        raw["last_error_category"] = raw.get("last_error_category")
         return raw
 
     def _queue(self) -> list[dict[str, Any]]:
         raw = _read_json(self.queue_path, [])
         return raw if isinstance(raw, list) else []
 
-    def installation_id(self) -> str:
-        with self._lock:
-            state = self._state()
-            current = state.get("installation_id")
-            try:
-                parsed = uuid.UUID(str(current))
-                if parsed.version == 4:
-                    return str(parsed)
-            except (ValueError, TypeError, AttributeError):
-                # Expected fallback for absent or malformed optional local state.
-                pass
-            generated = str(self.uuid_factory())
-            parsed = uuid.UUID(generated)
-            if parsed.version != 4:
-                raise ValueError("installation identifier must be UUIDv4")
-            state["installation_id"] = generated
-            _write_json(self.state_path, state)
-            return generated
+    def _dead_letters(self) -> list[dict[str, Any]]:
+        raw = _read_json(self.dead_letter_path, [])
+        return raw if isinstance(raw, list) else []
+
+    def _deduplication_key(self, event_name: str, should_deduplicate: bool) -> str | None:
+        if not should_deduplicate:
+            return None
+        if event_name == "version_first_seen":
+            return f"{event_name}:{VERSION}"
+        return event_name
+
+    @staticmethod
+    def _queued_deduplication_key(item: dict[str, Any]) -> str | None:
+        explicit = item.get("deduplication_key")
+        if isinstance(explicit, str) and explicit:
+            return explicit
+        payload = item.get("payload")
+        if not isinstance(payload, dict):
+            return None
+        event_name = payload.get("event_name")
+        if event_name == "version_first_seen":
+            context = payload.get("context")
+            version = context.get("app_version") if isinstance(context, dict) else None
+            return f"{event_name}:{version}" if isinstance(version, str) and version else None
+        if isinstance(event_name, str) and event_name in MILESTONE_EVENT_NAMES:
+            return event_name
+        return None
 
     def build_payload(self, event_name: str) -> dict[str, Any]:
         if event_name not in ALLOWED_EVENT_NAMES:
@@ -175,7 +219,6 @@ class TelemetryClient:
             "schema_version": SCHEMA_VERSION,
             "event_id": str(self.uuid_factory()),
             "event_name": event_name,
-            "installation_id": self.installation_id(),
             "client_ts": _utc_timestamp(),
             "context": {
                 "app_version": VERSION,
@@ -192,20 +235,32 @@ class TelemetryClient:
             with self._lock:
                 state = self._state()
                 milestones = set(str(value) for value in state.get("milestones", []))
-                if should_deduplicate and event_name in milestones:
-                    return False
+                deduplication_key = self._deduplication_key(event_name, should_deduplicate)
                 queue = self._queue()
+                pending_keys = {
+                    key
+                    for item in queue
+                    if (key := self._queued_deduplication_key(item)) is not None
+                }
+                if deduplication_key and (deduplication_key in milestones or deduplication_key in pending_keys):
+                    return False
                 queue.append({
                     "payload": self.build_payload(event_name),
                     "attempts": 0,
                     "next_attempt_at": self.now(),
+                    "deduplication_key": deduplication_key,
                 })
-                queue = queue[-MAX_QUEUE_EVENTS:]
-                _write_json(self.queue_path, queue)
-                if should_deduplicate:
-                    milestones.add(event_name)
-                    state["milestones"] = sorted(milestones)
+                if len(queue) > MAX_QUEUE_EVENTS:
+                    overflow = queue[:-MAX_QUEUE_EVENTS]
+                    queue = queue[-MAX_QUEUE_EVENTS:]
+                    dead_letters = self._dead_letters()
+                    for dropped in overflow:
+                        dead_letters.append(self._dead_letter_record(dropped, None, "queue_overflow"))
+                    _write_json(self.dead_letter_path, dead_letters[-MAX_DEAD_LETTER_EVENTS:])
+                    state["dead_letter_count"] += len(overflow)
+                    state["last_error_category"] = "queue_overflow"
                     _write_json(self.state_path, state)
+                _write_json(self.queue_path, queue)
         except Exception:
             _log.debug("telemetry queue write skipped", exc_info=True)
             return False
@@ -234,11 +289,11 @@ class TelemetryClient:
                 if index is None:
                     break
                 item = dict(queue[index])
-            status: int | None = None
+            delivery = DeliveryResult(status=None, error_category="transport_error")
             try:
-                status = self.sender(dict(item.get("payload") or {}))
+                delivery = self._normalize_delivery_result(self.sender(dict(item.get("payload") or {})))
             except Exception:
-                status = None
+                delivery = DeliveryResult(status=None, error_category="transport_error")
             with self._lock:
                 queue = self._queue()
                 event_id = (item.get("payload") or {}).get("event_id")
@@ -248,27 +303,104 @@ class TelemetryClient:
                 )
                 if current_index is None:
                     continue
-                if status is not None and 200 <= status < 300:
+                state = self._state()
+                state["last_status"] = delivery.status
+                acknowledged = (
+                    delivery.status is not None
+                    and 200 <= delivery.status < 300
+                    and event_id in delivery.acknowledged_event_ids
+                )
+                if acknowledged:
                     queue.pop(current_index)
-                elif status is not None and 400 <= status < 500 and status != 429:
-                    # Older/unsupported servers and invalid payloads fail safely.
+                    state["acknowledged_count"] += 1
+                    state["last_successful_delivery_at"] = _timestamp_from_epoch(self.now())
+                    state["last_error_category"] = None
+                    deduplication_key = self._queued_deduplication_key(item)
+                    if deduplication_key:
+                        milestones = set(str(value) for value in state.get("milestones", []))
+                        milestones.add(str(deduplication_key))
+                        state["milestones"] = sorted(milestones)
+                elif delivery.status is not None and 400 <= delivery.status < 500 and delivery.status != 429:
                     queue.pop(current_index)
+                    state["rejected_count"] += 1
+                    state["dead_letter_count"] += 1
+                    state["last_error_category"] = delivery.error_category or f"http_{delivery.status}"
+                    self._append_dead_letter(item, delivery.status, state["last_error_category"])
                 else:
                     attempts = int(item.get("attempts", 0)) + 1
+                    error_category = delivery.error_category
+                    if delivery.status is not None and 200 <= delivery.status < 300:
+                        error_category = "missing_acknowledgement"
+                    elif not error_category:
+                        error_category = f"http_{delivery.status}" if delivery.status is not None else "transport_error"
+                    state["last_error_category"] = error_category
                     if attempts >= MAX_ATTEMPTS:
                         queue.pop(current_index)
+                        state["dead_letter_count"] += 1
+                        self._append_dead_letter(item, delivery.status, error_category)
                     else:
                         item["attempts"] = attempts
                         item["next_attempt_at"] = self.now() + RETRY_DELAYS_SECONDS[attempts - 1]
                         queue[current_index] = item
                 _write_json(self.queue_path, queue)
+                _write_json(self.state_path, state)
             processed += 1
         return processed
+
+    @staticmethod
+    def _normalize_delivery_result(value: DeliveryResult | int | dict[str, Any]) -> DeliveryResult:
+        if isinstance(value, DeliveryResult):
+            return value
+        if isinstance(value, int):
+            return DeliveryResult(status=value)
+        if isinstance(value, dict):
+            status = value.get("status")
+            ids = value.get("acknowledged_event_ids", [])
+            return DeliveryResult(
+                status=int(status) if isinstance(status, int) else None,
+                acknowledged_event_ids=frozenset(str(item) for item in ids if isinstance(item, str)),
+                error_category=value.get("error_category") if isinstance(value.get("error_category"), str) else None,
+            )
+        return DeliveryResult(status=None, error_category="invalid_sender_result")
+
+    def _dead_letter_record(
+        self,
+        item: dict[str, Any],
+        status: int | None,
+        error_category: str,
+    ) -> dict[str, Any]:
+        return {
+            "payload": item.get("payload"),
+            "attempts": int(item.get("attempts", 0)) + 1,
+            "status": status,
+            "error_category": error_category,
+            "failed_at": _timestamp_from_epoch(self.now()),
+        }
+
+    def _append_dead_letter(self, item: dict[str, Any], status: int | None, error_category: str) -> None:
+        dead_letters = self._dead_letters()
+        dead_letters.append(self._dead_letter_record(item, status, error_category))
+        _write_json(self.dead_letter_path, dead_letters[-MAX_DEAD_LETTER_EVENTS:])
+
+    def status(self) -> dict[str, Any]:
+        with self._lock:
+            state = self._state()
+            return {
+                "enabled": bool(self.enabled_getter()),
+                "pending_count": len(self._queue()),
+                "acknowledged_count": state["acknowledged_count"],
+                "rejected_count": state["rejected_count"],
+                "dead_letter_count": state["dead_letter_count"],
+                "last_successful_delivery_at": state["last_successful_delivery_at"],
+                "last_status": state["last_status"],
+                "last_error_category": state["last_error_category"],
+            }
 
     def clear_queue(self) -> None:
         try:
             with self._lock:
                 _write_json(self.queue_path, [])
+                _write_json(self.dead_letter_path, [])
         except Exception:
             _log.debug("telemetry queue clear skipped", exc_info=True)
 
@@ -307,6 +439,27 @@ def start_telemetry_flush() -> None:
     except Exception:
         # Best-effort background telemetry must never delay local startup.
         pass
+
+
+def emit_startup_telemetry() -> None:
+    emit_telemetry("installation_first_launch")
+    emit_telemetry("version_first_seen")
+
+
+def telemetry_status() -> dict[str, Any]:
+    try:
+        return _client().status()
+    except Exception:
+        return {
+            "enabled": False,
+            "pending_count": None,
+            "acknowledged_count": None,
+            "rejected_count": None,
+            "dead_letter_count": None,
+            "last_successful_delivery_at": None,
+            "last_status": None,
+            "last_error_category": "status_unavailable",
+        }
 
 
 def clear_telemetry_queue() -> None:

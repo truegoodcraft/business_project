@@ -101,7 +101,7 @@ Managed BUS is not yet represented here as a generally available production serv
 
 BUS Core remains serious manufacturing operations software, not a full accounting suite. It does not include full POS, full accounting, QuickBooks/Wave sync, automatic reorder, full job scheduling, cloud synchronization, payment links, customer portals, or recurring billing.
 
-BUS Core v1.4.0 makes optional version-aware update checks and includes a strict optional product-telemetry client: it waits for first-run disclosure, sends nothing when disabled, creates a random local UUIDv4 installation identifier, queues only allowlisted events, retries at most three times, and never blocks local work. Payloads contain only the event name, event ID, installation ID, timestamp, app version, release channel, and coarse operating-system category. Customer, supplier, employee, item, recipe, invoice, email, document, filepath, financial, quantity, database, username, and machine-fingerprint content cannot enter the payload constructor. Lighthouse migration 0013 and Worker 1.22.1 are deployed and production-verified; tagging and release timing remain owner-controlled.
+BUS Core v1.4.0 makes optional version-aware update checks and includes a strict optional product-telemetry client: it waits for first-run disclosure, sends nothing when disabled, queues only allowlisted events, retries at most three times, and never blocks local work. A queued event is complete only after Lighthouse acknowledges its exact event ID; rejected or exhausted events are retained in a bounded local dead-letter file and exposed only as aggregate delivery diagnostics. Payloads contain only the event name, event ID, timestamp, app version, release channel, and coarse operating-system category. They contain no persistent installation identifier. Customer, supplier, employee, item, recipe, invoice, email, document, filepath, financial, quantity, database, username, and machine-fingerprint content cannot enter the payload constructor. Signals are limited to first launch, once-per-version release adoption, startup/manual update checks, successful update staging, reliability, and one-time successful use of major product areas. BUS Core does not report module opens, active days, sessions, returning installations, engagement, or retention. Lighthouse 1.27.0 and migration 0015 are deployed and production-verified; this BUS Core release remains owner-controlled.
 
 ---
 
@@ -276,15 +276,13 @@ BUS Core is supported through GitHub Sponsors and the BUS Core support page:
 - GitHub Sponsors: https://github.com/sponsors/truegoodcraft
 - BUS Core support: https://buscore.ca/support
 
----
-
 ## Security & Release Verification
 
 BUS Core runs locally and does not require network access for normal use.
 
 - Windows release builds are produced from `scripts/build_core.ps1` and `BUS-Core.spec`.
 - `scripts/build_core.ps1` prints optional manual `signtool` commands, but this repo does not currently guarantee automated code-signing for every release.
-- Update checks are default-on / opt-out. Fresh or missing update config runs one non-blocking startup check when `updates.enabled` and `updates.check_on_startup` are not explicitly `false`.
+- Update checks are default-on / opt-out. The sidebar startup controller is the only automatic owner and requests `source=startup`; the backend runs at most one startup check per app launch and enforces both `updates.enabled` and `updates.check_on_startup`. Manual `source=manual` checks remain available regardless of those automatic-check settings.
 - Manual "Check now" remains available even when startup checks are disabled.
 - BUS Core does not auto-download, auto-install, auto-stage on startup, or force restart.
 - The sidebar "Update" button is manual and write-gated. It calls `/app/update/stage` only after the user clicks it.

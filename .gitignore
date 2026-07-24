@@ -57,6 +57,10 @@ Thumbs.db
 *.sqlite3
 data/*.db
 core/**/db.sqlite3
+/artifacts/screenshots/
+/scripts/capture-website-screenshots.ps1
+/scripts/screenshots/
+/tests/screenshots/
 
 # --- Node (if UI uses npm/yarn/pnpm) ---
 core/ui/node_modules/

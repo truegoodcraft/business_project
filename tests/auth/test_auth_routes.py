@@ -442,6 +442,9 @@ def test_claimed_mode_allows_public_update_check_only(bus_client, monkeypatch):
         "download_url": None,
         "error_code": None,
         "error_message": None,
+        "check_source": "manual",
+        "check_performed": True,
+        "skip_reason": None,
     }
 
     config_get = client.get("/app/config")

@@ -11,7 +11,7 @@ from core.auth.permissions import PERMISSION_SETTINGS_MANAGE, PERMISSION_SETTING
 from core.config.writes import require_writes
 from core.config.manager import load_config, save_config
 from core.config.update_policy import UpdatePolicyError
-from core.telemetry import clear_telemetry_queue, emit_telemetry
+from core.telemetry import clear_telemetry_queue, emit_startup_telemetry
 from tgc.security import require_token_ctx
 
 router = APIRouter()
@@ -56,7 +56,7 @@ def update_config(
         if not enabled:
             clear_telemetry_queue()
         elif acknowledged:
-            emit_telemetry("installation_first_launch")
+            emit_startup_telemetry()
         return {"ok": True, "restart_required": False}
     if isinstance(dev_payload, dict) and "writes_enabled" in dev_payload:
         return {"ok": True, "restart_required": False}

@@ -55,6 +55,7 @@ Silent contract drift is a stability risk. The purpose of this document is not t
 | --- | --- | --- | --- | --- | --- |
 | `GET` | `/app/config` | Canonical | Token + `settings.read` | Read runtime UI/update/launcher config. | `core/api/routes/config.py` |
 | `POST` | `/app/config` | Canonical | Token + `settings.manage` + `require_writes` | Write runtime UI/update/launcher config. | `core/api/routes/config.py` |
+| `GET` | `/app/telemetry/status` | Canonical | Token + `settings.read` | Read local pending/acknowledged/rejected/dead-letter delivery diagnostics. | `core/api/routes/telemetry.py` |
 | `GET` | `/app/update/check` | Canonical | Token + `updates.check` | One-shot update check. | `core/api/routes/update.py` |
 | `GET` | `/app/system/state` | Canonical | Token + `system.read` | Return bus mode, first-run, counts, build/schema status. | `core/api/routes/system_state.py` |
 | `POST` | `/app/system/start-fresh` | Canonical | Token + `system.admin` + `require_writes` | Switch demo -> prod and initialize fresh prod DB. | `core/api/routes/system_state.py` |
@@ -272,7 +273,7 @@ Silent contract drift is a stability risk. The purpose of this document is not t
 | --- | --- | --- |
 | `/session/token` | Canonical | Returns `{ token }` and sets session cookie. |
 | `/app/system/state` | Canonical | Returns `bus_mode`, `is_first_run`, `counts`, `basis`, `build.version`, `build.schema_version`, `status`. |
-| `/app/update/check` | Canonical | Returns exactly `current_version`, `latest_version`, `update_available`, `download_url`, `error_code`, `error_message`. |
+| `/app/update/check` | Canonical | Accepts `source=startup|manual`; returns `current_version`, `latest_version`, `update_available`, `download_url`, `error_code`, `error_message`, `check_source`, `check_performed`, `skip_reason`. |
 | `/app/items*` | Canonical | Item rows include identity, unit/dimension, FIFO/on-hand display fields, vendor/location/type fields, and detail batch summary. |
 | `/app/recipes*` | Canonical | Uses `quantity_decimal` + `uom`; legacy quantity keys are rejected. |
 | `/app/manufacture` | Canonical | Requires `quantity_decimal` + `uom`; success returns `ok`, `status`, `run_id`, `output_unit_cost_cents`. |

@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
 import { apiGetJson, rawFetch } from '../api.js';
 import { getAuthState } from '../auth.js';
-import { runUpdateCheck } from '../update-check.js';
+import { currentStartupUpdateResult } from '../update-check.js';
 
 function mountHome() { return renderHome(); }
 export { mountHome as default, mountHome };
@@ -253,7 +253,7 @@ async function fetchHomeData(currentVersion) {
     apiGetJson('/app/system/state').catch(() => null),
     apiGetJson('/app/db/exports').catch(() => null),
     getAuthState().catch(() => null),
-    runUpdateCheck().catch(() => null),
+    currentStartupUpdateResult()?.catch(() => null) ?? Promise.resolve(null),
     fetchJobsPressureData(),
   ]);
 

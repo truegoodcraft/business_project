@@ -2,6 +2,7 @@
 import { apiPost, ensureToken, rawFetch } from './api.js';
 
 let startupCheckDone = false;
+let startupCheckPromise = null;
 
 function sidebarEls() {
   return {
@@ -37,7 +38,11 @@ async function executeCheck({ manual = false } = {}) {
   setSidebarStatus('Checking for updates...', 'neutral');
 
   try {
-    const res = await runUpdateCheck();
+    const res = await runUpdateCheck(manual ? 'manual' : 'startup');
+    if (res.skip_reason === 'updates_disabled' || res.skip_reason === 'startup_check_disabled') {
+      setSidebarStatus('', 'neutral');
+      return res;
+    }
     if (res.error_code) {
       setSidebarStatus(`Check failed: ${res.error_message || res.error_code}`, 'error');
       return res;
@@ -77,8 +82,9 @@ export function bindSidebarUpdateControls() {
   }
 }
 
-export async function runUpdateCheck() {
-  const response = await rawFetch('/app/update/check', {
+export async function runUpdateCheck(source = 'manual') {
+  const query = source === 'startup' ? '?source=startup' : '?source=manual';
+  const response = await rawFetch(`/app/update/check${query}`, {
     method: 'GET',
     credentials: 'same-origin',
     headers: { Accept: 'application/json' },
@@ -130,9 +136,15 @@ export async function runSidebarManualUpdateStage() {
 }
 
 export async function maybeRunStartupUpdateCheck() {
-  if (startupCheckDone) return;
+  if (startupCheckDone) return startupCheckPromise;
   startupCheckDone = true;
   bindSidebarUpdateControls();
-  // Product policy: run one public, non-authenticated startup check per boot.
-  await executeCheck({ manual: false });
+  // Product policy: this is the one automatic UI owner. The backend enforces
+  // saved startup policy and one execution per app launch.
+  startupCheckPromise = executeCheck({ manual: false });
+  return startupCheckPromise;
+}
+
+export function currentStartupUpdateResult() {
+  return startupCheckPromise;
 }

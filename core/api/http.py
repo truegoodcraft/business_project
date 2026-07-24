@@ -138,7 +138,7 @@ from core.appdb.migrate import ensure_invoice_bootstrap, ensure_vendors_flags
 from core.appdb.models import Base
 from core.appdb.paths import ui_dir
 from core.appdata.paths import db_path_for_mode, resolve_bus_mode
-from core.telemetry import emit_telemetry, start_telemetry_flush
+from core.telemetry import emit_startup_telemetry, emit_telemetry, start_telemetry_flush
 from core.runtime.instance_lock import acquire_db_owner_lock
 from core.utils.pathsafe import PathSafetyError, resolve_path_under_roots
 
@@ -188,6 +188,8 @@ def _check_state(state_b64: str) -> bool:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    app.state.startup_update_check_lock = threading.Lock()
+    app.state.startup_update_check_result = None
     app.state.db_owner_lock = acquire_db_owner_lock(DB_FILE, app_root=BUS_ROOT, port=None)
     try:
         startup_migrations()
@@ -203,7 +205,7 @@ async def lifespan(app: FastAPI):
     except Exception:
         emit_telemetry("startup_failure", deduplicate=False)
         raise
-    emit_telemetry("installation_first_launch")
+    emit_startup_telemetry()
     start_telemetry_flush()
     try:
         yield
@@ -278,11 +280,14 @@ async def _correlation(request: Request, call_next):
 
 
 _SUCCESS_MILESTONES = {
-    ("POST", "/app/items"): "first_inventory_item_created",
+    ("POST", "/app/contacts"): "first_contact_created",
     ("POST", "/app/recipes"): "first_recipe_created",
     ("POST", "/app/manufacturing/run"): "first_manufacturing_run_completed",
     ("POST", "/app/manufacture"): "first_manufacturing_run_completed",
-    ("POST", "/app/invoices"): "first_invoice_created",
+    ("POST", "/app/stock/in"): "first_stock_recorded",
+    ("POST", "/app/stock_in"): "first_stock_recorded",
+    ("POST", "/app/finance/expense"): "first_finance_entry_recorded",
+    ("POST", "/app/finance/refund"): "first_finance_entry_recorded",
 }
 
 
@@ -290,6 +295,9 @@ _SUCCESS_MILESTONES = {
 async def _telemetry_milestones(request: Request, call_next):
     response = await call_next(request)
     event_name = _SUCCESS_MILESTONES.get((request.method.upper(), request.url.path))
+    if request.method.upper() == "POST" and request.url.path.startswith("/app/invoices/"):
+        if request.url.path.endswith("/issue"):
+            event_name = "first_invoice_issued"
     if event_name and response.status_code < 400:
         emit_telemetry(event_name)
     return response
@@ -1206,7 +1214,7 @@ def app_export(
             status_code=400,
             detail={"error": res.get("error", "export_failed")},
         )
-    emit_telemetry("backup_completed", deduplicate=False)
+    emit_telemetry("first_backup_exported")
     return res
 
 

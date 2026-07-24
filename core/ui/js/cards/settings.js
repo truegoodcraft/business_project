@@ -97,7 +97,7 @@ export async function settingsCard(el) {
           <input type="checkbox" id="setting-telemetry-enabled" class="settings-check">
           <span>Share limited technical and product-usage events</span>
         </label>
-        <p class="settings-subtext">Sends only a random installation ID, version/channel/OS category, coarse module use, first milestones, and reliability events. Business content is never included. Turning this off clears the unsent queue.</p>
+        <p class="settings-subtext">Sends only event ID/name, version/channel/OS category, one-time successful-use milestones, update results, and reliability events. No persistent installation ID or business content is included. Turning this off clears the unsent queue.</p>
         <p class="settings-subtext"><a href="https://buscore.ca/telemetry" target="_blank" rel="noopener noreferrer">Exactly what BUS Core sends and does not send</a></p>
       </div>
 

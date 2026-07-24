@@ -240,6 +240,4 @@ def create_job_invoice(
     _token: str = Depends(require_token_ctx),
     _state: AppState = Depends(get_state),
 ):
-    result = invoice_service.create_invoice_from_job(db, job_id, body.model_dump(exclude_unset=True))
-    emit_telemetry("first_invoice_created")
-    return result
+    return invoice_service.create_invoice_from_job(db, job_id, body.model_dump(exclude_unset=True))

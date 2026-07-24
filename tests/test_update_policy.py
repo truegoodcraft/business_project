@@ -314,8 +314,13 @@ def test_update_service_partner_channel_does_not_fall_back_to_channel_less_publi
 
 def test_update_startup_check_is_public_one_shot_and_no_hidden_polling():
     update_js = (REPO_ROOT / "core" / "ui" / "js" / "update-check.js").read_text(encoding="utf-8")
+    home_js = (REPO_ROOT / "core" / "ui" / "js" / "cards" / "home.js").read_text(encoding="utf-8")
 
-    assert "rawFetch('/app/update/check'" in update_js
+    assert "rawFetch(`/app/update/check${query}`" in update_js
+    assert "?source=startup" in update_js
+    assert "?source=manual" in update_js
+    assert "runUpdateCheck" not in home_js
+    assert "currentStartupUpdateResult()" in home_js
     assert "apiPost('/app/update/stage', {})" in update_js
     assert "runSidebarManualUpdateStage" in update_js
     assert "runSidebarManualUpdateCheck();" in update_js

@@ -23,6 +23,9 @@ EXPECTED_KEYS = {
     "download_url",
     "error_code",
     "error_message",
+    "check_source",
+    "check_performed",
+    "skip_reason",
 }
 
 

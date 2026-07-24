@@ -146,13 +146,18 @@ def test_app_boot_checks_auth_state_before_protected_mount() -> None:
 
 def test_startup_update_check_uses_public_path_without_auth_boot_dependencies() -> None:
     update_js = (REPO_ROOT / "core" / "ui" / "js" / "update-check.js").read_text(encoding="utf-8")
+    home_js = (REPO_ROOT / "core" / "ui" / "js" / "cards" / "home.js").read_text(encoding="utf-8")
 
     startup_section = update_js.split("export async function maybeRunStartupUpdateCheck()", 1)[1]
     assert "startupCheckDone = true" in startup_section
     assert "executeCheck({ manual: false })" in startup_section
+    assert "?source=startup" in update_js
+    assert "?source=manual" in update_js
     assert "ensureToken" not in startup_section
     assert "/app/config" not in startup_section
     assert "apiGet" not in startup_section
+    assert "runUpdateCheck" not in home_js
+    assert "currentStartupUpdateResult()" in home_js
 
 
 def test_lazorallthecore_pass1_ui_polish_is_scoped() -> None:

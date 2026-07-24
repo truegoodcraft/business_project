@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Acknowledged minimal product signals and single-owner update checks
+- Made the sidebar startup controller the only automatic update-check owner, removed Home's duplicate request, and added backend `source=startup|manual` enforcement so saved `updates.enabled` and `updates.check_on_startup` policy applies to startup while manual checks remain available.
+- Added per-launch startup-check deduplication and additive response diagnostics (`check_source`, `check_performed`, `skip_reason`) without changing the aggregate-safe outbound tuple (`current_version`, `channel`, `first_check`) or making `first_check` version-aware.
+- Changed telemetry delivery to require Lighthouse acknowledgement of the exact event ID before removing a queued event or completing its milestone; added pending, acknowledged, rejected, dead-letter, last-success, status, and error-category diagnostics at `GET /app/telemetry/status`.
+- Removed repeated module-open telemetry and its in-app event endpoint.
+- Limited product signals to acknowledged first launch, once-per-version `version_first_seen`, startup/manual update checks, verified `update_staged`, reliability events, and locally deduplicated first successful use for stock, contacts, recipes, manufacturing, jobs, invoicing, finance, and backup export.
+- Removed the persistent installation identifier from outbound payloads. Events now contain only event ID/name, client timestamp, app version, release channel, and coarse OS category.
+- Recorded that the compatible Lighthouse 1.27.0 receiver and migration 0015 are deployed and production-verified before this BUS Core client release.
+- Bumped the internal working revision to `1.4.0.2`; public version remains `1.4.0`.
+
 ### Release build integrity
 - Fixed the Windows release build so missing runtime/build dependencies and any non-zero PyInstaller exit fail before a launcher-only artifact can be copied, signed, or bundled.
 - Made the onefile contract explicit, pinned the tested PyInstaller toolchain, and added structural CArchive, unsigned/signed launch-smoke, hash, and final-ZIP verification gates.

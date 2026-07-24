@@ -81,6 +81,9 @@ This AppData tree is the intended durable local ownership boundary for Core-mana
 | --- | --- | --- |
 | `%LOCALAPPDATA%\BUSCore\config.json` | Canonical | Main app-runtime config for UI, launcher, updates, write gate, and persisted policy fields. |
 | `%LOCALAPPDATA%\BUSCore\app\config.json` | Legacy | Non-authoritative compatibility input for recognized pre-reconciliation keys only. |
+| `%LOCALAPPDATA%\BUSCore\state\telemetry_state.json` | Canonical local telemetry state | Acknowledged local milestone/version deduplication keys, cumulative acknowledgement/rejection/dead-letter counters, and last delivery status/error timestamps. Contains no business content and no identifier transmitted to Lighthouse. |
+| `%LOCALAPPDATA%\BUSCore\state\telemetry_queue.json` | Canonical pending-delivery state | Bounded strict-schema events retained until Lighthouse acknowledges the exact event ID. |
+| `%LOCALAPPDATA%\BUSCore\state\telemetry_dead_letter.json` | Canonical bounded failure state | Rejected or retry-exhausted strict-schema events retained locally for diagnosis and cleared with opt-out queue cleanup. |
 | `%LOCALAPPDATA%\BUSCore\app\bus_mode.json` | Canonical | Primary persisted bus mode selector. |
 | `%LOCALAPPDATA%\BUSCore\app\bus_mode.flag` | Legacy | Alternate bus mode source. |
 | `%LOCALAPPDATA%\BUSCore\app\app.db` | Canonical | Production DB. |
@@ -112,6 +115,7 @@ These files exist today, but they are not ideal durable authorities. They are be
 | `%LOCALAPPDATA%\BUSCore\app\data\journals\plugin_audit.jsonl` | Canonical | Restore/import audit log. |
 | `%LOCALAPPDATA%\BUSCore\app\logs\core_<RUN_ID>.log` | Canonical | Runtime request/application log. |
 | `dist/`, `build/`, `reports/snapshots/` | Secondary | Build outputs and snapshot artifacts. |
+| `artifacts/screenshots/` | Secondary | Ignored local website-presentation captures and validation evidence. The capture-only database and isolated runtime subtree are disposable and removed after each run. |
 
 ### Ephemeral runtime state
 
@@ -121,6 +125,7 @@ These files exist today, but they are not ideal durable authorities. They are be
 | `RUN_ID`, `LOG_FILE`, background index task state | Canonical | In-process memory in `core/api/http.py` |
 | `window.BUS_ROUTE`, `runtimeSystemState` | Secondary | SPA in-memory route/runtime state |
 | `startupCheckDone` | Secondary | UI in-memory update-notice guard |
+| `app.state.startup_update_check_result` and lock | Canonical per-launch update guard | Backend-enforced one-shot startup check state; resets on application launch and does not affect manual checks. |
 
 ## Configuration authorities
 

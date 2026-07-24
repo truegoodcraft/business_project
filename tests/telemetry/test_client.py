@@ -5,10 +5,15 @@ import json
 import tempfile
 import unittest
 import urllib.parse
-import uuid
 from pathlib import Path
 
-from core.telemetry.client import ALLOWED_EVENT_NAMES, MAX_ATTEMPTS, TELEMETRY_ENDPOINT, TelemetryClient
+from core.telemetry.client import (
+    ALLOWED_EVENT_NAMES,
+    MAX_ATTEMPTS,
+    TELEMETRY_ENDPOINT,
+    DeliveryResult,
+    TelemetryClient,
+)
 from core.config.manager import Config
 from core.version import VERSION
 
@@ -23,10 +28,17 @@ class TelemetryClientTests(unittest.TestCase):
 
     def make_client(self, **overrides):
         sent = overrides.pop("sent", [])
-        sender = overrides.pop("sender", lambda payload: sent.append(payload) or 202)
+        sender = overrides.pop(
+            "sender",
+            lambda payload: sent.append(payload) or DeliveryResult(
+                status=202,
+                acknowledged_event_ids=frozenset({payload["event_id"]}),
+            ),
+        )
         client = TelemetryClient(
             state_path=overrides.pop("state_path", self.root / "state.json"),
             queue_path=overrides.pop("queue_path", self.root / "queue.json"),
+            dead_letter_path=overrides.pop("dead_letter_path", self.root / "dead-letter.json"),
             sender=sender,
             enabled_getter=overrides.pop("enabled_getter", lambda: True),
             channel_getter=overrides.pop("channel_getter", lambda: "stable"),
@@ -37,7 +49,7 @@ class TelemetryClientTests(unittest.TestCase):
 
     def test_disabled_telemetry_sends_and_writes_nothing(self):
         client, sent = self.make_client(enabled_getter=lambda: False)
-        self.assertFalse(client.emit("inventory_opened"))
+        self.assertFalse(client.emit("first_stock_recorded"))
         self.assertEqual(client.flush(), 0)
         self.assertEqual(sent, [])
         self.assertFalse(client.state_path.exists())
@@ -73,24 +85,11 @@ class TelemetryClientTests(unittest.TestCase):
         self.assertIn("independent of the business write gate", preference_route)
         self.assertNotIn("require_writes", preference_route)
 
-    def test_installation_identifier_is_random_uuid4_and_persistent(self):
-        first, _ = self.make_client()
-        identifier = first.installation_id()
-        self.assertEqual(uuid.UUID(identifier).version, 4)
-        second, _ = self.make_client()
-        self.assertEqual(second.installation_id(), identifier)
-        other_root = self.root / "other"
-        other, _ = self.make_client(
-            state_path=other_root / "state.json",
-            queue_path=other_root / "queue.json",
-        )
-        self.assertNotEqual(other.installation_id(), identifier)
-
     def test_payload_is_exact_and_cannot_accept_business_content(self):
         client, _ = self.make_client()
-        payload = client.build_payload("inventory_opened")
+        payload = client.build_payload("first_stock_recorded")
         self.assertEqual(set(payload), {
-            "schema_version", "event_id", "event_name", "installation_id", "client_ts", "context",
+            "schema_version", "event_id", "event_name", "client_ts", "context",
         })
         self.assertEqual(set(payload["context"]), {"app_version", "release_channel", "os_category"})
         serialized = json.dumps(payload).lower()
@@ -106,20 +105,20 @@ class TelemetryClientTests(unittest.TestCase):
 
     def test_version_channel_and_event_allowlist_match_contract(self):
         client, _ = self.make_client(channel_getter=lambda: "partner-3dque")
-        payload = client.build_payload("settings_opened")
+        payload = client.build_payload("version_first_seen")
         self.assertEqual(payload["context"]["app_version"], VERSION)
         self.assertEqual(payload["context"]["release_channel"], "partner-3dque")
         self.assertIn(payload["event_name"], ALLOWED_EVENT_NAMES)
 
-    def test_milestones_deduplicate_but_module_events_do_not(self):
+    def test_first_use_milestones_deduplicate_locally(self):
         client, _ = self.make_client()
-        self.assertTrue(client.emit("first_inventory_item_created"))
-        self.assertFalse(client.emit("first_inventory_item_created"))
-        self.assertTrue(client.emit("inventory_opened"))
-        self.assertTrue(client.emit("inventory_opened"))
+        self.assertTrue(client.emit("first_stock_recorded"))
+        self.assertFalse(client.emit("first_stock_recorded"))
+        self.assertTrue(client.emit("first_backup_exported"))
+        self.assertFalse(client.emit("first_backup_exported"))
         queue = json.loads(client.queue_path.read_text(encoding="utf-8"))
         self.assertEqual([item["payload"]["event_name"] for item in queue], [
-            "first_inventory_item_created", "inventory_opened", "inventory_opened",
+            "first_stock_recorded", "first_backup_exported",
         ])
 
     def test_lighthouse_outage_is_fail_open_and_retries_are_bounded(self):
@@ -127,7 +126,7 @@ class TelemetryClientTests(unittest.TestCase):
             raise OSError("offline")
 
         client, _ = self.make_client(sender=offline)
-        self.assertTrue(client.emit("inventory_opened"))
+        self.assertTrue(client.emit("update_check_manual"))
         for _ in range(MAX_ATTEMPTS):
             queue = json.loads(client.queue_path.read_text(encoding="utf-8"))
             if queue:
@@ -135,18 +134,60 @@ class TelemetryClientTests(unittest.TestCase):
                 client.queue_path.write_text(json.dumps(queue), encoding="utf-8")
             client.flush(max_events=1)
         self.assertEqual(json.loads(client.queue_path.read_text(encoding="utf-8")), [])
+        self.assertEqual(client.status()["dead_letter_count"], 1)
+        self.assertEqual(len(json.loads(client.dead_letter_path.read_text(encoding="utf-8"))), 1)
 
-    def test_older_server_response_drops_safely(self):
+    def test_rejected_event_is_dead_lettered_and_counted(self):
         client, _ = self.make_client(sender=lambda _payload: 404)
-        self.assertTrue(client.emit("inventory_opened"))
+        self.assertTrue(client.emit("update_check_manual"))
         self.assertEqual(client.flush(), 1)
         self.assertEqual(json.loads(client.queue_path.read_text(encoding="utf-8")), [])
+        self.assertEqual(client.status()["rejected_count"], 1)
+        self.assertEqual(client.status()["dead_letter_count"], 1)
+
+    def test_success_requires_matching_event_acknowledgement(self):
+        client, _ = self.make_client(sender=lambda _payload: DeliveryResult(status=202))
+        self.assertTrue(client.emit("first_stock_recorded"))
+        for _ in range(MAX_ATTEMPTS):
+            queue = json.loads(client.queue_path.read_text(encoding="utf-8"))
+            if queue:
+                queue[0]["next_attempt_at"] = 0
+                client.queue_path.write_text(json.dumps(queue), encoding="utf-8")
+            client.flush(max_events=1)
+        status = client.status()
+        self.assertEqual(status["acknowledged_count"], 0)
+        self.assertEqual(status["dead_letter_count"], 1)
+        self.assertEqual(status["last_error_category"], "missing_acknowledgement")
+
+    def test_milestone_is_committed_only_after_acknowledgement(self):
+        client, _ = self.make_client(sender=lambda _payload: DeliveryResult(status=None, error_category="offline"))
+        self.assertTrue(client.emit("first_stock_recorded"))
+        self.assertFalse(client.state_path.exists(), "queueing alone must not commit milestone state")
+
+        queued = json.loads(client.queue_path.read_text(encoding="utf-8"))
+        event_id = queued[0]["payload"]["event_id"]
+        client.sender = lambda _payload: DeliveryResult(
+            status=202,
+            acknowledged_event_ids=frozenset({event_id}),
+        )
+        client.flush(max_events=1)
+        state = json.loads(client.state_path.read_text(encoding="utf-8"))
+        self.assertIn("first_stock_recorded", state["milestones"])
+        self.assertEqual(client.status()["acknowledged_count"], 1)
+
+    def test_version_dedupe_key_is_scoped_to_the_app_version(self):
+        client, _ = self.make_client()
+        self.assertTrue(client.emit("version_first_seen"))
+        self.assertFalse(client.emit("version_first_seen"))
+        self.assertNotIn("active_day", ALLOWED_EVENT_NAMES)
+        self.assertFalse(client.emit("active_day"))
 
     def test_opt_out_queue_clear_removes_unsent_events(self):
         client, _ = self.make_client()
-        self.assertTrue(client.emit("inventory_opened"))
+        self.assertTrue(client.emit("update_check_manual"))
         client.clear_queue()
         self.assertEqual(json.loads(client.queue_path.read_text(encoding="utf-8")), [])
+        self.assertEqual(json.loads(client.dead_letter_path.read_text(encoding="utf-8")), [])
 
 
 if __name__ == "__main__":

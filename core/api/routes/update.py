@@ -3,7 +3,10 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+import threading
+from typing import Literal
+
+from fastapi import APIRouter, Depends, Query, Request
 
 from core.auth.dependencies import require_permission
 from core.auth.permissions import PERMISSION_UPDATES_CHECK, PERMISSION_UPDATES_STAGE
@@ -66,6 +69,75 @@ def _result_payload(result: UpdateResult) -> dict[str, object | None]:
     }
 
 
+def _check_payload(
+    result: UpdateResult,
+    *,
+    source: str,
+    performed: bool,
+    skip_reason: str | None = None,
+) -> dict[str, object | None]:
+    return {
+        **_result_payload(result),
+        "check_source": source,
+        "check_performed": performed,
+        "skip_reason": skip_reason,
+    }
+
+
+def _neutral_result() -> UpdateResult:
+    return UpdateResult(
+        current_version=CURRENT_VERSION,
+        latest_version=None,
+        update_available=False,
+        download_url=None,
+        error_code=None,
+        error_message=None,
+    )
+
+
+def _run_update_check(source: str) -> dict[str, object | None]:
+    emit_telemetry(f"update_check_{source}", deduplicate=False)
+    try:
+        cfg = load_config().updates
+        first_check = not _read_first_reported()
+        try:
+            result = get_update_service().check(
+                manifest_url=cfg.manifest_url,
+                channel=cfg.channel,
+                first_check=first_check,
+            )
+        finally:
+            # This remains an installation-level first-check flag. It is not
+            # reset for a new app version.
+            if first_check:
+                _record_first_reported()
+        if result.error_code:
+            emit_telemetry("update_failure", deduplicate=False)
+        return _check_payload(result, source=source, performed=True)
+    except Exception:
+        emit_telemetry("update_failure", deduplicate=False)
+        return _check_payload(
+            UpdateResult(
+                current_version=CURRENT_VERSION,
+                latest_version=None,
+                update_available=False,
+                download_url=None,
+                error_code="update_check_failed",
+                error_message="Update check failed.",
+            ),
+            source=source,
+            performed=True,
+        )
+
+
+def _startup_check_lock(request: Request) -> threading.Lock:
+    lock = getattr(request.app.state, "startup_update_check_lock", None)
+    if lock is None:
+        lock = threading.Lock()
+        request.app.state.startup_update_check_lock = lock
+    return lock
+
+
 def _stage_payload(result: UpdateStageResult) -> dict[str, object | None]:
     return {
         "ok": result.ok,
@@ -80,37 +152,59 @@ def _stage_payload(result: UpdateStageResult) -> dict[str, object | None]:
 
 
 @router.get("/update/check")
-def check_for_updates() -> dict[str, object | None]:
-    emit_telemetry("update_check", deduplicate=False)
-    try:
-        cfg = load_config().updates
-        first_check = not _read_first_reported()
+def check_for_updates(
+    request: Request,
+    source: Literal["startup", "manual"] = Query("manual"),
+) -> dict[str, object | None]:
+    # Manual checks are always available. Startup checks are the one canonical
+    # policy-controlled automatic path and execute at most once per app launch.
+    if source == "manual":
+        return _run_update_check(source)
+
+    with _startup_check_lock(request):
+        cached = getattr(request.app.state, "startup_update_check_result", None)
+        if isinstance(cached, dict):
+            return {
+                **cached,
+                "check_source": "startup",
+                "check_performed": False,
+                "skip_reason": "already_checked_this_launch",
+            }
+        result: dict[str, object | None] | None = None
+        reason: str | None = None
         try:
-            result = get_update_service().check(
-                manifest_url=cfg.manifest_url,
-                channel=cfg.channel,
-                first_check=first_check,
+            cfg = load_config().updates
+        except Exception:
+            result = _check_payload(
+                UpdateResult(
+                    current_version=CURRENT_VERSION,
+                    latest_version=None,
+                    update_available=False,
+                    download_url=None,
+                    error_code="update_config_unavailable",
+                    error_message="Update configuration is unavailable.",
+                ),
+                source="startup",
+                performed=False,
+                skip_reason="update_config_unavailable",
             )
-        finally:
-            # Record the first report after the attempt finishes, even on error
-            # or network failure, so a flaky network cannot spam first_check=true.
-            if first_check:
-                _record_first_reported()
-        if result.error_code:
-            emit_telemetry("update_failure", deduplicate=False)
-        return _result_payload(result)
-    except Exception:
-        emit_telemetry("update_failure", deduplicate=False)
-        return _result_payload(
-            UpdateResult(
-                current_version=CURRENT_VERSION,
-                latest_version=None,
-                update_available=False,
-                download_url=None,
-                error_code="update_check_failed",
-                error_message="Update check failed.",
-            )
-        )
+        else:
+            if not cfg.enabled:
+                reason = "updates_disabled"
+            elif not cfg.check_on_startup:
+                reason = "startup_check_disabled"
+        if result is None:
+            if reason is None:
+                result = _run_update_check("startup")
+            else:
+                result = _check_payload(
+                    _neutral_result(),
+                    source="startup",
+                    performed=False,
+                    skip_reason=reason,
+                )
+        request.app.state.startup_update_check_result = dict(result)
+        return result
 
 
 @router.post("/update/stage")
@@ -121,7 +215,7 @@ def stage_update(
 ) -> dict[str, object | None]:
     try:
         result = get_update_stage_service().stage_from_config()
-        emit_telemetry("update_success" if result.ok else "update_failure", deduplicate=False)
+        emit_telemetry("update_staged" if result.ok else "update_failure", deduplicate=False)
         return _stage_payload(result)
     except Exception:
         emit_telemetry("update_failure", deduplicate=False)

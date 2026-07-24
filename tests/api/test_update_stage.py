@@ -31,6 +31,9 @@ def test_update_check_contract_unchanged(bus_client):
         "download_url",
         "error_code",
         "error_message",
+        "check_source",
+        "check_performed",
+        "skip_reason",
     }
 
 

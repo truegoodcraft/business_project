@@ -29,7 +29,7 @@
 * BUS Core Self-Managed is free, open-source, local or self-hosted, customer-operated, portable, and requires no subscription.
 * TGC Managed BUS is an optional paid, manually provisioned service for isolated hosting, browser access, authentication, updates, backups, monitoring, recovery, and bounded support. Its canonical public intake is `https://buscore.ca/managed-bus-inquiry`.
 * Managed BUS is not represented as a generally available production service until a working intake and credible single-customer deployment baseline exist.
-* Absolute "no telemetry" claims are retired. BUS Core v1.4.0 includes the Lighthouse schema-1.0 client with first-run disclosure, a settings control, meaningful opt-out, strict payload construction, a random local UUIDv4 installation identifier, a 100-event local queue, at most three delivery attempts, milestone deduplication, and fail-open operation. Lighthouse migration 0013 and Worker 1.22.1 are deployed and production-verified; any tag or public release remains owner-controlled.
+* Absolute "no telemetry" claims are retired. BUS Core v1.4.0 includes the Lighthouse schema-1.0 client with first-run disclosure, a settings control, meaningful opt-out, strict payload construction, a 100-event local queue, at most three delivery attempts, and fail-open operation. An event or milestone is complete only after Lighthouse acknowledges its exact event ID; pending, acknowledged, rejected, dead-letter, last-success, status, and error-category delivery diagnostics remain local. Outbound events contain no persistent installation identifier. Allowed product evidence is limited to first launch, once-per-version release adoption, startup/manual update checks, successful update staging, reliability, and one-time successful use of major product areas. Module opens, active-day signals, returning-installation measures, sessions, engagement, retention, and cross-day profiles are prohibited. Lighthouse 1.27.0 and migration 0015 are deployed and production-verified; any BUS Core tag or public release remains owner-controlled.
 * Business content, including customer, supplier, employee, item, recipe, invoice, quantity, financial, document, raw database, filepath, and machine-fingerprint data, MUST NOT enter product telemetry.
 
 
@@ -444,11 +444,11 @@
 ### Update Check System
 
 *
-**Default-on / opt-out:** Missing `updates.enabled` and `updates.check_on_startup` are treated as `true`. The UI runs one non-blocking startup check only when `updates.enabled !== false` and `updates.check_on_startup !== false`.
+**Default-on / opt-out:** Missing `updates.enabled` and `updates.check_on_startup` are treated as `true`. The sidebar startup controller is the single automatic owner and calls `GET /app/update/check?source=startup`. The backend enforces both saved settings and executes at most one startup check per app launch; Home does not issue its own check.
 
 
 *
-**Config:** Update settings live in `%LOCALAPPDATA%\BUSCore\config.json` under `updates` (`enabled`, `channel`, `manifest_url`, `check_on_startup`). Strict SemVer required, and fetches time out at 4 seconds. A top-level local-state boolean `update_check_first_reported` records whether this profile has already reported a version-aware update check; it is a single aggregate-safe flag, not an identity or persistent client token, and survives settings saves.
+**Config:** Update settings live in `%LOCALAPPDATA%\BUSCore\config.json` under `updates` (`enabled`, `channel`, `manifest_url`, `check_on_startup`). Strict SemVer required, and fetches time out at 4 seconds. A top-level local-state boolean `update_check_first_reported` records whether this profile has already reported its first update check; it is installation-level, is never reset for an app version, is not an identity or persistent client token, and survives settings saves.
 
 
 *
@@ -460,11 +460,13 @@
 
 
 *
-**Manual check:** Manual "Check now" always calls `GET /app/update/check` regardless of the startup-check setting.
+**Manual check:** Manual "Check now" always calls `GET /app/update/check?source=manual` regardless of the automatic-check settings.
 
 
 *
-**Update-check outbound params:** The outbound update-check request to Lighthouse appends three aggregate-safe query params to `updates.manifest_url`: `current_version` (runtime `VERSION`, omitted if not strict SemVer), `channel` (validated low-cardinality lane, falling back to `stable`), and `first_check` (`true` on the first version-aware check for the local profile, `false` thereafter, backed by `update_check_first_reported`). Pre-existing manifest-URL query params are preserved and app-provided values win on key collision. The request MUST NOT carry any identity — no install/device/user id, hostname, username, machine fingerprint, or dedupe/persistent-client token — consistent with Lighthouse's aggregate-only, no-identity posture.
+**Update-check outbound params:** The outbound update-check request to Lighthouse appends three aggregate-safe query params to `updates.manifest_url`: `current_version` (runtime `VERSION`, omitted if not strict SemVer), `channel` (validated low-cardinality lane, falling back to `stable`), and installation-level `first_check` (`true` on the first check for the local profile, `false` thereafter, never reset for a version, and backed by `update_check_first_reported`). Pre-existing manifest-URL query params are preserved and app-provided values win on key collision. The request MUST NOT carry any identity — no install/device/user id, hostname, username, machine fingerprint, or dedupe/persistent-client token — consistent with Lighthouse's aggregate-only, no-identity posture.
+
+**Update-check response diagnostics:** The normalized six release fields remain present and are joined by `check_source`, `check_performed`, and nullable `skip_reason`. These distinguish actual manual/startup requests from policy skips and same-launch duplicate startup calls; they do not add outbound identity or change the installation-level `first_check` flag.
 
 
 *
@@ -577,7 +579,7 @@
 
 
 * 
-**Telemetry boundary:** Business analytics remain local to the SQLite DB. BUS Core v1.4.0's optional product client emits only Lighthouse-allowlisted installation/release, module-use, workflow-milestone, and reliability event names with the exact schema-1.0 common context. It is disclosed, controllable, meaningfully optional, bounded, non-blocking, and prohibited from accepting business content. Lighthouse 1.22.1 plus migration 0013 are live and production-verified; release timing remains owner-controlled.
+**Telemetry boundary:** Business analytics remain local to the SQLite DB. BUS Core v1.4.0's optional product client emits only Lighthouse-allowlisted first-launch, release/update, first-success, and reliability event names with the exact schema-1.0 common context. It emits no persistent installation identifier, module opens, active-day signals, sessions, engagement, retention, or cross-day profile. It is disclosed, controllable, meaningfully optional, bounded, non-blocking, and prohibited from accepting business content. Lighthouse 1.27.0 and migration 0015 are deployed and production-verified; this BUS Core client release remains owner-controlled.
 
 
 * 
@@ -1403,7 +1405,7 @@ Release-agent validation for this delta is complete when:
 - Canonical smoke harness is run via `scripts/smoke.ps1` in a suitable Windows/PowerShell-capable environment and results are attached.
 - Spot-check confirms no reintroduction of UoM defaulting in action flows and no header-clobber behavior in the httpx shim.
 
-> **Historical record note (2026-07-13):** The following Lighthouse v1 delta is preserved as implementation history. Its aggregate-only storage model, prohibition on installation identifiers, and prohibition on per-request event records describe that original v1 contract; they are not the current authority for the newer versioned telemetry contract and client. Current authority is the product/privacy boundary near the top of this SOT together with deployed, production-verified Lighthouse 1.22.1 and migration 0013.
+> **Historical record note (2026-07-24):** The following Lighthouse v1 delta is preserved as implementation history. Its aggregate-only storage model, prohibition on persistent installation identifiers, and prohibition on behavioral profiles align with the current product/privacy boundary near the top of this SOT. Exact event-ID acknowledgements and bounded local/remote deduplication are delivery integrity, not authority to build per-installation histories.
 
 [DELTA HEADER]
 SOT_VERSION_AT_START: v0.11.0
@@ -1469,7 +1471,7 @@ Lighthouse product telemetry is permitted only under these constraints:
 
 Aggregate-only counting (daily totals)
 
-Only a random local installation identifier approved by the versioned contract; no hardware-derived ID, device fingerprint, account ID, username, or cookie identity
+No persistent installation identifier, hardware-derived ID, device fingerprint, account ID, username, or cookie identity
 
 No IP storage (no raw IP retention; no hashed IP uniqueness systems)
 

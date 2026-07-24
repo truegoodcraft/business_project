@@ -77,13 +77,13 @@ Manifest compatibility is a release boundary for this bridge release: deployed c
 
 ## Observed Update Check Flow
 
-1. UI startup notice or Settings `Check now` calls `GET /app/update/check`.
-2. Startup gating happens in the UI using `updates.enabled !== false` and `updates.check_on_startup !== false`; manual `Check now` still calls the route regardless of those two gates.
+1. The sidebar startup controller calls `GET /app/update/check?source=startup`; Settings `Check now` calls `GET /app/update/check?source=manual`. Home consumes the startup result and does not issue another request.
+2. The backend enforces `updates.enabled` and `updates.check_on_startup` for startup requests and executes at most one startup check per app launch. Manual `Check now` remains available regardless of those two automatic-check gates.
 3. Route loads the configured `updates.channel` and `updates.manifest_url` from `%LOCALAPPDATA%\BUSCore\config.json`.
 4. `UpdateService.check()` validates the current runtime version as strict SemVer.
 5. Service validates the manifest URL and configured channel, fetches JSON with timeout and size caps, normalizes supported manifest shapes, supports signed manifest unwrapping when present, validates optional metadata shape, and compares the selected release version against runtime `VERSION`. Read-only update check still preserves unsigned-manifest compatibility.
-   - The outbound check request appends three aggregate-safe query params to the manifest URL: `current_version` (runtime `VERSION`, omitted if not strict SemVer), `channel` (validated low-cardinality lane, falling back to `stable`), and `first_check` (`true` on the first version-aware check for this local profile, `false` thereafter). Any pre-existing query params on `updates.manifest_url` are preserved; the app-provided values win on key collision. No identity is ever added — no install/device/user id, hostname, username, machine fingerprint, or dedupe/persistent-client token. The `first_check` state is a single local boolean `update_check_first_reported` in `%LOCALAPPDATA%\BUSCore\config.json`, set after the request attempt finishes (even on error) so a flaky network cannot inflate first-seen counts.
-6. Route returns normalized response keys: `current_version`, `latest_version`, `update_available`, `download_url`, `error_code`, `error_message`.
+   - The outbound check request appends three aggregate-safe query params to the manifest URL: `current_version` (runtime `VERSION`, omitted if not strict SemVer), `channel` (validated low-cardinality lane, falling back to `stable`), and installation-level `first_check` (`true` on the first check for this local profile, `false` thereafter, and never reset for a version). Any pre-existing query params on `updates.manifest_url` are preserved; the app-provided values win on key collision. No identity is ever added — no install/device/user id, hostname, username, machine fingerprint, or dedupe/persistent-client token. The `first_check` state is a single local boolean `update_check_first_reported` in `%LOCALAPPDATA%\BUSCore\config.json`, set after the request attempt finishes (even on error) so a flaky network cannot inflate first-seen counts.
+6. Route returns normalized release keys `current_version`, `latest_version`, `update_available`, `download_url`, `error_code`, `error_message` plus `check_source`, `check_performed`, and nullable `skip_reason` so callers can distinguish a real check from a policy or same-launch skip.
 7. UI shows a manual Update button when `update_available` is true.
 8. Clicking Update calls `POST /app/update/stage` (auth + write-gated) which requires a trusted signed manifest, then performs hash-verified ZIP download, safe extraction, EXE trust verification, and conservative version+sha keyed `verified_ready_versions` promotion. Legacy `verified_ready` remains only a compatibility/latest pointer.
 9. Successful staging reports verified-ready state and instructs restart/reopen; no forced restart endpoint is invoked.
@@ -91,7 +91,7 @@ Manifest compatibility is a release boundary for this bridge release: deployed c
 
 Update checks are part of the trust model because they are optional and non-blocking. Core remains usable without them, and an unavailable manifest host should not prevent normal local operation.
 
-The current update-check parameters are distinct from the broader product-telemetry contract. Lighthouse 1.22.0 and the current BUS Core working revision implement their respective receiver and client sides, but neither is live collection. Release order is mandatory: set the Lighthouse rate-control secret, apply migration 0013, deploy and verify Lighthouse, then release BUS Core. The client retains fail-open local operation and prohibits business-content payloads.
+The update-check parameters are distinct from the broader product-telemetry contract. The client removes a product event and completes a deduplicated milestone only after Lighthouse acknowledges that exact event ID. Release order is mandatory: deploy and verify the compatible Lighthouse receiver before releasing this BUS Core client. The client retains fail-open local operation and prohibits business-content payloads.
 
 ## Implemented vs documented vs assumed release/update elements
 

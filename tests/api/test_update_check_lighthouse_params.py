@@ -26,6 +26,9 @@ EXPECTED_RESPONSE_KEYS = {
     "download_url",
     "error_code",
     "error_message",
+    "check_source",
+    "check_performed",
+    "skip_reason",
 }
 
 # Identity-bearing params that must never appear on the outbound request.
@@ -284,8 +287,7 @@ def test_url_building_never_raises_on_odd_input():
 
 
 def test_disabled_updates_endpoint_behavior_unchanged(bus_client, monkeypatch):
-    # Pre-existing contract: /app/update/check does not itself gate on the
-    # updates.enabled flag. Ticket 2A must not change that behavior.
+    # Manual checks remain available even when automatic checks are disabled.
     from core.api.routes import update as update_routes
 
     _set_updates(monkeypatch, enabled=False, channel="stable")
@@ -301,6 +303,65 @@ def test_disabled_updates_endpoint_behavior_unchanged(bus_client, monkeypatch):
     query = dict(_outbound_query(recorded))
     assert query["current_version"] == CURRENT_VERSION
     assert query["first_check"] == "false"
+
+
+def test_startup_check_respects_enabled_and_check_on_startup(bus_client, monkeypatch):
+    from core.api.routes import update as update_routes
+
+    updates = UpdatesConfig.model_construct(
+        enabled=False,
+        channel="stable",
+        manifest_url="https://example.test/manifest.json",
+        check_on_startup=True,
+    )
+    monkeypatch.setattr(update_routes, "load_config", lambda: Config.model_construct(updates=updates))
+    recorded: list[str] = []
+    monkeypatch.setattr(update_routes, "get_update_service", lambda: _capture_service(recorded))
+
+    response = bus_client["client"].get("/app/update/check?source=startup")
+    assert response.status_code == 200
+    assert response.json()["check_performed"] is False
+    assert response.json()["skip_reason"] == "updates_disabled"
+    assert recorded == []
+
+
+def test_startup_check_respects_disabled_startup_policy(bus_client, monkeypatch):
+    from core.api.routes import update as update_routes
+
+    updates = UpdatesConfig.model_construct(
+        enabled=True,
+        channel="stable",
+        manifest_url="https://example.test/manifest.json",
+        check_on_startup=False,
+    )
+    monkeypatch.setattr(update_routes, "load_config", lambda: Config.model_construct(updates=updates))
+    recorded: list[str] = []
+    monkeypatch.setattr(update_routes, "get_update_service", lambda: _capture_service(recorded))
+
+    response = bus_client["client"].get("/app/update/check?source=startup")
+    assert response.status_code == 200
+    assert response.json()["check_performed"] is False
+    assert response.json()["skip_reason"] == "startup_check_disabled"
+    assert recorded == []
+
+
+def test_startup_check_executes_once_per_app_launch_but_manual_remains_available(bus_client, monkeypatch):
+    from core.api.routes import update as update_routes
+
+    _set_updates(monkeypatch, enabled=True, channel="stable")
+    recorded: list[str] = []
+    monkeypatch.setattr(update_routes, "get_update_service", lambda: _capture_service(recorded))
+    _set_first_reported(monkeypatch, reported=True)
+
+    first = bus_client["client"].get("/app/update/check?source=startup")
+    second = bus_client["client"].get("/app/update/check?source=startup")
+    manual = bus_client["client"].get("/app/update/check?source=manual")
+
+    assert first.json()["check_performed"] is True
+    assert second.json()["check_performed"] is False
+    assert second.json()["skip_reason"] == "already_checked_this_launch"
+    assert manual.json()["check_performed"] is True
+    assert len(recorded) == 2
 
 
 # --- Response contract unchanged (point 9) -------------------------------------
