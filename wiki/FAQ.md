@@ -26,7 +26,7 @@ Packaged Windows production data is under `%LOCALAPPDATA%\BUSCore\app\app.db`; d
 
 ## Does BUS Core use cloud sync or telemetry?
 
-BUS Core has no forced cloud or cloud synchronization. BUS Core v1.4.0 can make optional version-aware update checks and includes an optional disclosed product client with a Settings opt-out, strict allowlists, bounded retries, fail-open behavior, and no business-content fields. Lighthouse 1.22.1 and migration 0013 are live and production-verified.
+BUS Core has no forced cloud or cloud synchronization. BUS Core v1.4.1 can make optional version-aware update checks and includes an optional disclosed product client with a Settings opt-out, strict allowlists, bounded retries, exact event acknowledgement, fail-open behavior, and no business-content fields. Lighthouse 1.27.0 and migration 0015 are live and production-verified.
 
 ## Does it require an account?
 
@@ -50,7 +50,7 @@ Sold stock-out is currently supported for count items. For non-count items, use 
 
 ## Is BUS Core frozen?
 
-No. Core remains a maintained manufacturing operations product. After v1.3.2, work continues to prioritize reliability, security, data safety, release hygiene, documentation, tester blockers, and manufacturing workflows supported by real operating evidence.
+No. Core remains a maintained manufacturing operations product. Work continues to prioritize reliability, security, data safety, release hygiene, documentation, tester blockers, and manufacturing workflows supported by real operating evidence.
 
 ## Is Docker supported?
 

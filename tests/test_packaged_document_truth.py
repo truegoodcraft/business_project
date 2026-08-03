@@ -46,7 +46,7 @@ def test_staged_package_contains_current_document_authorities_only(tmp_path: Pat
 
     assert "sends nothing until that disclosure is acknowledged with telemetry enabled" in privacy
     assert "Turning telemetry off clears the unsent queue" in privacy
-    assert "Worker 1.22.1 are deployed and production-verified" in privacy
+    assert "Worker 1.27.0 are deployed and production-verified" in privacy
     assert "does not silently overwrite the running installation" in eula
     assert "launch an unverified artifact" in eula
     assert 'Absolute "no telemetry" claims are retired' in sot

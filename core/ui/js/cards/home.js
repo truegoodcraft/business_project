@@ -430,12 +430,12 @@ function renderUpdateCard(data) {
       ${updateLine}
       <p class="bus-home-side-label">What changed:</p>
       <ul class="bus-home-release-list">
-        <li>Jobs and invoices now enforce one active invoice per job and exact note-line totals.</li>
-        <li>Inventory and price mutations are validated at authoritative service boundaries.</li>
-        <li>Release bootstrap, packaging documents, and the complete serial test gate are coherent.</li>
+        <li>Startup and manual update checks now have one clear owner and report their source.</li>
+        <li>Product signals complete only after Lighthouse acknowledges the exact event.</li>
+        <li>Windows builds now fail closed on incomplete runtime packaging before signing.</li>
       </ul>
       <p class="bus-home-side-label">Why it matters:</p>
-      <p>This maintenance release protects invoice, cash, stock, and packaged-document truth while preserving BUS Core's local-first operating model.</p>
+      <p>This maintenance release makes update evidence and release artifacts more trustworthy without expanding the data BUS Core sends.</p>
       <div class="bus-home-side-actions">
         <a href="/brand/CHANGELOG.md" target="_blank" rel="noopener noreferrer">Read full changelog</a>
       </div>

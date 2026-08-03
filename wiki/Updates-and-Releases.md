@@ -2,7 +2,7 @@
 
 ## Version Basics
 
-Public BUS Core releases use semantic versions such as `1.4.0`. The app's current build/version is visible in its system and update surfaces. Release notes live in the repository under `docs/releases` and on the project's release page.
+Public BUS Core releases use semantic versions such as `1.4.1`. The app's current build/version is visible in its system and update surfaces. Release notes live in the repository under `docs/releases` and on the project's release page.
 
 ## Checking for Updates
 
@@ -12,13 +12,13 @@ When a newer release is available, selecting **Update** starts manual staging. S
 
 There is no silent background auto-install. Read-only update discovery and trusted update staging have different verification boundaries; see [Trust, Security, and Local-First](Trust-Security-and-Local-First.md).
 
-## v1.3.2 and Core Stability
+## Core Stability
 
-v1.3.2 is the community polish release. BUS Core remains maintained as manufacturing operations software. Future changes continue to prioritize bug fixes, data safety, backup/restore, security and trust, tester blockers, release/update reliability, documentation, operator clarity, and evidence-backed manufacturing improvements.
+BUS Core remains maintained as manufacturing operations software. Future changes continue to prioritize bug fixes, data safety, backup/restore, security and trust, tester blockers, release/update reliability, documentation, operator clarity, and evidence-backed manufacturing improvements.
 
 Core remains a complete open-source product that can be run locally or self-hosted without a subscription. The upcoming Managed BUS direction adds optional TGC operation around the same product rather than creating a divergent fork.
 
-BUS Core v1.4.0 adds the disclosed optional client after Lighthouse 1.22.1 and migration 0013 were deployed and production-verified. It remains bounded, fail-open, controllable in Settings, and unable to carry business content.
+BUS Core v1.4.1 uses the deployed, production-verified Lighthouse 1.27.0 and migration 0015 contract. It remains bounded, fail-open, controllable in Settings, requires exact event acknowledgement before local completion, and cannot carry business content.
 
 ## Before Updating
 

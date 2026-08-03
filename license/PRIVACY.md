@@ -2,7 +2,7 @@
 
 # BUS Core Privacy Statement
 
-Last updated: July 12, 2026
+Last updated: August 3, 2026
 
 BUS Core is designed to run locally on your machine.
 Because of this architecture, operational business records remain under the operator's control.
@@ -29,9 +29,9 @@ This data is not transmitted to the developer.
 
 BUS Core can make optional version-aware update checks. Those requests may include the current app version, release channel, and whether the local profile has previously attempted a version-aware check. They do not include an installation identifier, shop records, customer data, item or recipe data, invoice contents, quantities, financial values, file paths, or machine fingerprints.
 
-The packaged product client implements optional telemetry behind a first-run disclosure and settings control, and it sends nothing until that disclosure is acknowledged with telemetry enabled. It uses a random locally generated UUIDv4 installation identifier and sends only allowlisted event names with an event ID, timestamp, app version, release channel, and coarse operating-system category. It queues at most 100 events, retries at most three times, and discards unsupported older-server responses without affecting local work. Turning telemetry off clears the unsent queue.
+The packaged product client implements optional telemetry behind a first-run disclosure and settings control, and it sends nothing until that disclosure is acknowledged with telemetry enabled. It sends only allowlisted event names with an event ID, timestamp, app version, release channel, and coarse operating-system category; it sends no persistent installation identifier. It queues at most 100 events, retries at most three times, and completes an event or one-time milestone only after Lighthouse acknowledges the exact event ID. Rejected or retry-exhausted events remain in a bounded local dead-letter file, and unsupported older-server responses do not affect local work. Turning telemetry off clears the unsent queue.
 
-The payload constructor cannot accept customer, supplier, employee, item, recipe, invoice, email, document, filepath, financial, quantity, raw database, username, hardware, or machine-fingerprint content. Lighthouse migration 0013 and Worker 1.22.1 are deployed and production-verified.
+The payload constructor cannot accept customer, supplier, employee, item, recipe, invoice, email, document, filepath, financial, quantity, raw database, username, hardware, or machine-fingerprint content. Signals are limited to first launch, once-per-version release adoption, startup/manual update checks, successful update staging, reliability, and one-time successful use of major product areas. Module opens, active days, sessions, returning installations, engagement, and retention are not reported. Lighthouse migration 0015 and Worker 1.27.0 are deployed and production-verified.
 
 ---
 

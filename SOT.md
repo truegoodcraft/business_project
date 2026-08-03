@@ -1,6 +1,6 @@
 # TGC BUS Core — Unified Source of Truth
 
-**Version:** v1.4.0 **Updated:** 2026-07-13 **Status:** Stable **Authority:** `core/version.py` is the version authority. Where this document and code disagree, update this document.
+**Version:** v1.4.1 **Updated:** 2026-08-03 **Status:** Stable **Authority:** `core/version.py` is the version authority. Where this document and code disagree, update this document.
 
 ---
 
@@ -29,7 +29,7 @@
 * BUS Core Self-Managed is free, open-source, local or self-hosted, customer-operated, portable, and requires no subscription.
 * TGC Managed BUS is an optional paid, manually provisioned service for isolated hosting, browser access, authentication, updates, backups, monitoring, recovery, and bounded support. Its canonical public intake is `https://buscore.ca/managed-bus-inquiry`.
 * Managed BUS is not represented as a generally available production service until a working intake and credible single-customer deployment baseline exist.
-* Absolute "no telemetry" claims are retired. BUS Core v1.4.0 includes the Lighthouse schema-1.0 client with first-run disclosure, a settings control, meaningful opt-out, strict payload construction, a 100-event local queue, at most three delivery attempts, and fail-open operation. An event or milestone is complete only after Lighthouse acknowledges its exact event ID; pending, acknowledged, rejected, dead-letter, last-success, status, and error-category delivery diagnostics remain local. Outbound events contain no persistent installation identifier. Allowed product evidence is limited to first launch, once-per-version release adoption, startup/manual update checks, successful update staging, reliability, and one-time successful use of major product areas. Module opens, active-day signals, returning-installation measures, sessions, engagement, retention, and cross-day profiles are prohibited. Lighthouse 1.27.0 and migration 0015 are deployed and production-verified; any BUS Core tag or public release remains owner-controlled.
+* Absolute "no telemetry" claims are retired. BUS Core v1.4.1 includes the Lighthouse schema-1.0 client with first-run disclosure, a settings control, meaningful opt-out, strict payload construction, a 100-event local queue, at most three delivery attempts, and fail-open operation. An event or milestone is complete only after Lighthouse acknowledges its exact event ID; pending, acknowledged, rejected, dead-letter, last-success, status, and error-category delivery diagnostics remain local. Outbound events contain no persistent installation identifier. Allowed product evidence is limited to first launch, once-per-version release adoption, startup/manual update checks, successful update staging, reliability, and one-time successful use of major product areas. Module opens, active-day signals, returning-installation measures, sessions, engagement, retention, and cross-day profiles are prohibited. Lighthouse 1.27.0 and migration 0015 are deployed and production-verified; any BUS Core tag or public release remains owner-controlled.
 * Business content, including customer, supplier, employee, item, recipe, invoice, quantity, financial, document, raw database, filepath, and machine-fingerprint data, MUST NOT enter product telemetry.
 
 
@@ -579,7 +579,7 @@
 
 
 * 
-**Telemetry boundary:** Business analytics remain local to the SQLite DB. BUS Core v1.4.0's optional product client emits only Lighthouse-allowlisted first-launch, release/update, first-success, and reliability event names with the exact schema-1.0 common context. It emits no persistent installation identifier, module opens, active-day signals, sessions, engagement, retention, or cross-day profile. It is disclosed, controllable, meaningfully optional, bounded, non-blocking, and prohibited from accepting business content. Lighthouse 1.27.0 and migration 0015 are deployed and production-verified; this BUS Core client release remains owner-controlled.
+**Telemetry boundary:** Business analytics remain local to the SQLite DB. BUS Core v1.4.1's optional product client emits only Lighthouse-allowlisted first-launch, release/update, first-success, and reliability event names with the exact schema-1.0 common context. It emits no persistent installation identifier, module opens, active-day signals, sessions, engagement, retention, or cross-day profile. It is disclosed, controllable, meaningfully optional, bounded, non-blocking, and prohibited from accepting business content. Lighthouse 1.27.0 and migration 0015 are deployed and production-verified; this BUS Core client release remains owner-controlled.
 
 
 * 

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ast
 import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -38,6 +39,19 @@ APPROVED_COMMENT_TERMS = (
 
 
 def _iter_python_files() -> list[Path]:
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "--cached", "--others", "--exclude-standard", "--", "*.py"],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        pass  # Compatibility fallback for source trees without Git metadata.
+    else:
+        return sorted(REPO_ROOT / relative_path for relative_path in result.stdout.splitlines())
+
     files: list[Path] = []
     for current_root, dirs, filenames in os.walk(REPO_ROOT):
         dirs[:] = [

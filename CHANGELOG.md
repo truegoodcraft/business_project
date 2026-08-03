@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-08-03
+
 ### Acknowledged minimal product signals and single-owner update checks
 - Made the sidebar startup controller the only automatic update-check owner, removed Home's duplicate request, and added backend `source=startup|manual` enforcement so saved `updates.enabled` and `updates.check_on_startup` policy applies to startup while manual checks remain available.
 - Added per-launch startup-check deduplication and additive response diagnostics (`check_source`, `check_performed`, `skip_reason`) without changing the aggregate-safe outbound tuple (`current_version`, `channel`, `first_check`) or making `first_check` version-aware.
@@ -10,13 +12,18 @@
 - Limited product signals to acknowledged first launch, once-per-version `version_first_seen`, startup/manual update checks, verified `update_staged`, reliability events, and locally deduplicated first successful use for stock, contacts, recipes, manufacturing, jobs, invoicing, finance, and backup export.
 - Removed the persistent installation identifier from outbound payloads. Events now contain only event ID/name, client timestamp, app version, release channel, and coarse OS category.
 - Recorded that the compatible Lighthouse 1.27.0 receiver and migration 0015 are deployed and production-verified before this BUS Core client release.
-- Bumped the internal working revision to `1.4.0.2`; public version remains `1.4.0`.
+- Bumped the internal working revision to `1.4.0.2`; public version remained `1.4.0` during development.
 
 ### Release build integrity
 - Fixed the Windows release build so missing runtime/build dependencies and any non-zero PyInstaller exit fail before a launcher-only artifact can be copied, signed, or bundled.
 - Made the onefile contract explicit, pinned the tested PyInstaller toolchain, and added structural CArchive, unsigned/signed launch-smoke, hash, and final-ZIP verification gates.
 - Added focused regression coverage for the expected build mode, governed dependencies, embedded runtime, launch ordering, and rejection of launcher-only ZIPs.
-- Bumped the internal working revision to `1.4.0.1`; public version remains `1.4.0`.
+- Bumped the internal working revision to `1.4.0.1`; public version remained `1.4.0` during development.
+
+### Release identity
+- Selected public version `1.4.1`, reset `INTERNAL_VERSION` to `1.4.1.0`, and synchronized governed package, Windows, SOT, UI cache-token, Home update-card, wiki, changelog, and release-note surfaces.
+- Made the documented `pytest -q` gate collision-safe for same-named test modules, kept ignored local tools outside source-policy scans, and updated packaged-document assertions to the deployed Lighthouse contract.
+- Expected public artifact name is `BUS-Core-1.4.1.zip`; no tag, build, signature, publication, deployment, or release is part of this preparation pass.
 
 ## [1.4.0] - 2026-07-13
 
