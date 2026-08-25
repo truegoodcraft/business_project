@@ -148,7 +148,7 @@ def test_safe_zip_entry_destination_stays_under_extraction_root(parts: list[str]
 @given(
     SAFE_SEGMENT,
     SAFE_SEGMENT,
-    st.sampled_from(("parent", "nested_parent", "absolute", "drive", "colon", "control")),
+    st.sampled_from(("parent", "nested_parent", "absolute", "drive", "colon", "control", "surrogate")),
 )
 @settings(max_examples=80)
 def test_unsafe_zip_entry_names_are_rejected(first: str, second: str, shape: str) -> None:
@@ -159,6 +159,7 @@ def test_unsafe_zip_entry_names_are_rejected(first: str, second: str, shape: str
         "drive": f"C:\\{first}\\{second}",
         "colon": f"{first}:{second}",
         "control": f"{first}/\x01{second}",
+        "surrogate": f"{first}/\ud800{second}",
     }
     info = zipfile.ZipInfo(names[shape])
 

@@ -227,6 +227,8 @@ def _validated_zip_destination(info: zipfile.ZipInfo, temp_dir: Path) -> Path:
     normalized_name = info.filename.replace("\\", "/")
     if not normalized_name or normalized_name.startswith("/") or WINDOWS_ABSOLUTE_PATH_PATTERN.match(normalized_name):
         raise ArtifactExtractError("unsafe_zip_entry", "Artifact ZIP contains an absolute path entry.")
+    if any(0xD800 <= ord(character) <= 0xDFFF for character in normalized_name):
+        raise ArtifactExtractError("unsafe_zip_entry", "Artifact ZIP contains an invalid Unicode entry name.")
 
     parts = PurePosixPath(normalized_name).parts
     if not parts:

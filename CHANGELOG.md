@@ -11,7 +11,8 @@
 - Added a clean, hash-locked Python 3.11 release-check environment with test, governance, isolated-smoke, unsigned-build, and explicit signed-release gates without changing the tagged publication workflow.
 - Bounded restored scrypt password-hash parameters before expensive work and added Hypothesis properties for password hashes, root-confined paths and RIDs, signed manifests, ZIP entries, backup headers, and unit conversions.
 - Added separate hash-locked Linux/Windows test-tool graphs and dependency auditing for pytest and Hypothesis.
-- Bumped the internal working revision to `1.4.1.2`; public `VERSION` remains `1.4.1` until an owner-approved release boundary.
+- Added two bounded Linux Atheris harnesses for manifest parsing/trust and path/ZIP-entry validation, with deterministic CI runs, fail-closed invalid-Unicode handling, and a separately audited hash-locked fuzz-tool graph.
+- Bumped the internal working revision to `1.4.1.3`; public `VERSION` remains `1.4.1` until an owner-approved release boundary.
 
 ## [1.4.1] - 2026-08-03
 

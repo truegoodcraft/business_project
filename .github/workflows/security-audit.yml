@@ -33,14 +33,14 @@ jobs:
       - name: Bandit full report, Low+ advisory
         continue-on-error: true
         run: |
-          bandit -r core tgc scripts launcher.py \
+          bandit -r core tgc scripts fuzz launcher.py \
             -x "tests,build,dist,.venv,.pytest_cache,.tmp_test_deps_*,.tmp_localappdata_*,.gate-pytest-*,.artifacts" \
             --severity-level low \
             --confidence-level low
 
       - name: Bandit blocking scan, Medium/High
         run: |
-          bandit -r core tgc scripts launcher.py \
+          bandit -r core tgc scripts fuzz launcher.py \
             -x "tests,build,dist,.venv,.pytest_cache,.tmp_test_deps_*,.tmp_localappdata_*,.gate-pytest-*,.artifacts" \
             --severity-level medium \
             --confidence-level low
@@ -57,10 +57,12 @@ jobs:
             python-version: "3.12"
             lockfile: requirements-linux.lock.txt
             test-lockfile: requirements-test-linux.lock.txt
+            fuzz-lockfile: requirements-fuzz-linux.lock.txt
           - os: windows-latest
             python-version: "3.11"
             lockfile: requirements-windows.lock.txt
             test-lockfile: requirements-test-windows.lock.txt
+            fuzz-lockfile: ""
 
     steps:
       - name: Checkout
@@ -91,5 +93,14 @@ jobs:
           python -m pip_audit
           --require-hashes
           -r "${{ matrix.test-lockfile }}"
+          --cache-dir "${{ runner.temp }}/pip-audit"
+          --progress-spinner off
+
+      - name: Audit locked Linux fuzz dependencies
+        if: matrix.fuzz-lockfile != ''
+        run: >-
+          python -m pip_audit
+          --require-hashes
+          -r "${{ matrix.fuzz-lockfile }}"
           --cache-dir "${{ runner.temp }}/pip-audit"
           --progress-spinner off

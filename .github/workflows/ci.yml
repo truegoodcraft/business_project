@@ -25,10 +25,12 @@ jobs:
             python-version: "3.12"
             lockfile: requirements-linux.lock.txt
             test-lockfile: requirements-test-linux.lock.txt
+            fuzz-lockfile: requirements-fuzz-linux.lock.txt
           - os: windows-latest
             python-version: "3.11"
             lockfile: requirements-windows.lock.txt
             test-lockfile: requirements-test-windows.lock.txt
+            fuzz-lockfile: ""
 
     env:
       PYTHONUTF8: "1"
@@ -54,8 +56,20 @@ jobs:
           python -m pip install --require-hashes -r "${{ matrix.test-lockfile }}"
           python -m pip check
 
+      - name: Install locked Linux fuzz tooling
+        if: matrix.fuzz-lockfile != ''
+        run: |
+          python -m pip install --only-binary=:all: --require-hashes -r "${{ matrix.fuzz-lockfile }}"
+          python -m pip check
+
       - name: Compile Python sources
-        run: python -m compileall -q core tgc scripts launcher.py
+        run: python -m compileall -q core tgc scripts fuzz launcher.py
 
       - name: Run tests
         run: python -m pytest -q
+
+      - name: Run bounded Atheris harnesses
+        if: matrix.fuzz-lockfile != ''
+        run: |
+          python fuzz/fuzz_manifest.py -atheris_runs=512 -max_len=65537 -timeout=5 -rss_limit_mb=1024 -seed=1
+          python fuzz/fuzz_paths_zip.py -atheris_runs=512 -max_len=1027 -timeout=5 -rss_limit_mb=1024 -seed=1

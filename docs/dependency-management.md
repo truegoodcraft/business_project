@@ -7,6 +7,8 @@ BUS Core separates dependency policy from deployable dependency graphs:
 - `requirements-test.txt` defines pinned test tooling, including property-based tests.
 - `requirements-test-linux.lock.txt` and `requirements-test-windows.lock.txt` are the
   hash-locked test-tool graphs used by the matching CI platforms.
+- `requirements-fuzz.txt` defines the Linux-only Atheris tool, and
+  `requirements-fuzz-linux.lock.txt` is its hash-locked Python 3.12 graph.
 - `requirements-linux.lock.txt` is the complete Python 3.12 Linux runtime graph used by Docker and Linux CI.
 - `requirements-windows.lock.txt` is the complete Python 3.11 Windows runtime and release-build graph.
 
@@ -23,6 +25,7 @@ uv pip compile requirements.txt --python-platform linux --python-version 3.12 --
 uv pip compile requirements-build.txt --python-platform windows --python-version 3.11 --generate-hashes --upgrade --output-file requirements-windows.lock.txt
 uv pip compile requirements-test.txt --python-platform linux --python-version 3.12 --generate-hashes --upgrade --output-file requirements-test-linux.lock.txt
 uv pip compile requirements-test.txt --python-platform windows --python-version 3.11 --generate-hashes --upgrade --output-file requirements-test-windows.lock.txt
+uv pip compile requirements-fuzz.txt --python-platform linux --python-version 3.12 --generate-hashes --upgrade --output-file requirements-fuzz-linux.lock.txt
 ```
 
 Review direct-dependency bounds before accepting a major-version update. Commit each input change and all affected regenerated locks together.
@@ -34,9 +37,11 @@ On Linux/Python 3.12:
 ```bash
 python -m pip install --require-hashes -r requirements-linux.lock.txt
 python -m pip install --require-hashes -r requirements-test-linux.lock.txt
+python -m pip install --only-binary=:all: --require-hashes -r requirements-fuzz-linux.lock.txt
 python -m pip check
 pip-audit --require-hashes -r requirements-linux.lock.txt
 pip-audit --require-hashes -r requirements-test-linux.lock.txt
+pip-audit --require-hashes -r requirements-fuzz-linux.lock.txt
 ```
 
 On Windows/Python 3.11:

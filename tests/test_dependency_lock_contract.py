@@ -11,6 +11,7 @@ LOCK_FILES = (
     REPO_ROOT / "requirements-windows.lock.txt",
     REPO_ROOT / "requirements-test-linux.lock.txt",
     REPO_ROOT / "requirements-test-windows.lock.txt",
+    REPO_ROOT / "requirements-fuzz-linux.lock.txt",
 )
 
 
@@ -82,6 +83,25 @@ def test_ci_uses_matching_hash_locked_test_graphs() -> None:
     assert "test-lockfile: requirements-test-linux.lock.txt" in security_workflow
     assert "test-lockfile: requirements-test-windows.lock.txt" in security_workflow
     assert 'python -m pip_audit\n          --require-hashes\n          -r "${{ matrix.test-lockfile }}"' in security_workflow
+
+
+def test_linux_fuzz_graph_is_locked_audited_and_bounded() -> None:
+    workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    security_workflow = (REPO_ROOT / ".github" / "workflows" / "security-audit.yml").read_text(
+        encoding="utf-8"
+    )
+    fuzz_policy = (REPO_ROOT / "requirements-fuzz.txt").read_text(encoding="utf-8")
+    fuzz_lock = (REPO_ROOT / "requirements-fuzz-linux.lock.txt").read_text(encoding="utf-8")
+
+    assert "atheris==3.1.0" in fuzz_policy
+    assert "\natheris==3.1.0 \\" in fuzz_lock
+    assert "--hash=sha256:" in fuzz_lock
+    assert "fuzz-lockfile: requirements-fuzz-linux.lock.txt" in workflow
+    assert 'pip install --only-binary=:all: --require-hashes -r "${{ matrix.fuzz-lockfile }}"' in workflow
+    assert "python fuzz/fuzz_manifest.py -atheris_runs=512 -max_len=65537 -timeout=5 -rss_limit_mb=1024 -seed=1" in workflow
+    assert "python fuzz/fuzz_paths_zip.py -atheris_runs=512 -max_len=1027 -timeout=5 -rss_limit_mb=1024 -seed=1" in workflow
+    assert "fuzz-lockfile: requirements-fuzz-linux.lock.txt" in security_workflow
+    assert 'python -m pip_audit\n          --require-hashes\n          -r "${{ matrix.fuzz-lockfile }}"' in security_workflow
 
 
 def test_container_uses_digest_pinned_image_and_linux_lock() -> None:
