@@ -3,7 +3,8 @@
 param(
   [string]$BindHost = "127.0.0.1",
   [int]$Port = 8765,
-  [int]$HealthTimeoutSec = 30
+  [int]$HealthTimeoutSec = 30,
+  [string]$PythonPath = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -54,6 +55,14 @@ $hadOriginalAllowWrites = $null -ne (Get-Item Env:ALLOW_WRITES -ErrorAction Sile
 $originalAllowWrites = $env:ALLOW_WRITES
 $hadOriginalReadOnly = $null -ne (Get-Item Env:READ_ONLY -ErrorAction SilentlyContinue)
 $originalReadOnly = $env:READ_ONLY
+$hadOriginalBusDev = $null -ne (Get-Item Env:BUS_DEV -ErrorAction SilentlyContinue)
+$originalBusDev = $env:BUS_DEV
+$hadOriginalBusCoreHome = $null -ne (Get-Item Env:BUSCORE_HOME -ErrorAction SilentlyContinue)
+$originalBusCoreHome = $env:BUSCORE_HOME
+$hadOriginalBusMode = $null -ne (Get-Item Env:BUS_MODE -ErrorAction SilentlyContinue)
+$originalBusMode = $env:BUS_MODE
+$hadOriginalPythonPath = $null -ne (Get-Item Env:PYTHONPATH -ErrorAction SilentlyContinue)
+$originalPythonPath = $env:PYTHONPATH
 
 $guid = [guid]::NewGuid().ToString()
 $tempRoot = [System.IO.Path]::GetTempPath()
@@ -68,22 +77,42 @@ try {
   $env:LOCALAPPDATA = $tempDir
   $env:ALLOW_WRITES = "1"
   $env:READ_ONLY = "0"
+  $env:BUS_DEV = "0"
+  $env:BUSCORE_HOME = Join-Path $tempDir "BUSCore"
+  $env:BUS_MODE = "prod"
+  $env:PYTHONPATH = [string]$repoRoot
   Write-Host ("[smoke] BUS_DB -> {0}" -f $tempDbPath)
+  Write-Host "[smoke] BUS_DEV -> 0"
   if (Test-TcpPortInUse -TargetHost $BindHost -Port $Port) {
     $requestedPort = $Port
     $Port = Get-FreeTcpPort
     Write-Host ("[smoke] Port {0} busy; using isolated port {1}" -f $requestedPort, $Port)
   }
 
-  $launchScript = Join-Path $scriptDir "launch.ps1"
-  $server = Start-Process -FilePath "powershell" -ArgumentList @(
-    "-NoProfile",
-    "-ExecutionPolicy", "Bypass",
-    "-File", ('"{0}"' -f $launchScript),
-    "-BindHost", $BindHost,
-    "-Port", $Port,
-    "-Quiet"
-  ) -WorkingDirectory $repoRoot -PassThru
+  if ([string]::IsNullOrWhiteSpace($PythonPath)) {
+    $launchScript = Join-Path $scriptDir "launch.ps1"
+    $server = Start-Process -FilePath "powershell" -ArgumentList @(
+      "-NoProfile",
+      "-ExecutionPolicy", "Bypass",
+      "-File", ('"{0}"' -f $launchScript),
+      "-BindHost", $BindHost,
+      "-Port", $Port,
+      "-Quiet"
+    ) -WorkingDirectory $repoRoot -PassThru
+  } else {
+    $resolvedPython = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($PythonPath)
+    if (!(Test-Path $resolvedPython -PathType Leaf)) {
+      throw "Smoke Python not found: $resolvedPython"
+    }
+    Write-Host ("[smoke] Python -> {0}" -f $resolvedPython)
+    $server = Start-Process -FilePath $resolvedPython -ArgumentList @(
+      "-m", "uvicorn",
+      "core.api.http:create_app",
+      "--factory",
+      "--host", $BindHost,
+      "--port", $Port
+    ) -WorkingDirectory $repoRoot -PassThru
+  }
 
   $healthUrl = "http://{0}:{1}/health" -f $BindHost, $Port
   $deadline = (Get-Date).AddSeconds($HealthTimeoutSec)
@@ -147,6 +176,30 @@ finally {
     $env:READ_ONLY = $originalReadOnly
   } else {
     Remove-Item Env:READ_ONLY -ErrorAction SilentlyContinue
+  }
+
+  if ($hadOriginalBusDev) {
+    $env:BUS_DEV = $originalBusDev
+  } else {
+    Remove-Item Env:BUS_DEV -ErrorAction SilentlyContinue
+  }
+
+  if ($hadOriginalBusCoreHome) {
+    $env:BUSCORE_HOME = $originalBusCoreHome
+  } else {
+    Remove-Item Env:BUSCORE_HOME -ErrorAction SilentlyContinue
+  }
+
+  if ($hadOriginalBusMode) {
+    $env:BUS_MODE = $originalBusMode
+  } else {
+    Remove-Item Env:BUS_MODE -ErrorAction SilentlyContinue
+  }
+
+  if ($hadOriginalPythonPath) {
+    $env:PYTHONPATH = $originalPythonPath
+  } else {
+    Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue
   }
 
   try {

@@ -56,9 +56,11 @@ jobs:
           - os: ubuntu-latest
             python-version: "3.12"
             lockfile: requirements-linux.lock.txt
+            test-lockfile: requirements-test-linux.lock.txt
           - os: windows-latest
             python-version: "3.11"
             lockfile: requirements-windows.lock.txt
+            test-lockfile: requirements-test-windows.lock.txt
 
     steps:
       - name: Checkout
@@ -81,5 +83,13 @@ jobs:
           python -m pip_audit
           --require-hashes
           -r "${{ matrix.lockfile }}"
+          --cache-dir "${{ runner.temp }}/pip-audit"
+          --progress-spinner off
+
+      - name: Audit locked test dependencies
+        run: >-
+          python -m pip_audit
+          --require-hashes
+          -r "${{ matrix.test-lockfile }}"
           --cache-dir "${{ runner.temp }}/pip-audit"
           --progress-spinner off

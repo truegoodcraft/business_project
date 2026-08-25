@@ -24,9 +24,11 @@ jobs:
           - os: ubuntu-latest
             python-version: "3.12"
             lockfile: requirements-linux.lock.txt
+            test-lockfile: requirements-test-linux.lock.txt
           - os: windows-latest
             python-version: "3.11"
             lockfile: requirements-windows.lock.txt
+            test-lockfile: requirements-test-windows.lock.txt
 
     env:
       PYTHONUTF8: "1"
@@ -49,7 +51,7 @@ jobs:
         run: |
           python -m pip install "pip==26.2.1"
           python -m pip install --require-hashes -r "${{ matrix.lockfile }}"
-          python -m pip install "pytest==9.1.1"
+          python -m pip install --require-hashes -r "${{ matrix.test-lockfile }}"
           python -m pip check
 
       - name: Compile Python sources

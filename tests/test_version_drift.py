@@ -122,3 +122,39 @@ def test_release_check_validates_current_canonical_chain():
     assert "BUS-Core.exe" in script and "BUS-Core-{0}.exe" in script, (
         "scripts/release-check.ps1 must assert the real current build artifact names."
     )
+    assert "requirements-windows.lock.txt" in script, (
+        "release-check must install the governed Windows runtime/build graph."
+    )
+    assert "requirements-test-windows.lock.txt" in script, (
+        "release-check must install the governed test graph."
+    )
+    assert script.count("--require-hashes") >= 2, (
+        "release-check must hash-verify both governed dependency graphs."
+    )
+    assert "Release check requires Python 3.11.x" in script, (
+        "release-check must reject a non-canonical Windows build interpreter."
+    )
+    assert "buscore-release-check-{0}" in script and "[guid]::NewGuid()" in script, (
+        "release-check must create a unique clean environment instead of mutating the user's venv."
+    )
+    assert "@('-m', 'venv', $TempVenvRoot)" in script, (
+        "release-check must build inside a fresh Python 3.11 virtual environment."
+    )
+    assert "Remove-Item -Path $TempVenvRoot -Recurse -Force" in script, (
+        "release-check must remove only its exact temporary environment in finally."
+    )
+    assert "'-m', 'pytest', '-q'" in script, (
+        "release-check must run the test suite before building."
+    )
+    assert "validate_version_governance.py" in script and "validate_change_trace.py" in script, (
+        "release-check must run both governance validations before building."
+    )
+    assert "'-PythonPath', $VenvPython" in script, (
+        "release-check smoke must use the same governed Python environment as the build."
+    )
+    assert "[switch]$Release" in script and "'-Release'" in script, (
+        "release-check must expose and forward an explicit signed-release mode."
+    )
+    assert "BUS-Core-{0}.zip" in script and "Get-AuthenticodeSignature" in script, (
+        "signed-release mode must independently assert the bundle and signer."
+    )

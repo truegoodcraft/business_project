@@ -4,6 +4,9 @@ BUS Core separates dependency policy from deployable dependency graphs:
 
 - `requirements.txt` defines bounded direct runtime dependencies and minimum security floors.
 - `requirements-build.txt` adds the governed Windows/PyInstaller toolchain.
+- `requirements-test.txt` defines pinned test tooling, including property-based tests.
+- `requirements-test-linux.lock.txt` and `requirements-test-windows.lock.txt` are the
+  hash-locked test-tool graphs used by the matching CI platforms.
 - `requirements-linux.lock.txt` is the complete Python 3.12 Linux runtime graph used by Docker and Linux CI.
 - `requirements-windows.lock.txt` is the complete Python 3.11 Windows runtime and release-build graph.
 
@@ -18,9 +21,11 @@ Use `uv` 0.11.33 from the repository root:
 py -3.11 -m pip install uv==0.11.33
 uv pip compile requirements.txt --python-platform linux --python-version 3.12 --generate-hashes --upgrade --output-file requirements-linux.lock.txt
 uv pip compile requirements-build.txt --python-platform windows --python-version 3.11 --generate-hashes --upgrade --output-file requirements-windows.lock.txt
+uv pip compile requirements-test.txt --python-platform linux --python-version 3.12 --generate-hashes --upgrade --output-file requirements-test-linux.lock.txt
+uv pip compile requirements-test.txt --python-platform windows --python-version 3.11 --generate-hashes --upgrade --output-file requirements-test-windows.lock.txt
 ```
 
-Review direct-dependency bounds before accepting a major-version update. Commit each input change and both regenerated locks together.
+Review direct-dependency bounds before accepting a major-version update. Commit each input change and all affected regenerated locks together.
 
 ## Verify a refresh
 
@@ -28,16 +33,20 @@ On Linux/Python 3.12:
 
 ```bash
 python -m pip install --require-hashes -r requirements-linux.lock.txt
+python -m pip install --require-hashes -r requirements-test-linux.lock.txt
 python -m pip check
 pip-audit --require-hashes -r requirements-linux.lock.txt
+pip-audit --require-hashes -r requirements-test-linux.lock.txt
 ```
 
 On Windows/Python 3.11:
 
 ```powershell
 py -3.11 -m pip install --require-hashes -r requirements-windows.lock.txt
+py -3.11 -m pip install --require-hashes -r requirements-test-windows.lock.txt
 py -3.11 -m pip check
 py -3.11 -m pip_audit --require-hashes -r requirements-windows.lock.txt
+py -3.11 -m pip_audit --require-hashes -r requirements-test-windows.lock.txt
 ```
 
 Then run the full test and release-build gates. A lock refresh is not complete until both platforms resolve, audit cleanly, and pass their tests.
