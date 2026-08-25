@@ -69,7 +69,8 @@ def run_transform(plugin_id: str, fn: str, payload: Dict[str, Any], *, timeout: 
             },
         }
         try:
-            proc = subprocess.run(  # nosec B603 - argv is fixed by _sandbox_command()
+            # `_sandbox_command()` returns the fixed BUS Core-owned runner argv.
+            proc = subprocess.run(  # nosec B603
                 _sandbox_command(),
                 input=json.dumps(sandbox_payload).encode("utf-8"),
                 capture_output=True,

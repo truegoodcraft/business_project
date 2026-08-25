@@ -1003,8 +1003,17 @@ async function initialRender(root) {
     await loadJobs({ keepSelection: true });
     render();
   } catch (error) {
-    root.innerHTML = `<div class="card jobs-load-error"><h2>Jobs unavailable</h2><p>${safeError(error, 'Unable to load Jobs.')}</p></div>`;
+    renderJobsLoadError(root, error);
   }
+}
+
+export function renderJobsLoadError(root, error) {
+  root.replaceChildren(
+    el('div', { class: 'card jobs-load-error' }, [
+      el('h2', { text: 'Jobs unavailable' }),
+      el('p', { text: safeError(error, 'Unable to load Jobs.') }),
+    ]),
+  );
 }
 
 export async function mountJobs() {

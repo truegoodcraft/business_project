@@ -420,6 +420,24 @@ async function renderHistoryList(parent) {
   await loadRecentRuns30d();
 }
 
+export function buildRecentRunRow(run) {
+  const ts = run?.created_at || '';
+  const d = ts ? new Date(ts) : null;
+  const dateStr = d ? d.toLocaleDateString() : '';
+  const rid = run?.source_id ? String(run.source_id) : null;
+  const recipeName = rid
+    ? `Run #${rid}`
+    : (run?.source_kind ? String(run.source_kind) : '(manufacture)');
+  const qty = fmtHumanQty(run?.quantity_decimal, run?.uom);
+  const row = el('div', { class: 'mf-runs-grid mf-runs-row' });
+  row.append(
+    el('div', { title: recipeName, text: recipeName }),
+    el('div', { text: dateStr }),
+    el('div', { text: qty }),
+  );
+  return row;
+}
+
 async function loadRecentRuns30d() {
   const panel = document.getElementById('mf-recent-panel');
   if (!panel) return;
@@ -467,20 +485,10 @@ async function loadRecentRuns30d() {
 
     const frag = document.createDocumentFragment();
     groupedRuns.forEach((r) => {
-      const ts = r.created_at || '';
-      const d = ts ? new Date(ts) : null;
-      const dateStr = d ? d.toLocaleDateString() : '';
-      const rid = r.source_id ? String(r.source_id) : null;
-      const recipeName = rid ? `Run #${rid}` : (r.source_kind ? String(r.source_kind) : '(manufacture)');
-      const qty = fmtHumanQty(r.quantity_decimal, r.uom);
-      const row = document.createElement('div');
-      row.className = 'mf-runs-grid mf-runs-row';
-      row.innerHTML = `<div title="${recipeName}">${recipeName}</div><div>${dateStr}</div><div>${qty}</div>`;
-      frag.appendChild(row);
+      frag.appendChild(buildRecentRunRow(r));
     });
     body.replaceChildren(frag);
   } catch {
     body.innerHTML = '<div class="mf-runs-empty">Failed to load recent runs.</div>';
   }
 }
-

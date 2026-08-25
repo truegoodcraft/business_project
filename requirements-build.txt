@@ -1,7 +1,10 @@
-# Governed Windows release-build environment.
+# Human-maintained Windows release-build dependency policy.
 # Runtime dependencies are required because PyInstaller analyzes and bundles them.
+# Release builds install the generated requirements-windows.lock.txt.
 -r requirements.txt
 
 # Keep the frozen-runtime toolchain deterministic across release builds.
 pyinstaller==6.21.0
 pyinstaller-hooks-contrib==2026.6
+setuptools==84.0.0
+wheel==0.48.0

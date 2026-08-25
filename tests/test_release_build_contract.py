@@ -37,10 +37,13 @@ def test_spec_explicitly_defines_onefile_release_mode() -> None:
 
 def test_build_toolchain_is_pinned_and_includes_runtime_requirements() -> None:
     requirements = _read("requirements-build.txt")
+    windows_lock = _read("requirements-windows.lock.txt")
 
     assert "-r requirements.txt" in requirements
     assert "pyinstaller==6.21.0" in requirements
     assert "pyinstaller-hooks-contrib==2026.6" in requirements
+    assert "pyinstaller==6.21.0 \\" in windows_lock
+    assert "--hash=sha256:" in windows_lock
 
 
 def test_repository_source_guard_ignores_workspace_tool_environments() -> None:
@@ -54,7 +57,9 @@ def test_build_script_fails_closed_around_native_and_artifact_checks() -> None:
 
     assert "pip show pyinstaller" not in script
     assert "install --upgrade pyinstaller" not in script
-    assert '"-r", $buildRequirements' in script
+    assert '"--require-hashes", "-r", $buildLock' in script
+    assert 'Join-Path $ROOT "requirements-windows.lock.txt"' in script
+    assert "Select-String -LiteralPath $buildLock" in script
     assert '[string]$BuildPythonPath = ""' in script
     assert 'Invoke-NativeChecked' in script
     assert 'PyInstaller onefile build' in script

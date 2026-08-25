@@ -319,10 +319,10 @@ if (!(Test-Path $spec)) {
   throw "Spec not found: $spec`nExpected '$Name.spec' at repo root."
 }
 
-$buildRequirements = Join-Path $ROOT "requirements-build.txt"
+$buildLock = Join-Path $ROOT "requirements-windows.lock.txt"
 $artifactVerifier = Join-Path $ROOT "scripts\verify_release_artifact.py"
-if (!(Test-Path $buildRequirements -PathType Leaf)) {
-  throw "Governed build requirements not found: $buildRequirements"
+if (!(Test-Path $buildLock -PathType Leaf)) {
+  throw "Governed Windows build lock not found: $buildLock"
 }
 if (!(Test-Path $artifactVerifier -PathType Leaf)) {
   throw "Release artifact verifier not found: $artifactVerifier"
@@ -374,12 +374,12 @@ $VMAJOR = [int]$verParts[0]
 $VMINOR = [int]$verParts[1]
 $VPATCH = [int]$verParts[2]
 
-# Install the governed runtime and build inputs. This is intentionally not an
-# unconstrained PyInstaller upgrade; requirements-build.txt pins the toolchain.
+# Install the governed runtime and build graph. The lock contains exact
+# versions and reviewed distribution hashes for the Python 3.11 Windows target.
 Write-Host "[INFO] Ensuring governed build dependencies" -ForegroundColor Cyan
 Invoke-NativeChecked `
   -FilePath $venvPy `
-  -Arguments @("-m", "pip", "install", "--disable-pip-version-check", "-r", $buildRequirements) `
+  -Arguments @("-m", "pip", "install", "--disable-pip-version-check", "--require-hashes", "-r", $buildLock) `
   -Description "Governed build dependency installation"
 Invoke-NativeChecked `
   -FilePath $venvPy `
@@ -391,10 +391,10 @@ $pyInstallerVersion = Invoke-NativeCapture `
   -Arguments @("-c", "import importlib.metadata as m; from PIL import Image; print(m.version('pyinstaller'))") `
   -Description "PyInstaller and Pillow dependency probe"
 $expectedPyInstallerVersion = (
-  Select-String -LiteralPath $buildRequirements -Pattern '^pyinstaller==([^\s]+)$'
+  Select-String -LiteralPath $buildLock -Pattern '^pyinstaller==([^\s\\]+)(?:\s+\\)?$'
 ).Matches.Groups[1].Value
 if ([string]::IsNullOrWhiteSpace($expectedPyInstallerVersion)) {
-  throw "requirements-build.txt must contain an exact pyinstaller==X.Y.Z pin."
+  throw "requirements-windows.lock.txt must contain an exact pyinstaller==X.Y.Z pin."
 }
 if ($pyInstallerVersion -ne $expectedPyInstallerVersion) {
   throw "PyInstaller version drift: expected $expectedPyInstallerVersion, got $pyInstallerVersion."

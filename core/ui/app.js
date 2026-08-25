@@ -891,14 +891,33 @@ function renderInlinePanel(title, message, badHash = null) {
   const screen = document.querySelector('[data-role="home-screen"]');
   if (!screen) return;
   screen.classList.remove('hidden');
-  screen.innerHTML = `
-    <div class="card">
-      <h2>${title}</h2>
-      <p>${message}</p>
-      ${badHash ? `<p><code>${badHash}</code></p>` : ''}
-      <p><a href="#/home">Back to Home</a></p>
-    </div>
-  `;
+  const card = document.createElement('div');
+  card.className = 'card';
+
+  const heading = document.createElement('h2');
+  heading.textContent = String(title ?? '');
+  card.append(heading);
+
+  const body = document.createElement('p');
+  body.textContent = String(message ?? '');
+  card.append(body);
+
+  if (badHash) {
+    const route = document.createElement('p');
+    const code = document.createElement('code');
+    code.textContent = String(badHash);
+    route.append(code);
+    card.append(route);
+  }
+
+  const navigation = document.createElement('p');
+  const back = document.createElement('a');
+  back.setAttribute('href', '#/home');
+  back.textContent = 'Back to Home';
+  navigation.append(back);
+  card.append(navigation);
+
+  screen.replaceChildren(card);
 }
 
 async function showNotFound(badHash) {
@@ -1145,4 +1164,3 @@ Otherwise the EULA is rendered as plain text inside a <pre> block.
 
   render();
 }
-

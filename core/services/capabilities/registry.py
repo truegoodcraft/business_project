@@ -27,6 +27,11 @@ from core.config.paths import STATE_DIR
 from core.version import VERSION
 
 def _state_dir() -> Path:
+    # Tests, managed launches, and operators may explicitly confine BUS Core
+    # state. Honor that boundary before falling back to legacy platform paths.
+    configured_home = os.environ.get("BUSCORE_HOME")
+    if configured_home:
+        return Path(configured_home).expanduser().resolve() / "state"
     # Windows: %LOCALAPPDATA%\BUSCore\state ; Others: ~/.tgc/state
     if os.name == "nt":
         return STATE_DIR

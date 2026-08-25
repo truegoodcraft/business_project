@@ -40,6 +40,9 @@ def _logs_dir() -> Path:
 
 
 def _state_dir() -> Path:
+    configured_home = os.environ.get("BUSCORE_HOME")
+    if configured_home:
+        return Path(configured_home).expanduser().resolve()
     if os.name == "nt":
         return APP_DIR
     return Path.home() / ".tgc"

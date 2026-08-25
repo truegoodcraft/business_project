@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Security and supply-chain hardening
+- Replaced route-hash, manufacturing-history, and Jobs error-message HTML interpolation with text-safe DOM construction and added hostile-payload regression tests.
+- Made capability, secret, settings, database, and configuration state honor explicit BUS Core runtime roots before legacy home-directory fallbacks; secret-file paths now resolve at use time so state cannot drift across roots.
+- Raised vulnerable dependency floors, added reviewed Python 3.12 Linux and Python 3.11 Windows hash locks, pinned the container base image by digest, and added grouped low-noise Dependabot updates.
+- Restored active Linux/Windows CI, made locked dependency audits blocking, SHA-pinned GitHub Actions, and narrowed publishing permissions to the jobs that require them.
+- Bumped the internal working revision to `1.4.1.1`; public `VERSION` remains `1.4.1` until an owner-approved release boundary.
+
 ## [1.4.1] - 2026-08-03
 
 ### Acknowledged minimal product signals and single-owner update checks

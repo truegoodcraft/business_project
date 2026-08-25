@@ -282,6 +282,7 @@ BUS Core runs locally and does not require network access for normal use.
 
 - Windows release builds are produced from `scripts/build_core.ps1` and `BUS-Core.spec`; `-Release` enables Authenticode signing and the verified release ZIP bundle.
 - Release mode requires the governed Python 3.11 build environment, the pinned PyInstaller toolchain, a current-user code-signing certificate matching the configured thumbprint, and Windows SDK `signtool`. Pass `-SignToolPath` when `signtool.exe` is not on `PATH`.
+- Runtime and release dependencies are installed from platform-specific, hash-locked graphs; see [`docs/dependency-management.md`](docs/dependency-management.md) for the governed refresh and verification procedure.
 - The build fails closed unless the onefile archive is complete, unsigned and signed launch smoke succeeds, the signer thumbprint and Authenticode signature verify, copied hashes match, and the final ZIP contains the expected executable and packaged documents.
 - Update checks are default-on / opt-out. The sidebar startup controller is the only automatic owner and requests `source=startup`; the backend runs at most one startup check per app launch and enforces both `updates.enabled` and `updates.check_on_startup`. Manual `source=manual` checks remain available regardless of those automatic-check settings.
 - Manual "Check now" remains available even when startup checks are disabled.
@@ -313,7 +314,6 @@ See `LICENSE` for details.
 [https://buscore.ca](https://buscore.ca/?src=github_readme_1)
 
 Maintained by True Good Craft (Canada)
-
 
 
 

@@ -138,10 +138,13 @@ def test_verified_ready_newer_current_only_is_ignored(monkeypatch: pytest.Monkey
     assert selection is None
 
 
-def test_verified_ready_newer_always_newest_launches(monkeypatch: pytest.MonkeyPatch):
+def test_verified_ready_newer_always_newest_launches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     launcher = _import_launcher(monkeypatch)
     future_version = _future_version(launcher)
-    future_exe = f"C:/cache/versions/{future_version}/BUS-Core.exe"
+    cache_root = tmp_path / "cache"
+    future_exe = cache_root / "versions" / future_version / "BUS-Core.exe"
+    future_exe.parent.mkdir(parents=True)
+    future_exe.write_bytes(b"verified")
     calls: list[tuple[str, int, bool]] = []
     monkeypatch.setattr(
         launcher,
@@ -151,7 +154,7 @@ def test_verified_ready_newer_always_newest_launches(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(
         launcher.update_cache,
         "cache_root",
-        lambda: Path("C:/cache"),
+        lambda: cache_root,
     )
     monkeypatch.setattr(
         launcher.update_cache,
@@ -159,20 +162,10 @@ def test_verified_ready_newer_always_newest_launches(monkeypatch: pytest.MonkeyP
         lambda _root, active_version: {
             "verified_ready": {
                 "version": future_version,
-                "exe_path": future_exe,
+                "exe_path": str(future_exe),
                 "sha256": "a" * 64,
             }
         },
-    )
-    monkeypatch.setattr(
-        launcher.Path,
-        "exists",
-        lambda self: str(self).replace("\\", "/") == future_exe,
-    )
-    monkeypatch.setattr(
-        launcher.Path,
-        "is_file",
-        lambda self: str(self).replace("\\", "/") == future_exe,
     )
 
     launched = launcher._maybe_handoff_to_verified_ready(
@@ -183,16 +176,19 @@ def test_verified_ready_newer_always_newest_launches(monkeypatch: pytest.MonkeyP
 
     assert launched is True
     assert len(calls) == 1
-    assert calls[0][0].replace("\\", "/") == future_exe
+    assert calls[0][0] == str(future_exe.resolve(strict=False))
     assert calls[0][1:] == (8765, False)
 
 
-def test_verified_ready_newer_ask_yes_attempts_launch(monkeypatch: pytest.MonkeyPatch):
+def test_verified_ready_newer_ask_yes_attempts_launch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     launcher = _import_launcher(monkeypatch)
     future_version = _future_version(launcher)
-    future_exe = f"C:/cache/versions/{future_version}/BUS-Core.exe"
+    cache_root = tmp_path / "cache"
+    future_exe = cache_root / "versions" / future_version / "BUS-Core.exe"
+    future_exe.parent.mkdir(parents=True)
+    future_exe.write_bytes(b"verified")
     calls: list[tuple[str, int, bool]] = []
-    monkeypatch.setattr(launcher.os, "name", "nt", raising=False)
+    monkeypatch.setattr(launcher, "os", types.SimpleNamespace(name="nt"))
     monkeypatch.setattr(
         launcher,
         "_ask_windows_use_verified",
@@ -206,7 +202,7 @@ def test_verified_ready_newer_ask_yes_attempts_launch(monkeypatch: pytest.Monkey
     monkeypatch.setattr(
         launcher.update_cache,
         "cache_root",
-        lambda: Path("C:/cache"),
+        lambda: cache_root,
     )
     monkeypatch.setattr(
         launcher.update_cache,
@@ -214,20 +210,10 @@ def test_verified_ready_newer_ask_yes_attempts_launch(monkeypatch: pytest.Monkey
         lambda _root, active_version: {
             "verified_ready": {
                 "version": future_version,
-                "exe_path": future_exe,
+                "exe_path": str(future_exe),
                 "sha256": "a" * 64,
             }
         },
-    )
-    monkeypatch.setattr(
-        launcher.Path,
-        "exists",
-        lambda self: str(self).replace("\\", "/") == future_exe,
-    )
-    monkeypatch.setattr(
-        launcher.Path,
-        "is_file",
-        lambda self: str(self).replace("\\", "/") == future_exe,
     )
 
     launched = launcher._maybe_handoff_to_verified_ready(
@@ -240,10 +226,15 @@ def test_verified_ready_newer_ask_yes_attempts_launch(monkeypatch: pytest.Monkey
     assert len(calls) == 1
 
 
-def test_verified_ready_newer_ask_no_does_not_launch(monkeypatch: pytest.MonkeyPatch):
+def test_verified_ready_newer_ask_no_does_not_launch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     launcher = _import_launcher(monkeypatch)
+    future_version = _future_version(launcher)
+    cache_root = tmp_path / "cache"
+    future_exe = cache_root / "versions" / future_version / "BUS-Core.exe"
+    future_exe.parent.mkdir(parents=True)
+    future_exe.write_bytes(b"verified")
     calls: list[tuple[str, int, bool]] = []
-    monkeypatch.setattr(launcher.os, "name", "nt", raising=False)
+    monkeypatch.setattr(launcher, "os", types.SimpleNamespace(name="nt"))
     monkeypatch.setattr(
         launcher,
         "_ask_windows_use_verified",
@@ -257,28 +248,18 @@ def test_verified_ready_newer_ask_no_does_not_launch(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(
         launcher.update_cache,
         "cache_root",
-        lambda: Path("C:/cache"),
+        lambda: cache_root,
     )
     monkeypatch.setattr(
         launcher.update_cache,
         "read_state",
         lambda _root, active_version: {
             "verified_ready": {
-                "version": "1.2.2",
-                "exe_path": "C:/cache/versions/1.2.2/BUS-Core.exe",
+                "version": future_version,
+                "exe_path": str(future_exe),
                 "sha256": "a" * 64,
             }
         },
-    )
-    monkeypatch.setattr(
-        launcher.Path,
-        "exists",
-        lambda self: str(self).replace("\\", "/") == "C:/cache/versions/1.2.2/BUS-Core.exe",
-    )
-    monkeypatch.setattr(
-        launcher.Path,
-        "is_file",
-        lambda self: str(self).replace("\\", "/") == "C:/cache/versions/1.2.2/BUS-Core.exe",
     )
 
     launched = launcher._maybe_handoff_to_verified_ready(
@@ -293,7 +274,7 @@ def test_verified_ready_newer_ask_no_does_not_launch(monkeypatch: pytest.MonkeyP
 
 def test_verified_ready_newer_ask_yes_launches(monkeypatch: pytest.MonkeyPatch):
     launcher = _import_launcher(monkeypatch)
-    monkeypatch.setattr(launcher.os, "name", "nt", raising=False)
+    monkeypatch.setattr(launcher, "os", types.SimpleNamespace(name="nt"))
 
     action, selection = launcher._decide_verified_launch_action(
         verified_launch_policy="ask",
@@ -308,7 +289,7 @@ def test_verified_ready_newer_ask_yes_launches(monkeypatch: pytest.MonkeyPatch):
 
 def test_verified_ready_newer_ask_no_keeps_current(monkeypatch: pytest.MonkeyPatch):
     launcher = _import_launcher(monkeypatch)
-    monkeypatch.setattr(launcher.os, "name", "nt", raising=False)
+    monkeypatch.setattr(launcher, "os", types.SimpleNamespace(name="nt"))
 
     action, selection = launcher._decide_verified_launch_action(
         verified_launch_policy="ask",
@@ -381,7 +362,7 @@ def test_launch_failure_falls_back_to_current(monkeypatch: pytest.MonkeyPatch):
 
 def test_non_windows_ask_defaults_to_current(monkeypatch: pytest.MonkeyPatch):
     launcher = _import_launcher(monkeypatch)
-    monkeypatch.setattr(launcher.os, "name", "posix", raising=False)
+    monkeypatch.setattr(launcher, "os", types.SimpleNamespace(name="posix"))
 
     action, selection = launcher._decide_verified_launch_action(
         verified_launch_policy="ask",

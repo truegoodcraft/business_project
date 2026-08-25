@@ -1,50 +1,59 @@
 name: CI
 
 on:
-  workflow_dispatch: {}
+  push:
+  pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-test:
-    if: ${{ false }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    name: Tests (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python-version: "3.12"
+            lockfile: requirements-linux.lock.txt
+          - os: windows-latest
+            python-version: "3.11"
+            lockfile: requirements-windows.lock.txt
+
+    env:
+      PYTHONUTF8: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: ${{ matrix.lockfile }}
 
-      - name: Install dependencies (best-effort)
+      - name: Install locked runtime and test tooling
         run: |
-          python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt || true; fi
-          pip install pytest
+          python -m pip install "pip==26.2.1"
+          python -m pip install --require-hashes -r "${{ matrix.lockfile }}"
+          python -m pip install "pytest==9.1.1"
+          python -m pip check
 
-      - name: Stamp SPDX headers (idempotent)
-        run: python tools/add_spdx_headers.py
+      - name: Compile Python sources
+        run: python -m compileall -q core tgc scripts launcher.py
 
-      - name: Check SPDX headers
-        run: python tools/check_spdx_headers.py
-
-      - name: Check plugin LICENSE files
-        run: python tools/check_licenses.py
-
-      - name: Run tests (if any)
-        run: |
-          if [ -d tests ]; then pytest -q; else echo "No tests/ directory"; fi
-
-      - name: Upload artifacts (logs/data)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: tgc-artifacts
-          path: |
-            logs/**
-            data/**
-          if-no-files-found: ignore
+      - name: Run tests
+        run: python -m pytest -q

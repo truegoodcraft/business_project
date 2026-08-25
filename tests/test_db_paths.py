@@ -40,7 +40,7 @@ def test_resolve_db_path_defaults_to_demo(tmp_path, monkeypatch):
     appdata_paths = importlib.reload(appdata_paths)
 
     assert appdata_paths.resolve_bus_mode() == "demo"
-    assert Path(appdata_paths.resolve_db_path()).name == "app_demo.db"
+    assert Path(appdata_paths.resolve_db_path()) == local_app_data / "BUSCore" / "app" / "app_demo.db"
 
 
 def test_resolve_bus_mode_priority_config_over_env_and_flag(tmp_path, monkeypatch):
