@@ -75,6 +75,8 @@ Current defaults are enabled `true` and disclosure acknowledged `false`, so noth
 - `context.release_channel`;
 - `context.os_category`.
 
+The HTTP request also carries `Content-Type: application/json` and `User-Agent: BUS-Core/<VERSION>`. The `User-Agent` is a product/version transport identifier, not authentication, a user or device identifier, or an additional payload field.
+
 No arbitrary business fields or persistent installation identifier can enter through the public emitter.
 
 Current implementation allowlist, with authority status made explicit:

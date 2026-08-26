@@ -112,7 +112,10 @@ def _default_sender(payload: dict[str, Any]) -> DeliveryResult:
         TELEMETRY_ENDPOINT,
         data=json.dumps(payload, separators=(",", ":")).encode("utf-8"),
         method="POST",
-        headers={"Content-Type": "application/json"},
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": f"BUS-Core/{VERSION}",
+        },
     )
     try:
         # B310 is a false positive here: Request receives the immutable, audited

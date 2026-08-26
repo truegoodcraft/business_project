@@ -158,3 +158,14 @@ def test_release_check_validates_current_canonical_chain():
     assert "BUS-Core-{0}.zip" in script and "Get-AuthenticodeSignature" in script, (
         "signed-release mode must independently assert the bundle and signer."
     )
+
+
+def test_governance_wrapper_rejects_an_unusable_repo_venv_before_fallback():
+    script = (REPO_ROOT / "scripts" / "governance-check.ps1").read_text(encoding="utf-8")
+
+    assert "Test-Path $python -PathType Leaf" in script
+    assert '& $python -c "import sys"' in script
+    assert "catch" in script and "$venvUsable = $false" in script
+    assert 'Get-Command "python" -CommandType Application -ErrorAction Stop' in script
+    assert "validate_version_governance.py" in script
+    assert "validate_change_trace.py" in script

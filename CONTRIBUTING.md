@@ -18,6 +18,10 @@ Behavior changes require implementation, focused tests, SOT, changelog, internal
 
 ## Validation
 
+Use the risk-based policy in [`docs/TESTING_POLICY.md`](docs/TESTING_POLICY.md) to select proportional tests after validation scope is approved. Ordinary local work should run the smallest checks that directly exercise the changed behavior; critical boundaries and release candidates escalate to the full chain. This local selection policy does not reduce the complete cross-platform gate run by active GitHub CI.
+
+Behavior changes require focused regression coverage. `scripts\governance-check.ps1` is the convenience wrapper for the two static validators below and falls back to an available `python` when the repository `.venv` launcher exists but cannot run.
+
 The static governance checks are:
 
 ```powershell
