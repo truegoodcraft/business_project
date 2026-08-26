@@ -54,9 +54,10 @@ Silent contract drift is a stability risk. The purpose of this document is not t
 | Method | Path | Status | Guard note | Purpose | Primary handler |
 | --- | --- | --- | --- | --- | --- |
 | `GET` | `/app/config` | Canonical | Token + `settings.read` | Read runtime UI/update/launcher config. | `core/api/routes/config.py` |
-| `POST` | `/app/config` | Canonical | Token + `settings.manage` + `require_writes` | Write runtime UI/update/launcher config. | `core/api/routes/config.py` |
-| `GET` | `/app/telemetry/status` | Canonical | Token + `settings.read` | Read local pending/acknowledged/rejected/dead-letter delivery diagnostics. | `core/api/routes/telemetry.py` |
-| `GET` | `/app/update/check` | Canonical | Token + `updates.check` | One-shot update check. | `core/api/routes/update.py` |
+| `POST` | `/app/config` | Canonical | Token + `settings.manage` + `require_writes` | Write runtime UI/update/launcher config. Telemetry fields can best-effort emit eligible startup milestones or clear pending/dead-letter contents. | `core/api/routes/config.py` |
+| `POST` | `/app/telemetry/preference` | Canonical current contract | Token + `settings.read`; deliberately no business write gate | Persist disclosure/preference; enable attempts eligible startup milestone emission, while disable blocks new emits/new flush starts and best-effort clears pending/dead-letter contents without cancelling an already in-flight request. | `core/api/routes/telemetry.py` |
+| `GET` | `/app/telemetry/status` | Canonical | Token + `settings.read` | Read local delivery snapshot without flushing or contacting Lighthouse. Pending is current queue length; acknowledgement/rejection/dead-letter counts are cumulative. | `core/api/routes/telemetry.py` |
+| `GET` | `/app/update/check` | Canonical public exception | No session/token/permission dependency for exact GET | Startup/manual non-staging discovery. A performed check writes request evidence and can change Lighthouse/product-event evidence; while the reported flag remains false, each performed check retries the best-effort config write. | `core/api/routes/update.py` |
 | `GET` | `/app/system/state` | Canonical | Token + `system.read` | Return bus mode, first-run, counts, build/schema status. | `core/api/routes/system_state.py` |
 | `POST` | `/app/system/start-fresh` | Canonical | Token + `system.admin` + `require_writes` | Switch demo -> prod and initialize fresh prod DB. | `core/api/routes/system_state.py` |
 | `GET` | `/app/users` | Canonical | Token + `users.read` | List DB-backed auth users without password hashes. | `core/api/routes/users.py` |
@@ -174,12 +175,12 @@ Silent contract drift is a stability risk. The purpose of this document is not t
 | `POST` | `/execTransform` | Canonical | Execute transform proposal path. | `core/api/http.py` |
 | `POST` | `/policy.simulate` | Canonical | Evaluate policy decision. | `core/api/http.py` |
 | `POST` | `/nodes.manifest.sync` | Canonical | Validate signed manifest payload. | `core/api/http.py` |
-| `GET` | `/transparency.report` | Canonical | Runtime transparency report. | `core/api/http.py` |
+| `GET` | `/transparency.report` | Canonical policy/path/plugin report with known telemetry drift | Current payload hardcodes telemetry off; it is not product-telemetry status authority. | `core/api/http.py` |
 | `GET` | `/logs` | Canonical | Return text runtime log tail. | `core/api/http.py` |
 | `GET` | `/local/available_drives` | Canonical | Enumerate local drives/mounts. | `core/api/http.py` |
 | `GET` | `/local/validate_path` | Canonical | Validate local directory path. | `core/api/http.py` |
 | `POST` | `/open/local` | Canonical | Open allow-listed local path in OS explorer. | `core/api/http.py` |
-| `POST` | `/app/update/stage` | Canonical | Manual trusted update staging behind session auth and write gate; prepares `verified_ready` only. | `core/api/routes/update.py` |
+| `POST` | `/app/update/stage` | Canonical | Manual trusted staging behind session auth, `updates.stage`, and the write gate; promotes consistent version+sha state into `verified_ready_versions` and updates legacy `verified_ready` as the compatibility/latest record and active older-state fallback. | `core/api/routes/update.py` |
 | `POST` | `/server/restart` | Canonical | Exit process for manual restart. | `core/api/http.py` |
 | `POST` | `/reader/local/resolve_ids` | Canonical | Map local paths -> reader IDs. | `core/reader/api.py` |
 | `POST` | `/reader/local/resolve_paths` | Canonical | Map reader IDs -> local paths. | `core/reader/api.py` |
@@ -217,7 +218,7 @@ Silent contract drift is a stability risk. The purpose of this document is not t
 
 | Hash route | Status | Screen / behavior | Main files |
 | --- | --- | --- | --- |
-| `#/home` | Canonical | Home dashboard with version badge and static guidance. | `core/ui/app.js`, `core/ui/js/cards/home.js` |
+| `#/home` | Canonical with known telemetry display drift | Home dashboard with version badge and static guidance; current Telemetry Off text is hardcoded and must not be used as status evidence. | `core/ui/app.js`, `core/ui/js/cards/home.js` |
 | `#/welcome` | Canonical | Onboarding/EULA/demo-mode entry flow. | `core/ui/app.js` |
 | `#/inventory` | Canonical | Inventory screen; supports `#/inventory/{id}`. | `core/ui/js/cards/inventory.js` |
 | `#/manufacturing` | Canonical | Manufacturing run screen. | `core/ui/js/cards/manufacturing.js` |
@@ -240,6 +241,7 @@ Silent contract drift is a stability risk. The purpose of this document is not t
 | Backup export via Settings -> Administration | Canonical | Uses encrypted `/app/db/export`; raw `/app/backup` and `/app.db` are not mounted. | `core/ui/js/cards/admin.js`, route inventory above |
 | Home dashboard transaction widgets | Removed | Endpoints exist as backend stubs, but the legacy widget is no longer mounted. | `core/api/routes/transactions.py` |
 | Dedicated `#/runs` and `#/import` screens | Drifted | Routes exist in SPA but render placeholders only. | `core/ui/app.js` |
+| First-run telemetry choice failure | Drifted | The disclosure catches preference-save failures and dismisses without an error; the unacknowledged preference can therefore prompt again on the next load. A click/dismissal is not persistence proof. | `core/ui/js/telemetry.js`, `core/api/routes/telemetry.py` |
 
 ## UI-to-API dependency map
 
@@ -253,7 +255,9 @@ Silent contract drift is a stability risk. The purpose of this document is not t
 | Recipes | `/app/items`, `/app/recipes`, `/app/recipes/{id}`, `/app/recipes` `POST`, `/app/recipes/{id}` `PUT|DELETE` |
 | Contacts | `/app/vendors?is_org=true`, `/app/vendors?is_vendor=true`, `/app/contacts?...`, `/app/contacts` `POST`, `/app/vendors/{id}` `PUT|DELETE`, `/app/contacts/{id}` `PUT|DELETE` |
 | Invoices | `/app/invoices`, `/app/invoices/{invoice_id}`, `/app/invoices/{invoice_id}/lines`, `/app/invoices/{invoice_id}/issue`, `/app/invoices/{invoice_id}/mark-paid`, `/app/invoices/{invoice_id}/void`, `/app/invoices/{invoice_id}/print` |
-| Settings | `/app/config`, `/app/update/check`, `/app/update/stage` |
+| App boot / disclosure | `/app/update/check?source=startup`, `/auth/state`, `/session/token`, `/app/config`, `/app/telemetry/preference` |
+| Settings | `/app/config`, `/app/telemetry/preference`, `/app/update/check?source=manual`, `/app/update/stage` |
+| No mounted UI consumer | `/app/telemetry/status` is an operator/API diagnostic only in the current UI. |
 | Settings/Admin | `/app/db/export`, `/app/db/exports`, `/app/db/import/upload`, `/app/db/import/preview`, `/app/db/import/commit` |
 | Security | `/auth/state`, `/auth/recovery-codes/regenerate`, `/app/users`, `/app/roles`, `/app/sessions`, `/app/sessions/{id}/revoke`, `/app/audit` |
 | Logs | `/app/logs?limit=...&cursor_id=...` |
@@ -262,9 +266,9 @@ Silent contract drift is a stability risk. The purpose of this document is not t
 ## Update UX and Handoff Notes
 
 - The Settings/sidebar update UX is a manual `Update` button, not a raw download-link primary action.
-- `GET /app/update/check` remains read-only and only reports update availability/state.
-- `POST /app/update/stage` performs the trusted staging chain and can return `verified_ready` plus restart guidance, but it does not force restart.
-- Launcher handoff to `verified_ready` happens only on next start, after DB ownership lock, and follows configured verified launch policy.
+- `GET /app/update/check` does not stage or launch artifacts, but a performed request is not evidence-neutral: it writes the request log, fetches the configured manifest, can change Lighthouse evidence, and may enqueue product telemetry. While the first-check flag remains false, each performed check retries the best-effort state write; after a write succeeds, later checks do not rewrite it.
+- `POST /app/update/stage` performs the trusted staging chain and can promote version+sha keyed `verified_ready_versions`, update legacy `verified_ready` as the compatibility/latest record, and return restart guidance; it does not force restart.
+- Launcher handoff evaluates the effective verified-ready record set only on next start, after DB ownership lock, and follows configured verified launch policy. The keyed map is current write authority, but valid legacy-only `verified_ready` state is merged/enumerated as an active compatibility fallback.
 - The running EXE is not overwritten; staged versions remain confined under the local update cache until a later launcher handoff.
 
 ## Contract-sensitive payloads
@@ -273,7 +277,9 @@ Silent contract drift is a stability risk. The purpose of this document is not t
 | --- | --- | --- |
 | `/session/token` | Canonical | Returns `{ token }` and sets session cookie. |
 | `/app/system/state` | Canonical | Returns `bus_mode`, `is_first_run`, `counts`, `basis`, `build.version`, `build.schema_version`, `status`. |
-| `/app/update/check` | Canonical | Accepts `source=startup|manual`; returns `current_version`, `latest_version`, `update_available`, `download_url`, `error_code`, `error_message`, `check_source`, `check_performed`, `skip_reason`. |
+| `/app/telemetry/preference` | Canonical current contract | Accepts exactly `{ enabled: bool }`; returns `ok` and `enabled`. Uses `settings.read` and intentionally bypasses the business write gate. |
+| `/app/telemetry/status` | Canonical | Returns enabled, current pending count, cumulative acknowledged/rejected/dead-letter counts, last success, latest attempted status, and last error category; fallback fields become null with `status_unavailable`. |
+| `/app/update/check` | Canonical public exception | Accepts `source=startup|manual`; returns `current_version`, `latest_version`, `update_available`, `download_url`, `error_code`, `error_message`, `check_source`, `check_performed`, `skip_reason`. Non-staging does not mean zero side effects. |
 | `/app/items*` | Canonical | Item rows include identity, unit/dimension, FIFO/on-hand display fields, vendor/location/type fields, and detail batch summary. |
 | `/app/recipes*` | Canonical | Uses `quantity_decimal` + `uom`; legacy quantity keys are rejected. |
 | `/app/manufacture` | Canonical | Requires `quantity_decimal` + `uom`; success returns `ok`, `status`, `run_id`, `output_unit_cost_cents`. |

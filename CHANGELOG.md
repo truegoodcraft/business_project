@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+No changes are recorded after the `1.4.2` release-preparation boundary.
+
+## [1.4.2] - 2026-08-26
+
+### Canonical analytics operations and documentation alignment
+- Added root `AGENTS.md` governance and a canonical `OPERATIONS.md` runbook for repeatable, side-effect-aware BUS Core, Lighthouse, and Agent Smith diagnosis with explicit access levels and `ACCESS_BLOCKED` reporting.
+- Documented the two independent Lighthouse fact streams, exact product-event acknowledgement and trigger-driven retry behavior, local telemetry state semantics, delivery-proof levels, known non-authoritative UI/report surfaces, and cross-service ownership boundaries.
+- Corrected the exact public `GET /app/update/check` contract and clarified that non-staging discovery still writes request evidence, performs an outbound fetch, can change Lighthouse evidence, may enqueue product telemetry, and retries best-effort first-check persistence on each performed check until a write succeeds.
+- Reconciled current manual signed staging and policy-controlled next-start handoff with stale historical/future wording, including the keyed ready-state write authority and active legacy-state fallback; corrected the development variable to `BUS_DEV`; and limited `/health` and `/transparency.report` diagnostic claims to implemented reality.
+- Reconciled API guard/write-gate documentation, including the SOT's narrow telemetry-preference exception, telemetry preference/status contracts, AppData lifecycle paths, legacy runbook guidance, and repository agent approval gates without changing runtime behavior.
+- Documented the release-trigger/manual-backfill distinction and deprecated manual `tag` input fallback, non-transactional R2/manifest publication order, main-push GHCR/wiki side effects, and the build gate's prior-output replacement, package-index, local-launch, certificate-provider, and timestamp-service interactions.
+- Scoped update-request privacy claims to Core-generated parameters, hardened the local JSON inspection recipe, and recorded unresolved code/SOT drift for repeatable restore/import events, silent first-run consent-save failure, packaged privacy/wiki/release-note text, and the separately owned `tgc-ops` compliance projection.
+- No runtime behavior, deployment, migration, publication, or external system changed in this documentation/governance bundle.
+
 ### Security and supply-chain hardening
 - Replaced route-hash, manufacturing-history, and Jobs error-message HTML interpolation with text-safe DOM construction and added hostile-payload regression tests.
 - Made capability, secret, settings, database, and configuration state honor explicit BUS Core runtime roots before legacy home-directory fallbacks; secret-file paths now resolve at use time so state cannot drift across roots.
@@ -12,7 +26,20 @@
 - Bounded restored scrypt password-hash parameters before expensive work and added Hypothesis properties for password hashes, root-confined paths and RIDs, signed manifests, ZIP entries, backup headers, and unit conversions.
 - Added separate hash-locked Linux/Windows test-tool graphs and dependency auditing for pytest and Hypothesis.
 - Added two bounded Linux Atheris harnesses for manifest parsing/trust and path/ZIP-entry validation, with deterministic CI runs, fail-closed invalid-Unicode handling, and a separately audited hash-locked fuzz-tool graph.
-- Bumped the internal working revision to `1.4.1.3`; public `VERSION` remains `1.4.1` until an owner-approved release boundary.
+- Prepared these security and supply-chain changes for the owner-approved `1.4.2` release boundary.
+
+### Release identity
+- Selected public version `1.4.2`, reset `INTERNAL_VERSION` to `1.4.2.0`, and synchronized governed runtime, package, Windows, SOT, UI cache-token, Home update-card, wiki, changelog, and release-note surfaces.
+- Expected public artifact name is `BUS-Core-1.4.2.zip`. Build, signing, commit, tag, GitHub release creation, Lighthouse/R2 mirroring, manifest publication, container publication, and deployment remain owner-controlled and are not performed by this preparation pass.
+
+### Known remaining work — not shipped in 1.4.2
+- Resolve the authority conflict for repeatable `restore_attempted`, `restore_completed`, `import_completed`, and `import_failed` telemetry events: either remove them as a code-conformance fix or approve a complete behavior/SOT/changelog/privacy/test contract change.
+- Replace Home and `/transparency.report` hardcoded telemetry-off claims with authoritative local status, and make first-run disclosure visibly retry or report a telemetry-preference save failure instead of silently dismissing.
+- Reconcile `license/PRIVACY.md` and its tests with implemented opt-out semantics: best-effort queue/dead-letter clearing, retained cumulative state, and inability to cancel an already in-flight sender request.
+- Correct stale code/test descriptions that call `GET /app/update/check` read-only or describe only three response fields / an active-install proxy; the implemented nine-field, evidence-mutating contract is already documented in the SOT and operator runbook.
+- Update the estate-owned `tgc-ops` projection and regenerate `TGC-COMPLIANCE.md` so its authority-document inventory includes the new governance and operations documents; do not hand-edit the generated snapshot in this repository.
+- Decide separately whether non-staging update discovery should require signed manifests, whether optional restart orchestration should be added, and whether the Docker lane needs a governed release-hardening process.
+- Review `buscore-site` privacy/support wording before any telemetry-behavior change so the native client, public pages, Lighthouse contract, and Agent Smith diagnostics remain synchronized across repositories.
 
 ## [1.4.1] - 2026-08-03
 

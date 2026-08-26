@@ -1,19 +1,30 @@
-# Windows Runbook: BUS Core Startup
+# Windows Runbook: Supported BUS Core Launch
 
-Use these commands to bootstrap and launch the BUS Core application on Windows.
+This is a launch guide, not a diagnostic procedure. Read root `AGENTS.md` and use `OPERATIONS.md` for read-only inspection.
+
+## Normal native launch
+
+From a prepared source environment:
 
 ```powershell
-# Ensure folders exist
-New-Item -ItemType Directory -Force -Path data | Out-Null
-New-Item -ItemType Directory -Force -Path data\journals | Out-Null
+python launcher.py
+```
 
-# Point DB to absolute path (avoids CWD surprises)
-$env:BUS_DB = (Resolve-Path .\data\app.db).Path
+`launcher.py` is the canonical native entry. It owns AppData directory preparation, database/app locking, runtime initialization/migrations, verified-update handoff policy, Uvicorn startup, tray lifecycle, and browser opening. Do not create repo-local data folders, point `BUS_DB` at a repo database, or invoke migration files manually as part of normal startup.
 
-# Apply migration
-python core/appdb/migrations/2025_11_30_int_measurements.py
+The packaged Windows executable uses the same launcher authority.
 
-# Launch the canonical native entry (visible console)
+## Explicit development launch
+
+Use development mode only when that runtime mutation is approved:
+
+```powershell
+$env:BUS_DEV = "1"
 python launcher.py --dev --port 8765
 ```
 
+Development mode exposes dev-only diagnostics and detailed errors. It does not bypass authentication, suppress update requests, suppress/reroute native product telemetry, or make startup read-only.
+
+## Operational warning
+
+Launching can acquire locks, initialize or migrate databases, seed demo state, index files, write logs/config/state, emit startup events, and start a telemetry flush. Never launch BUS Core solely to inspect Lighthouse or telemetry evidence. If the instance is not already running and runtime access was not approved, report `ACCESS_BLOCKED` instead.

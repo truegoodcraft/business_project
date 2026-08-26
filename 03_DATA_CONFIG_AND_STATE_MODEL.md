@@ -1,11 +1,11 @@
 # 03_DATA_CONFIG_AND_STATE_MODEL
 
 - Document purpose: Authority map for persistent, mutable, generated, and runtime state in BUS Core, with an emphasis on one durable authority per class of state.
-- Primary authority basis: `core/appdata/paths.py`, `core/appdb/engine.py`, `core/appdb/models.py`, `core/appdb/models_recipes.py`, `core/appdb/models_invoices.py`, `core/config/manager.py`, `core/api/routes/system_state.py`, `core/api/http.py`.
+- Primary authority basis: `core/appdata/paths.py`, `core/appdb/engine.py`, `core/appdb/models.py`, `core/appdb/models_recipes.py`, `core/appdb/models_invoices.py`, `core/config/manager.py`, `core/telemetry/client.py`, `core/runtime/update_cache.py`, `core/api/routes/system_state.py`, `core/api/http.py`.
 - Best use: Determine where state lives, which file or component owns it, and whether authority is canonical, split, or repo-local.
-- Refresh triggers: DB schema changes, path-helper changes, config-key changes, onboarding/first-run logic changes, state file relocations.
-- Highest-risk drift areas: Repo-local mutable state, mixed session state, ORM-vs-startup schema differences, invoice payment/inventory authority drift, and localStorage layered over backend first-run truth.
-- Key dependent files / modules: `core/appdata/paths.py`, `core/appdb/engine.py`, `core/appdb/models.py`, `core/appdb/models_recipes.py`, `core/appdb/models_invoices.py`, `core/config/manager.py`, `core/plugins/loader.py`, `core/api/routes/system_state.py`, `core/api/routes/invoices.py`.
+- Refresh triggers: DB schema changes, path-helper changes, config-key changes, telemetry queue/state semantics, update-cache changes, onboarding/first-run logic changes, state file relocations.
+- Highest-risk drift areas: Repo-local mutable state, mixed session state, malformed telemetry/update JSON being interpreted as defaults, ORM-vs-startup schema differences, invoice payment/inventory authority drift, and localStorage layered over backend first-run truth.
+- Key dependent files / modules: `core/appdata/paths.py`, `core/appdb/engine.py`, `core/appdb/models.py`, `core/appdb/models_recipes.py`, `core/appdb/models_invoices.py`, `core/config/manager.py`, `core/telemetry/client.py`, `core/runtime/update_cache.py`, `core/plugins/loader.py`, `core/api/routes/system_state.py`, `core/api/routes/invoices.py`.
 
 ## State Authority Matrix
 
@@ -16,7 +16,7 @@ Stability in this phase depends on one durable authority per class of state. Dur
 | Inventory, vendors/contacts, ledger, finance, recipes, manufacturing, invoices | DB-backed | Canonical | SQLite schema in `core/appdb/models.py`, `core/appdb/models_recipes.py`, and `core/appdb/models_invoices.py` | Main durable business state. |
 | DB path selection | Config/env-derived | Canonical | `core/appdata/paths.py::resolve_db_path()` | Uses `BUS_DB` override or bus mode. |
 | Bus mode (`demo` / `prod`) | File/env-backed | Canonical | `core/appdata/paths.py::resolve_bus_mode()` | Priority: `bus_mode.json`, env var, flag file, default. |
-| App runtime config | File-backed | Canonical | `%LOCALAPPDATA%\BUSCore\config.json` via `core/config/manager.py` | Single durable app-runtime authority for launcher, UI, backup, updates, write gate, and persisted policy fields. |
+| App runtime config | File-backed | Canonical | `%LOCALAPPDATA%\BUSCore\config.json` via `core/config/manager.py` | Single durable app-runtime authority for launcher, UI, backup, updates, telemetry consent, write gate, policy fields, and top-level `update_check_first_reported`. |
 | Legacy app-local config fallback | File-backed | Legacy | `%LOCALAPPDATA%\BUSCore\app\config.json` via compatibility reads in `core/config/manager.py` | Read-only fallback for recognized old keys (`writes_enabled`, `role`, `plan_only`) when canonical values are absent. |
 | Reader roots / Drive include settings | File-backed | Canonical | `%LOCALAPPDATA%\BUSCore\settings_reader.json` via `core/settings/reader_state.py` | Governs local FS and Drive provider behavior. |
 | Plugin enabled flags | Repo-local file-backed | Drifted | `data/settings_plugins.json` via `core/plugins/loader.py` | Live mutable state outside AppData; treat as drift/technical debt relative to the local durable authority model. |
@@ -27,6 +27,8 @@ Stability in this phase depends on one durable authority per class of state. Dur
 | UI theme variant | Browser localStorage | Presentation-only | `core/ui/js/theme.js`, `core/ui/js/cards/settings.js`, `core/ui/css/app.css` | Stored as `localStorage["bus.ui.themeVariant"]`; legacy `dark`, `system`, `current`, `default`, and `light` values are normalized client-side. Must not become backend config, auth, business, inventory, finance, or release-update authority. |
 | User accounts and identity state | DB-backed | Implemented as claimed-mode identity and management authority | `core/appdb/models_auth.py`, `core/auth/*` helpers, `core/api/routes/auth.py`, `core/api/routes/users.py`, and Security UI modules | Canonical state includes users, roles, permissions, sessions, recovery-code hashes, recovery-attempt counters, and audit events. `session_guard` uses auth user count to choose unclaimed vs claimed mode. User management can create/update/enable/disable users, assign roles, reset passwords, revoke sessions, regenerate recovery codes, and list audit events. Owner setup/user creation/password reset/recovery enforce a modest minimum password length. UI `localStorage` must not become auth, role, permission, recovery, or session authority. |
 | Capability manifest | File-backed generated state | Canonical | `%LOCALAPPDATA%\BUSCore\state\system_manifest.json` | Signed with local HMAC key. |
+| Product-telemetry delivery | Three local JSON files | Canonical local client evidence | `core/telemetry/client.py` under `%LOCALAPPDATA%\BUSCore\state` | State counters/milestones are cumulative; queue and dead-letter files are current bounded records. Writes are atomic per file, not transactional across files. |
+| Verified update cache | AppData directories + JSON state | Canonical manual staging/next-start evidence | `core/runtime/update_cache.py` under `%LOCALAPPDATA%\BUSCore\updates` | Raw JSON must be validated before interpretation; runtime fallback can mask malformed state as defaults. |
 
 ## Persistence model
 
@@ -79,11 +81,12 @@ This AppData tree is the intended durable local ownership boundary for Core-mana
 
 | Path | Status | Purpose |
 | --- | --- | --- |
-| `%LOCALAPPDATA%\BUSCore\config.json` | Canonical | Main app-runtime config for UI, launcher, updates, write gate, and persisted policy fields. |
+| `%LOCALAPPDATA%\BUSCore\config.json` | Canonical | Main app-runtime config for UI, launcher, updates, telemetry consent, write gate, policy fields, and top-level first-update-attempt state. |
 | `%LOCALAPPDATA%\BUSCore\app\config.json` | Legacy | Non-authoritative compatibility input for recognized pre-reconciliation keys only. |
-| `%LOCALAPPDATA%\BUSCore\state\telemetry_state.json` | Canonical local telemetry state | Acknowledged local milestone/version deduplication keys, cumulative acknowledgement/rejection/dead-letter counters, and last delivery status/error timestamps. Contains no business content and no identifier transmitted to Lighthouse. |
-| `%LOCALAPPDATA%\BUSCore\state\telemetry_queue.json` | Canonical pending-delivery state | Bounded strict-schema events retained until Lighthouse acknowledges the exact event ID. |
-| `%LOCALAPPDATA%\BUSCore\state\telemetry_dead_letter.json` | Canonical bounded failure state | Rejected or retry-exhausted strict-schema events retained locally for diagnosis and cleared with opt-out queue cleanup. |
+| `%LOCALAPPDATA%\BUSCore\state\telemetry_state.json` | Canonical local telemetry state | Acknowledged milestone/version deduplication keys, cumulative acknowledgement/rejection/dead-letter counters, and last delivery status/error timestamps. Retained across opt-out and has no time-based expiry; contains no business content or transmitted installation identifier. |
+| `%LOCALAPPDATA%\BUSCore\state\telemetry_queue.json` | Canonical pending-delivery state | At most 100 strict-schema records with attempt/eligibility state. Includes future-backoff records; retry is trigger-driven rather than continuously scheduled, and records have no time-based expiry. |
+| `%LOCALAPPDATA%\BUSCore\state\telemetry_dead_letter.json` | Canonical bounded failure state | Newest 100 rejected, queue-overflowed, or retry-exhausted records, with count-based but no time-based retention. Best-effort opt-out cleanup overwrites this file and the pending queue with empty arrays but retains cumulative state; file length need not equal `dead_letter_count`. |
+| `%LOCALAPPDATA%\BUSCore\updates\state.json` | Canonical update-cache state | Version/hash-keyed current verified-ready write authority plus legacy `verified_ready` compatibility/latest state, which remains an active valid older-state handoff fallback. Validate raw JSON before relying on an empty/default runtime view. |
 | `%LOCALAPPDATA%\BUSCore\app\bus_mode.json` | Canonical | Primary persisted bus mode selector. |
 | `%LOCALAPPDATA%\BUSCore\app\bus_mode.flag` | Legacy | Alternate bus mode source. |
 | `%LOCALAPPDATA%\BUSCore\app\app.db` | Canonical | Production DB. |
@@ -95,6 +98,10 @@ This AppData tree is the intended durable local ownership boundary for Core-mana
 | `%LOCALAPPDATA%\BUSCore\state\system_manifest.json` | Canonical | Signed capability manifest. |
 | `%LOCALAPPDATA%\BUSCore\state\capabilities_hmac.key` | Canonical | Capability-manifest signing key. |
 | Browser `localStorage["bus.ui.themeVariant"]` | Presentation-only | Selected UI theme variant; not backend state or business authority. |
+
+Telemetry JSON parse failures are treated by current runtime code as empty/default rather than quarantined. Starting BUS Core, emitting an event, or staging an update after a parse failure can overwrite diagnostic evidence. Direct diagnosis must validate raw JSON first and stop on malformed input.
+
+Telemetry state, queue, and dead-letter writes are atomic only per individual file. A crash or swallowed best-effort error can leave them temporarily inconsistent. Interpret current file lengths separately from cumulative counters and never infer acknowledgement from an empty queue alone.
 
 ### Repo-local mutable state
 
@@ -131,7 +138,7 @@ These files exist today, but they are not ideal durable authorities. They are be
 
 | Config authority | Status | Stored keys | Owner |
 | --- | --- | --- | --- |
-| `%LOCALAPPDATA%\BUSCore\config.json` | Canonical | `launcher.*`, `ui.theme`, `backup.default_directory`, `dev.writes_enabled`, `updates.*`, `policy.role`, `policy.plan_only` | `core/config/manager.py` |
+| `%LOCALAPPDATA%\BUSCore\config.json` | Canonical | `launcher.*`, `ui.theme`, `backup.default_directory`, `dev.writes_enabled`, `updates.*`, `telemetry.enabled`, `telemetry.disclosure_acknowledged`, `policy.role`, `policy.plan_only`, top-level `update_check_first_reported` | `core/config/manager.py` |
 | `%LOCALAPPDATA%\BUSCore\app\config.json` | Legacy compatibility input | Read-only fallback for `writes_enabled`, `role`, `plan_only` only when canonical values are absent | `core/config/manager.py` compatibility read path |
 | `%LOCALAPPDATA%\BUSCore\settings_reader.json` | Canonical | `enabled`, `local_roots`, `drive_includes.*` | `core/settings/reader_state.py` |
 | `config/policy.json` | Canonical | `version`, `mode`, `rules[]` | `core/runtime/policy.py` |

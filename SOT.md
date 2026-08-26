@@ -1,6 +1,6 @@
 # TGC BUS Core — Unified Source of Truth
 
-**Version:** v1.4.1 **Updated:** 2026-08-03 **Status:** Stable **Authority:** `core/version.py` is the version authority. Where this document and code disagree, update this document.
+**Version:** v1.4.2 **Updated:** 2026-08-26 **Status:** Stable **Authority:** `core/version.py` is the version authority. If this document, code, tests, or operator documentation disagree, stop and report the drift; do not silently choose an authority or rewrite intent. Conformance requires an owner-approved synchronized change bundle.
 
 ---
 
@@ -29,7 +29,7 @@
 * BUS Core Self-Managed is free, open-source, local or self-hosted, customer-operated, portable, and requires no subscription.
 * TGC Managed BUS is an optional paid, manually provisioned service for isolated hosting, browser access, authentication, updates, backups, monitoring, recovery, and bounded support. Its canonical public intake is `https://buscore.ca/managed-bus-inquiry`.
 * Managed BUS is not represented as a generally available production service until a working intake and credible single-customer deployment baseline exist.
-* Absolute "no telemetry" claims are retired. BUS Core v1.4.1 includes the Lighthouse schema-1.0 client with first-run disclosure, a settings control, meaningful opt-out, strict payload construction, a 100-event local queue, at most three delivery attempts, and fail-open operation. An event or milestone is complete only after Lighthouse acknowledges its exact event ID; pending, acknowledged, rejected, dead-letter, last-success, status, and error-category delivery diagnostics remain local. Outbound events contain no persistent installation identifier. Allowed product evidence is limited to first launch, once-per-version release adoption, startup/manual update checks, successful update staging, reliability, and one-time successful use of major product areas. Module opens, active-day signals, returning-installation measures, sessions, engagement, retention, and cross-day profiles are prohibited. Lighthouse 1.27.0 and migration 0015 are deployed and production-verified; any BUS Core tag or public release remains owner-controlled.
+* Absolute "no telemetry" claims are retired. BUS Core v1.4.2 includes the Lighthouse schema-1.0 client with first-run disclosure, a settings control, meaningful opt-out, strict payload construction, a 100-event local queue, at most three delivery attempts, and fail-open operation. Retry is trigger-driven rather than continuously scheduled, and shutdown does not flush or wait for the daemon delivery worker. An event or milestone is complete only after Lighthouse acknowledges its exact event ID; pending, acknowledged, rejected, dead-letter, last-success, status, and error-category delivery diagnostics remain local. Outbound events contain no persistent installation identifier. Allowed product evidence is limited to first launch, once-per-version release adoption, startup/manual update checks, successful update staging, reliability, and one-time successful use of major product areas. Module opens, active-day signals, returning-installation measures, sessions, engagement, retention, and cross-day profiles are prohibited. The schema-1.0 receiver/migration baseline was deployed and production-verified at Lighthouse 1.27.0 with migration 0015; Lighthouse's own SOT is authority for its current deployed version, and any BUS Core tag or public release remains owner-controlled.
 * Business content, including customer, supplier, employee, item, recipe, invoice, quantity, financial, document, raw database, filepath, and machine-fingerprint data, MUST NOT enter product telemetry.
 
 
@@ -82,6 +82,16 @@
 
 * Meaningful agent changes MUST also update `CHANGELOG.md`, this SOT when behavior/contracts/authority change, and any governance docs affected by version-policy changes.
 
+### Repository Governance and Operations Authority
+
+* Root `AGENTS.md` is the mandatory repository work-control entry point. It defines read order, approval gates, drift-stop behavior, cross-service boundaries, and required reporting.
+
+* Root `OPERATIONS.md` is the canonical repeatable diagnostic procedure subordinate to this SOT. Analytics or Lighthouse diagnosis MUST use its access levels, side-effect classifications, signal separation, `ACCESS_BLOCKED` procedure, and evidence report format.
+
+* Repository inspection does not authorize local AppData reads, runtime launch, loopback HTTP calls, outbound probes, tests, builds, commits, pushes, publication, deployment, or secret access. Those actions require explicit scope.
+
+* A friendly label such as "health," "status," "check," or HTTP `GET` does not establish zero mutation. Diagnostic actions MUST be classified from implementation effects before use.
+
 ### Security hardening traceability (RID boundary token)
 
 * RID/root-signature path token handling is treated as boundary-adjacent integrity logic because it participates in allowed-root path resolution used by runtime commit flows.
@@ -100,7 +110,7 @@
 
 * `scripts/validate_change_trace.py` is the hard traceability guard: if code/control surfaces change, both `CHANGELOG.md` and `core/version.py` MUST be in the same diff, and `INTERNAL_VERSION` MUST be bumped for meaningful repo changes.
 
-* `.github/workflows/security-audit.yml` is the canonical security-tooling workflow. It runs Bandit against `core`, `tgc`, `scripts`, and `launcher.py`; Medium/High findings fail CI while Low findings remain visible advisory output. It also runs `pip-audit` against `requirements.txt` in advisory mode until BUS Core has a fully pinned/locked audit input.
+* `.github/workflows/security-audit.yml` is the canonical security-tooling workflow. It runs Bandit against `core`, `tgc`, `scripts`, `fuzz`, and `launcher.py`; Medium/High findings fail CI while Low findings remain visible advisory output. Hash-locked Linux/Windows runtime, test, and fuzz dependency audits are blocking.
 
 ### User Accounts / Claimed Owner Security Model — Authorization Delta
 
@@ -138,9 +148,9 @@
 
 * `INTERNAL_VERSION` is not part of release tags, manifest generation, `latest.version`, update-check comparison logic, or any other strict SemVer validation path.
 
-* Release tags MUST equal `v{VERSION}`, and `.github/workflows/release-mirror.yml` machine-checks `tag == core/version.py::VERSION` and release tag target == current default-branch commit before publishing manifest metadata.
+* Release-triggered publication requires the release tag to equal `v{VERSION}` and resolve to the current default-branch commit; `.github/workflows/release-mirror.yml` machine-checks both conditions before publishing manifest metadata. An explicitly owner-approved manual `workflow_dispatch` is a historical-backfill exception: it runs current default-branch tooling, accepts canonical input `release_tag` or deprecated compatibility input `tag`, requires the resolved value to be strict `vX.Y.Z`, derives the mirrored version from it, and intentionally skips the release-trigger tag/`VERSION` and tag-target checks.
 
-* Published manifest `latest.version` MUST come from `core/version.py::VERSION`; tags remain a checked release boundary, not a second public version authority.
+* For release-triggered publication, manifest `latest.version` MUST come from `core/version.py::VERSION`. For the manual historical-backfill exception, `latest.version` comes from the validated requested release tag so an older existing release can be mirrored without changing the current checkout's `VERSION`.
 
 * `scripts/validate_version_governance.py` machine-checks the version mirrors, and `.github/workflows/governance-guard.yml` runs both governance validators on `push`, `pull_request`, and `workflow_dispatch`.
 
@@ -152,19 +162,23 @@
 
 * `.github/workflows/release-mirror.yml` is the manifest signing authority for release publication. It generates `stable.json`, signs it into `stable.signed.json` with `scripts/sign_manifest.py`, fails if GitHub secret `BUSCORE_MANIFEST_SIGNING_PRIVATE_KEY` is missing, verifies the signed manifest, and uploads the signed file as `manifest/core/stable.json`. Lighthouse serves/proxies the signed manifest but does not own signing authority.
 
+* Release-mirror publication is ordered but not transactional: it uploads the versioned R2 release asset before manifest signing/verification and the stable-manifest overwrite. A later failure can therefore leave a release object without a corresponding stable-manifest update. Manual historical dispatch can intentionally repoint stable `latest` to the requested older tag. Failure reconciliation, deletion, or republishing is a separate production mutation and requires explicit owner approval; automation MUST NOT improvise rollback.
+
 * Allowed Core update channels are `stable`, `test`, `partner-3dque`, `lts-1.1`, and `security-hotfix`. Non-stable channels MUST require an explicit channel-specific manifest entry and MUST NOT silently fall back to a public channel-less stable/latest manifest.
 
 * Current and future manifests MUST preserve backward compatibility for deployed Core clients by keeping top-level `latest.version` and `latest.download.url`. Additive metadata, a `channels` map, and the top-level embedded `signature` object are allowed, and `channels.stable` SHOULD mirror top-level `latest` unless a release owner intentionally documents a divergence.
 
 * Manifest authenticity support uses Ed25519. Embedded manifest signatures cover deterministic canonical JSON of the manifest with the top-level `signature` removed. The production public manifest key is pinned in Core with key ID `bus-core-prod-ed25519-2026-04-25`; the private signing key MUST NOT be committed and currently lives only in the GitHub secret `BUSCORE_MANIFEST_SIGNING_PRIVATE_KEY`.
 
-* Client-side signed-manifest enforcement is required for manual update staging (`POST /app/update/stage`) and remains off for read-only update checks. Unsigned manifest compatibility is intentionally preserved only for discovery/check behavior, not for artifact staging.
+* Client-side signed-manifest enforcement is required for manual update staging (`POST /app/update/stage`) and remains off for non-staging update discovery. Unsigned manifest compatibility is intentionally preserved only for discovery/check behavior, not for artifact staging. A performed check is not evidence-neutral: it makes an outbound request and can change request logs plus Lighthouse and optional product-telemetry evidence. While `update_check_first_reported` remains false, each performed check sends `first_check=true` and retries the best-effort config write; only after a write succeeds do later checks send false and stop rewriting it.
 
-* This release is an update-chain hardening bridge release. Manual staging requires trusted signed manifest metadata, hash-verifies downloaded ZIP artifacts against manifest `sha256` metadata while enforcing declared size when present, safely extracts hash-verified ZIPs into the local update cache, verifies EXE Authenticode/publisher/thumbprint trust, and promotes only consistent version+sha keyed `verified_ready_versions` state. Legacy `verified_ready` remains only a compatibility/latest pointer. It still does not force restart or auto-apply an update while Core is running.
+* This release is an update-chain hardening bridge release. Manual staging requires trusted signed manifest metadata, hash-verifies downloaded ZIP artifacts against manifest `sha256` metadata while enforcing declared size when present, safely extracts hash-verified ZIPs into the local update cache, verifies EXE Authenticode/publisher/thumbprint trust, and promotes only consistent version+sha keyed `verified_ready_versions` state. `verified_ready` is the legacy compatibility/latest record: current validation merges a valid legacy record into the effective keyed view, and launcher enumeration still accepts legacy-only state as a handoff fallback. It still does not force restart or auto-apply an update while Core is running.
 
 * BUS Core has a DB/app ownership lock that prevents multiple live owners of the same DB/app root. Launcher preflight blocks duplicate native launches before browser open / uvicorn bind, and the app-level lock remains defense-in-depth. Verified version handoff is evaluated after DB ownership lock on next start, scans verified-ready records, filters to versions newer than the running `VERSION`, and chooses the newest eligible SemVer candidate according to the configured launch policy.
 
-* `scripts/build_core.ps1` remains the canonical local Windows build script. Without release flags it builds the onefile EXE, keeps `dist/BUS-Core.exe`, and copies the versioned EXE to `dist/BUS-Core-<VERSION>.exe`.
+* `scripts/release-check.ps1` is the governed clean Windows validation/evidence entry point. It creates a temporary Python 3.11 environment, may contact configured package indexes while installing hash-locked runtime/test inputs, runs compilation, tests, governance checks, isolated local launch smoke, and then invokes `scripts/build_core.ps1`. Default mode produces an unsigned developer build; `-Release` is separately approval-gated signing/bundling work that accesses the Windows certificate provider and configured timestamp service.
+
+* `scripts/build_core.ps1` remains the canonical underlying local Windows build implementation. It installs its governed build graph when needed and recursively replaces existing repository `build/` and `dist/` outputs only after environment validation, so an approved build must include an explicit preserve/discard decision for prior artifacts. Without release flags it builds the onefile EXE, keeps `dist/BUS-Core.exe`, and copies the versioned EXE to `dist/BUS-Core-<VERSION>.exe`.
 
 * `scripts/build_core.ps1 -Release` is the current release-mode build path: it builds the versioned EXE, signs only `dist/BUS-Core-<VERSION>.exe`, verifies the Authenticode result internally, verifies the signer thumbprint against `55474AA9A2D562022A6590D487045E069457F985`, and bundles the canonical public ZIP `dist/BUS-Core-<VERSION>.zip`.
 
@@ -366,7 +380,7 @@
 
 * Sensitive `/app/*` reads MUST declare an explicit route-local session-token dependency unless the route is intentionally documented as public.
 
-* Sensitive `/app/*` mutations MUST declare explicit route-local session-token and write-gate dependencies. Global session middleware remains defense-in-depth, not the only authority.
+* Sensitive `/app/*` mutations MUST declare explicit route-local session-token and write-gate dependencies. The sole current narrow exception is `POST /app/telemetry/preference`: it requires the mode-appropriate session plus `settings.read` but intentionally omits the business write gate so a user can always record disclosure/opt out. This exception does not generalize to other mutations; generic `POST /app/config` remains `settings.manage` plus write-gated. Global session middleware remains defense-in-depth, not the only authority.
 
 * Owner commit enforcement MUST be added only where the existing domain policy requires it; adding owner commit to a domain that did not previously require it is a behavior/authority change.
 
@@ -464,13 +478,15 @@
 
 
 *
-**Update-check outbound params:** The outbound update-check request to Lighthouse appends three aggregate-safe query params to `updates.manifest_url`: `current_version` (runtime `VERSION`, omitted if not strict SemVer), `channel` (validated low-cardinality lane, falling back to `stable`), and installation-level `first_check` (`true` on the first check for the local profile, `false` thereafter, never reset for a version, and backed by `update_check_first_reported`). Pre-existing manifest-URL query params are preserved and app-provided values win on key collision. The request MUST NOT carry any identity — no install/device/user id, hostname, username, machine fingerprint, or dedupe/persistent-client token — consistent with Lighthouse's aggregate-only, no-identity posture.
+**Update-check outbound params:** The outbound update-check request to Lighthouse appends three aggregate-safe query params to `updates.manifest_url`: `current_version` (runtime `VERSION`, omitted if not strict SemVer), `channel` (validated low-cardinality lane, falling back to `stable`), and installation-level `first_check` (`true` while the local `update_check_first_reported` flag remains false, `false` after successful persistence, and never reset for a version). Pre-existing manifest-URL query params are preserved and app-provided values win on key collision. Core-generated parameters MUST NOT carry identity — no install/device/user id, hostname, username, machine fingerprint, or dedupe/persistent-client token. Because operator-configured URL userinfo and unrelated query parameters are not prohibited/sanitized, operators MUST treat them as trust-sensitive outbound data; the Core-generated-field privacy guarantee does not authorize those extras.
 
 **Update-check response diagnostics:** The normalized six release fields remain present and are joined by `check_source`, `check_performed`, and nullable `skip_reason`. These distinguish actual manual/startup requests from policy skips and same-launch duplicate startup calls; they do not add outbound identity or change the installation-level `first_check` flag.
 
+**Update-check access and side effects:** Exact `GET /app/update/check` is intentionally public in the current runtime and has no route-local permission dependency. A performed check writes the request log, performs the configured outbound manifest request, and may enqueue product telemetry when consent is effective. Whenever the local flag still reads false, Core sends `first_check=true` and makes a best-effort `update_check_first_reported` write after the attempt, even on request error. A successful write makes later checks send false without rewriting; a failed write causes a later performed check to send true and retry persistence. Manual checks always run regardless of automatic update settings. Under the current Lighthouse contract, extra configured query parameters can still return a manifest while producing zero route count, and a custom manifest host produces no Lighthouse route count. This route MUST NOT be used as a passive health or analytics probe.
+
 
 *
-**Manual download only:** BUS Core does not auto-download, auto-install, stage, run, or apply update artifacts.
+**Artifact action boundary:** BUS Core does not automatically download, install, stage, run, or apply update artifacts. Explicit user-triggered `POST /app/update/stage` performs trusted staging, and the launcher may hand off to a verified newer executable on a later start according to configured policy.
 
 
 *
@@ -478,11 +494,9 @@
 
 
 *
-**Manifest validation and authenticity:** Supported manifest shapes are legacy direct stable manifests, canonical top-level `latest`, `channels.<channel>`, top-level channel-keyed entries, signature envelopes, and backward-compatible embedded signatures. Stable remains backward-compatible with top-level `latest.version` and `latest.download.url`. Non-stable channels require an explicit channel-specific entry and must not fall back to channel-less public stable/latest metadata. Optional artifact metadata (`sha256`, `size_bytes`, `release_notes_url`, `signature_url`, artifact kind/type/platform, publisher, signer) is shape-validated when present. Ed25519 verification and deterministic JSON canonicalization exist, including embedded top-level signatures that cover the manifest with `signature` removed. Manual update staging requires a trusted signed manifest; read-only update check does not yet require signatures.
+**Manifest validation and authenticity:** Supported manifest shapes are legacy direct stable manifests, canonical top-level `latest`, `channels.<channel>`, top-level channel-keyed entries, signature envelopes, and backward-compatible embedded signatures. Stable remains backward-compatible with top-level `latest.version` and `latest.download.url`. Non-stable channels require an explicit channel-specific entry and must not fall back to channel-less public stable/latest metadata. Optional artifact metadata (`sha256`, `size_bytes`, `release_notes_url`, `signature_url`, artifact kind/type/platform, publisher, signer) is shape-validated when present. Ed25519 verification and deterministic JSON canonicalization exist, including embedded top-level signatures that cover the manifest with `signature` removed. Manual update staging requires a trusted signed manifest; non-staging discovery does not yet require signatures.
 
 
-*
-**Trusted manifest key policy:** Core pins production manifest public key ID `bus-core-prod-ed25519-2026-04-25`. Public keys are safe to commit; private manifest signing keys must stay outside the repo. Release signing currently uses GitHub secret `BUSCORE_MANIFEST_SIGNING_PRIVATE_KEY`.
 *
 **Trusted manifest key policy:** Core pins production manifest public key ID `bus-core-prod-ed25519-2026-04-25`. Public keys are safe to commit; private manifest signing keys must stay outside the repo. Release signing currently uses GitHub secret `BUSCORE_MANIFEST_SIGNING_PRIVATE_KEY`.
 *
@@ -490,15 +504,7 @@
 
 
 *
-**Local update cache/state lifecycle:** `%LOCALAPPDATA%\BUSCore\updates\` is the update cache root with `manifests\`, `downloads\`, and `versions\` subdirectories plus `updates\state.json`. `hash_verified` means a downloaded ZIP in `updates\downloads\` matched signed manifest `declared_sha256` metadata and optional declared size when present. `extracted` means that same `hash_verified` ZIP was safely unpacked into `updates\versions\<version>\` and exactly one EXE candidate path was recorded. `exe_verified` means the extracted EXE passed Authenticode/publisher/thumbprint trust checks. `verified_ready_versions` is keyed by version and sha256 and is written only when `hash_verified`, `extracted`, and `exe_verified` agree and confined cache files still exist. Legacy `verified_ready` is only a compatibility/latest pointer.
-
-*
-**Backward-compatible manifest requirement:** Public manifests must keep top-level `latest.version` and `latest.download.url` so existing deployed BUS Core clients can still detect a newer version and open the Lighthouse-provided download link. Channel-aware and metadata-rich fields must remain additive.
-
-
-*
-**Local update cache/state lifecycle:** `%LOCALAPPDATA%\BUSCore\updates\` is the update cache root with `manifests\`, `downloads\`, and `versions\` subdirectories plus `updates\state.json`. `hash_verified` means a downloaded ZIP in `updates\downloads\` matched signed manifest `declared_sha256` metadata and optional declared size when present. `extracted` means that same `hash_verified` ZIP was safely unpacked into `updates\versions\<version>\` and exactly one EXE candidate path was recorded. `exe_verified` means the extracted EXE passed Authenticode/publisher/thumbprint trust checks. `verified_ready_versions` is keyed by version and sha256 and is written only when `hash_verified`, `extracted`, and `exe_verified` agree and confined cache files still exist. Legacy `verified_ready` is only a compatibility/latest pointer.
-
+**Local update cache/state lifecycle:** `%LOCALAPPDATA%\BUSCore\updates\` is the update cache root with `manifests\`, `downloads\`, and `versions\` subdirectories plus `updates\state.json`. `hash_verified` means a downloaded ZIP in `updates\downloads\` matched signed manifest `declared_sha256` metadata and optional declared size when present. `extracted` means that same `hash_verified` ZIP was safely unpacked into `updates\versions\<version>\` and exactly one EXE candidate path was recorded. `exe_verified` means the extracted EXE passed Authenticode/publisher/thumbprint trust checks. `verified_ready_versions` is the version+sha keyed current write authority and is written only when `hash_verified`, `extracted`, and `exe_verified` agree and confined cache files still exist. Legacy `verified_ready` is the compatibility/latest record and remains an active read/handoff fallback: validation merges a valid record into the effective keyed view, enumeration includes a non-duplicate legacy record, and exact lookup falls back to it.
 
 *
 **Background behavior:** There is no hidden periodic update polling loop and no `localStorage` stale/success timestamp tracking for update checks.
@@ -507,7 +513,9 @@
 *
 **UI:** Non-blocking banner appears if an update is found.
 
-#### Phase 0A Behavior Correction (2026-04-24)
+#### Historical Phase 0A Behavior Correction (2026-04-24)
+
+> Historical record only. Statements in this phase describe the implementation at that date and are superseded where they conflict with the current staging and next-start handoff authority above and in Secure Update Foundation.
 
 * `UpdatesConfig.enabled` is now default-on (`true`) when missing; `updates.check_on_startup` remains default-on when missing.
 
@@ -519,25 +527,25 @@
 
 * This correction did not add auto-update behavior. Later bridge work added internal ZIP hash verification plus safe extraction helpers, but it still did not add executable trust verification, verified-ready promotion, handoff, or UI-driven update application.
 
-#### Phase 1-3 Bridge Hardening (2026-04-24)
+#### Historical Phase 1-3 Bridge Hardening (2026-04-24)
 
 * Phase 1 made update channel and manifest URL behavior explicit and policy-validated without changing Lighthouse, Docker, release automation, or update installation behavior.
 
-* Phase 2 added manifest schema validation while preserving legacy stable/current `latest.version` + `latest.download.url` compatibility and the six-field `/app/update/check` response.
+* At that time, Phase 2 added manifest schema validation while preserving legacy stable/current `latest.version` + `latest.download.url` compatibility and the then-six-field `/app/update/check` response. The current nine-field response and route boundary are governed above.
 
 * Phase 3 added internal `ManifestRelease` carry-forward for declared artifact metadata so future verification can use already-validated manifest values.
 
 * Phase 3 fix restored the public API error-code contract: policy-blocked localhost/private/link-local/loopback/unspecified manifest URLs return `manifest_url_not_allowed`, while malformed URLs and bad schemes remain `invalid_manifest_url`.
 
-* Remaining update-chain work includes safe handoff/launch behavior, any future decision about requiring signed manifests for read-only update checks, Docker release hardening if that lane becomes release-governed, and preserving DB ownership/single-instance control before any staged/apply update path.
+* At the time of this historical phase, remaining work included safe handoff/launch behavior and executable trust verification. That work was later implemented for explicit manual staging and policy-controlled next-start handoff; only the historical context is retained here.
 
-* This bridge release still performs no auto-download, no auto-install, no executable launch, and no handoff. Artifact download and extraction exist only as internal helpers; executable trust verification is still incomplete.
+* The still-current limitation is no automatic download, install, startup staging, forced restart, or silent apply. Current manual staging and next-start handoff behavior is governed by the authority above, not by this historical phase snapshot.
 
 #### Secure Update Foundation (2026-04-25)
 
 * DB/app ownership locking prevents two live BUS Core owners from using the same DB/app root. Launcher preflight blocks a duplicate native instance before browser open / uvicorn bind, and the app-level lock remains defense-in-depth.
 
-* The update cache/state model now supports conservative `hash_verified`, `extracted`, `exe_verified`, and version+sha keyed `verified_ready_versions` stages under `%LOCALAPPDATA%\BUSCore\updates\state.json`. `verified_ready_versions` records are written only after ZIP hash, safe extraction, EXE trust, version/channel/hash/path consistency, and confined-file existence checks succeed; legacy `verified_ready` remains a compatibility/latest pointer.
+* The update cache/state model now supports conservative `hash_verified`, `extracted`, `exe_verified`, and version+sha keyed `verified_ready_versions` stages under `%LOCALAPPDATA%\BUSCore\updates\state.json`. `verified_ready_versions` records are written only after ZIP hash, safe extraction, EXE trust, version/channel/hash/path consistency, and confined-file existence checks succeed; legacy `verified_ready` remains the compatibility/latest record and an active read/handoff fallback for valid older state.
 
 * Manifest authenticity primitives support Ed25519 signatures, deterministic canonical JSON, signature envelopes, and embedded top-level signatures. Embedded signatures preserve public compatibility by keeping top-level `latest.version` and `latest.download.url`; the signature covers canonical JSON after removing top-level `signature`.
 
@@ -547,7 +555,7 @@
 
 * Internal helpers can download a ZIP into `updates\downloads\`, verify SHA256 and optional declared size against signed manifest metadata, then safely extract that ZIP into `updates\versions\<version>\` through a temporary extraction directory while rejecting unsafe archive contents and zero/multiple EXE candidates.
 
-* Enforcement is deliberately scoped: read-only update check keeps unsigned manifest compatibility, but manual update staging requires trusted signed manifests and verifies ZIP hash, safe extraction, EXE Authenticode/publisher/thumbprint trust, and `verified_ready` consistency before restart guidance. Forced restart/auto-apply behavior remains out of scope.
+* Enforcement is deliberately scoped: public non-staging update discovery keeps unsigned manifest compatibility, but manual update staging requires trusted signed manifests and verifies ZIP hash, safe extraction, EXE Authenticode/publisher/thumbprint trust, and `verified_ready` consistency before restart guidance. Forced restart/auto-apply behavior remains out of scope.
 
 
 
@@ -564,7 +572,7 @@
 
 ## 9. Security & Diagnostics
 
-* **Session Authority:** `GET /session/token` is the canonical session bootstrap surface. It returns the current token and sets the `bus_session` cookie. Non-public routes require that cookie via the global session guard.
+* **Session Authority:** `GET /session/token` is unclaimed-mode compatibility: while zero auth users exist it returns the current token and sets `bus_session`. Once claimed, it returns `login_required`; protected routes require a valid DB-backed `bus_auth_session`. Exact public exceptions, including `GET /app/update/check`, bypass the global session requirement.
 
 * **Validator Authority:** `core.api.http` (`session_guard`, `validate_session_token`, `require_token_ctx`) is the canonical protected-route validator. `tgc.security.require_token_ctx` is a compatibility wrapper and must delegate to the canonical path.
 
@@ -579,13 +587,31 @@
 
 
 * 
-**Telemetry boundary:** Business analytics remain local to the SQLite DB. BUS Core v1.4.1's optional product client emits only Lighthouse-allowlisted first-launch, release/update, first-success, and reliability event names with the exact schema-1.0 common context. It emits no persistent installation identifier, module opens, active-day signals, sessions, engagement, retention, or cross-day profile. It is disclosed, controllable, meaningfully optional, bounded, non-blocking, and prohibited from accepting business content. Lighthouse 1.27.0 and migration 0015 are deployed and production-verified; this BUS Core client release remains owner-controlled.
+**Telemetry boundary:** Business analytics remain local to the SQLite DB. BUS Core v1.4.2's optional product client is authorized to emit only Lighthouse-allowlisted first-launch, release/update, first-success, and reliability event names with the exact schema-1.0 common context. It emits no persistent installation identifier, module opens, active-day signals, sessions, engagement, retention, or cross-day profile. It is disclosed, controllable, meaningfully optional, bounded, non-blocking, and prohibited from accepting business content. The schema-1.0 receiver/migration baseline was deployed and production-verified at Lighthouse 1.27.0 with migration 0015; Lighthouse's own SOT remains authority for its current deployed version, and this BUS Core client release remains owner-controlled.
+
+### Analytics Operations Contract
+
+* **Signal separation:** Update-route `GET` evidence and schema-1.0 product-event `POST` evidence are independent. They MUST NOT be added, substituted, or interpreted as people, authenticated clients, unique installations, adoption, engagement, retention, or per-install completeness.
+
+* **Consent and destination:** Product delivery targets the immutable current endpoint `https://lighthouse.buscore.ca/telemetry/v1/events` and requires both `telemetry.enabled` and `telemetry.disclosure_acknowledged`. `BUS_DEV=1`, release channel, a custom update-manifest URL, and the public-site `dev_mode` cookie do not suppress or reroute the native product client.
+
+* **Local state:** `%LOCALAPPDATA%\BUSCore\state\telemetry_state.json`, `telemetry_queue.json`, and `telemetry_dead_letter.json` are the local delivery authorities. State counters are cumulative; queue/dead-letter file lengths are current retained records, and there is no time-based expiry. Disabling telemetry blocks new emits/new flush starts and retains state counters/milestones while attempting best-effort replacement of queue and dead-letter contents with empty arrays; it does not cancel a sender request already in flight.
+
+* **Acknowledgement and retry:** Success requires HTTP 2xx plus the exact event ID in `acknowledged_event_ids`. Retry is trigger-driven: a worker processes currently eligible events and does not schedule itself to wake for future eligibility. A later emit, startup, or explicit internal flush is required. Shutdown does not flush or join the daemon worker.
+
+* **Status route:** `GET /app/telemetry/status` requires the mode-appropriate session and `settings.read`. It reads local delivery state without flushing or contacting Lighthouse, but every HTTP request is logged and claimed auth may touch session activity. Its counts/status are local evidence, not a live receiver probe.
+
+* **Diagnostic access:** Repository reads are the zero-mutation default. Direct AppData reads require explicit local-state scope. Starting Core is never a passive diagnostic because startup can initialize/migrate/index, log, emit milestones, and start a flush. `GET /app/update/check`, telemetry preference writes, internal flushes, and update staging MUST NOT be used as passive probes.
+
+* **Known telemetry drift:** Home and `/transparency.report` currently hardcode telemetry off and are not telemetry authorities. The first-run disclosure silently dismisses after a preference-save failure and can reappear later. Current code also allowlists and emits repeatable `restore_attempted`, `restore_completed`, `import_completed`, and `import_failed` outcomes that are outside the SOT-authorized signal set above. `/health` proves only process reachability and public version. These implementation defects/authority conflicts remain explicit drift for a separate owner-approved code/SOT/changelog/version/test/privacy bundle; this documentation pass does not authorize the extra events.
+
+* **Diagnostic procedure:** `OPERATIONS.md` is the required access, side-effect, delivery-proof, `ACCESS_BLOCKED`, and morning-alert runbook for this contract.
 
 
 * 
 **Diagnostic Instrumentation Policy:** Temporary diagnostic instrumentation (e.g., debug prints, route dumps) MUST NOT exist in production code. Debug-only tracking variables must be removed before merge.
 
-* **Swallowed Exception Policy:** Empty `except: pass` handlers are not allowed by default. Intentional non-fatal handlers are limited to best-effort cleanup, optional platform/UI behavior, cache invalidation, telemetry-free journal side effects, config/tracker cleanup, and migration/compatibility fallbacks; each must use a narrow exception type where practical plus safe type-only logging or an explanatory comment. Raw exception details, sensitive paths, secrets, tokens, passwords, and DB URLs must not be returned to clients or logged from these paths. Security/auth/write/restore/update failures must fail closed or return controlled errors unless the failure is explicitly non-critical cleanup or an already-missing resource condition.
+* **Swallowed Exception Policy:** Empty `except: pass` handlers are not allowed by default. Intentional non-fatal handlers are limited to best-effort cleanup, optional platform/UI behavior, cache invalidation, telemetry-free journal side effects, config/tracker cleanup, and migration/compatibility fallbacks; each must use a narrow exception type where practical plus safe type-only logging or an explanatory comment. Raw exception details, sensitive paths, secrets, tokens, passwords, and DB URLs must not be returned to clients or logged from these paths. Security/auth/write/restore/update failures must fail closed or return controlled errors unless the failure is explicitly non-critical cleanup or an already-missing resource condition. Best-effort telemetry opt-out cleanup failure MUST NOT permit new emits or new flush starts, but an already in-flight sender request is not cancelled and the preference response is not proof that pending/dead-letter clearing writes succeeded.
 
 
 
@@ -1405,7 +1431,7 @@ Release-agent validation for this delta is complete when:
 - Canonical smoke harness is run via `scripts/smoke.ps1` in a suitable Windows/PowerShell-capable environment and results are attached.
 - Spot-check confirms no reintroduction of UoM defaulting in action flows and no header-clobber behavior in the httpx shim.
 
-> **Historical record note (2026-07-24):** The following Lighthouse v1 delta is preserved as implementation history. Its aggregate-only storage model, prohibition on persistent installation identifiers, and prohibition on behavioral profiles align with the current product/privacy boundary near the top of this SOT. Exact event-ID acknowledgements and bounded local/remote deduplication are delivery integrity, not authority to build per-installation histories.
+> **Historical record note (2026-07-24):** The following Lighthouse v1 delta is preserved as implementation history. Current authority is the product/privacy boundary near the top of this SOT plus the Analytics Operations Contract and `OPERATIONS.md`. Later exact event-ID acknowledgements and bounded local/remote deduplication are delivery integrity, not authority to build per-installation histories; historical endpoint/storage statements below are superseded where they conflict with current Lighthouse deployment truth.
 
 [DELTA HEADER]
 SOT_VERSION_AT_START: v0.11.0
@@ -1518,11 +1544,11 @@ Optional future-compatible fields may include a top-level `channels` map, a top-
 
 The manifest is the single source of truth for “latest release” metadata.
 
-Publishing a new release requires `core/version.py::VERSION`, the strict external release tag `v{VERSION}`, the release tag target, the current default-branch commit, and hosted manifest metadata to agree. The release mirror workflow machine-checks tag/version and tag/default-branch target agreement before publishing manifest metadata.
+Publishing a new release requires `core/version.py::VERSION`, the strict external release tag `v{VERSION}`, the release tag target, the current default-branch commit, and hosted manifest metadata to agree. On release-triggered runs, the release mirror workflow machine-checks tag/version and tag/default-branch target agreement before publishing manifest metadata. An explicitly owner-approved manual `workflow_dispatch` is a separate historical-backfill path: it uses current default-branch tooling, resolves canonical `release_tag` or deprecated compatibility `tag`, validates the resolved existing tag as strict `vX.Y.Z`, derives manifest version and asset identity from it, and does not perform the release-trigger tag/`VERSION` or tag-target checks.
 
 Canonical public release assets referenced by Lighthouse/manifest metadata MUST use `BUS-Core-<VERSION>.zip` naming.
 
-Manifest must never contain placeholders or non-JSON tokens. Release publication signs the manifest metadata with an embedded Ed25519 `signature` object. Manual update staging requires that signature to verify against Core's active pinned manifest public keys before download/extract/EXE trust work begins; read-only update check still preserves unsigned compatibility. Checksum, size, release-notes, artifact signature URL, publisher, signer, and artifact-kind fields are currently validated for shape and may be retained internally as declared manifest metadata.
+Manifest must never contain placeholders or non-JSON tokens. Release publication signs the manifest metadata with an embedded Ed25519 `signature` object. Manual update staging requires that signature to verify against Core's active pinned manifest public keys before download/extract/EXE trust work begins; non-staging update discovery still preserves unsigned compatibility. Checksum, size, release-notes, artifact signature URL, publisher, signer, and artifact-kind fields are currently validated for shape and may be retained internally as declared manifest metadata.
 
 (5) LIGHTHOUSE SERVICE CONTRACT
 
@@ -1586,7 +1612,7 @@ GET /app/update/check remains the canonical in-app one-shot check surface
 
 Core sot
 
-Manifest checksum, size, release-notes, and artifact signature-style metadata are declared manifest metadata. Core validates their shape and retains them internally; manual update staging requires a trusted signed manifest before using `sha256` and `size_bytes` to hash-verify a cached ZIP artifact. Read-only update check still does not require signatures.
+Manifest checksum, size, release-notes, and artifact signature-style metadata are declared manifest metadata. Core validates their shape and retains them internally; manual update staging requires a trusted signed manifest before using `sha256` and `size_bytes` to hash-verify a cached ZIP artifact. Non-staging update discovery still does not require signatures.
 
 Lighthouse is the public manifest proxy, download redirect target, update-signal receiver, and future versioned product-telemetry contract authority. Its availability must never be required for normal local BUS Core operation.
 
@@ -1629,6 +1655,8 @@ Background polling loops that violate Core's one-shot, default-on / opt-out upda
 Core sot
 
 # SoT DELTA — Update Check System — Default-on / Opt-out Manifest Fetch + SSRF Guards + Streaming Size Cap
+
+> **Historical/superseded delta:** This 2026-02-28 branch snapshot predates the current public-route documentation, nine-field response, backend startup policy/deduplication, manual trusted staging, and next-start launcher handoff. Retain it as history only; current authority is the Update Check System section above and `OPERATIONS.md`.
 
 SOT_VERSION_AT_START: v0.11.0
 SESSION_LABEL: Update Check System — Default-on / Opt-out Manifest Fetch + SSRF Guards + Streaming Size Cap
@@ -1674,7 +1702,7 @@ This delta documents the implemented in-app Update Check system behavior and har
 - Manifest is JSON-only (`Content-Type` must include `application/json` when present).
 - Manifest read is streaming with a hard 64KB cap (`65536` bytes).
 - Optional artifact metadata (`sha256`, `size_bytes`, `release_notes_url`, `signature_url`, artifact kind/type/platform, publisher, signer) is shape-validated when present and retained internally as declared manifest metadata by `ManifestRelease`.
-- Read-only update check still surfaces compatible manifest discovery data without requiring signed manifests. Manual update staging requires a trusted signed manifest before any artifact hash/extract/EXE trust pipeline step.
+- Non-staging update discovery still surfaces compatible manifest data without requiring signed manifests. Manual update staging requires a trusted signed manifest before any artifact hash/extract/EXE trust pipeline step.
 
 ## UI Behavior
 - Settings includes update controls and manual “Check now”.

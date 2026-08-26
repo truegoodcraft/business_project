@@ -11,10 +11,10 @@ Its purpose is to preserve predictability and prevent silent contract drift. If 
 - Supported operational routes are real protected admin/integration surfaces that exist and are supported, but they are not the core business contract.
 - Secondary / legacy / drifted routes are mounted but non-canonical. They must not be presented as the preferred API surface for new callers.
 - These tiers exist to keep Core predictable: the contract should make drift visible, not blur canonical and compatibility surfaces together.
-- `GET /session/token` is the canonical session bootstrap route. It returns `{ "token": "<token>" }` and sets the configured session cookie (`bus_session` by default).
-- Non-public routes require that session cookie. Current runtime enforcement is a mix of global middleware and route-local dependencies.
-- Middleware-based auth is current truth for several supported routes. The handler does not declare route-local token auth for `/app/config`, `/app/update/check`, `/app/purchase`, `/app/stock/in`, `/app/stock/out`, `/app/ledger/history`, `/app/finance/*`, and `/app/logs`; protection comes from the global `session_guard` middleware.
-- Write gating is also mixed by current runtime. Many mutating routes use `require_writes` or `require_write_access`, but `/app/purchase`, `/app/stock/in`, `/app/stock/out`, `/app/finance/expense`, and `/app/finance/refund` do not have a route-local write gate today.
+- `GET /session/token` is the canonical unclaimed-mode compatibility bootstrap. With zero auth users it returns `{ "token": "<token>" }` and sets `bus_session`; in claimed mode it returns `login_required` and does not grant app access.
+- Protected routes require the mode-appropriate session through the global gate and, for covered route families, route-local token and permission dependencies.
+- Exact `GET /app/update/check` is an intentional public exception in `PUBLIC_GET_PATHS` and declares no route-local token or permission dependency. Its public status does not make it passive or side-effect-free.
+- Config, ledger/stock, finance, and app-log routes described below carry current route-local token/permission dependencies. Their sensitive mutations carry the current write gate.
 - Owner-commit authorization is route-local on item, vendor/contact, recipe, and manufacture mutations. It is not uniformly applied to all business mutations.
 - `/dev/*` routes and `GET /health/detailed` are dev-only. When `BUS_DEV != 1`, they return `404`. When `BUS_DEV = 1`, they still require a valid session cookie.
 
@@ -38,21 +38,32 @@ Its purpose is to preserve predictability and prevent silent contract drift. If 
 
 - `GET /app/config`
   - Read the current runtime config object.
-  - Auth is middleware-based, not route-local.
+  - Requires mode-appropriate session auth and `settings.read`.
 
 - `POST /app/config`
   - Write the runtime config object.
-  - Requires `require_writes`.
-  - Returns `{ "ok": true, "restart_required": true }`.
+  - Requires mode-appropriate session auth, `settings.manage`, and `require_writes`.
+  - If the payload contains telemetry fields, disabling performs best-effort queue/dead-letter clearing; enabling with disclosure acknowledged attempts to emit eligible startup milestones. These are the same non-blocking telemetry side effects as the dedicated preference route.
+  - Returns `{ "ok": true, "restart_required": <bool> }`; telemetry writes and explicit `dev.writes_enabled` changes return `false`, while other accepted config writes return `true`.
+
+- `POST /app/telemetry/preference`
+  - Persists `{ "enabled": <bool> }` and marks disclosure acknowledged.
+  - Requires mode-appropriate session auth and the current `settings.read` permission. It intentionally bypasses the business write gate so opt-out remains available.
+  - Enabling attempts to emit eligible first-launch/version startup milestones; acknowledgement/pending deduplication may suppress them, and immediate background delivery may leave no pending record. Disabling blocks new emits/new flush starts and performs best-effort replacement of the current pending queue and retained dead-letter contents with empty arrays while cumulative state/milestones remain; it does not cancel an already in-flight sender request.
+  - Returns `{ "ok": true, "enabled": <bool> }`. Success is neither enqueue/delivery proof nor proof that best-effort clearing writes succeeded.
 
 - `GET /app/telemetry/status`
-  - Requires `settings.read`.
-  - Returns local delivery diagnostics: enabled state, pending/acknowledged/rejected/dead-letter counts, last successful delivery time, last HTTP status, and last error category.
+  - Requires mode-appropriate session auth and `settings.read`.
+  - Returns a local snapshot and does not flush, retry, or contact Lighthouse.
+  - `pending_count` is current readable queue length; acknowledgement/rejection/dead-letter counts are cumulative, and dead-letter count is not the retained-file length. `last_status` is the latest attempted HTTP status, while `last_successful_delivery_at` advances only after an exact acknowledgement.
+  - If status construction fails, counts/status are null, `enabled` is false, and `last_error_category` is `status_unavailable`.
 
 - `GET /app/update/check?source=startup|manual`
   - Canonical in-app update check.
-  - Auth is middleware-based, not route-local.
+  - Exact public `GET` exception with no route-local token or permission dependency; callable before login in claimed mode.
   - `source` defaults to `manual`. Manual checks always run; startup checks enforce saved update policy and run at most once per app launch.
+  - A performed request does not stage artifacts, but it is evidence-mutating: it writes the request log, performs the configured outbound manifest fetch, can change Lighthouse count/rate/error evidence, and may enqueue product telemetry when effective consent is enabled. While the reported flag remains false, each performed check makes a best-effort persistence attempt, including after fetch failure; once a write succeeds, later checks send false and do not rewrite it.
+  - Core replaces its canonical `current_version`, `channel`, and `first_check` keys but does not prohibit/sanitize configured URL userinfo and preserves unrelated query parameters. Core-added values carry no identity; operator-supplied URL data is trust-sensitive, and extra query parameters prevent the default Lighthouse route from contributing to its strict three-parameter aggregate.
   - Returns:
     - `current_version`
     - `latest_version`
@@ -66,7 +77,7 @@ Its purpose is to preserve predictability and prevent silent contract drift. If 
 
 - `POST /app/update/stage`
   - Canonical manual update staging route.
-  - Requires session auth and `require_writes`.
+  - Requires mode-appropriate session auth, `updates.stage`, and `require_writes`.
   - Executes trusted staging only after the user clicks the UI `Update` button.
   - Returns exactly:
     - `ok`
@@ -77,7 +88,7 @@ Its purpose is to preserve predictability and prevent silent contract drift. If 
     - `restart_available`
     - `error_code`
     - `error_message`
-  - Success means a newer version is verified and written to conservative version+sha keyed `verified_ready_versions` state; legacy `verified_ready` remains a compatibility/latest pointer.
+  - Success means a newer version is verified and written to conservative version+sha keyed `verified_ready_versions` state; legacy `verified_ready` is updated as the compatibility/latest record and remains an active read/handoff fallback for valid older state.
   - It does not force restart, does not overwrite the running EXE, and does not itself launch the staged executable.
   - Launcher handoff, when enabled by config, is evaluated on next start after DB ownership lock.
 
@@ -271,8 +282,7 @@ Its purpose is to preserve predictability and prevent silent contract drift. If 
 
 - `POST /app/purchase`
   - Canonical purchase stock-in route.
-  - Current auth is middleware-based, not route-local.
-  - Current runtime does not add a route-local write gate.
+  - Requires mode-appropriate session auth, `inventory.write`, and `require_writes`.
   - Request body:
     - `item_id`
     - `quantity_decimal`
@@ -283,8 +293,7 @@ Its purpose is to preserve predictability and prevent silent contract drift. If 
 
 - `POST /app/stock/in`
   - Canonical stock-in route.
-  - Current auth is middleware-based, not route-local.
-  - Current runtime does not add a route-local write gate.
+  - Requires mode-appropriate session auth, `inventory.write`, and `require_writes`.
   - Request body:
     - `item_id`
     - `quantity_decimal`
@@ -295,8 +304,7 @@ Its purpose is to preserve predictability and prevent silent contract drift. If 
 
 - `POST /app/stock/out`
   - Canonical stock-out route.
-  - Current auth is middleware-based, not route-local.
-  - Current runtime does not add a route-local write gate.
+  - Requires mode-appropriate session auth, `inventory.write`, and `require_writes`.
   - Request body:
     - `item_id`
     - `quantity_decimal`
@@ -309,7 +317,7 @@ Its purpose is to preserve predictability and prevent silent contract drift. If 
 
 - `GET /app/ledger/history`
   - Canonical movement history read route.
-  - Current auth is middleware-based, not route-local.
+  - Requires mode-appropriate session auth and `inventory.read`.
   - Query params: `item_id`, `limit`, optional `include_base`.
   - Returns `{ "movements": [...] }`.
   - Each movement includes `id`, `item_id`, `batch_id`, `quantity_decimal`, `uom`, `unit_cost_cents`, `source_kind`, `source_id`, `is_oversold`, and `created_at`.
@@ -330,8 +338,7 @@ Its purpose is to preserve predictability and prevent silent contract drift. If 
 
 - `POST /app/finance/expense`
   - Record an expense cash event.
-  - Current auth is middleware-based, not route-local.
-  - Current runtime does not add a route-local write gate.
+  - Requires mode-appropriate session auth, `finance.write`, and `require_writes`.
   - Request body:
     - `amount_cents`
     - optional `category`
@@ -341,8 +348,7 @@ Its purpose is to preserve predictability and prevent silent contract drift. If 
 
 - `POST /app/finance/refund`
   - Record a refund and optional inventory restock.
-  - Current auth is middleware-based, not route-local.
-  - Current runtime does not add a route-local write gate.
+  - Requires mode-appropriate session auth, `finance.write`, and `require_writes`.
   - Request body:
     - `item_id`
     - `refund_amount_cents`
@@ -358,7 +364,7 @@ Its purpose is to preserve predictability and prevent silent contract drift. If 
 
 - `GET /app/finance/profit`
   - Profit snapshot for a date window.
-  - Current auth is middleware-based, not route-local.
+  - Requires mode-appropriate session auth and `finance.read`.
   - Query params: `from=YYYY-MM-DD`, `to=YYYY-MM-DD`.
   - Returns exactly:
     - `gross_sales_cents`
@@ -371,21 +377,21 @@ Its purpose is to preserve predictability and prevent silent contract drift. If 
 
 - `GET /app/finance/summary`
   - Finance KPI summary for a date window.
-  - Current auth is middleware-based, not route-local.
+  - Requires mode-appropriate session auth and `finance.read`.
   - Query params: `from=YYYY-MM-DD`, `to=YYYY-MM-DD`.
   - Returns totals plus `runs_count`, `units_produced`, `units_sold`, `from`, and `to`.
   - Invalid windows return `400`.
 
 - `GET /app/finance/transactions`
   - Mixed finance transaction feed for a date window.
-  - Current auth is middleware-based, not route-local.
+  - Requires mode-appropriate session auth and `finance.read`.
   - Query params: `from=YYYY-MM-DD`, `to=YYYY-MM-DD`, `limit`.
   - Returns `{ "from": ..., "to": ..., "limit": ..., "count": ..., "transactions": [...] }`.
   - Current supported transaction kinds include `sale`, `refund`, `expense`, `manufacturing_run`, and `purchase_inferred`.
 
 - `GET /app/logs`
   - App event feed used by the UI logs screen.
-  - Current auth is middleware-based, not route-local.
+  - Requires mode-appropriate session auth and `logs.read`.
   - Returns `{ "events": [...], "next_cursor_id": ... }`.
   - This is distinct from `GET /logs`, which returns the runtime text log tail.
 
@@ -445,7 +451,7 @@ These routes are supported and mounted, but they are not the canonical business 
   - `POST /execTransform`
   - `POST /policy.simulate`
   - `POST /nodes.manifest.sync`
-  - `GET /transparency.report`
+  - `GET /transparency.report` — policy/path/plugin transparency only; the current payload hardcodes telemetry off and is not product-telemetry status authority.
 
 - Reader and organizer integration
   - `POST /reader/local/resolve_ids`
@@ -534,6 +540,7 @@ These are mounted compatibility routes, not canonical routes for new callers. Wh
 
 - Backup UI should route operators to the canonical encrypted export flow at `POST /app/db/export`; raw `/app/backup` and `/app.db` routes are not mounted and are not canonical.
 - `/app/transactions` and `/app/transactions/summary` remain mounted stubs. They are real routes, but they are not canonical business contract.
-- Some supported routes rely on middleware-based auth rather than route-local auth declarations. This document reflects that reality instead of normalizing it away.
-- Some supported mutating routes also lack a route-local write gate today, notably `/app/purchase`, `/app/stock/in`, `/app/stock/out`, `/app/finance/expense`, and `/app/finance/refund`. That is current runtime truth, not a documented endorsement of a cleaner model.
+- Exact public `GET /app/update/check` remains an explicit exception to the protected route model and changes local/remote evidence when performed.
+- `POST /app/telemetry/preference` currently uses `settings.read` and intentionally bypasses the business write gate. This is documented implementation truth, not a silent permission-policy decision.
+- Home and `/transparency.report` currently hardcode telemetry off. Use local state or protected `/app/telemetry/status`; correcting those displays requires a separate behavior-change bundle.
 

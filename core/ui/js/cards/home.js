@@ -430,12 +430,12 @@ function renderUpdateCard(data) {
       ${updateLine}
       <p class="bus-home-side-label">What changed:</p>
       <ul class="bus-home-release-list">
-        <li>Startup and manual update checks now have one clear owner and report their source.</li>
-        <li>Product signals complete only after Lighthouse acknowledges the exact event.</li>
-        <li>Windows builds now fail closed on incomplete runtime packaging before signing.</li>
+        <li>Analytics diagnosis now has one canonical, side-effect-aware operating procedure.</li>
+        <li>Release checks use locked dependency graphs and a clean Python 3.11 environment.</li>
+        <li>Security and CI gates now fail closed on incomplete or vulnerable release inputs.</li>
       </ul>
       <p class="bus-home-side-label">Why it matters:</p>
-      <p>This maintenance release makes update evidence and release artifacts more trustworthy without expanding the data BUS Core sends.</p>
+      <p>This maintenance release strengthens security, release governance, and diagnostic clarity without expanding the data BUS Core sends.</p>
       <div class="bus-home-side-actions">
         <a href="/brand/CHANGELOG.md" target="_blank" rel="noopener noreferrer">Read full changelog</a>
       </div>

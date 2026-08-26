@@ -20,9 +20,9 @@
 """Canonical version information for BUS Core."""
 
 # Public/release version. Must remain strict SemVer X.Y.Z.
-VERSION = "1.4.1"
+VERSION = "1.4.2"
 
 # Internal working revision. Agents may bump this on meaningful repo changes.
-INTERNAL_VERSION = "1.4.1.3"
+INTERNAL_VERSION = "1.4.2.0"
 
 __all__ = ["VERSION", "INTERNAL_VERSION"]
