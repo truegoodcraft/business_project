@@ -6,6 +6,7 @@ import tempfile
 import unittest
 import urllib.parse
 from pathlib import Path
+from unittest.mock import patch
 
 from core.telemetry.client import (
     ALLOWED_EVENT_NAMES,
@@ -13,6 +14,7 @@ from core.telemetry.client import (
     TELEMETRY_ENDPOINT,
     DeliveryResult,
     TelemetryClient,
+    _default_sender,
 )
 from core.config.manager import Config
 from core.version import VERSION
@@ -70,6 +72,30 @@ class TelemetryClientTests(unittest.TestCase):
         self.assertFalse(parsed.password)
         self.assertFalse(parsed.query)
         self.assertFalse(parsed.fragment)
+
+    def test_default_transport_identifies_bus_core_with_public_version(self):
+        event_id = "00000000-0000-0000-0000-000000000001"
+
+        class Response:
+            status = 202
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self, _limit):
+                return json.dumps({"acknowledged_event_ids": [event_id]}).encode("utf-8")
+
+        with patch("core.telemetry.client.urllib.request.urlopen", return_value=Response()) as urlopen:
+            result = _default_sender({"event_id": event_id})
+
+        request = urlopen.call_args.args[0]
+        headers = {name.lower(): value for name, value in request.header_items()}
+        self.assertEqual(headers["content-type"], "application/json")
+        self.assertEqual(headers["user-agent"], f"BUS-Core/{VERSION}")
+        self.assertEqual(result.acknowledged_event_ids, frozenset({event_id}))
 
     def test_first_run_and_settings_surfaces_are_explicit(self):
         repo = Path(__file__).resolve().parents[2]

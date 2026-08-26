@@ -35,7 +35,7 @@ Normal local operation does not require Lighthouse, Google, Managed BUS, or any 
 - Guarded manual staging re-fetches trusted manifest metadata and downloads the declared artifact.
 - Optional product telemetry uses the fixed Lighthouse schema-1.0 endpoint only after disclosure is acknowledged and telemetry remains enabled.
 
-Update-route analytics and product-event telemetry are separate evidence streams. Core's three generated update parameters and the strict product-event payload contain no business content or persistent installation identifier. However, the update client does not prohibit/sanitize operator-configured URL userinfo and preserves unrelated query parameters, so that URL data is trust-sensitive and is not covered by the Core-generated-field privacy guarantee. Neither stream is a count of people, authenticated clients, unique installations, engagement, or retention.
+Update-route analytics and product-event telemetry are separate evidence streams. Core's three generated update parameters and the strict product-event payload contain no business content or persistent installation identifier. Product-event requests also carry `Content-Type: application/json` and `User-Agent: BUS-Core/<VERSION>`; that transport header identifies the product/version, not a user, device, installation, or additional payload field. However, the update client does not prohibit/sanitize operator-configured URL userinfo and preserves unrelated query parameters, so that URL data is trust-sensitive and is not covered by the Core-generated-field privacy guarantee. Neither stream is a count of people, authenticated clients, unique installations, engagement, or retention.
 
 ## Product telemetry controls and evidence
 

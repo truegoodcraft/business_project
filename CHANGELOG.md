@@ -2,7 +2,17 @@
 
 ## [Unreleased]
 
-No changes are recorded after the `1.4.2` release-preparation boundary.
+### Telemetry transport identity
+- Added the explicit `User-Agent: BUS-Core/<VERSION>` header to the immutable Lighthouse telemetry request so Cloudflare receives an honest product identity instead of urllib's generic Python identity.
+- Added a transport-level regression test for both required telemetry headers without changing authentication, payload contents, user tracking, opt-out behavior, or the audited endpoint.
+
+### Risk-based verification policy
+- Replaced the stale contribution checklist with a four-level, change-risk testing policy in `docs/TESTING_POLICY.md`; routine approved local changes use targeted tests and escalate to broader suites when scope or boundary risk warrants it.
+- Reconciled the older cleanup plan with current release hardening: active locked Linux/Windows `ci.yml` remains canonical, the obsolete `build-test.yml` remains removed, and security-audit triggers stay broad until required-check behavior is explicitly verified.
+- Made the lightweight governance helper fall back to an available `python` when a stale `.venv` launcher exists but cannot run.
+- Kept source-level business-flow smoke and frozen-executable launch smoke as distinct release evidence instead of repeating them on ordinary edits.
+- Left generated `TGC-COMPLIANCE.md` unchanged; projecting the new testing-policy authority requires the separately owned `tgc-ops` update already recorded below as remaining work.
+- Bumped the internal working revision from `1.4.2.0` to `1.4.2.1`; public `VERSION` remains `1.4.2`.
 
 ## [1.4.2] - 2026-08-26
 
