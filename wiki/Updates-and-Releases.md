@@ -2,7 +2,7 @@
 
 ## Version Basics
 
-Public BUS Core releases use semantic versions such as `1.4.1`. The app's current build/version is visible in its system and update surfaces. Release notes live in the repository under `docs/releases` and on the project's release page.
+Public BUS Core releases use semantic versions such as `1.4.2`. The app's current build/version is visible in its system and update surfaces. Release notes live in the repository under `docs/releases` and on the project's release page.
 
 ## Checking for Updates
 
@@ -18,7 +18,7 @@ BUS Core remains maintained as manufacturing operations software. Future changes
 
 Core remains a complete open-source product that can be run locally or self-hosted without a subscription. The upcoming Managed BUS direction adds optional TGC operation around the same product rather than creating a divergent fork.
 
-BUS Core v1.4.1 uses the deployed, production-verified Lighthouse 1.27.0 and migration 0015 contract. It remains bounded, fail-open, controllable in Settings, requires exact event acknowledgement before local completion, and cannot carry business content.
+BUS Core v1.4.2 uses the schema-1.0 receiver/migration baseline deployed and production-verified at Lighthouse 1.27.0 with migration 0015. Lighthouse's own SOT governs its current deployed version. The BUS Core client remains bounded, fail-open, controllable in Settings, requires exact event acknowledgement before local completion, and cannot carry business content.
 
 ## Before Updating
 

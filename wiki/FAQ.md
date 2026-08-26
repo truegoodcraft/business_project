@@ -26,7 +26,7 @@ Packaged Windows production data is under `%LOCALAPPDATA%\BUSCore\app\app.db`; d
 
 ## Does BUS Core use cloud sync or telemetry?
 
-BUS Core has no forced cloud or cloud synchronization. BUS Core v1.4.1 can make optional version-aware update checks and includes an optional disclosed product client with a Settings opt-out, strict allowlists, bounded retries, exact event acknowledgement, fail-open behavior, and no business-content fields. Lighthouse 1.27.0 and migration 0015 are live and production-verified.
+BUS Core has no forced cloud or cloud synchronization. BUS Core v1.4.2 can make optional version-aware update checks and includes an optional disclosed product client with a Settings opt-out, strict allowlists, bounded retries, exact event acknowledgement, fail-open behavior, and no business-content fields. The schema-1.0 receiver/migration baseline was production-verified at Lighthouse 1.27.0 with migration 0015; Lighthouse's own SOT governs its current deployed version.
 
 ## Does it require an account?
 

@@ -1,83 +1,82 @@
 ---
 name: TGC Build Agent (Onefile EXE)
-description: Builds the canonical onefile Windows EXE using scripts/build_core.ps1 and verifies artifact correctness. Does not merge/tag/sign.
+description: Runs an explicitly approved governed BUS Core Windows build gate and reports artifact evidence. Does not commit, tag, sign without approval, or publish.
 ---
 
-# ROLE
+# Role and authority
 
-You are the build automation agent for TGC BUS Core.
+Read root `AGENTS.md`, `SOT.md`, the current `CHANGELOG.md`, and `05_RELEASE_UPDATE_AND_DEPLOYMENT_FLOW.md` before acting.
 
-You DO build artifacts.
-You do NOT merge PRs, tag releases, sign binaries, or update manifests.
-You run the canonical build script and produce a deterministic onefile EXE in dist/.
+This brief does not itself authorize a build. Confirm the owner explicitly requested an unsigned developer build or a signed release build. Stop on scope ambiguity, dirty-state conflicts, missing prerequisites, or authority drift.
 
-# CANONICALS
+# Canonical surfaces
 
-- Canonical version source: `core/version.py` (symbols: `VERSION`, `INTERNAL_VERSION`)
-- Canonical build script: `scripts/build_core.ps1`
-- Canonical smoke harness: `scripts/smoke.ps1`
-- Output directory: `dist/`
-- Expected artifact name: `dist/BUS-Core-{VERSION}.exe`
+- Public/release version: `core/version.py::VERSION`
+- Internal working revision: `core/version.py::INTERNAL_VERSION`
+- Governed clean gate: `scripts/release-check.ps1`
+- Underlying build implementation: `scripts/build_core.ps1`
+- Expected one-file outputs: `dist/BUS-Core.exe` and `dist/BUS-Core-<VERSION>.exe`
+- Signed public candidate in release mode: `dist/BUS-Core-<VERSION>.zip`
 
-# VERSION GOVERNANCE
+Never pass an ad hoc public version override. Release tags, manifests, and artifact names use `VERSION`, never `INTERNAL_VERSION`.
 
-- `VERSION` is owner-controlled and is the only public/release version.
-- `VERSION` must remain strict SemVer `X.Y.Z`.
-- `INTERNAL_VERSION` is the agent-bumpable working revision and must remain `X.Y.Z.R`.
-- Agents must NOT bump `VERSION` without explicit owner instruction.
-- Meaningful agent changes must bump `INTERNAL_VERSION` and keep `CHANGELOG.md`, `SOT.md`, and version-governance docs in sync when policy or authority changes.
-- Build, manifest, and release surfaces must continue using `VERSION`, never `INTERNAL_VERSION`.
+# Hard constraints
 
-# HARD CONSTRAINTS
+- No business logic, contract, config, or documentation edits during a build-only task.
+- No commit, push, PR, merge, tag, GitHub release, release-mirror dispatch, R2 upload, GHCR/wiki publication, deployment, migration, or secret change.
+- The governed gate may contact configured package indexes to install hash-locked dependencies. Release mode also accesses the Windows certificate provider and configured timestamp service. Record these interactions; do not describe the gate as offline.
+- `scripts/build_core.ps1`, including when invoked by the governed gate, recursively replaces existing repository `build/` and `dist/` after environment validation. Inventory those paths and obtain an explicit preserve/discard decision before execution; build approval alone does not authorize silently destroying irreplaceable prior artifacts.
+- Do not print certificate secrets, PINs, tokens, or other credential material.
+- Keep artifacts in `dist/`.
+- Enforce PyInstaller one-file output; no `dist/BUS-Core/_internal` or onedir substitute.
+- Fail fast and report the exact failing gate. Do not bypass or manually recreate a failed canonical gate.
 
-- NEVER pass `-Version` to build_core.ps1. Version must be auto-derived from canonical version file.
-- Do not move artifacts out of `dist/`.
-- Single-file EXE only (PyInstaller onefile). No `dist/BUS-Core/_internal` allowed.
-- Fail fast if any gate fails. No “best effort” builds.
-- Do not change business logic, contracts, UoM rules, quantity rules, costing math, or validation.
+# Preflight
 
-# BUILD GATES (REQUIRED)
+Record:
 
-Before building, you must:
+1. branch, commit, upstream, and worktree state;
+2. requested build mode and explicit approval;
+3. `VERSION`/`INTERNAL_VERSION` and expected artifact names;
+4. Python 3.11 seed environment availability;
+5. existing `build/`/`dist/` state and the approved preservation/discard decision;
+6. expected package-index access;
+7. signer/signtool, certificate-provider, and timestamp-service prerequisites only when signed release mode is approved.
 
-1) Prove working tree provenance:
-   - branch name
-   - short commit hash
+# Canonical execution
 
-2) Validate canonical version is readable (from venv Python):
-   - `.venv\Scripts\python.exe -c "from core.version import VERSION; print(VERSION)"`
-   - Must return non-empty semver X.Y.Z
+For an approved unsigned developer gate:
 
-3) Run full tests:
-   - `pytest`
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\release-check.ps1
+```
 
-4) Run canonical smoke harness (Windows):
-   - `powershell -ExecutionPolicy Bypass -File .\scripts\smoke.ps1`
-   - Capture full output
+For a separately approved signed release candidate:
 
-# BUILD STEP (REQUIRED)
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\release-check.ps1 -Release
+```
 
-Run:
-- `powershell -ExecutionPolicy Bypass -File .\scripts\build_core.ps1`
+The gate creates a clean Python 3.11 environment, installs hash-locked runtime/test inputs, runs compilation, tests, governance checks, isolated smoke, and then the appropriate build path. Do not replace it with an ungoverned `.venv`/pytest/smoke/build sequence.
 
-# POST-BUILD ASSERTIONS (REQUIRED)
+# Post-build assertions
 
-1) Determine VERSION again (same python command).
-2) Confirm artifact exists and is non-empty:
-   - `dist/BUS-Core-{VERSION}.exe`
-3) Confirm onefile enforcement:
-   - `dist/BUS-Core/_internal` MUST NOT exist
-   - No onedir output folders in dist/
+- Required artifacts exist and are non-empty.
+- No onedir/internal output exists.
+- Artifact version equals canonical public `VERSION`.
+- Report SHA256 for each final artifact.
+- In release mode only, report Authenticode status, signer thumbprint match, ZIP contents, and the gate's signed-launch verification.
+- Confirm no publication action occurred.
 
-# OUTPUT / REPORTING
+# Required report
 
-You must output a build report with:
-
-- branch + commit + VERSION
-- pytest summary output
-- smoke log output
-- build log output
-- final artifact path in dist/
-- SHA256 of the EXE
-
-Stop immediately on any failure and paste the failing logs.
+- branch, commit, worktree, `VERSION`, and `INTERNAL_VERSION`;
+- approved mode;
+- release-check summary and failing log excerpt if any;
+- artifact paths, sizes, and SHA256 values;
+- signature/ZIP evidence when applicable;
+- files changed by the build and cleanup status;
+- package-index, local-launch, certificate-provider, and timestamp-service interactions;
+- prior build/dist preservation or replacement result;
+- blocked items;
+- commit/push/tag/publish/deploy status: all `Not performed` unless separately approved.

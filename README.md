@@ -101,7 +101,7 @@ Managed BUS is not yet represented here as a generally available production serv
 
 BUS Core remains serious manufacturing operations software, not a full accounting suite. It does not include full POS, full accounting, QuickBooks/Wave sync, automatic reorder, full job scheduling, cloud synchronization, payment links, customer portals, or recurring billing.
 
-BUS Core v1.4.1 makes optional version-aware update checks and includes a strict optional product-telemetry client: it waits for first-run disclosure, sends nothing when disabled, queues only allowlisted events, retries at most three times, and never blocks local work. A queued event is complete only after Lighthouse acknowledges its exact event ID; rejected or exhausted events are retained in a bounded local dead-letter file and exposed only as aggregate delivery diagnostics. Payloads contain only the event name, event ID, timestamp, app version, release channel, and coarse operating-system category. They contain no persistent installation identifier. Customer, supplier, employee, item, recipe, invoice, email, document, filepath, financial, quantity, database, username, and machine-fingerprint content cannot enter the payload constructor. Signals are limited to first launch, once-per-version release adoption, startup/manual update checks, successful update staging, reliability, and one-time successful use of major product areas. BUS Core does not report module opens, active days, sessions, returning installations, engagement, or retention. Lighthouse 1.27.0 and migration 0015 are deployed and production-verified; this BUS Core release remains owner-controlled.
+BUS Core v1.4.2 makes optional version-aware update checks and includes a strict optional product-telemetry client: it waits for first-run disclosure, blocks new emits/new flush starts when disabled, queues only allowlisted events, makes at most three trigger-driven delivery attempts, and never blocks local work. Disabling does not cancel a sender request already in flight. Retry eligibility alone does not schedule a future wake, and shutdown does not wait for delivery. A queued event is complete only after Lighthouse acknowledges its exact event ID; rejected, exhausted, or queue-overflowed events are retained in a bounded local dead-letter file and exposed only as aggregate delivery diagnostics. Payloads contain only the event name, event ID, timestamp, app version, release channel, and coarse operating-system category. They contain no persistent installation identifier. Customer, supplier, employee, item, recipe, invoice, email, document, filepath, financial, quantity, database, username, and machine-fingerprint content cannot enter the payload constructor. SOT-authorized signals are limited to first launch, once-per-version release adoption, startup/manual update checks, successful update staging, reliability, and one-time successful use of major product areas; the additional repeatable restore/import outcomes currently implemented are documented as unresolved code/SOT drift in `OPERATIONS.md`. BUS Core does not report module opens, active days, sessions, returning installations, engagement, or retention. Local delivery truth is available through the protected telemetry status route and local state described in `OPERATIONS.md`; Home and `/transparency.report` are not current telemetry authorities. The schema-1.0 receiver/migration baseline was deployed and production-verified at Lighthouse 1.27.0 with migration 0015; Lighthouse's own SOT is authority for its current deployed version, and this BUS Core release remains owner-controlled.
 
 ---
 
@@ -142,17 +142,20 @@ Double-click the tray icon to open the dashboard.
 
 ## Development Mode
 
-Enable development features by setting:
+Enable development features with the canonical launcher flag or environment variable:
 
-```bash
-BUS_ENV=dev
+```powershell
+$env:BUS_DEV = "1"
+python launcher.py --dev
 ```
 
-This enables:
+On shells that support inline environment assignment:
 
-* Console output
-* Debug endpoints
-* Smoke tests (`scripts/smoke.ps1`)
+```bash
+BUS_DEV=1 python launcher.py --dev
+```
+
+`BUS_DEV=1` exposes development-only surfaces and detailed errors. It does not bypass session authentication and does not suppress or redirect native product telemetry. Run `scripts/smoke.ps1` separately when that test action is approved.
 
 Development scripts are included in the source tree.
 
@@ -160,7 +163,7 @@ Development scripts are included in the source tree.
 
 ## Architecture
 
-See [`SOT.md`](SOT.md) for the canonical Source of Truth and system architecture.
+Read [`AGENTS.md`](AGENTS.md) before repository work, [`SOT.md`](SOT.md) for canonical behavior and architecture, and [`OPERATIONS.md`](OPERATIONS.md) for side-effect-aware diagnostics and Lighthouse/telemetry access.
 
 ---
 
@@ -205,6 +208,8 @@ scripts\up.ps1
 ```bash
 curl http://localhost:8765/health
 ```
+
+`/health` proves only that a process responds with its public version. The request is logged; it does not prove database, telemetry, Lighthouse, or Agent Smith health. Do not start BUS Core merely to obtain this response.
 
 UI:
 
@@ -286,14 +291,16 @@ BUS Core runs locally and does not require network access for normal use.
 - The build fails closed unless the onefile archive is complete, unsigned and signed launch smoke succeeds, the signer thumbprint and Authenticode signature verify, copied hashes match, and the final ZIP contains the expected executable and packaged documents.
 - Update checks are default-on / opt-out. The sidebar startup controller is the only automatic owner and requests `source=startup`; the backend runs at most one startup check per app launch and enforces both `updates.enabled` and `updates.check_on_startup`. Manual `source=manual` checks remain available regardless of those automatic-check settings.
 - Manual "Check now" remains available even when startup checks are disabled.
+- The exact `GET /app/update/check` route is currently public. A performed check is non-staging discovery, but it is not a passive diagnostic: it makes the configured outbound request, writes request evidence, can affect Lighthouse count/rate/error evidence, and may enqueue product telemetry. While the first-check flag remains false, each performed check retries its best-effort config write; after a write succeeds, later checks do not rewrite it.
+- Update-route analytics and optional product-event delivery are independent Lighthouse signal streams. Neither is a people, authenticated-client, unique-install, adoption, engagement, or retention count.
 - BUS Core does not auto-download, auto-install, auto-stage on startup, or force restart.
 - The sidebar "Update" button is manual and write-gated. It calls `/app/update/stage` only after the user clicks it.
 - The update check path validates manifest URL policy, JSON/content type, payload size, strict SemVer, supported manifest shapes, configured channel selection, optional signed-manifest unwrapping, and optional artifact metadata shape.
 - Current manifests must remain backward-compatible for deployed clients by keeping top-level `latest.version` and `latest.download.url`; new clients can additionally read `channels.<channel>`, additive metadata, and the top-level embedded Ed25519 `signature`.
 - The release mirror signs the public manifest before upload using a private key stored outside the repo in GitHub secret `BUSCORE_MANIFEST_SIGNING_PRIVATE_KEY`; the matching public key is pinned in Core as `bus-core-prod-ed25519-2026-04-25`.
-- Manual update staging now requires trusted signed manifests. Read-only `/app/update/check` still preserves unsigned-manifest compatibility for discovery.
-- `/app/update/stage` runs the trusted manual staging chain: signed release selection, hash-verified ZIP download, safe extraction, EXE Authenticode plus True Good Craft signer checks with pinned thumbprint, and conservative `verified_ready` promotion.
-- `/app/update/check` remains read-only and does not stage or launch artifacts.
+- Manual update staging now requires trusted signed manifests. Non-staging `/app/update/check` discovery still preserves unsigned-manifest compatibility.
+- `/app/update/stage` runs the trusted manual staging chain: signed release selection, hash-verified ZIP download, safe extraction, EXE Authenticode plus True Good Craft signer checks with pinned thumbprint, and conservative version+sha keyed `verified_ready_versions` promotion. Legacy `verified_ready` is the compatibility/latest record and remains an active launcher fallback for valid older state.
+- `/app/update/check` does not stage or launch artifacts, but it changes local and remote analytics evidence when a check is performed.
 - BUS Core does not overwrite the running EXE. After successful staging, the launcher can hand off on next start (after DB ownership lock) using configured verified launch policy.
 - Channel support exists in Core config for `stable`, `test`, `partner-3dque`, `lts-1.1`, and `security-hotfix`, but current release automation publishes the stable manifest lane only.
 - BUS Core has DB/app ownership locking to prevent two live owners of the same DB/app root.
