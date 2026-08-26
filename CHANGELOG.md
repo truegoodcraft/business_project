@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Security and supply-chain hardening
+- Replaced route-hash, manufacturing-history, and Jobs error-message HTML interpolation with text-safe DOM construction and added hostile-payload regression tests.
+- Made capability, secret, settings, database, and configuration state honor explicit BUS Core runtime roots before legacy home-directory fallbacks; secret-file paths now resolve at use time so state cannot drift across roots.
+- Raised vulnerable dependency floors, added reviewed Python 3.12 Linux and Python 3.11 Windows hash locks, pinned the container base image by digest, and added grouped low-noise Dependabot updates.
+- Restored active Linux/Windows CI, made locked dependency audits blocking, SHA-pinned GitHub Actions, and narrowed publishing permissions to the jobs that require them.
+- Corrected isolated-smoke cleanup to use the API's display quantity/unit contract, verify zero inventory, report archived history truthfully, expose cleanup errors, and run explicitly in production mode.
+- Added a clean, hash-locked Python 3.11 release-check environment with test, governance, isolated-smoke, unsigned-build, and explicit signed-release gates without changing the tagged publication workflow.
+- Bounded restored scrypt password-hash parameters before expensive work and added Hypothesis properties for password hashes, root-confined paths and RIDs, signed manifests, ZIP entries, backup headers, and unit conversions.
+- Added separate hash-locked Linux/Windows test-tool graphs and dependency auditing for pytest and Hypothesis.
+- Added two bounded Linux Atheris harnesses for manifest parsing/trust and path/ZIP-entry validation, with deterministic CI runs, fail-closed invalid-Unicode handling, and a separately audited hash-locked fuzz-tool graph.
+- Bumped the internal working revision to `1.4.1.3`; public `VERSION` remains `1.4.1` until an owner-approved release boundary.
+
 ## [1.4.1] - 2026-08-03
 
 ### Acknowledged minimal product signals and single-owner update checks

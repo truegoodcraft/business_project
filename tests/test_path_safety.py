@@ -21,6 +21,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
         ("//server/share/file", "path_out_of_roots"),
         ("~/.ssh/id_rsa", "path_out_of_roots"),
         ("bad\x00name", "path_invalid"),
+        ("bad\ud800name", "path_invalid"),
     ],
 )
 def test_resolve_path_under_roots_rejects_dangerous_inputs(tmp_path: Path, raw_path: str, expected_code: str) -> None:

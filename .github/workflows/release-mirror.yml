@@ -9,10 +9,6 @@ on:
       release_tag:
         description: "Release tag to mirror (example: v1.1.0)"
         required: false
-      tooling_ref:
-        description: "Repository ref to checkout for workflow tooling during manual runs"
-        required: false
-        default: "main"
       tag:
         description: "Deprecated manual fallback for release_tag"
         required: false
@@ -29,31 +25,43 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tooling_ref || github.event.release.tag_name || github.sha }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.repository.default_branch || github.event.release.tag_name || github.sha }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Validate release ref target
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || github.event.inputs.release_tag || github.event.inputs.tag }}
         run: |
-          TAG="${{ github.event.release.tag_name || github.event.inputs.release_tag || github.event.inputs.tag }}"
+          set -euo pipefail
+          TAG="$RELEASE_TAG"
 
           if [ -z "$TAG" ]; then
             echo "::error::No release tag provided."
             exit 1
           fi
 
-          if [ "${{ github.event_name }}" != "release" ]; then
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Release tag ${TAG} must match strict external SemVer form vX.Y.Z."
+            exit 1
+          fi
+
+          if [ "$EVENT_NAME" != "release" ]; then
             echo "Skipping release-ref target check for workflow_dispatch backfill."
             exit 0
           fi
 
+          git check-ref-format --branch "$DEFAULT_BRANCH" > /dev/null
           git fetch --force origin \
-            "+refs/heads/${{ github.event.repository.default_branch }}:refs/remotes/origin/${{ github.event.repository.default_branch }}" \
+            "+refs/heads/${DEFAULT_BRANCH}:refs/remotes/origin/${DEFAULT_BRANCH}" \
             "+refs/tags/${TAG}:refs/tags/${TAG}"
 
           TAG_SHA="$(git rev-list -n 1 "$TAG")"
-          DEFAULT_BRANCH_SHA="$(git rev-parse "refs/remotes/origin/${{ github.event.repository.default_branch }}")"
+          DEFAULT_BRANCH_SHA="$(git rev-parse "refs/remotes/origin/${DEFAULT_BRANCH}")"
           CHECKOUT_SHA="$(git rev-parse HEAD)"
 
           if [ "$TAG_SHA" != "$CHECKOUT_SHA" ]; then
@@ -62,24 +70,31 @@ jobs:
           fi
 
           if [ "$TAG_SHA" != "$DEFAULT_BRANCH_SHA" ]; then
-            echo "::error::Release tag ${TAG} resolves to ${TAG_SHA}, but origin/${{ github.event.repository.default_branch }} is ${DEFAULT_BRANCH_SHA}. Publish the release only after the version bump is on the default branch, then create the tag from that commit."
+            echo "::error::Release tag ${TAG} resolves to ${TAG_SHA}, but origin/${DEFAULT_BRANCH} is ${DEFAULT_BRANCH_SHA}. Publish the release only after the version bump is on the default branch, then create the tag from that commit."
             exit 1
           fi
 
-      - name: Install Node.js (LTS)
-        uses: actions/setup-node@v4
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "lts/*"
+          node-version: "24.19.0"
 
       - name: Install Wrangler CLI
-        run: npm install -g wrangler
+        run: npm install -g "wrangler@4.123.0"
 
       - name: Install manifest signing dependencies
-        run: python3 -m pip install "cryptography>=46.0.0"
+        run: |
+          python3 -m pip install "pip==26.2.1"
+          python3 -m pip install "cryptography==50.0.0"
 
       - name: Determine release tag and version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REPOSITORY_NAME: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || github.event.inputs.release_tag || github.event.inputs.tag }}
         run: |
-          TAG="${{ github.event.release.tag_name || github.event.inputs.release_tag || github.event.inputs.tag }}"
+          set -euo pipefail
+          TAG="$RELEASE_TAG"
 
           if [ -z "$TAG" ]; then
             echo "::error::No release tag provided."
@@ -87,18 +102,14 @@ jobs:
             exit 1
           fi
 
-          case "$TAG" in
-            v[0-9]*.[0-9]*.[0-9]*)
-              ;;
-            *)
-              echo "::error::Release tag ${TAG} must match strict external SemVer form vX.Y.Z."
-              exit 1
-              ;;
-          esac
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Release tag ${TAG} must match strict external SemVer form vX.Y.Z."
+            exit 1
+          fi
 
           CANONICAL_VERSION="${TAG#v}"
 
-          if [ "${{ github.event_name }}" = "release" ]; then
+          if [ "$EVENT_NAME" = "release" ]; then
             VERSION_FROM_REPO=$(python3 - <<'PY'
           import pathlib
           import re
@@ -125,7 +136,7 @@ jobs:
           echo "RAW_TAG=$TAG" >> "$GITHUB_ENV"
           echo "CANONICAL_VERSION=${CANONICAL_VERSION}" >> "$GITHUB_ENV"
           echo "EXPECTED_ASSET_NAME=BUS-Core-${CANONICAL_VERSION}.zip" >> "$GITHUB_ENV"
-          echo "RELEASE_NOTES_URL=https://github.com/${{ github.repository }}/releases/tag/${TAG}" >> "$GITHUB_ENV"
+          echo "RELEASE_NOTES_URL=https://github.com/${GITHUB_REPOSITORY_NAME}/releases/tag/${TAG}" >> "$GITHUB_ENV"
 
       - name: Download release asset
         env:
@@ -164,20 +175,22 @@ jobs:
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: |
           wrangler r2 object put --remote \
-            "${{ secrets.R2_BUCKET }}/releases/$ASSET_NAME" \
+            "$R2_BUCKET/releases/$ASSET_NAME" \
             --file "$ASSET_FILE"
 
       - name: Generate manifest (stable.json)
         env:
+          GITHUB_REPOSITORY_NAME: ${{ github.repository }}
           MIN_SUPPORTED_VERSION: ${{ vars.MIN_SUPPORTED_VERSION }}
           GH_TOKEN: ${{ github.token }}
         run: |
           MIN_SUPPORTED="${MIN_SUPPORTED_VERSION:-$CANONICAL_VERSION}"
-          RELEASES_BASE_URL="${{ env.RELEASE_PUBLIC_BASE_URL }}/releases"
+          RELEASES_BASE_URL="${RELEASE_PUBLIC_BASE_URL}/releases"
 
-          RELEASES_JSON=$(gh api "repos/${{ github.repository }}/releases?per_page=10" 2>/dev/null || echo "[]")
+          RELEASES_JSON=$(gh api "repos/${GITHUB_REPOSITORY_NAME}/releases?per_page=10")
 
           HISTORY_JSON=$(echo "$RELEASES_JSON" | jq -c \
             --arg current_tag "$RAW_TAG" \
@@ -229,7 +242,7 @@ jobs:
           ls -la scripts
 
           if [ ! -f scripts/sign_manifest.py ]; then
-            echo "::error::Missing scripts/sign_manifest.py in the checked out repository ref. For workflow_dispatch backfills, set tooling_ref to a branch or ref that contains the current signing tooling."
+            echo "::error::Missing scripts/sign_manifest.py in the trusted repository ref."
             exit 1
           fi
 
@@ -251,7 +264,7 @@ jobs:
         run: |
           jq -e \
             --arg expected_version "$CANONICAL_VERSION" \
-            --arg expected_url "${{ env.RELEASE_PUBLIC_BASE_URL }}/releases/$ASSET_NAME" \
+            --arg expected_url "${RELEASE_PUBLIC_BASE_URL}/releases/$ASSET_NAME" \
             '.latest.version == $expected_version
               and .latest.download.url == $expected_url
               and .signature.alg == "Ed25519"
@@ -278,8 +291,9 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: |
           wrangler r2 object put --remote \
-            "${{ secrets.R2_BUCKET }}/manifest/core/stable.json" \
+            "$R2_BUCKET/manifest/core/stable.json" \
             --file stable.signed.json \
             --content-type "application/json"

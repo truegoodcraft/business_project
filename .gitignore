@@ -24,6 +24,7 @@ env/
 codex-test-tmp*/
 .tmp_test_deps_*/
 .tmp_localappdata_*/
+.gate-pytest-*/
 .pytest_cache/
 __pycache__/
 *.pyc

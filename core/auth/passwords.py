@@ -16,6 +16,11 @@ SCRYPT_DKLEN = 32
 SALT_BYTES = 16
 MIN_PASSWORD_LENGTH = 8
 
+_SUPPORTED_SCRYPT_PARAMETERS = frozenset({(str(SCRYPT_N), str(SCRYPT_R), str(SCRYPT_P))})
+_SALT_B64_LENGTH = 4 * ((SALT_BYTES + 2) // 3)
+_HASH_B64_LENGTH = 4 * ((SCRYPT_DKLEN + 2) // 3)
+_MAX_ENCODED_HASH_LENGTH = 256
+
 
 def _b64encode(raw: bytes) -> str:
     return base64.b64encode(raw).decode("ascii")
@@ -54,6 +59,11 @@ def password_scheme(encoded_hash: str) -> str:
 
 
 def _parse_scrypt_hash(encoded_hash: str) -> tuple[int, int, int, bytes, bytes] | None:
+    # Hashes may originate in a restored database. Reject oversized or
+    # non-canonical inputs before splitting, base64 decoding,
+    # or invoking the deliberately expensive scrypt primitive.
+    if not encoded_hash or len(encoded_hash) > _MAX_ENCODED_HASH_LENGTH:
+        return None
     parts = encoded_hash.split("$")
     if len(parts) != 6 or parts[0] != SCRYPT_SCHEME:
         return None
@@ -62,18 +72,23 @@ def _parse_scrypt_hash(encoded_hash: str) -> tuple[int, int, int, bytes, bytes] 
         if "=" not in part:
             return None
         key, value = part.split("=", 1)
+        if key in values:
+            return None
         values[key] = value
+    if set(values) != {"n", "r", "p", "salt", "hash"}:
+        return None
+    if (values["n"], values["r"], values["p"]) not in _SUPPORTED_SCRYPT_PARAMETERS:
+        return None
     try:
-        n = int(values["n"])
-        r = int(values["r"])
-        p = int(values["p"])
+        if len(values["salt"]) != _SALT_B64_LENGTH or len(values["hash"]) != _HASH_B64_LENGTH:
+            return None
         salt = _b64decode(values["salt"])
         expected = _b64decode(values["hash"])
     except (KeyError, TypeError, ValueError):
         return None
-    if n <= 1 or r <= 0 or p <= 0 or not salt or not expected:
+    if len(salt) != SALT_BYTES or len(expected) != SCRYPT_DKLEN:
         return None
-    return n, r, p, salt, expected
+    return SCRYPT_N, SCRYPT_R, SCRYPT_P, salt, expected
 
 
 def verify_password(password: str, encoded_hash: str) -> bool:

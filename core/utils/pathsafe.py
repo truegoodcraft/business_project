@@ -15,7 +15,7 @@ def _clean_path_value(path_value: str | Path) -> str:
     raw = str(path_value or "").strip()
     if not raw:
         raise PathSafetyError("path_empty")
-    if "\x00" in raw:
+    if "\x00" in raw or any(0xD800 <= ord(character) <= 0xDFFF for character in raw):
         raise PathSafetyError("path_invalid")
     if raw.startswith(("~", "~/", "~\\")):
         raise PathSafetyError("path_out_of_roots")

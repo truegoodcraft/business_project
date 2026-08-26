@@ -1,0 +1,4 @@
+# Human-maintained Linux fuzz-tool policy.
+# Atheris does not support Windows; CI installs the generated
+# requirements-fuzz-linux.lock.txt only on Ubuntu/Python 3.12.
+atheris==3.1.0

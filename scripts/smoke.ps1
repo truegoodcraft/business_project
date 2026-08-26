@@ -171,6 +171,20 @@ function Get-WebErrorBody {
   return ""
 }
 
+function Get-TryErrorSummary {
+  param($TryResult)
+
+  $message = "unknown error"
+  if ($TryResult -and $TryResult.err -and $TryResult.err.Exception) {
+    $message = [string]$TryResult.err.Exception.Message
+  }
+  $body = Get-WebErrorBody $TryResult
+  if (-not [string]::IsNullOrWhiteSpace($body)) {
+    return ("{0}; response={1}" -f $message, $body)
+  }
+  return $message
+}
+
 function Parse-ErrorDetail {
   param([Parameter()]$Json)
   if ($null -eq $Json) { return @{ kind = "none"; message = "" } }
@@ -253,9 +267,9 @@ if ($tokResp) {
 # Best-effort feature check (safe if /openapi.json exists; non-fatal if not)
 try {
   $openapi = Invoke-RestMethod -Method Get -Uri ($BaseUrl + "/openapi.json") -WebSession $script:Session
-  Write-Host "  [INFO] Dev Mode: ON (Full invariant checks enabled)"
+  Write-Host "  [INFO] OpenAPI contract available (canonical checks enabled)"
 } catch {
-  Write-Host "  [INFO] Dev Mode: UNKNOWN (continuing with canonical checks)"
+  Write-Host "  [INFO] OpenAPI contract unavailable (continuing with canonical checks)"
 }
 
 # ---------------------------------------
@@ -925,51 +939,81 @@ Step "10. Cleanup"
 Info "Zeroing inventory and removing test data..."
 
 $targetItems = @($itemA, $itemB, $itemC, $itemD)
-foreach ($itm in $targetItems) {
-  # We need fresh qty_stored. Query /app/items again or just query this specific item if possible?
-  # /app/items returns all. We can filter.
-  # But simpler: we know the IDs.
-  # We cannot assume the state. We must query.
-
-  # Note: 0.8.2 /app/items does not support server-side filtering by id in query string?
-  # Let's assume we fetch all and find it.
-}
-
 $allItems = Invoke-Json GET ($BaseUrl + "/app/items") $null
 foreach ($itm in $targetItems) {
   $id = $itm.id
-  $current = $allItems | Where-Object { $_.id -eq $id }
+  $current = @($allItems | Where-Object { $_.id -eq $id } | Select-Object -First 1)
 
-  if ($current) {
-    [decimal]$onHandQty = [decimal]$current.qty_stored
+  if ($current.Count -gt 0) {
+    $display = $current[0].stock_on_hand_display
+    if ($null -eq $display -or $null -eq $display.value -or [string]::IsNullOrWhiteSpace([string]$display.unit)) {
+      Fail ("Item {0} is missing stock_on_hand_display.value/unit" -f $id)
+      exit 1
+    }
+    [decimal]$onHandQty = ParseDec $display.value ("cleanup:item:{0}.stock_on_hand_display.value" -f $id)
+    $onHandUom = [string]$display.unit
     if ($onHandQty -ne [decimal]0) {
       $absQty = [math]::Abs([decimal]$onHandQty)
       $qtyText = $absQty.ToString([System.Globalization.CultureInfo]::InvariantCulture)
       if ($onHandQty -gt [decimal]0) {
         $zeroTry = Try-Invoke {
-          Invoke-Json POST ($BaseUrl + "/app/stock/out") @{ item_id = $id; quantity_decimal = $qtyText; uom = "ea"; reason = "loss"; note = "Smoke Test Cleanup"; record_cash_event = $false }
+          Invoke-Json POST ($BaseUrl + "/app/stock/out") @{ item_id = $id; quantity_decimal = $qtyText; uom = $onHandUom; reason = "loss"; note = "Smoke Test Cleanup"; record_cash_event = $false }
         }
       } else {
         $zeroTry = Try-Invoke {
-          Invoke-Json POST ($BaseUrl + "/app/stock/in") @{ item_id = $id; quantity_decimal = $qtyText; uom = "ea"; unit_cost_cents = 0; source_id = "smoke-cleanup" }
+          Invoke-Json POST ($BaseUrl + "/app/stock/in") @{ item_id = $id; quantity_decimal = $qtyText; uom = $onHandUom; unit_cost_cents = 0; source_id = "smoke-cleanup" }
         }
       }
 
-      if ($zeroTry.ok) { Pass ("Zeroed inventory for Item {0} (qty={1})" -f $id, $qtyText) } else { Info ("Cleanup warning: failed to zero inventory for Item {0} (continuing)" -f $id) }
+      if ($zeroTry.ok) {
+        $verifyZeroTry = Try-Invoke { Invoke-Json GET ($BaseUrl + "/app/items/$id") $null }
+        if ($verifyZeroTry.ok) {
+          $remainingDisplay = $verifyZeroTry.resp.stock_on_hand_display
+          if ($null -eq $remainingDisplay -or $null -eq $remainingDisplay.value) {
+            Info ("Cleanup warning: Item {0} zeroing response could not be verified (missing display quantity)" -f $id)
+          } else {
+            [decimal]$remainingQty = ParseDec $remainingDisplay.value ("cleanup:item:{0}.remaining_display.value" -f $id)
+            if ($remainingQty -eq [decimal]0) {
+              Pass ("Zeroed inventory for Item {0} (qty={1} {2})" -f $id, $qtyText, $onHandUom)
+            } else {
+              Info ("Cleanup warning: Item {0} still has {1} {2} after zeroing" -f $id, $remainingDisplay.value, $remainingDisplay.unit)
+            }
+          }
+        } else {
+          Info ("Cleanup warning: could not verify Item {0} after zeroing: {1}" -f $id, (Get-TryErrorSummary $verifyZeroTry))
+        }
+      } else {
+        Info ("Cleanup warning: failed to zero inventory for Item {0}: {1}" -f $id, (Get-TryErrorSummary $zeroTry))
+      }
     } else {
       Pass ("Item {0} already at zero inventory" -f $id)
     }
 
-    # Archive/Delete item
-    # Assuming DELETE /app/items/{id} works
     $del = Try-Invoke { Invoke-RestMethod -Method DELETE -Uri ($BaseUrl + "/app/items/$id") -WebSession $script:Session }
-    if ($del.ok) { Pass ("Deleted Item {0}" -f $id) } else { Info ("Could not delete Item {0} (probably has history)" -f $id) }
+    if ($del.ok) {
+      $deleteProperties = @($del.resp.PSObject.Properties.Name)
+      if (($deleteProperties -contains "archived") -and $del.resp.archived -eq $true) {
+        Pass ("Archived Item {0} (history preserved)" -f $id)
+      } elseif (($deleteProperties -contains "ok") -and $del.resp.ok -eq $true) {
+        Pass ("Deleted Item {0}" -f $id)
+      } else {
+        Info ("Cleanup warning: unexpected item removal response for Item {0}" -f $id)
+      }
+    } else {
+      Info ("Cleanup warning: could not remove Item {0}: {1}" -f $id, (Get-TryErrorSummary $del))
+    }
   }
 }
 
 # Archive/Delete Recipe
 $delRec = Try-Invoke { Invoke-RestMethod -Method DELETE -Uri ($BaseUrl + "/app/recipes/$($rec.id)") -WebSession $script:Session }
-if ($delRec.ok) { Pass "Deleted Recipe $($rec.id)" } else { Info "Could not delete Recipe (probably has history)" }
+if ($delRec.ok -and $delRec.resp.ok -eq $true) {
+  Pass "Deleted Recipe $($rec.id)"
+} elseif ($delRec.ok) {
+  Info "Cleanup warning: unexpected recipe removal response for Recipe $($rec.id)"
+} else {
+  Info ("Cleanup warning: could not delete Recipe {0}: {1}" -f $rec.id, (Get-TryErrorSummary $delRec))
+}
 
 # -----------------------------
 # Finish

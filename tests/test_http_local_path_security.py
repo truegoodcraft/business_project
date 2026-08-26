@@ -62,7 +62,11 @@ def test_open_local_uses_resolved_safe_file_path(bus_client, monkeypatch, tmp_pa
 
     assert response.status_code == 200
     assert response.json() == {"ok": True}
-    assert captured["args"] == ["explorer", "/select,", str(safe_file.resolve(strict=False))]
+    expected_path = str(safe_file.resolve(strict=False))
+    if api_http.os.name == "nt":
+        assert captured["args"] == ["explorer", "/select,", expected_path]
+    else:
+        assert captured["args"] == ["xdg-open", expected_path]
 
 
 def test_open_local_rejects_traversal_path(bus_client, monkeypatch, tmp_path: Path):

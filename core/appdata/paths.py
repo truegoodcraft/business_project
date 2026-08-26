@@ -64,14 +64,14 @@ def update_cache_root() -> Path:
 
 
 def app_db_default() -> Path:
-    if _is_windows():
+    if _is_windows() or os.environ.get("LOCALAPPDATA"):
         return app_root() / "app.db"
     # non-Windows dev fallback target
     return Path.home() / ".buscore" / "app" / "app.db"
 
 
 def app_demo_db_default() -> Path:
-    if _is_windows():
+    if _is_windows() or os.environ.get("LOCALAPPDATA"):
         return app_root() / "app_demo.db"
     return Path.home() / ".buscore" / "app" / "app_demo.db"
 

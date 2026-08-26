@@ -11,23 +11,111 @@ concurrency:
   group: publish-wiki
   cancel-in-progress: true
 
-permissions:
-  contents: write
+permissions: {}
 
 jobs:
   publish-wiki:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # The GitHub Wiki repository must be initialized manually once by creating
       # a Home page in the GitHub UI before this workflow can publish reliably.
       # /wiki in the main repo is the editable source folder.
       # GitHub Wiki is the published user-facing output.
+      - name: Prepare wiki repository
+        id: prepare
+        shell: bash
+        env:
+          WIKI_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          wiki_dir="$(mktemp -d "${RUNNER_TEMP}/buscore-wiki.XXXXXX")"
+          git clone "https://github.com/${WIKI_REPOSITORY}.wiki.git" "$wiki_dir"
+          echo "wiki_dir=$wiki_dir" >> "$GITHUB_OUTPUT"
+
+          python3 - "$GITHUB_WORKSPACE/wiki" "$wiki_dir" <<'PY'
+          from __future__ import annotations
+
+          import re
+          import shutil
+          import sys
+          from pathlib import Path
+
+          source = Path(sys.argv[1]).resolve(strict=True)
+          target = Path(sys.argv[2]).resolve(strict=True)
+          if not (target / ".git").is_dir():
+              raise SystemExit("Refusing to publish outside the cloned wiki repository.")
+
+          for child in target.iterdir():
+              if child.name == ".git":
+                  continue
+              if child.is_dir():
+                  shutil.rmtree(child)
+              else:
+                  child.unlink()
+
+          shutil.copytree(source, target, dirs_exist_ok=True)
+          readme = target / "README.md"
+          if readme.exists():
+              readme.replace(target / "Home.md")
+
+          markdown_suffixes = {
+              ".md",
+              ".markdown",
+              ".mdown",
+              ".mkdn",
+              ".mkd",
+              ".mdwn",
+              ".mkdown",
+              ".ron",
+          }
+          local_link = re.compile(
+              r"(?P<prefix>\]\()"
+              r"(?P<path>(?![a-z][a-z0-9+.-]*:|//|#)[^)]+?)"
+              r"(?P<suffix>\.(?:md|markdown|mdown|mkdn|mkd|mdwn|mkdown|ron))"
+              r"(?P<trailer>[?#][^)]*)?\)",
+              re.IGNORECASE,
+          )
+
+          def rewrite(match: re.Match[str]) -> str:
+              path = match.group("path")
+              if path == "README":
+                  path = "Home"
+              trailer = match.group("trailer") or ""
+              return f'{match.group("prefix")}{path}{trailer})'
+
+          for page in target.rglob("*"):
+              if page.is_file() and page.suffix.lower() in markdown_suffixes:
+                  content = page.read_text(encoding="utf-8")
+                  page.write_text(local_link.sub(rewrite, content), encoding="utf-8")
+          PY
+
       - name: Publish wiki
-        uses: Andrew-Chen-Wang/github-wiki-action@v5
-        with:
-          path: wiki
-          strategy: clone
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WIKI_DIR: ${{ steps.prepare.outputs.wiki_dir }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          cd "$WIKI_DIR"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "Wiki already matches the repository source."
+            exit 0
+          fi
+
+          git commit -m "Update wiki ${COMMIT_SHA}"
+          gh auth setup-git
+          git push origin HEAD:master

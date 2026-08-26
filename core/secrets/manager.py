@@ -60,13 +60,20 @@ def _namespace(plugin_id: str, key: str) -> str:
 
 
 def _state_dir() -> Path:
+    configured_home = os.environ.get("BUSCORE_HOME")
+    if configured_home:
+        return Path(configured_home).expanduser().resolve() / "secrets"
     if os.name == "nt":
         return APP_ROOT / "secrets"
     return Path.home() / ".tgc" / "secrets"
 
 
-_KEY_PATH = _state_dir() / "master.key"
-_STORE_PATH = _state_dir() / "secrets.json.enc"
+def _key_path() -> Path:
+    return _state_dir() / "master.key"
+
+
+def _store_path() -> Path:
+    return _state_dir() / "secrets.json.enc"
 
 
 def _ensure_dirs() -> None:
@@ -75,10 +82,11 @@ def _ensure_dirs() -> None:
 
 def _load_or_create_master_key() -> bytes:
     _ensure_dirs()
-    if _KEY_PATH.exists():
-        return _KEY_PATH.read_bytes()
+    key_path = _key_path()
+    if key_path.exists():
+        return key_path.read_bytes()
     key = Fernet.generate_key()
-    _KEY_PATH.write_bytes(key)
+    key_path.write_bytes(key)
     if KEYRING_AVAILABLE and keyring is not None:
         try:
             # also copy to OS keyring as backup (non-fatal)
@@ -89,16 +97,18 @@ def _load_or_create_master_key() -> bytes:
 
 
 def _load_store_bytes() -> bytes:
-    if not _STORE_PATH.exists():
+    store_path = _store_path()
+    if not store_path.exists():
         return b""
-    return _STORE_PATH.read_bytes()
+    return store_path.read_bytes()
 
 
 def _save_store_bytes(data: bytes) -> None:
     _ensure_dirs()
-    tmp = _STORE_PATH.with_suffix(".tmp")
+    store_path = _store_path()
+    tmp = store_path.with_suffix(".tmp")
     tmp.write_bytes(data)
-    tmp.replace(_STORE_PATH)
+    tmp.replace(store_path)
 
 
 def _file_get(plugin_id: str, key: str) -> Optional[str]:

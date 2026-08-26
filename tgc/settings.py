@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from pydantic import Field
@@ -10,8 +11,17 @@ from pydantic_settings import BaseSettings
 from platformdirs import PlatformDirs
 
 
-_platform_dirs = PlatformDirs(appname="buscore", appauthor="tgc", ensure_exists=True)
-BUSCORE_HOME: Path = Path(_platform_dirs.user_data_dir)
+_platform_dirs = PlatformDirs(appname="buscore", appauthor="tgc", ensure_exists=False)
+
+
+def _resolve_buscore_home() -> Path:
+    configured_home = os.environ.get("BUSCORE_HOME")
+    if configured_home:
+        return Path(configured_home).expanduser().resolve()
+    return Path(_platform_dirs.user_data_dir)
+
+
+BUSCORE_HOME: Path = _resolve_buscore_home()
 DATA_DIR: Path = BUSCORE_HOME / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 

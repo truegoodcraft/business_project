@@ -2,7 +2,12 @@
 
 ## Reporting a Vulnerability
 
-Please report suspected vulnerabilities privately to project maintainers and include:
+Please report suspected vulnerabilities privately through one of these channels:
+
+- [GitHub private vulnerability reporting](https://github.com/True-Good-Craft/TGC-BUS-Core/security/advisories/new), when the repository's **Report a vulnerability** action is available.
+- Email `truegoodcraft@gmail.com` with the subject `BUS Core security report` if private GitHub reporting is unavailable.
+
+Include:
 
 - Affected file(s) and function(s)
 - Reproduction steps and required inputs
@@ -10,6 +15,8 @@ Please report suspected vulnerabilities privately to project maintainers and inc
 - Suggested fix or mitigation (optional)
 
 Do not open public issues for unpatched security defects.
+
+BUS Core `1.4.x` is the currently supported release line. Security fixes are prepared on a branch, verified against the supported runtime and release targets, and released only after owner approval. Do not send live credentials, private business data, or an unredacted production database with a report.
 
 ## Bandit Policy (BUS Core)
 
@@ -29,11 +36,12 @@ Current CI security workflow: `.github/workflows/security-audit.yml`.
 - Bandit runs on `core`, `tgc`, `scripts`, and `launcher.py`.
 - Low-severity Bandit findings are reported in advisory mode.
 - Medium and High Bandit findings fail CI.
-- `pip-audit` runs against `requirements.txt` in advisory mode because the repository currently has range-based requirements rather than a fully pinned lockfile. This is visible evidence, not a silent skip; promote it to blocking once BUS Core has a stable audit input.
+- `pip-audit` blocks on the hash-locked Python 3.12 Linux and Python 3.11 Windows dependency graphs.
+- General CI installs those same reviewed locks and runs the regression suite on both targets.
 
-This security workflow and the April 2026 hardening pass are internal repository hardening evidence. They are not an independent audit, penetration test, OWASP certification, enterprise-readiness claim, or proof that BUS Core is safe for LAN/public multi-user hosting by default.
+This security workflow and the April/August 2026 hardening passes are internal repository hardening evidence. They are not an independent audit, penetration test, OWASP certification, enterprise-readiness claim, or proof that BUS Core is safe for LAN/public multi-user hosting by default.
 
-Known remaining work includes structured security audit events, pinned dependency audit input or lockfile-based blocking dependency audit, backup/restore operator safeguards, fallback secrets hardening, and explicit plugin/provider trust-boundary enforcement.
+Known remaining work includes structured security audit events, backup/restore operator safeguards, further fallback-secret hardening, and explicit plugin/provider trust-boundary enforcement.
 
 Current workflow exclusions are limited to tests, build/runtime outputs, virtual environments, caches, and local temporary tooling directories:
 
@@ -44,6 +52,7 @@ Current workflow exclusions are limited to tests, build/runtime outputs, virtual
 - `.pytest_cache`
 - `.tmp_test_deps_*`
 - `.tmp_localappdata_*`
+- `.gate-pytest-*`
 - `.artifacts`
 
 ## Suppression Standard
